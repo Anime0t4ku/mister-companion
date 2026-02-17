@@ -29,14 +29,7 @@ jobs:
       - name: Build Executable
         working-directory: mister-companion
         run: |
-          pyinstaller ^
-            --clean ^
-            --onefile ^
-            --windowed ^
-            --icon app.ico ^
-            --add-data "icon.png;." ^
-            --name MiSTer-Companion ^
-            mister-companion.py
+          pyinstaller --clean --onefile --windowed --icon app.ico --add-data "icon.png;." --name MiSTer-Companion mister-companion.py
 
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v4
