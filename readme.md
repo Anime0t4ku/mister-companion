@@ -44,7 +44,7 @@ Download the latest automatic build:
 
 | Platform | Status | Download |
 |----------|--------|----------|
-| Windows | ![Build Status](https://github.com/Anime0t4ku/mister-companion/actions/workflows/build.yml/badge.svg) | [Download Pre-release](https://github.com/Anime0t4ku/mister-companion/releases/download/Pre-release/MiSTer-Companion-Windows-x86_64.zip) |
+| Windows | ![Build Status](https://github.com/Anime0t4ku/mister-companion/actions/workflows/build.yaml/badge.svg) | [Download Pre-release](https://github.com/Anime0t4ku/mister-companion/releases/download/Pre-release/MiSTer-Companion-Windows-x86_64.zip) |
 
 ---
 
