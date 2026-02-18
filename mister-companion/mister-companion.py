@@ -45,8 +45,12 @@ def decode_password(encoded: str) -> str:
 def load_config():
     if not os.path.exists(CONFIG_FILE):
         return DEFAULT_CONFIG.copy()
-    with open(CONFIG_FILE, "r") as f:
-        return json.load(f)
+
+    try:
+        with open(CONFIG_FILE, "r") as f:
+            return json.load(f)
+    except Exception:
+        return DEFAULT_CONFIG.copy()
 
 def save_config(config):
     with open(CONFIG_FILE, "w") as f:
@@ -120,7 +124,7 @@ class MiSTerApp:
 
     def __init__(self, root):
         self.root = root
-        self.root.title("MiSTer Companion v1.0 by Anime0t4ku")
+        self.root.title("MiSTer Companion v1.0.1 by Anime0t4ku")
         self.root.geometry("900x760")
 
         # ===== App Icon =====
@@ -218,7 +222,14 @@ class MiSTerApp:
     def build_ui(self):
 
         style = ttk.Style()
-        style.theme_use("vista")
+
+        try:
+            if sys.platform.startswith("win"):
+                style.theme_use("vista")
+            else:
+                style.theme_use("clam")
+        except Exception:
+            pass
 
         style.configure("green.Horizontal.TProgressbar",
                         troughcolor="#e0e0e0",
@@ -653,8 +664,20 @@ class MiSTerApp:
         self.check_services_status()
 
     def open_explorer(self):
-        if self.connection.ip:
-            subprocess.Popen(f'explorer \\\\{self.connection.ip}\\')
+        if not self.connection.ip:
+            return
+
+        ip = self.connection.ip
+
+        try:
+            if sys.platform.startswith("win"):
+                subprocess.Popen(["explorer", f"\\\\{ip}\\"])
+            elif sys.platform.startswith("linux"):
+                subprocess.Popen(["xdg-open", f"smb://{ip}/"])
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", f"smb://{ip}/"])
+        except Exception as e:
+            messagebox.showerror("Error", f"Unable to open file share:\n{str(e)}")
 
     def reboot(self):
         if not self.connection.connected:
