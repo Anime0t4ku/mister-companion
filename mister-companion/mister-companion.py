@@ -124,7 +124,7 @@ class MiSTerApp:
 
     def __init__(self, root):
         self.root = root
-        self.root.title("MiSTer Companion v1.0.1 by Anime0t4ku")
+        self.root.title("MiSTer Companion v1.1.0 by Anime0t4ku")
         self.root.geometry("900x760")
 
         # ===== App Icon =====
@@ -337,15 +337,21 @@ class MiSTerApp:
 
         self.install_button = ttk.Button(button_row,
                                          text="Install update_all",
-                                         width=22,
+                                         width=18,
                                          command=self.install_update_all)
-        self.install_button.pack(side="left", padx=15)
+        self.install_button.pack(side="left", padx=8)
+
+        self.uninstall_button = ttk.Button(button_row,
+                                           text="Uninstall update_all",
+                                           width=18,
+                                           command=self.uninstall_update_all)
+        self.uninstall_button.pack(side="left", padx=8)
 
         self.run_button = ttk.Button(button_row,
                                      text="Run update_all",
-                                     width=22,
+                                     width=18,
                                      command=self.run_update_all)
-        self.run_button.pack(side="left", padx=15)
+        self.run_button.pack(side="left", padx=8)
 
         self.console_frame = ttk.Frame(maintenance_frame)
 
@@ -377,11 +383,17 @@ class MiSTerApp:
         files_inner = ttk.Frame(files_frame)
         files_inner.pack(pady=20)
 
-        self.smb_button = ttk.Button(files_inner,
-                                     text="Enable SMB",
-                                     width=22,
-                                     command=self.enable_smb)
-        self.smb_button.pack(side="left", padx=20)
+        self.enable_smb_button = ttk.Button(files_inner,
+                                            text="Enable SMB",
+                                            width=18,
+                                            command=self.enable_smb)
+        self.enable_smb_button.pack(side="left", padx=10)
+
+        self.disable_smb_button = ttk.Button(files_inner,
+                                             text="Disable SMB",
+                                             width=18,
+                                             command=self.disable_smb)
+        self.disable_smb_button.pack(side="left", padx=10)
 
         self.explorer_button = ttk.Button(files_inner,
                                           text="Open in Explorer",
@@ -484,16 +496,16 @@ class MiSTerApp:
             messagebox.showerror("Connection Error", message)
 
     def enable_controls(self):
-        self.install_button.config(state="normal")
         self.run_button.config(state="normal")
-        self.smb_button.config(state="normal")
         self.explorer_button.config(state="normal")
         self.reboot_button.config(state="normal")
 
     def disable_controls(self):
         self.install_button.config(state="disabled")
+        self.uninstall_button.config(state="disabled")
         self.run_button.config(state="disabled")
-        self.smb_button.config(state="disabled")
+        self.enable_smb_button.config(state="disabled")
+        self.disable_smb_button.config(state="disabled")
         self.explorer_button.config(state="disabled")
         self.reboot_button.config(state="disabled")
 
@@ -544,7 +556,10 @@ class MiSTerApp:
         update_check = self.connection.run_command(
             "test -f /media/fat/Scripts/update_all.sh && echo EXISTS"
         )
-        if "EXISTS" in (update_check or ""):
+
+        update_installed = "EXISTS" in (update_check or "")
+
+        if update_installed:
             self.update_status_label.config(
                 text="update_all: Installed ✓",
                 foreground="green"
@@ -558,7 +573,10 @@ class MiSTerApp:
         smb_check = self.connection.run_command(
             "test -f /media/fat/linux/samba.sh && echo EXISTS"
         )
-        if "EXISTS" in (smb_check or ""):
+
+        smb_enabled = "EXISTS" in (smb_check or "")
+
+        if smb_enabled:
             self.smb_status_label.config(
                 text="SMB: Enabled ✓",
                 foreground="green"
@@ -568,6 +586,54 @@ class MiSTerApp:
                 text="SMB: Disabled",
                 foreground="red"
             )
+
+        self.update_button_states(update_installed, smb_enabled)
+
+    def update_button_states(self, update_installed=False, smb_enabled=False):
+
+        # update_all buttons
+        if update_installed:
+            self.install_button.config(state="disabled")
+            self.uninstall_button.config(state="normal")
+            self.run_button.config(state="normal")
+        else:
+            self.install_button.config(state="normal")
+            self.uninstall_button.config(state="disabled")
+            self.run_button.config(state="disabled")
+
+        # SMB buttons
+        if smb_enabled:
+            self.enable_smb_button.config(state="disabled")
+            self.disable_smb_button.config(state="normal")
+        else:
+            self.enable_smb_button.config(state="normal")
+            self.disable_smb_button.config(state="disabled")
+
+    def uninstall_update_all(self):
+        if not self.connection.connected:
+            return
+
+        if messagebox.askyesno("Uninstall update_all",
+                               "Are you sure you want to remove update_all?"):
+            self.connection.run_command(
+                "rm -f /media/fat/Scripts/update_all.sh"
+            )
+            self.check_services_status()
+
+
+    def disable_smb(self):
+        if not self.connection.connected:
+            return
+
+        self.connection.run_command(
+            "if [ -f /media/fat/linux/samba.sh ]; then mv /media/fat/linux/samba.sh /media/fat/linux/_samba.sh; fi"
+        )
+
+        if messagebox.askyesno("SMB Disabled",
+                               "SMB has been disabled.\n\nA reboot is required.\n\nReboot now?"):
+            self.reboot()
+
+        self.check_services_status()
 
     def toggle_console(self):
         if self.console_visible:
