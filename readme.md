@@ -1,6 +1,6 @@
 # MiSTer Companion
 
-MiSTer Companion is a lightweight cross-platform GUI utility for managing and maintaining your MiSTer FPGA system over SSH.
+MiSTer Companion is a lightweight Windows GUI utility for managing and maintaining your MiSTer FPGA system over SSH.
 
 It provides a simple interface for common maintenance tasks without needing to use a terminal.
 
@@ -10,10 +10,10 @@ Supports:
 - Storage usage monitoring
 - update_all installation and execution
 - SMB enable / disable
-- Open MiSTer share in file explorer
+- Open MiSTer share in Windows Explorer
 - Remote reboot
 
-Clean, safe, and easy MiSTer management from your desktop.
+Clean, safe, and easy MiSTer management from Windows.
 
 ![Screenshot](assets/screenshot.png)
 
@@ -38,30 +38,13 @@ https://rufus.ie/
 
 ---
 
-## Download (Automatic Builds)
+## Download (Windows)
 
-Download the latest automatic pre-release build:
+Download the latest automatic build:
 
 | Platform | Status | Download |
 |----------|--------|----------|
-| Windows (x86_64) | ![Build Status](https://github.com/Anime0t4ku/mister-companion/actions/workflows/build.yaml/badge.svg) | [Download Windows](https://github.com/Anime0t4ku/mister-companion/releases/download/Pre-release/MiSTer-Companion-Windows-x86_64.zip) |
-| Linux (x86_64) | ![Build Status](https://github.com/Anime0t4ku/mister-companion/actions/workflows/build.yaml/badge.svg) | [Download Linux](https://github.com/Anime0t4ku/mister-companion/releases/download/Pre-release/MiSTer-Companion-Linux-x86_64.zip) |
-
----
-
-## Linux Notes
-
-The Linux build:
-
-- Compiled on Ubuntu (GitHub Actions)
-- Works on most modern x86_64 distributions
-- Does not require Python or Tkinter installed
-- Requires a graphical desktop environment (X11 / Wayland)
-
-To run:
-
-    chmod +x MiSTer-Companion
-    ./MiSTer-Companion
+| Windows | ![Build Status](https://github.com/Anime0t4ku/mister-companion/actions/workflows/build.yaml/badge.svg) | [Download Pre-release](https://github.com/Anime0t4ku/mister-companion/releases/download/Pre-release/MiSTer-Companion-Windows-x86_64.zip) |
 
 ---
 
@@ -70,7 +53,7 @@ To run:
 If running the script directly:
 
 - Python 3.10+
-- Tkinter (usually included, may require `python3-tk` on Linux)
+- Tkinter (usually included)
 - paramiko
 - requests
 
