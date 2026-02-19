@@ -32,12 +32,7 @@ jobs:
 
       - name: Build Executable
         working-directory: mister-companion
-        run: |
-          pyinstaller --clean --onefile --windowed ^
-          --icon app.ico ^
-          --add-data "icon.png;." ^
-          --name MiSTer-Companion ^
-          mister-companion.py
+        run: pyinstaller --clean --onefile --windowed --icon app.ico --add-data "icon.png;." --name MiSTer-Companion mister-companion.py
 
       - name: Upload Windows Artifact
         uses: actions/upload-artifact@v4
@@ -74,11 +69,7 @@ jobs:
 
       - name: Build Executable
         working-directory: mister-companion
-        run: |
-          pyinstaller --clean --onefile --windowed \
-          --add-data "icon.png:." \
-          --name MiSTer-Companion \
-          mister-companion.py
+        run: pyinstaller --clean --onefile --windowed --add-data "icon.png:." --name MiSTer-Companion mister-companion.py
 
       - name: Upload Linux Artifact
         uses: actions/upload-artifact@v4
@@ -88,7 +79,7 @@ jobs:
 
 
   # ============================================================
-  # Pre-release
+  # Pre-release Creation
   # ============================================================
   release:
     name: Create / Update Pre-release
