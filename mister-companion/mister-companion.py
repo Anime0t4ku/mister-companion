@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog
 import paramiko
 import requests
+from websocket import create_connection
 import threading
 import subprocess
 import json
@@ -124,7 +125,7 @@ class MiSTerApp:
 
     def __init__(self, root):
         self.root = root
-        self.root.title("MiSTer Companion v2.0.0 by Anime0t4ku")
+        self.root.title("MiSTer Companion v2.1.0 by Anime0t4ku")
         self.root.geometry("900x760")
 
         # ===== App Icon =====
@@ -263,11 +264,12 @@ class MiSTerApp:
         self.connection_tab = ttk.Frame(notebook)
         self.device_tab = ttk.Frame(notebook)
         self.scripts_tab = ttk.Frame(notebook)
-        self.launchers_tab = ttk.Frame(notebook)
+        self.zapscripts_tab = ttk.Frame(notebook)
 
         notebook.add(self.connection_tab, text="Connection")
         notebook.add(self.device_tab, text="Device")
         notebook.add(self.scripts_tab, text="Scripts")
+        notebook.add(self.zapscripts_tab, text="ZapScripts")
 
         # ===== Device Section =====
 
@@ -383,6 +385,7 @@ class MiSTerApp:
                                      command=self.run_update_all)
         self.run_button.pack(side="left", padx=8)
 
+        
         # ===== Zaparoo =====
 
         zaparoo_frame = ttk.LabelFrame(self.scripts_tab, text="Zaparoo")
@@ -521,6 +524,19 @@ class MiSTerApp:
                                         command=self.reboot)
         self.reboot_button.pack(pady=20)
 
+        # ===== Zapscripts =====
+
+        self.zapscripts_wrapper = ttk.Frame(self.zapscripts_tab)
+        self.zapscripts_wrapper.pack(fill="both", expand=True, padx=20, pady=20)
+
+        self.zapscripts_message = ttk.Label(
+            self.zapscripts_wrapper,
+            text="Connect to a MiSTer device to load Zaparoo scripts.",
+            foreground="gray"
+        )
+
+        self.zapscripts_message.pack()
+
     # =========================
     # Device Management
     # =========================
@@ -584,6 +600,158 @@ class MiSTerApp:
     # =========================
     # Core Logic
     # =========================
+
+    def populate_zapscripts(self):
+
+        for widget in self.zapscripts_wrapper.winfo_children():
+            widget.destroy()
+
+        # ===== Launch Scripts =====
+
+        launch_frame = ttk.LabelFrame(self.zapscripts_wrapper, text="Launch Scripts")
+        launch_frame.pack(fill="x", pady=10)
+
+        button_row = ttk.Frame(launch_frame)
+        button_row.pack(pady=10)
+
+        run_update_button = ttk.Button(
+            button_row,
+            text="Run update_all",
+            width=22,
+            command=lambda: self.run_zaparoo_api("update_all")
+        )
+
+        run_update_button.pack(side="left", padx=6)
+
+        # Disable button if update_all is not installed
+        if not getattr(self, "update_all_installed", False):
+            run_update_button.config(state="disabled")
+
+        run_migrate_button = ttk.Button(
+            button_row,
+            text="Run migrate_sd",
+            width=22,
+            command=lambda: self.run_zaparoo_api("migrate_sd")
+        )
+
+        run_migrate_button.pack(side="left", padx=6)
+
+        if not getattr(self, "migrate_sd_installed", False):
+            run_migrate_button.config(state="disabled")
+
+        # ===== Launch Misc =====
+
+        misc_frame = ttk.LabelFrame(self.zapscripts_wrapper, text="Launch Misc.")
+        misc_frame.pack(fill="x", pady=10)
+
+        misc_buttons = ttk.Frame(misc_frame)
+        misc_buttons.pack(pady=10)
+
+        # Row 1
+        row1 = ttk.Frame(misc_buttons)
+        row1.pack(pady=5)
+
+        ttk.Button(
+            row1,
+            text="Open Bluetooth Menu",
+            width=24,
+            command=lambda: self.send_zaparoo_input("**input.keyboard:{f11}")
+        ).pack(side="left", padx=6)
+
+        ttk.Button(
+            row1,
+            text="Open OSD Menu",
+            width=24,
+            command=lambda: self.send_zaparoo_input("**input.keyboard:{f12}")
+        ).pack(side="left", padx=6)
+
+        # Row 2
+        row2 = ttk.Frame(misc_buttons)
+        row2.pack(pady=5)
+
+        ttk.Button(
+            row2,
+            text="Cycle Wallpaper",
+            width=24,
+            command=lambda: self.send_zaparoo_input("**input.keyboard:{f1}")
+        ).pack(side="left", padx=6)
+
+        ttk.Button(
+            row2,
+            text="Return to MiSTer Home",
+            width=24,
+            command=lambda: self.send_zaparoo_input("**stop")
+        ).pack(side="left", padx=6)
+
+    def run_zaparoo_api(self, script):
+
+        if not self.connection.ip:
+            messagebox.showerror("Error", "No MiSTer connected.")
+            return
+
+        ws_url = f"ws://{self.connection.ip}:7497/api/v0.1"
+
+        payload = {
+            "jsonrpc": "2.0",
+            "method": "run",
+            "params": f"**mister.script:{script}.sh",
+            "id": 1
+        }
+
+        def worker():
+            try:
+                ws = create_connection(ws_url, timeout=5)
+
+                ws.send(json.dumps(payload))
+
+                response = ws.recv()
+                print("Zaparoo response:", response)
+
+                ws.close()
+
+            except Exception as e:
+                error_msg = str(e)
+                self.root.after(
+                    0,
+                    lambda: messagebox.showerror("API Error", error_msg)
+                )
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def send_zaparoo_input(self, command):
+
+        if not self.connection.ip:
+            messagebox.showerror("Error", "No MiSTer connected.")
+            return
+
+        ws_url = f"ws://{self.connection.ip}:7497/api/v0.1"
+
+        payload = {
+            "jsonrpc": "2.0",
+            "method": "run",
+            "params": command,
+            "id": 1
+        }
+
+        def worker():
+            try:
+                ws = create_connection(ws_url, timeout=5)
+
+                ws.send(json.dumps(payload))
+
+                response = ws.recv()
+                print("Zaparoo response:", response)
+
+                ws.close()
+
+            except Exception as e:
+                error_msg = str(e)
+                self.root.after(
+                    0,
+                    lambda: messagebox.showerror("API Error", error_msg)
+                )
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def connect(self):
         ip = self.ip_entry.get().strip()
@@ -666,12 +834,14 @@ class MiSTerApp:
                 pass
 
         # USB storage
-        usb = self.connection.run_command("df -h /media/usb* 2>/dev/null | tail -1")
+        usb = self.connection.run_command("df -h | grep /media/usb")
 
-        if usb and "/media/usb" in usb:
+        if usb:
 
             try:
-                parts = usb.split()
+                line = usb.splitlines()[0]
+                parts = line.split()
+
                 size = parts[1]
                 avail = parts[3]
                 percent = int(parts[4].replace("%", ""))
@@ -680,6 +850,13 @@ class MiSTerApp:
                 self.usb_label.config(
                     text=f"{avail} free of {size} ({percent}% used)"
                 )
+
+                if percent > 85:
+                    self.usb_bar.configure(style="red.Horizontal.TProgressbar")
+                elif percent > 70:
+                    self.usb_bar.configure(style="orange.Horizontal.TProgressbar")
+                else:
+                    self.usb_bar.configure(style="green.Horizontal.TProgressbar")
 
             except Exception:
                 self.usb_label.config(text="USB detected (unable to read usage)")
@@ -694,6 +871,7 @@ class MiSTerApp:
         )
 
         update_installed = "EXISTS" in (update_check or "")
+        self.update_all_installed = update_installed
 
         if update_installed:
             self.update_status_label.config(
@@ -725,6 +903,35 @@ class MiSTerApp:
 
         self.update_button_states(update_installed, smb_enabled)
 
+        # ===== migrate_sd -detection =====
+
+        migrate_check = self.connection.run_command(
+            "test -f /media/fat/Scripts/migrate_sd.sh && echo EXISTS"
+        )
+
+        migrate_installed = "EXISTS" in (migrate_check or "")
+        self.migrate_sd_installed = migrate_installed
+
+        if migrate_installed:
+
+            self.migrate_status_label.config(
+                text="migrate_sd: Installed ✓",
+                foreground="green"
+            )
+
+            self.install_migrate_button.config(state="disabled")
+            self.uninstall_migrate_button.config(state="normal")
+
+        else:
+
+            self.migrate_status_label.config(
+                text="migrate_sd: Not Installed",
+                foreground="red"
+            )
+
+            self.install_migrate_button.config(state="normal")
+            self.uninstall_migrate_button.config(state="disabled")
+
         # ===== Zaparoo detection =====
 
         zaparoo_check = self.connection.run_command(
@@ -750,6 +957,16 @@ class MiSTerApp:
             self.run_zaparoo_button.config(state="disabled")
             self.uninstall_zaparoo_button.config(state="disabled")
 
+            for widget in self.zapscripts_wrapper.winfo_children():
+                widget.destroy()
+
+            ttk.Label(
+                self.zapscripts_wrapper,
+                text="ZapScripts require Zaparoo to be installed.\n\nPlease install Zaparoo from the Scripts tab.",
+                foreground="red",
+                justify="center"
+            ).pack(pady=40)
+
         elif zaparoo_installed and not zaparoo_initialized:
 
             self.zaparoo_status_label.config(
@@ -760,6 +977,16 @@ class MiSTerApp:
             self.install_zaparoo_button.config(state="disabled")
             self.run_zaparoo_button.config(state="normal")
             self.uninstall_zaparoo_button.config(state="normal")
+
+            for widget in self.zapscripts_wrapper.winfo_children():
+                widget.destroy()
+
+            ttk.Label(
+                self.zapscripts_wrapper,
+                text="ZapScripts are not available yet.\n\nPlease run Zaparoo once from the Scripts tab to complete setup.",
+                foreground="orange",
+                justify="center"
+            ).pack(pady=40)
 
         else:
 
@@ -772,33 +999,7 @@ class MiSTerApp:
             self.run_zaparoo_button.config(state="disabled")
             self.uninstall_zaparoo_button.config(state="normal")
 
-        # ===== migrate_sd detection =====
-
-        migrate_check = self.connection.run_command(
-            "test -f /media/fat/Scripts/migrate_sd.sh && echo EXISTS"
-        )
-
-        migrate_installed = "EXISTS" in (migrate_check or "")
-
-        if migrate_installed:
-
-            self.migrate_status_label.config(
-                text="migrate_sd: Installed ✓",
-                foreground="green"
-            )
-
-            self.install_migrate_button.config(state="disabled")
-            self.uninstall_migrate_button.config(state="normal")
-
-        else:
-
-            self.migrate_status_label.config(
-                text="migrate_sd: Not Installed",
-                foreground="red"
-            )
-
-            self.install_migrate_button.config(state="normal")
-            self.uninstall_migrate_button.config(state="disabled")
+            self.populate_zapscripts()
 
     def update_button_states(self, update_installed=False, smb_enabled=False):
 
@@ -907,6 +1108,9 @@ class MiSTerApp:
             "update_all will run through SSH.\n\n"
             "The output will NOT appear on the MiSTer TV screen.\n"
             "It will only be visible inside MiSTer Companion.\n\n"
+            "If you want the output to appear on the TV screen, run update_all from:\n"
+            "• ZapScripts in MiSTer Companion\n"
+            "• The Scripts menu on the MiSTer itself\n\n"
             "Continue?"
         )
 
