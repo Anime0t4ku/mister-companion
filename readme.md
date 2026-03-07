@@ -12,6 +12,7 @@ Supports:
 - Zaparoo installation and setup
 - ZapScripts launcher via Zaparoo Core API
 - SD migration tool (migrate_sd) installer
+- cifs_mount installer and config
 - SMB enable / disable
 - Open MiSTer share in Windows Explorer
 - Remote reboot
@@ -43,6 +44,7 @@ MiSTer Companion uses a **tabbed interface** to organize functionality.
 - Install and run **update_all**
 - Install **Zaparoo**
 - Install **migrate_sd** (SD card migration utility)
+- Install **cifs_mount / cifs_umount** (add network location to MiSTer)
 - View **live SSH output** when running scripts
 
 ### ZapScripts
