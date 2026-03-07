@@ -125,7 +125,7 @@ class MiSTerApp:
 
     def __init__(self, root):
         self.root = root
-        self.root.title("MiSTer Companion v2.1.0 by Anime0t4ku")
+        self.root.title("MiSTer Companion v2.2.0 by Anime0t4ku")
         self.root.geometry("900x760")
 
         # ===== App Icon =====
@@ -455,6 +455,69 @@ class MiSTerApp:
             command=self.uninstall_migrate_sd
         )
         self.uninstall_migrate_button.pack(side="left", padx=8)
+
+        # ===== CIFS Network Share =====
+
+        cifs_frame = ttk.LabelFrame(self.scripts_tab, text="CIFS Network Share")
+        cifs_frame.pack(fill="x", padx=20, pady=15)
+
+        self.cifs_status_label = ttk.Label(
+            cifs_frame,
+            text="cifs_mount: Unknown",
+            foreground="gray"
+        )
+        self.cifs_status_label.pack(pady=(5,5))
+
+        cifs_buttons = ttk.Frame(cifs_frame)
+        cifs_buttons.pack(pady=10)
+
+        self.install_cifs_button = ttk.Button(
+            cifs_buttons,
+            text="Install",
+            width=14,
+            command=self.install_cifs_mount
+        )
+        self.install_cifs_button.pack(side="left", padx=6)
+
+        self.configure_cifs_button = ttk.Button(
+            cifs_buttons,
+            text="Configure",
+            width=14,
+            command=self.configure_cifs
+        )
+        self.configure_cifs_button.pack(side="left", padx=6)
+
+        self.mount_cifs_button = ttk.Button(
+            cifs_buttons,
+            text="Mount",
+            width=14,
+            command=self.run_cifs_mount
+        )
+        self.mount_cifs_button.pack(side="left", padx=6)
+
+        self.unmount_cifs_button = ttk.Button(
+            cifs_buttons,
+            text="Unmount",
+            width=14,
+            command=self.run_cifs_umount
+        )
+        self.unmount_cifs_button.pack(side="left", padx=6)
+
+        self.remove_cifs_config_button = ttk.Button(
+            cifs_buttons,
+            text="Remove Config",
+            width=14,
+            command=self.remove_cifs_config
+        )
+        self.remove_cifs_config_button.pack(side="left", padx=6)
+
+        self.uninstall_cifs_button = ttk.Button(
+            cifs_buttons,
+            text="Uninstall",
+            width=14,
+            command=self.uninstall_cifs_mount
+        )
+        self.uninstall_cifs_button.pack(side="left", padx=6)
 
         # ===== SSH Output =====
 
@@ -1001,6 +1064,61 @@ class MiSTerApp:
 
             self.populate_zapscripts()
 
+        # ===== CIFS detection =====
+
+        cifs_script_check = self.connection.run_command(
+            "test -f /media/fat/Scripts/cifs_mount.sh && echo EXISTS"
+        )
+
+        cifs_ini_check = self.connection.run_command(
+            "test -f /media/fat/Scripts/cifs_mount.ini && echo CONFIG"
+        )
+
+        script_installed = "EXISTS" in (cifs_script_check or "")
+        ini_present = "CONFIG" in (cifs_ini_check or "")
+
+        if not script_installed:
+
+            self.cifs_status_label.config(
+                text="cifs_mount: Not Installed",
+                foreground="red"
+            )
+
+            self.install_cifs_button.config(state="normal")
+            self.configure_cifs_button.config(state="disabled")
+            self.mount_cifs_button.config(state="disabled")
+            self.unmount_cifs_button.config(state="disabled")
+            self.remove_cifs_config_button.config(state="disabled")
+            self.uninstall_cifs_button.config(state="disabled")
+
+        elif script_installed and not ini_present:
+
+            self.cifs_status_label.config(
+                text="cifs_mount: Installed (Not Configured)",
+                foreground="orange"
+            )
+
+            self.install_cifs_button.config(state="disabled")
+            self.configure_cifs_button.config(text="Configure", state="normal")
+            self.mount_cifs_button.config(state="disabled")
+            self.unmount_cifs_button.config(state="disabled")
+            self.remove_cifs_config_button.config(state="disabled")
+            self.uninstall_cifs_button.config(state="normal")
+
+        else:
+
+            self.cifs_status_label.config(
+                text="cifs_mount: Configured ✓",
+                foreground="green"
+            )
+
+            self.install_cifs_button.config(state="disabled")
+            self.configure_cifs_button.config(text="Reconfigure", state="normal")
+            self.mount_cifs_button.config(state="normal")
+            self.unmount_cifs_button.config(state="normal")
+            self.remove_cifs_config_button.config(state="normal")
+            self.uninstall_cifs_button.config(state="normal")
+
     def update_button_states(self, update_installed=False, smb_enabled=False):
 
         # update_all buttons
@@ -1088,6 +1206,176 @@ class MiSTerApp:
         else:
             self.console_frame.pack(fill="x", padx=20, pady=10)
             self.console_visible = True
+
+    def load_cifs_config(self):
+
+        config = {}
+
+        try:
+            output = self.connection.run_command(
+                "cat /media/fat/Scripts/cifs_mount.ini"
+            )
+
+            if not output:
+                return config
+
+            for line in output.splitlines():
+
+                if "=" not in line:
+                    continue
+
+                key, value = line.split("=", 1)
+                config[key.strip()] = value.strip().strip('"')
+
+        except Exception:
+            pass
+
+        return config
+
+    def configure_cifs(self):
+
+            popup = tk.Toplevel(self.root)
+            popup.title("Configure CIFS Mount")
+            popup.geometry("360x360")
+            popup.resizable(False, False)
+
+            frame = ttk.Frame(popup, padding=15)
+            frame.pack(fill="both", expand=True)
+
+            ttk.Label(frame, text="Server IP").pack(anchor="w")
+            server_entry = ttk.Entry(frame)
+            server_entry.pack(fill="x", pady=3)
+
+            ttk.Label(frame, text="Share Name").pack(anchor="w")
+            share_entry = ttk.Entry(frame)
+            share_entry.pack(fill="x", pady=3)
+
+            ttk.Label(frame, text="Username").pack(anchor="w")
+            user_entry = ttk.Entry(frame)
+            user_entry.pack(fill="x", pady=3)
+
+            ttk.Label(frame, text="Password").pack(anchor="w")
+            pass_entry = ttk.Entry(frame, show="*")
+            pass_entry.pack(fill="x", pady=3)
+
+            boot_var = tk.BooleanVar(value=True)
+
+            ttk.Checkbutton(
+                frame,
+                text="Mount at boot",
+                variable=boot_var
+            ).pack(anchor="w", pady=(8, 5))
+
+            # ===== Load existing config =====
+
+            config = self.load_cifs_config()
+
+            if "SERVER" in config:
+                server_entry.insert(0, config["SERVER"])
+
+            if "SHARE" in config:
+                share_entry.insert(0, config["SHARE"])
+
+            if "USERNAME" in config:
+                user_entry.insert(0, config["USERNAME"])
+
+            if "PASSWORD" in config:
+                pass_entry.insert(0, config["PASSWORD"])
+
+            if config.get("MOUNT_AT_BOOT") == "false":
+                boot_var.set(False)
+
+            # ===== Test connection =====
+
+            def test_connection():
+
+                server = server_entry.get().strip()
+                share = share_entry.get().strip()
+                username = user_entry.get().strip()
+                password = pass_entry.get().strip()
+
+                if not server or not share:
+                    messagebox.showerror(
+                        "Missing Information",
+                        "Server IP and Share Name are required."
+                    )
+                    return
+
+                test_cmd = f'mount -t cifs //{server}/{share} /tmp/cifs_test -o username="{username}",password="{password}"'
+
+                result = self.connection.run_command(
+                    f'mkdir -p /tmp/cifs_test && {test_cmd} && umount /tmp/cifs_test && echo SUCCESS'
+                )
+
+                if result and "SUCCESS" in result:
+                    messagebox.showinfo("Success", "Connection successful.")
+                else:
+                    messagebox.showerror(
+                        "Connection Failed",
+                        "Unable to connect to the network share."
+                    )
+
+            # ===== Save config =====
+
+            def save_config():
+
+                server = server_entry.get().strip()
+                share = share_entry.get().strip()
+                username = user_entry.get().strip()
+                password = pass_entry.get().strip()
+
+                if not server:
+                    messagebox.showerror("Missing Information", "Server IP is required.")
+                    return
+
+                if not share:
+                    messagebox.showerror("Missing Information", "Share name is required.")
+                    return
+
+                ini = f'''SERVER="{server}"
+    SHARE="{share}"
+    USERNAME="{username}"
+    PASSWORD="{password}"
+    LOCAL_DIR="cifs/games"
+    WAIT_FOR_SERVER="true"
+    MOUNT_AT_BOOT="{str(boot_var.get()).lower()}"
+    SINGLE_CIFS_CONNECTION="true"
+    '''
+
+                try:
+
+                    sftp = self.connection.client.open_sftp()
+
+                    with sftp.open("/media/fat/Scripts/cifs_mount.ini", "w") as f:
+                        f.write(ini)
+
+                    sftp.close()
+
+                    self.check_services_status()
+
+                    popup.destroy()
+
+                except Exception as e:
+                    messagebox.showerror("Error", str(e))
+
+            # ===== Buttons =====
+
+            button_row = ttk.Frame(frame)
+            button_row.pack(pady=12)
+
+            ttk.Button(
+                button_row,
+                text="Test Connection",
+                width=16,
+                command=test_connection
+            ).pack(side="left", padx=6)
+
+            ttk.Button(
+                button_row,
+                text="Save",
+                width=10,
+                command=save_config
+            ).pack(side="left", padx=6)
 
     # ===== Thread-safe logging =====
 
@@ -1346,6 +1634,96 @@ class MiSTerApp:
                 self.log(f"ERROR: {str(e)}\n")
 
         threading.Thread(target=worker).start()
+
+    def install_cifs_mount(self):
+
+        if not self.connection.connected:
+            return
+
+        if not self.console_visible:
+            self.console_frame.pack(fill="x", padx=20, pady=10)
+            self.console_visible = True
+
+        self.console.delete("1.0", tk.END)
+        self.log("Installing cifs_mount scripts...\n")
+
+        def worker():
+
+            try:
+
+                base = "https://raw.githubusercontent.com/MiSTer-devel/Scripts_MiSTer/master/"
+
+                mount_script = requests.get(base + "cifs_mount.sh").content
+                umount_script = requests.get(base + "cifs_umount.sh").content
+
+                sftp = self.connection.client.open_sftp()
+
+                try:
+                    sftp.mkdir("/media/fat/Scripts")
+                except IOError:
+                    pass
+
+                with sftp.open("/media/fat/Scripts/cifs_mount.sh", "wb") as f:
+                    f.write(mount_script)
+
+                with sftp.open("/media/fat/Scripts/cifs_umount.sh", "wb") as f:
+                    f.write(umount_script)
+
+                sftp.close()
+
+                self.connection.run_command("chmod +x /media/fat/Scripts/cifs_mount.sh")
+                self.connection.run_command("chmod +x /media/fat/Scripts/cifs_umount.sh")
+
+                self.log("CIFS scripts installed.\n")
+
+                self.check_services_status()
+
+            except Exception as e:
+                self.log(f"ERROR: {str(e)}\n")
+
+        threading.Thread(target=worker).start()
+
+    def run_cifs_mount(self):
+
+        if not self.connection.connected:
+            return
+
+        self.connection.run_command("/media/fat/Scripts/cifs_mount.sh")
+
+    def run_cifs_umount(self):
+
+        if not self.connection.connected:
+            return
+
+        self.connection.run_command("/media/fat/Scripts/cifs_umount.sh")
+
+    def remove_cifs_config(self):
+
+        if not self.connection.connected:
+            return
+
+        if messagebox.askyesno("Remove Config", "Delete CIFS configuration?"):
+            self.connection.run_command(
+                "rm -f /media/fat/Scripts/cifs_mount.ini"
+            )
+
+            self.check_services_status()
+
+    def uninstall_cifs_mount(self):
+
+        if not self.connection.connected:
+            return
+
+        if messagebox.askyesno("Uninstall", "Remove CIFS scripts?"):
+            self.connection.run_command(
+                "rm -f /media/fat/Scripts/cifs_mount.sh"
+            )
+
+            self.connection.run_command(
+                "rm -f /media/fat/Scripts/cifs_umount.sh"
+            )
+
+            self.check_services_status()
         
     def enable_smb(self):
         self.connection.run_command(
