@@ -2,7 +2,6 @@ name: Bug Report
 description: Report a problem with MiSTer Companion
 title: "[BUG] "
 labels: ["bug"]
-assignees: []
 
 body:
 
@@ -23,6 +22,17 @@ body:
     required: true
 
 - type: dropdown
+  id: install_type
+  attributes:
+    label: Installation Type
+    description: How are you running MiSTer Companion?
+    options:
+      - Windows Executable (release build)
+      - Python Script (running from source)
+  validations:
+    required: true
+
+- type: dropdown
   id: os
   attributes:
     label: Operating System
@@ -33,15 +43,6 @@ body:
       - Other
   validations:
     required: true
-
-- type: input
-  id: mister_version
-  attributes:
-    label: MiSTer Version
-    description: If known, what MiSTer version or build are you running?
-    placeholder: e.g. MiSTerFusion / Standard MiSTer
-  validations:
-    required: false
 
 - type: textarea
   id: description
@@ -75,11 +76,11 @@ body:
   id: logs
   attributes:
     label: Console Output (if applicable)
-    description: Paste any output from the update_all console if relevant.
+    description: Paste any console output or errors here.
     render: shell
 
 - type: textarea
   id: additional
   attributes:
     label: Additional Information
-    description: Screenshots, extra info, etc.
+    description: Screenshots or extra context.
