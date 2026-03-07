@@ -10,6 +10,7 @@ Supports:
 - Storage usage monitoring (SD and USB)
 - update_all installation and execution
 - Zaparoo installation and setup
+- ZapScripts launcher via Zaparoo Core API
 - SD migration tool (migrate_sd) installer
 - SMB enable / disable
 - Open MiSTer share in Windows Explorer
@@ -43,6 +44,14 @@ MiSTer Companion uses a **tabbed interface** to organize functionality.
 - Install **Zaparoo**
 - Install **migrate_sd** (SD card migration utility)
 - View **live SSH output** when running scripts
+
+### ZapScripts
+- Run **update_all** via the Zaparoo Core API
+- Run **migrate_sd** via the Zaparoo Core API
+- Open **Bluetooth menu**
+- Open **MiSTer OSD menu**
+- Cycle **wallpaper**
+- Return to **MiSTer home**
 
 ---
 
@@ -89,11 +98,12 @@ If running the script directly:
 - Tkinter (usually included)
 - paramiko
 - requests
+- websocket-client
 
 Install dependencies:
 
 ```
-pip install paramiko requests
+pip install paramiko requests websocket-client
 ```
 
 Run with:
