@@ -7,15 +7,42 @@ It provides a simple interface for common maintenance tasks without needing to u
 Supports:
 
 - Device management (save multiple MiSTer systems)
-- Storage usage monitoring
+- Storage usage monitoring (SD and USB)
 - update_all installation and execution
+- Zaparoo installation and setup
+- SD migration tool (migrate_sd) installer
 - SMB enable / disable
 - Open MiSTer share in Windows Explorer
 - Remote reboot
+- SSH console output for script execution
 
 Clean, safe, and easy MiSTer management from Windows.
 
 ![Screenshot](assets/screenshot.png)
+
+---
+
+## Features
+
+MiSTer Companion uses a **tabbed interface** to organize functionality.
+
+### Connection
+- Connect to your MiSTer over SSH
+- Save and manage multiple devices
+- Automatic reconnect after reboot
+
+### Device
+- View **SD card storage usage**
+- Detect **USB storage usage**
+- Enable or disable **SMB file sharing**
+- Open the MiSTer network share directly in Windows Explorer
+- Reboot MiSTer remotely
+
+### Scripts
+- Install and run **update_all**
+- Install **Zaparoo**
+- Install **migrate_sd** (SD card migration utility)
+- View **live SSH output** when running scripts
 
 ---
 
@@ -28,7 +55,13 @@ Before using MiSTer Companion, make sure:
 - Your MiSTer is connected to your local network
 - Your MiSTer has an active internet connection
 
-Default credentials are `root / 1` (unless changed)
+Default credentials are:
+
+```
+root / 1
+```
+
+(unless you changed them)
 
 MiSTerFusion download:  
 https://github.com/MiSTer-devel/mr-fusion/releases
@@ -59,11 +92,15 @@ If running the script directly:
 
 Install dependencies:
 
-    pip install paramiko requests
+```
+pip install paramiko requests
+```
 
 Run with:
 
-    python mister-companion.py
+```
+python mister-companion.py
+```
 
 ---
 
