@@ -1,0 +1,27 @@
+name: Question
+description: Ask a question about MiSTer Companion
+title: "[QUESTION] "
+labels: ["question"]
+
+body:
+
+- type: markdown
+  attributes:
+    value: |
+      Have a question about MiSTer Companion?
+
+      Please provide as much detail as possible.
+
+- type: textarea
+  id: question
+  attributes:
+    label: Your Question
+    description: What would you like to know?
+  validations:
+    required: true
+
+- type: textarea
+  id: context
+  attributes:
+    label: Additional Context
+    description: Include any relevant details about your setup.
