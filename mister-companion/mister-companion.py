@@ -124,7 +124,7 @@ class MiSTerApp:
 
     def __init__(self, root):
         self.root = root
-        self.root.title("MiSTer Companion v1.1.0 by Anime0t4ku")
+        self.root.title("MiSTer Companion v2.0.0 by Anime0t4ku")
         self.root.geometry("900x760")
 
         # ===== App Icon =====
@@ -241,8 +241,10 @@ class MiSTerApp:
                         troughcolor="#e0e0e0",
                         background="#F44336")
 
+        # ===== Header =====
+
         top_frame = ttk.Frame(self.root)
-        top_frame.pack(fill="x", padx=20, pady=(15, 5))
+        top_frame.pack(fill="x", padx=20, pady=(10, 5))
 
         ttk.Label(top_frame,
                   text="MiSTer Companion",
@@ -253,9 +255,23 @@ class MiSTerApp:
                                       foreground="red")
         self.status_label.pack(side="right")
 
+        # ===== Notebook Layout =====
+
+        notebook = ttk.Notebook(self.root)
+        notebook.pack(fill="both", expand=True, padx=10, pady=10)
+
+        self.connection_tab = ttk.Frame(notebook)
+        self.device_tab = ttk.Frame(notebook)
+        self.scripts_tab = ttk.Frame(notebook)
+        self.launchers_tab = ttk.Frame(notebook)
+
+        notebook.add(self.connection_tab, text="Connection")
+        notebook.add(self.device_tab, text="Device")
+        notebook.add(self.scripts_tab, text="Scripts")
+
         # ===== Device Section =====
 
-        device_frame = ttk.LabelFrame(self.root, text="Saved Devices")
+        device_frame = ttk.LabelFrame(self.connection_tab, text="Saved Devices")
         device_frame.pack(fill="x", padx=20, pady=10)
 
         device_inner = ttk.Frame(device_frame)
@@ -278,7 +294,7 @@ class MiSTerApp:
 
         # ===== Connection Bar =====
 
-        conn_outer = ttk.Frame(self.root)
+        conn_outer = ttk.Frame(self.connection_tab)
         conn_outer.pack(fill="x", padx=20, pady=15)
 
         conn_frame = ttk.Frame(conn_outer)
@@ -308,11 +324,14 @@ class MiSTerApp:
 
         # ===== Storage =====
 
-        storage_frame = ttk.LabelFrame(self.root, text="Storage")
+        storage_frame = ttk.LabelFrame(self.device_tab, text="Storage")
         storage_frame.pack(fill="x", padx=20, pady=15)
 
         storage_inner = ttk.Frame(storage_frame)
         storage_inner.pack(pady=20)
+
+        # SD storage
+        ttk.Label(storage_inner, text="SD Card").pack()
 
         self.storage_bar = ttk.Progressbar(storage_inner,
                                            length=500,
@@ -320,11 +339,22 @@ class MiSTerApp:
         self.storage_bar.pack()
 
         self.storage_label = ttk.Label(storage_inner, text="--")
-        self.storage_label.pack(pady=(8,0))
+        self.storage_label.pack(pady=(5, 10))
+
+        # USB storage
+        ttk.Label(storage_inner, text="USB Storage").pack()
+
+        self.usb_bar = ttk.Progressbar(storage_inner,
+                                       length=500,
+                                       style="green.Horizontal.TProgressbar")
+        self.usb_bar.pack()
+
+        self.usb_label = ttk.Label(storage_inner, text="Checking...")
+        self.usb_label.pack(pady=(5, 0))
 
         # ===== Maintenance =====
 
-        maintenance_frame = ttk.LabelFrame(self.root, text="Update & Maintenance")
+        maintenance_frame = ttk.LabelFrame(self.scripts_tab, text="update_all")
         maintenance_frame.pack(fill="x", padx=20, pady=15)
 
         self.update_status_label = ttk.Label(maintenance_frame,
@@ -353,26 +383,105 @@ class MiSTerApp:
                                      command=self.run_update_all)
         self.run_button.pack(side="left", padx=8)
 
-        self.console_frame = ttk.Frame(maintenance_frame)
+        # ===== Zaparoo =====
+
+        zaparoo_frame = ttk.LabelFrame(self.scripts_tab, text="Zaparoo")
+        zaparoo_frame.pack(fill="x", padx=20, pady=15)
+
+        self.zaparoo_status_label = ttk.Label(
+            zaparoo_frame,
+            text="Zaparoo: Unknown",
+            foreground="gray"
+        )
+        self.zaparoo_status_label.pack()
+
+        zaparoo_buttons = ttk.Frame(zaparoo_frame)
+        zaparoo_buttons.pack(pady=15)
+
+        self.install_zaparoo_button = ttk.Button(
+            zaparoo_buttons,
+            text="Install Zaparoo",
+            width=18,
+            command=self.install_zaparoo
+        )
+        self.install_zaparoo_button.pack(side="left", padx=8)
+
+        self.run_zaparoo_button = ttk.Button(
+            zaparoo_buttons,
+            text="Run Zaparoo",
+            width=18,
+            command=self.run_zaparoo
+        )
+        self.run_zaparoo_button.pack(side="left", padx=8)
+
+        self.uninstall_zaparoo_button = ttk.Button(
+            zaparoo_buttons,
+            text="Uninstall Zaparoo",
+            width=18,
+            command=self.uninstall_zaparoo
+        )
+        self.uninstall_zaparoo_button.pack(side="left", padx=8)
+
+        # ===== SD Migration =====
+
+        migrate_frame = ttk.LabelFrame(self.scripts_tab, text="SD Migration")
+        migrate_frame.pack(fill="x", padx=20, pady=15)
+
+        self.migrate_status_label = ttk.Label(
+            migrate_frame,
+            text="migrate_sd: Unknown",
+            foreground="gray"
+        )
+        self.migrate_status_label.pack(pady=(5, 5))
+
+        migrate_buttons = ttk.Frame(migrate_frame)
+        migrate_buttons.pack(pady=10)
+
+        self.install_migrate_button = ttk.Button(
+            migrate_buttons,
+            text="Install migrate_sd",
+            width=20,
+            command=self.install_migrate_sd
+        )
+        self.install_migrate_button.pack(side="left", padx=8)
+
+        self.uninstall_migrate_button = ttk.Button(
+            migrate_buttons,
+            text="Uninstall migrate_sd",
+            width=20,
+            command=self.uninstall_migrate_sd
+        )
+        self.uninstall_migrate_button.pack(side="left", padx=8)
+
+        # ===== SSH Output =====
+
+        self.console_frame = ttk.LabelFrame(self.scripts_tab, text="SSH Output")
 
         console_header = ttk.Frame(self.console_frame)
         console_header.pack(fill="x")
-
-        ttk.Label(console_header,
-                  text="update_all Output",
-                  font=("Segoe UI", 10, "bold")).pack(side="left", padx=5)
 
         ttk.Button(console_header,
                    text="Hide",
                    width=8,
                    command=self.toggle_console).pack(side="right", padx=5)
 
-        self.console = tk.Text(self.console_frame, height=12)
-        self.console.pack(fill="x", padx=20, pady=10)
+        console_container = ttk.Frame(self.console_frame)
+        console_container.pack(fill="both", padx=20, pady=10)
+
+        scrollbar = ttk.Scrollbar(console_container)
+        scrollbar.pack(side="right", fill="y")
+
+        self.console = tk.Text(console_container,
+                               height=12,
+                               yscrollcommand=scrollbar.set)
+
+        self.console.pack(side="left", fill="both", expand=True)
+
+        scrollbar.config(command=self.console.yview)
 
         # ===== File Sharing =====
 
-        files_frame = ttk.LabelFrame(self.root, text="File Sharing")
+        files_frame = ttk.LabelFrame(self.device_tab, text="File Sharing")
         files_frame.pack(fill="x", padx=20, pady=15)
 
         self.smb_status_label = ttk.Label(files_frame,
@@ -403,7 +512,7 @@ class MiSTerApp:
 
         # ===== Power =====
 
-        power_frame = ttk.LabelFrame(self.root, text="Power")
+        power_frame = ttk.LabelFrame(self.device_tab, text="Power")
         power_frame.pack(fill="x", padx=20, pady=15)
 
         self.reboot_button = ttk.Button(power_frame,
@@ -487,6 +596,7 @@ class MiSTerApp:
 
         if success:
             self.set_status("CONNECTED")
+            self.status_label.config(text=f"Connected ({ip})", foreground="green")
             self.enable_controls()
             self.refresh_storage()
             self.check_services_status()
@@ -522,35 +632,61 @@ class MiSTerApp:
             "REBOOTING": "Rebooting...",
             "DISCONNECTED": "Disconnected"
         }
-        self.status_label.config(text=texts[state],
-                                 foreground=colors[state])
+        if state == "CONNECTED":
+            self.status_label.config(foreground=colors[state])
+        else:
+            self.status_label.config(text=texts[state],
+                                     foreground=colors[state])
 
     def refresh_storage(self):
+
+        # SD card
         df = self.connection.run_command("df -h /media/fat | tail -1")
-        if not df:
-            self.set_status("DISCONNECTED")
-            self.disable_controls()
-            return
 
-        try:
-            parts = df.split()
-            size = parts[1]
-            avail = parts[3]
-            percent = int(parts[4].replace("%", ""))
-        except (IndexError, ValueError):
-            return
+        if df:
+            try:
+                parts = df.split()
+                size = parts[1]
+                avail = parts[3]
+                percent = int(parts[4].replace("%", ""))
 
-        self.storage_bar["value"] = percent
-        self.storage_label.config(
-            text=f"{avail} free of {size} ({percent}% used)"
-        )
+                self.storage_bar["value"] = percent
+                self.storage_label.config(
+                    text=f"{avail} free of {size} ({percent}% used)"
+                )
 
-        if percent > 85:
-            self.storage_bar.configure(style="red.Horizontal.TProgressbar")
-        elif percent > 70:
-            self.storage_bar.configure(style="orange.Horizontal.TProgressbar")
+                if percent > 85:
+                    self.storage_bar.configure(style="red.Horizontal.TProgressbar")
+                elif percent > 70:
+                    self.storage_bar.configure(style="orange.Horizontal.TProgressbar")
+                else:
+                    self.storage_bar.configure(style="green.Horizontal.TProgressbar")
+
+            except Exception:
+                pass
+
+        # USB storage
+        usb = self.connection.run_command("df -h /media/usb* 2>/dev/null | tail -1")
+
+        if usb and "/media/usb" in usb:
+
+            try:
+                parts = usb.split()
+                size = parts[1]
+                avail = parts[3]
+                percent = int(parts[4].replace("%", ""))
+
+                self.usb_bar["value"] = percent
+                self.usb_label.config(
+                    text=f"{avail} free of {size} ({percent}% used)"
+                )
+
+            except Exception:
+                self.usb_label.config(text="USB detected (unable to read usage)")
+
         else:
-            self.storage_bar.configure(style="green.Horizontal.TProgressbar")
+            self.usb_bar["value"] = 0
+            self.usb_label.config(text="No USB storage detected")
 
     def check_services_status(self):
         update_check = self.connection.run_command(
@@ -589,6 +725,81 @@ class MiSTerApp:
 
         self.update_button_states(update_installed, smb_enabled)
 
+        # ===== Zaparoo detection =====
+
+        zaparoo_check = self.connection.run_command(
+            "test -f /media/fat/Scripts/zaparoo.sh && echo EXISTS"
+        )
+
+        zaparoo_installed = "EXISTS" in (zaparoo_check or "")
+
+        first_run_check = self.connection.run_command(
+            "test -d /media/fat/zaparoo && echo CONFIG"
+        )
+
+        zaparoo_initialized = "CONFIG" in (first_run_check or "")
+
+        if not zaparoo_installed:
+
+            self.zaparoo_status_label.config(
+                text="Zaparoo: Not Installed",
+                foreground="red"
+            )
+
+            self.install_zaparoo_button.config(state="normal")
+            self.run_zaparoo_button.config(state="disabled")
+            self.uninstall_zaparoo_button.config(state="disabled")
+
+        elif zaparoo_installed and not zaparoo_initialized:
+
+            self.zaparoo_status_label.config(
+                text="Zaparoo: First launch required",
+                foreground="orange"
+            )
+
+            self.install_zaparoo_button.config(state="disabled")
+            self.run_zaparoo_button.config(state="normal")
+            self.uninstall_zaparoo_button.config(state="normal")
+
+        else:
+
+            self.zaparoo_status_label.config(
+                text="Zaparoo: Installed ✓",
+                foreground="green"
+            )
+
+            self.install_zaparoo_button.config(state="disabled")
+            self.run_zaparoo_button.config(state="disabled")
+            self.uninstall_zaparoo_button.config(state="normal")
+
+        # ===== migrate_sd detection =====
+
+        migrate_check = self.connection.run_command(
+            "test -f /media/fat/Scripts/migrate_sd.sh && echo EXISTS"
+        )
+
+        migrate_installed = "EXISTS" in (migrate_check or "")
+
+        if migrate_installed:
+
+            self.migrate_status_label.config(
+                text="migrate_sd: Installed ✓",
+                foreground="green"
+            )
+
+            self.install_migrate_button.config(state="disabled")
+            self.uninstall_migrate_button.config(state="normal")
+
+        else:
+
+            self.migrate_status_label.config(
+                text="migrate_sd: Not Installed",
+                foreground="red"
+            )
+
+            self.install_migrate_button.config(state="normal")
+            self.uninstall_migrate_button.config(state="disabled")
+
     def update_button_states(self, update_installed=False, smb_enabled=False):
 
         # update_all buttons
@@ -620,6 +831,40 @@ class MiSTerApp:
             )
             self.check_services_status()
 
+    def uninstall_zaparoo(self):
+
+        if not self.connection.connected:
+            return
+
+        if messagebox.askyesno(
+                "Uninstall Zaparoo",
+                "Are you sure you want to remove Zaparoo?"
+        ):
+            self.connection.run_command(
+                "rm -f /media/fat/Scripts/zaparoo.sh"
+            )
+
+            self.connection.run_command(
+                "rm -rf /media/fat/zaparoo"
+            )
+
+            self.check_services_status()
+
+    def uninstall_migrate_sd(self):
+
+        if not self.connection.connected:
+            return
+
+        if messagebox.askyesno(
+                "Uninstall migrate_sd",
+                "Are you sure you want to remove migrate_sd?"
+        ):
+            self.connection.run_command(
+                "rm -f /media/fat/Scripts/migrate_sd.sh"
+            )
+
+            self.log("migrate_sd removed.\n")
+            self.check_services_status()
 
     def disable_smb(self):
         if not self.connection.connected:
@@ -653,7 +898,19 @@ class MiSTerApp:
         self.console.see(tk.END)
 
     def run_update_all(self):
+
         if not self.connection.connected:
+            return
+
+        proceed = messagebox.askyesno(
+            "Run update_all",
+            "update_all will run through SSH.\n\n"
+            "The output will NOT appear on the MiSTer TV screen.\n"
+            "It will only be visible inside MiSTer Companion.\n\n"
+            "Continue?"
+        )
+
+        if not proceed:
             return
 
         if not self.console_visible:
@@ -668,6 +925,38 @@ class MiSTerApp:
                 self.log
             )
         ).start()
+
+    def run_zaparoo(self):
+
+        if not self.connection.connected:
+            return
+
+        if not self.console_visible:
+            self.console_frame.pack(fill="x", padx=20, pady=10)
+            self.console_visible = True
+
+        self.console.delete("1.0", tk.END)
+
+        self.log("Starting Zaparoo...\n")
+
+        def worker():
+
+            self.connection.run_command_stream(
+                "/media/fat/Scripts/zaparoo.sh",
+                self.log
+            )
+
+            self.log("\nZaparoo finished.\n")
+
+            self.root.after(
+                0,
+                lambda: messagebox.askyesno(
+                    "Reboot Recommended",
+                    "Zaparoo initial setup may require a reboot.\n\nReboot MiSTer now?"
+                ) and self.reboot()
+            )
+
+        threading.Thread(target=worker).start()
 
     def install_update_all(self):
         if not self.connection.connected:
@@ -718,6 +1007,142 @@ class MiSTerApp:
 
         threading.Thread(target=worker).start()
 
+    def install_zaparoo(self):
+
+        if not self.connection.connected:
+            return
+
+        if not self.console_visible:
+            self.console_frame.pack(fill="x", padx=20, pady=10)
+            self.console_visible = True
+
+        self.console.delete("1.0", tk.END)
+        self.log("Installing Zaparoo...\n")
+
+        def worker():
+            try:
+
+                api_url = "https://api.github.com/repos/ZaparooProject/zaparoo-core/releases/latest"
+                r = requests.get(api_url)
+                data = r.json()
+
+                download_url = None
+                asset_name = None
+
+                for asset in data.get("assets", []):
+                    name = asset["name"].lower()
+
+                    if "mister_arm" in name and name.endswith(".zip"):
+                        download_url = asset["browser_download_url"]
+                        asset_name = asset["name"]
+                        break
+
+                if not download_url:
+                    self.log("Could not find MiSTer Zaparoo release.\n")
+                    return
+
+                self.log(f"Found release: {asset_name}\n")
+                self.log("Downloading release...\n")
+
+                zip_data = requests.get(download_url).content
+
+                import zipfile
+                from io import BytesIO
+
+                zip_file = zipfile.ZipFile(BytesIO(zip_data))
+
+                sftp = self.connection.client.open_sftp()
+
+                try:
+                    sftp.mkdir("/media/fat/Scripts")
+                except IOError:
+                    pass
+
+                for file in zip_file.namelist():
+
+                    if file.endswith("zaparoo.sh"):
+                        self.log("Uploading zaparoo.sh\n")
+
+                        file_data = zip_file.read(file)
+
+                        with sftp.open("/media/fat/Scripts/zaparoo.sh", "wb") as remote_file:
+                            remote_file.write(file_data)
+
+                        break
+
+                sftp.close()
+
+                self.connection.run_command(
+                    "chmod +x /media/fat/Scripts/zaparoo.sh"
+                )
+
+                self.log("Zaparoo installation complete.\n")
+
+                self.check_services_status()
+
+            except Exception as e:
+                self.log(f"ERROR: {str(e)}\n")
+
+        threading.Thread(target=worker).start()
+
+    def install_migrate_sd(self):
+
+        if not self.connection.connected:
+            return
+
+        proceed = messagebox.askyesno(
+            "Install migrate_sd",
+            "This tool installs the 'migrate_sd' script on your MiSTer.\n\n"
+            "Important:\n"
+            "The migration process MUST be started directly on the MiSTer\n"
+            "from the Scripts menu.\n\n"
+            "It cannot be executed from MiSTer Companion.\n\n"
+            "Install the script now?"
+        )
+
+        if not proceed:
+            return
+
+        if not self.console_visible:
+            self.console_frame.pack(fill="x", padx=20, pady=10)
+            self.console_visible = True
+
+        self.console.delete("1.0", tk.END)
+        self.log("Installing migrate_sd...\n")
+
+        def worker():
+
+            try:
+
+                url = "https://raw.githubusercontent.com/Natrox/MiSTer_Utils_Natrox/main/scripts/migrate_sd.sh"
+
+                script_data = requests.get(url).content
+
+                sftp = self.connection.client.open_sftp()
+
+                try:
+                    sftp.mkdir("/media/fat/Scripts")
+                except IOError:
+                    pass
+
+                with sftp.open("/media/fat/Scripts/migrate_sd.sh", "wb") as f:
+                    f.write(script_data)
+
+                sftp.close()
+
+                self.connection.run_command(
+                    "chmod +x /media/fat/Scripts/migrate_sd.sh"
+                )
+
+                self.log("migrate_sd installed successfully.\n")
+                self.log("Run it from the MiSTer Scripts menu.\n")
+                self.check_services_status()
+
+            except Exception as e:
+                self.log(f"ERROR: {str(e)}\n")
+
+        threading.Thread(target=worker).start()
+        
     def enable_smb(self):
         self.connection.run_command(
             "if [ -f /media/fat/linux/_samba.sh ]; then mv /media/fat/linux/_samba.sh /media/fat/linux/samba.sh; fi"
@@ -746,10 +1171,54 @@ class MiSTerApp:
             messagebox.showerror("Error", f"Unable to open file share:\n{str(e)}")
 
     def reboot(self):
+
         if not self.connection.connected:
             return
+
+        ip = self.connection.ip
+        username = self.connection.username
+        password = self.connection.password
+
         self.set_status("REBOOTING")
+
         self.connection.reboot()
+
+        threading.Thread(
+            target=self._wait_for_reboot,
+            args=(ip, username, password),
+            daemon=True
+        ).start()
+
+    def _wait_for_reboot(self, ip, username, password):
+
+        # give MiSTer time to shut down
+        time.sleep(10)
+
+        for _ in range(30):  # try for ~60 seconds
+
+            try:
+                test = paramiko.SSHClient()
+                test.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+                test.connect(
+                    hostname=ip,
+                    username=username,
+                    password=password,
+                    timeout=3
+                )
+
+                test.close()
+
+                # reconnect through the normal method
+                self.root.after(0, self.connect)
+
+                return
+
+            except Exception:
+                time.sleep(2)
+
+        # failed to reconnect
+        self.root.after(0, lambda: self.set_status("DISCONNECTED"))
 
 
 if __name__ == "__main__":
