@@ -411,8 +411,8 @@ class MiSTerApp:
 
         self.run_zaparoo_button = ttk.Button(
             zaparoo_buttons,
-            text="Run Zaparoo",
-            width=18,
+            text="Enable Zaparoo Service",
+            width=22,
             command=self.run_zaparoo
         )
         self.run_zaparoo_button.pack(side="left", padx=8)
@@ -1003,11 +1003,11 @@ class MiSTerApp:
 
         zaparoo_installed = "EXISTS" in (zaparoo_check or "")
 
-        first_run_check = self.connection.run_command(
-            "test -d /media/fat/zaparoo && echo CONFIG"
+        service_check = self.connection.run_command(
+            "grep 'mrext/zaparoo' /media/fat/linux/user-startup.sh 2>/dev/null"
         )
 
-        zaparoo_initialized = "CONFIG" in (first_run_check or "")
+        service_enabled = service_check and "mrext/zaparoo" in service_check
 
         if not zaparoo_installed:
 
@@ -1030,10 +1030,11 @@ class MiSTerApp:
                 justify="center"
             ).pack(pady=40)
 
-        elif zaparoo_installed and not zaparoo_initialized:
+
+        elif zaparoo_installed and not service_enabled:
 
             self.zaparoo_status_label.config(
-                text="Zaparoo: First launch required",
+                text="Zaparoo: Installed (Service Disabled)",
                 foreground="orange"
             )
 
@@ -1046,10 +1047,11 @@ class MiSTerApp:
 
             ttk.Label(
                 self.zapscripts_wrapper,
-                text="ZapScripts are not available yet.\n\nPlease run Zaparoo once from the Scripts tab to complete setup.",
+                text="Zaparoo is installed but the boot service is not enabled.\n\nClick 'Enable Zaparoo Service' in the Scripts tab.",
                 foreground="orange",
                 justify="center"
             ).pack(pady=40)
+
 
         else:
 
@@ -1423,32 +1425,66 @@ class MiSTerApp:
         if not self.connection.connected:
             return
 
-        if not self.console_visible:
-            self.console_frame.pack(fill="x", padx=20, pady=10)
-            self.console_visible = True
+        confirm = messagebox.askyesno(
+            "Enable Zaparoo Service",
+            "This will enable the Zaparoo service so it starts automatically on boot.\n\nContinue?"
+        )
 
-        self.console.delete("1.0", tk.END)
+        if not confirm:
+            return
 
-        self.log("Starting Zaparoo...\n")
+        try:
 
-        def worker():
-
-            self.connection.run_command_stream(
-                "/media/fat/Scripts/zaparoo.sh",
-                self.log
+            # Check if user-startup.sh exists
+            exists = self.connection.run_command(
+                "test -f /media/fat/linux/user-startup.sh && echo EXISTS"
             )
 
-            self.log("\nZaparoo finished.\n")
+            if "EXISTS" not in (exists or ""):
 
-            self.root.after(
-                0,
-                lambda: messagebox.askyesno(
-                    "Reboot Recommended",
-                    "Zaparoo initial setup may require a reboot.\n\nReboot MiSTer now?"
-                ) and self.reboot()
+                # Create full startup file
+                script = """#!/bin/sh
+
+    # mrext/zaparoo
+    [[ -e /media/fat/Scripts/zaparoo.sh ]] && /media/fat/Scripts/zaparoo.sh -service $1
+    """
+
+                sftp = self.connection.client.open_sftp()
+
+                with sftp.open("/media/fat/linux/user-startup.sh", "w") as f:
+                    f.write(script)
+
+                sftp.close()
+
+            else:
+
+                # Check if zaparoo already configured
+                check = self.connection.run_command(
+                    "grep 'mrext/zaparoo' /media/fat/linux/user-startup.sh"
+                )
+
+                if not check:
+                    self.connection.run_command(
+                        'echo "" >> /media/fat/linux/user-startup.sh'
+                    )
+
+                    self.connection.run_command(
+                        'echo "# mrext/zaparoo" >> /media/fat/linux/user-startup.sh'
+                    )
+
+                    self.connection.run_command(
+                        'echo "[[ -e /media/fat/Scripts/zaparoo.sh ]] && /media/fat/Scripts/zaparoo.sh -service $1" >> /media/fat/linux/user-startup.sh'
+                    )
+
+            messagebox.showinfo(
+                "Zaparoo Enabled",
+                "Zaparoo service enabled.\n\nPlease reboot your MiSTer."
             )
 
-        threading.Thread(target=worker).start()
+            self.check_services_status()
+
+        except Exception as e:
+            messagebox.showerror("Error", str(e))
 
     def install_update_all(self):
         if not self.connection.connected:
@@ -1569,6 +1605,17 @@ class MiSTerApp:
                 )
 
                 self.log("Zaparoo installation complete.\n")
+                self.log("Next step: Enable the Zaparoo service from the Scripts tab.\n")
+
+                self.root.after(
+                    0,
+                    lambda: messagebox.showinfo(
+                        "Zaparoo Installed",
+                        "Zaparoo has been installed successfully.\n\n"
+                        "Next step:\n"
+                        "Click 'Enable Zaparoo Service' to start Zaparoo automatically at boot."
+                    )
+                )
 
                 self.check_services_status()
 
