@@ -12,6 +12,7 @@ import time
 import socket
 import webbrowser
 import sys
+import stat
 
 def resource_path(relative_path):
     try:
@@ -22,12 +23,18 @@ def resource_path(relative_path):
 
 CONFIG_FILE = "config.json"
 
+# SaveManager folders
+SAVE_ROOT = "SaveManager"
+BACKUP_ROOT = os.path.join(SAVE_ROOT, "backups")
+SYNC_ROOT = os.path.join(SAVE_ROOT, "sync")
+
 DEFAULT_CONFIG = {
     "devices": [],
     "last_connected": None,
     "update_all_installed": False,
     "smb_enabled": False,
-    "hide_setup_notice": False
+    "hide_setup_notice": False,
+    "backup_retention": 10
 }
 
 # =========================
@@ -125,7 +132,7 @@ class MiSTerApp:
 
     def __init__(self, root):
         self.root = root
-        self.root.title("MiSTer Companion v2.2.0 by Anime0t4ku")
+        self.root.title("MiSTer Companion v2.3.0 by Anime0t4ku")
         self.root.geometry("900x760")
 
         # ===== App Icon =====
@@ -137,6 +144,10 @@ class MiSTerApp:
 
         self.connection = MiSTerConnection()
         self.config_data = load_config()
+
+        # Create SaveManager folders
+        os.makedirs(BACKUP_ROOT, exist_ok=True)
+        os.makedirs(SYNC_ROOT, exist_ok=True)
 
         self.console_visible = False
 
@@ -265,11 +276,13 @@ class MiSTerApp:
         self.device_tab = ttk.Frame(notebook)
         self.scripts_tab = ttk.Frame(notebook)
         self.zapscripts_tab = ttk.Frame(notebook)
+        self.savemanager_tab = ttk.Frame(notebook)
 
         notebook.add(self.connection_tab, text="Connection")
         notebook.add(self.device_tab, text="Device")
         notebook.add(self.scripts_tab, text="Scripts")
         notebook.add(self.zapscripts_tab, text="ZapScripts")
+        notebook.add(self.savemanager_tab, text="SaveManager")
 
         # ===== Device Section =====
 
@@ -291,6 +304,10 @@ class MiSTerApp:
                    command=self.save_current_device).pack(side="left", padx=5)
 
         ttk.Button(device_inner,
+                   text="Edit Device",
+                   command=self.edit_selected_device).pack(side="left", padx=5)
+
+        ttk.Button(device_inner,
                    text="Delete Device",
                    command=self.delete_selected_device).pack(side="left", padx=5)
 
@@ -302,17 +319,34 @@ class MiSTerApp:
         conn_frame = ttk.Frame(conn_outer)
         conn_frame.pack()
 
-        ttk.Label(conn_frame, text="IP:").pack(side="left", padx=(0,5))
+        ttk.Label(conn_frame, text="IP:").pack(side="left", padx=(0, 5))
         self.ip_entry = ttk.Entry(conn_frame, width=18)
         self.ip_entry.pack(side="left", padx=5)
 
-        ttk.Label(conn_frame, text="User:").pack(side="left", padx=(10,5))
+        ttk.Label(conn_frame, text="User:").pack(side="left", padx=(10, 5))
         self.username_entry = ttk.Entry(conn_frame, width=12)
         self.username_entry.pack(side="left", padx=5)
+        self.username_entry.insert(0, "root")
 
-        ttk.Label(conn_frame, text="Pass:").pack(side="left", padx=(10,5))
+        ttk.Label(conn_frame, text="Pass:").pack(side="left", padx=(10, 5))
         self.password_entry = ttk.Entry(conn_frame, show="*", width=12)
         self.password_entry.pack(side="left", padx=5)
+        self.password_entry.insert(0, "1")
+
+        self.password_default = True
+
+        def clear_default_password(event):
+            if self.password_default:
+                self.password_entry.delete(0, tk.END)
+                self.password_default = False
+
+        def restore_default_password(event):
+            if not self.password_entry.get():
+                self.password_entry.insert(0, "1")
+                self.password_default = True
+
+        self.password_entry.bind("<FocusIn>", clear_default_password)
+        self.password_entry.bind("<FocusOut>", restore_default_password)
 
         self.connect_button = ttk.Button(conn_frame,
                                          text="Connect",
@@ -600,6 +634,118 @@ class MiSTerApp:
 
         self.zapscripts_message.pack()
 
+        # ===== SaveManager =====
+
+        savemanager_frame = ttk.Frame(self.savemanager_tab)
+        savemanager_frame.pack(fill="both", expand=True, padx=20, pady=20)
+
+        self.savemanager_info = ttk.Label(
+            savemanager_frame,
+            text="SaveManager allows you to backup, restore and sync MiSTer saves and savestates.\n\n"
+                 "Backups are stored locally on your PC and are never modified.\n"
+                 "The Sync folder is used to merge saves between devices.",
+            justify="center",
+            foreground="gray"
+        )
+
+        self.savemanager_info.pack(pady=(0, 20))
+
+        button_row = ttk.Frame(savemanager_frame)
+        button_row.pack(pady=10)
+
+        self.backup_count_label = ttk.Label(
+            savemanager_frame,
+            text="Current backups for this device: 0",
+            foreground="gray"
+        )
+        self.backup_count_label.pack(pady=(5, 10))
+
+        retention_row = ttk.Frame(savemanager_frame)
+        retention_row.pack(pady=(0, 10))
+
+        self.retention_label = ttk.Label(
+            retention_row,
+            text="Backups to keep per device:",
+            foreground="gray"
+        )
+        self.retention_label.pack(side="left", padx=5)
+
+        self.retention_var = tk.IntVar(
+            value=self.config_data.get("backup_retention", 10)
+        )
+
+        self.retention_spin = ttk.Spinbox(
+            retention_row,
+            from_=1,
+            to=100,
+            width=5,
+            textvariable=self.retention_var,
+            command=self.save_retention_setting
+        )
+
+        self.retention_spin.pack(side="left", padx=5)
+
+        self.backup_button = ttk.Button(
+            button_row,
+            text="Backup Device",
+            width=18,
+            command=self.backup_saves
+        )
+        self.backup_button.pack(side="left", padx=10)
+
+        self.restore_button = ttk.Button(
+            button_row,
+            text="Restore Backup",
+            width=18,
+            command=self.restore_saves
+        )
+        self.restore_button.pack(side="left", padx=10)
+
+        self.sync_button = ttk.Button(
+            button_row,
+            text="Sync Saves",
+            width=18,
+            command=self.sync_saves
+        )
+        self.sync_button.pack(side="left", padx=10)
+
+        folder_row = ttk.Frame(savemanager_frame)
+        folder_row.pack(pady=15)
+
+        self.open_backup_folder_button = ttk.Button(
+            folder_row,
+            text="Browse Backups",
+            width=18,
+            command=self.open_backup_folder
+        )
+        self.open_backup_folder_button.pack(side="left", padx=10)
+
+        self.open_sync_folder_button = ttk.Button(
+            folder_row,
+            text="Browse Sync Folder",
+            width=18,
+            command=self.open_sync_folder
+        )
+        self.open_sync_folder_button.pack(side="left", padx=10)
+
+        self.savemanager_log_frame = ttk.LabelFrame(savemanager_frame, text="Status")
+
+        log_header = ttk.Frame(self.savemanager_log_frame)
+        log_header.pack(fill="x")
+
+        self.hide_log_button = ttk.Button(
+            log_header,
+            text="Hide",
+            width=8,
+            command=self.hide_savemanager_log
+        )
+        self.hide_log_button.pack(side="right", padx=5, pady=5)
+
+        self.savemanager_log = tk.Text(self.savemanager_log_frame, height=10)
+        self.savemanager_log.pack(fill="both", expand=True, padx=10, pady=10)
+
+
+
     # =========================
     # Device Management
     # =========================
@@ -621,22 +767,198 @@ class MiSTerApp:
             "password": encode_password(self.password_entry.get().strip())
         }
 
+        for d in self.config_data["devices"]:
+            if d["name"].lower() == name.lower():
+                messagebox.showerror("Error", "Device name already exists.")
+                return
+
         self.config_data["devices"].append(device)
         self.config_data["last_connected"] = name
         save_config(self.config_data)
+
         self.load_devices()
 
+        # Automatically select the newly added device
+        self.device_combo.set(name)
+        self.load_selected_device()
+
     def delete_selected_device(self):
+
         selected = self.device_combo.get()
+
         if not selected:
             return
 
+        confirm = messagebox.askyesno(
+            "Delete Device",
+            f'Delete device "{selected}"?\n\nThis will remove the saved profile.'
+        )
+
+        if not confirm:
+            return
+
+        device_path = os.path.join(BACKUP_ROOT, selected)
+
+        if os.path.exists(device_path):
+
+            delete_backups = messagebox.askyesno(
+                "Delete Backups",
+                f'Do you want to delete the saved backups for "{selected}"?\n\n'
+                "Yes = permanently delete backups\n"
+                "No = keep backups and rename folder"
+            )
+
+            try:
+
+                if delete_backups:
+
+                    import shutil
+                    shutil.rmtree(device_path)
+
+
+                else:
+
+                    base_name = f"removed_{selected}"
+
+                    new_name = base_name
+
+                    counter = 2
+
+                    new_path = os.path.join(BACKUP_ROOT, new_name)
+
+                    # Find available folder name
+
+                    while os.path.exists(new_path):
+                        new_name = f"{base_name}_{counter}"
+
+                        new_path = os.path.join(BACKUP_ROOT, new_name)
+
+                        counter += 1
+
+                    os.rename(device_path, new_path)
+
+            except Exception as e:
+                messagebox.showerror(
+                    "Backup Operation Failed",
+                    f"Unable to modify backup folder:\n{str(e)}"
+                )
+
+        # Remove device from config
         self.config_data["devices"] = [
             d for d in self.config_data["devices"]
             if d["name"] != selected
         ]
+
         save_config(self.config_data)
+
         self.load_devices()
+
+        # Clear selection and input fields
+        self.device_combo.set("")
+        self.ip_entry.delete(0, tk.END)
+        self.username_entry.delete(0, tk.END)
+        self.password_entry.delete(0, tk.END)
+
+    def edit_selected_device(self):
+
+        selected = self.device_combo.get()
+
+        if not selected:
+            messagebox.showerror("Error", "Select a device first.")
+            return
+
+        device = None
+        for d in self.config_data["devices"]:
+            if d["name"] == selected:
+                device = d
+                break
+
+        if not device:
+            return
+
+        popup = tk.Toplevel(self.root)
+        popup.title("Edit Device")
+        popup.geometry("320x260")
+        popup.resizable(False, False)
+
+        frame = ttk.Frame(popup, padding=15)
+        frame.pack(fill="both", expand=True)
+
+        ttk.Label(frame, text="Device Name").pack(anchor="w")
+        name_entry = ttk.Entry(frame)
+        name_entry.pack(fill="x", pady=3)
+        name_entry.insert(0, device["name"])
+
+        ttk.Label(frame, text="IP Address").pack(anchor="w")
+        ip_entry = ttk.Entry(frame)
+        ip_entry.pack(fill="x", pady=3)
+        ip_entry.insert(0, device["ip"])
+
+        ttk.Label(frame, text="Username").pack(anchor="w")
+        user_entry = ttk.Entry(frame)
+        user_entry.pack(fill="x", pady=3)
+        user_entry.insert(0, device["username"])
+
+        ttk.Label(frame, text="Password").pack(anchor="w")
+        pass_entry = ttk.Entry(frame, show="*")
+        pass_entry.pack(fill="x", pady=3)
+        pass_entry.insert(0, decode_password(device["password"]))
+
+        def save_changes():
+
+            new_name = name_entry.get().strip()
+            new_ip = ip_entry.get().strip()
+            new_user = user_entry.get().strip()
+            new_pass = pass_entry.get().strip()
+
+            if not new_name:
+                messagebox.showerror("Error", "Device name cannot be empty.")
+                return
+
+            old_name = device["name"]
+
+            # Update device info
+            device["name"] = new_name
+            device["ip"] = new_ip
+            device["username"] = new_user
+            device["password"] = encode_password(new_pass)
+
+            save_config(self.config_data)
+
+            # Rename backup folder if device name changed
+            if old_name != new_name:
+
+                old_path = os.path.join(BACKUP_ROOT, old_name)
+                new_path = os.path.join(BACKUP_ROOT, new_name)
+
+                if os.path.exists(old_path):
+
+                    try:
+                        os.rename(old_path, new_path)
+                    except Exception as e:
+                        messagebox.showerror(
+                            "Backup Rename Failed",
+                            f"Unable to rename backup folder:\n{str(e)}"
+                        )
+
+            self.load_devices()
+            self.device_combo.set(new_name)
+            self.load_selected_device()
+
+            popup.destroy()
+
+        button_row = ttk.Frame(frame)
+        button_row.pack(pady=10)
+
+        ttk.Button(button_row,
+                   text="Save",
+                   width=12,
+                   command=save_changes).pack(side="left", padx=5)
+
+        ttk.Button(button_row,
+                   text="Cancel",
+                   width=12,
+                   command=popup.destroy).pack(side="left", padx=5)
 
     def load_selected_device(self, event=None):
         selected = self.device_combo.get()
@@ -826,11 +1148,19 @@ class MiSTerApp:
         success, message = self.connection.connect(ip, username, password)
 
         if success:
+
+            selected_device = self.device_combo.get()
+
+            if selected_device:
+                self.config_data["last_connected"] = selected_device
+                save_config(self.config_data)
+
             self.set_status("CONNECTED")
             self.status_label.config(text=f"Connected ({ip})", foreground="green")
             self.enable_controls()
             self.refresh_storage()
             self.check_services_status()
+            self.update_backup_count()
         else:
             self.set_status("DISCONNECTED")
             self.disable_controls()
@@ -841,6 +1171,14 @@ class MiSTerApp:
         self.explorer_button.config(state="normal")
         self.reboot_button.config(state="normal")
 
+        # Enable SaveManager
+        self.enable_savemanager_buttons()
+
+        # SaveManager text active color
+        self.savemanager_info.config(foreground="black")
+        self.backup_count_label.config(foreground="black")
+        self.retention_label.config(foreground="black")
+
     def disable_controls(self):
         self.install_button.config(state="disabled")
         self.uninstall_button.config(state="disabled")
@@ -849,6 +1187,36 @@ class MiSTerApp:
         self.disable_smb_button.config(state="disabled")
         self.explorer_button.config(state="disabled")
         self.reboot_button.config(state="disabled")
+
+        # Disable SaveManager controls
+        self.disable_savemanager_buttons()
+
+        # SaveManager text inactive color
+        self.savemanager_info.config(foreground="gray")
+        self.backup_count_label.config(foreground="gray")
+        self.retention_label.config(foreground="gray")
+
+        # Disable script buttons
+        self.install_zaparoo_button.config(state="disabled")
+        self.run_zaparoo_button.config(state="disabled")
+        self.uninstall_zaparoo_button.config(state="disabled")
+
+        self.install_migrate_button.config(state="disabled")
+        self.uninstall_migrate_button.config(state="disabled")
+
+        self.install_cifs_button.config(state="disabled")
+        self.configure_cifs_button.config(state="disabled")
+        self.mount_cifs_button.config(state="disabled")
+        self.unmount_cifs_button.config(state="disabled")
+        self.remove_cifs_config_button.config(state="disabled")
+        self.uninstall_cifs_button.config(state="disabled")
+
+        # Reset storage UI
+        self.storage_bar["value"] = 0
+        self.storage_label.config(text="--")
+
+        self.usb_bar["value"] = 0
+        self.usb_label.config(text="--")
 
     def set_status(self, state):
         colors = {
@@ -1849,6 +2217,507 @@ class MiSTerApp:
         # failed to reconnect
         self.root.after(0, lambda: self.set_status("DISCONNECTED"))
 
+    # =========================
+    # SaveManager Functions
+    # =========================
+
+    def save_retention_setting(self):
+
+        try:
+            value = int(self.retention_var.get())
+
+            if value < 1:
+                value = 1
+
+            self.config_data["backup_retention"] = value
+            save_config(self.config_data)
+
+        except Exception:
+            pass
+
+    def show_savemanager_log(self):
+
+        if not self.savemanager_log_frame.winfo_ismapped():
+            self.savemanager_log_frame.pack(fill="both", expand=True, pady=10)
+
+    def hide_savemanager_log(self):
+
+        if self.hide_log_button["state"] == "disabled":
+            return
+
+        self.savemanager_log_frame.pack_forget()
+
+    def update_backup_count(self):
+
+        device_name = self.device_combo.get().strip()
+
+        if not device_name:
+            if not self.connection.ip:
+                self.backup_count_label.config(text="Current backups for this device: 0")
+                return
+
+            device_name = self.connection.ip.replace(".", "_")
+
+        device_path = os.path.join(BACKUP_ROOT, device_name)
+
+        if not os.path.exists(device_path):
+            count = 0
+        else:
+            count = len(os.listdir(device_path))
+
+        self.backup_count_label.config(
+            text=f"Current backups for this device: {count}"
+        )
+
+    def enforce_backup_retention(self, device_name):
+
+        retention = self.config_data.get("backup_retention", 10)
+
+        device_path = os.path.join(BACKUP_ROOT, device_name)
+
+        if not os.path.exists(device_path):
+            return
+
+        backups = sorted(os.listdir(device_path))
+
+        while len(backups) > retention:
+            oldest = backups.pop(0)
+
+            import shutil
+            shutil.rmtree(os.path.join(device_path, oldest))
+
+            self.savemanager_log_msg(f"Old backup removed: {oldest}")
+
+    def disable_savemanager_buttons(self):
+        self.backup_button.config(state="disabled")
+        self.restore_button.config(state="disabled")
+        self.sync_button.config(state="disabled")
+        self.open_backup_folder_button.config(state="disabled")
+        self.open_sync_folder_button.config(state="disabled")
+        self.retention_spin.config(state="disabled")
+
+    def enable_savemanager_buttons(self):
+        self.backup_button.config(state="normal")
+        self.restore_button.config(state="normal")
+        self.sync_button.config(state="normal")
+        self.open_backup_folder_button.config(state="normal")
+        self.open_sync_folder_button.config(state="normal")
+        self.retention_spin.config(state="normal")
+
+    def savemanager_log_msg(self, text):
+        self.savemanager_log.insert(tk.END, text + "\n")
+        self.savemanager_log.see(tk.END)
+
+    def backup_saves(self, internal_call=False):
+
+        if not self.connection.connected:
+            messagebox.showerror("Error", "Connect to a MiSTer first.")
+            return
+
+        def worker():
+
+            self.root.after(0, self.disable_savemanager_buttons)
+            self.root.after(0, self.show_savemanager_log)
+            self.root.after(0, lambda: self.savemanager_log.delete("1.0", tk.END))
+            self.root.after(0, lambda: self.hide_log_button.config(state="disabled"))
+            self.root.after(0, lambda: self.savemanager_log_msg("Starting backup..."))
+
+            device_name = self.device_combo.get().strip()
+
+            if not device_name:
+                device_name = self.connection.ip.replace(".", "_")
+
+            timestamp = time.strftime("%Y-%m-%d_%H-%M-%S")
+            backup_path = os.path.join(BACKUP_ROOT, device_name, timestamp)
+
+            os.makedirs(backup_path, exist_ok=True)
+
+            try:
+
+                sftp = self.connection.client.open_sftp()
+
+                def download_dir(remote_dir, local_dir):
+
+                    os.makedirs(local_dir, exist_ok=True)
+
+                    for item in sftp.listdir_attr(remote_dir):
+
+                        remote_path = f"{remote_dir}/{item.filename}"
+                        local_path = os.path.join(local_dir, item.filename)
+
+                        if stat.S_ISDIR(item.st_mode):
+                            download_dir(remote_path, local_path)
+                        else:
+                            sftp.get(remote_path, local_path)
+
+                self.root.after(0, lambda: self.savemanager_log_msg("Downloading /media/fat/Saves ..."))
+
+                download_dir("/media/fat/Saves", backup_path + "/Saves")
+
+                try:
+                    download_dir("/media/fat/savestates", backup_path + "/savestates")
+                except IOError:
+                    pass
+
+                sftp.close()
+
+                self.root.after(0, lambda: self.savemanager_log_msg("Updating sync folder..."))
+
+                import shutil
+
+                def merge_to_sync(local_dir, sync_dir):
+
+                    os.makedirs(sync_dir, exist_ok=True)
+
+                    for item in os.listdir(local_dir):
+
+                        local_path = os.path.join(local_dir, item)
+                        sync_path = os.path.join(sync_dir, item)
+
+                        if os.path.isdir(local_path):
+                            merge_to_sync(local_path, sync_path)
+                        else:
+                            if not os.path.exists(sync_path):
+                                shutil.copy2(local_path, sync_path)
+                            else:
+                                if os.path.getmtime(local_path) > os.path.getmtime(sync_path):
+                                    shutil.copy2(local_path, sync_path)
+
+                merge_to_sync(backup_path, SYNC_ROOT)
+
+                self.enforce_backup_retention(device_name)
+
+                self.root.after(0, lambda: self.savemanager_log_msg(f"Backup completed: {backup_path}"))
+                self.root.after(0, self.update_backup_count)
+                self.root.after(0, lambda: self.hide_log_button.config(state="normal"))
+
+                if not internal_call:
+                    self.root.after(0, self.enable_savemanager_buttons)
+
+            except Exception as e:
+
+                self.root.after(0, lambda: self.savemanager_log_msg(f"Backup failed: {str(e)}"))
+                self.root.after(0, lambda: self.hide_log_button.config(state="normal"))
+
+                if not internal_call:
+                    self.root.after(0, self.enable_savemanager_buttons)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def restore_saves(self):
+
+        if not self.connection.connected:
+            messagebox.showerror("Error", "Connect to a MiSTer first.")
+            return
+
+        device_root = BACKUP_ROOT
+
+        if not os.path.exists(device_root):
+            messagebox.showerror("Error", "No backups available.")
+            return
+
+        devices = os.listdir(device_root)
+
+        if not devices:
+            messagebox.showerror("Error", "No backups available.")
+            return
+
+        popup = tk.Toplevel(self.root)
+        popup.title("Restore Backup")
+        popup.geometry("360x300")
+        popup.resizable(False, False)
+
+        frame = ttk.Frame(popup, padding=15)
+        frame.pack(fill="both", expand=True)
+
+        ttk.Label(
+            frame,
+            text="Choose a backup device and version to restore to the currently connected MiSTer.",
+            foreground="black",
+            justify="center",
+            wraplength=320
+        ).pack(pady=(0, 10))
+
+        ttk.Label(frame, text="Backup Device").pack(anchor="w")
+        device_combo = ttk.Combobox(frame, values=devices, state="readonly")
+        device_combo.pack(fill="x", pady=5)
+
+        ttk.Label(frame, text="Backup Version").pack(anchor="w")
+        backup_combo = ttk.Combobox(frame, state="readonly")
+        backup_combo.pack(fill="x", pady=5)
+
+        backup_before_restore = tk.BooleanVar(value=True)
+
+        ttk.Checkbutton(
+            frame,
+            text="Backup current device before restore",
+            variable=backup_before_restore
+        ).pack(anchor="w", pady=10)
+
+        def load_backups(event=None):
+
+            device = device_combo.get()
+
+            path = os.path.join(device_root, device)
+
+            if os.path.exists(path):
+                backups = sorted(os.listdir(path), reverse=True)
+                backup_combo["values"] = backups
+
+        device_combo.bind("<<ComboboxSelected>>", load_backups)
+
+        if devices:
+            device_combo.current(0)
+            load_backups()
+
+        def run_restore():
+
+            device = device_combo.get()
+            backup = backup_combo.get()
+
+            if not device or not backup:
+                messagebox.showerror("Error", "Select a backup.")
+                return
+
+            backup_path = os.path.join(device_root, device, backup)
+
+            popup.destroy()
+
+            def worker():
+
+                self.root.after(0, self.disable_savemanager_buttons)
+                self.root.after(0, self.show_savemanager_log)
+                self.root.after(0, lambda: self.hide_log_button.config(state="disabled"))
+                self.root.after(0, lambda: self.savemanager_log.delete("1.0", tk.END))
+                self.root.after(0, lambda: self.savemanager_log_msg("Starting restore..."))
+
+                try:
+
+                    if backup_before_restore.get():
+                        self.root.after(0, lambda: self.savemanager_log_msg("Creating safety backup..."))
+                        self.backup_saves(internal_call=True)
+
+                    sftp = self.connection.client.open_sftp()
+
+                    def upload_dir(local_dir, remote_dir):
+
+                        try:
+                            self.connection.run_command(f'mkdir -p "{remote_dir}"')
+                        except:
+                            pass
+
+                        for item in os.listdir(local_dir):
+
+                            local_path = os.path.join(local_dir, item)
+                            remote_path = f"{remote_dir}/{item}"
+
+                            if os.path.isdir(local_path):
+                                upload_dir(local_path, remote_path)
+                            else:
+                                sftp.put(local_path, remote_path)
+
+                    upload_dir(os.path.join(backup_path, "Saves"), "/media/fat/Saves")
+
+                    savestate_path = os.path.join(backup_path, "savestates")
+                    if os.path.exists(savestate_path):
+                        upload_dir(savestate_path, "/media/fat/savestates")
+
+                    sftp.close()
+
+                    self.root.after(0, lambda: self.savemanager_log_msg("Restore completed."))
+                    self.root.after(0, lambda: self.hide_log_button.config(state="normal"))
+                    self.root.after(0, self.enable_savemanager_buttons)
+
+                except Exception as e:
+
+                    self.root.after(0, lambda: self.savemanager_log_msg(f"Restore failed: {str(e)}"))
+                    self.root.after(0, lambda: self.hide_log_button.config(state="normal"))
+                    self.root.after(0, self.enable_savemanager_buttons)
+
+            threading.Thread(target=worker, daemon=True).start()
+
+        # ===== Restore popup buttons (THIS MUST BE OUTSIDE run_restore) =====
+
+        button_row = ttk.Frame(frame)
+        button_row.pack(pady=12)
+
+        ttk.Button(
+            button_row,
+            text="Restore",
+            width=12,
+            command=run_restore
+        ).pack(side="left", padx=6)
+
+        ttk.Button(
+            button_row,
+            text="Cancel",
+            width=12,
+            command=popup.destroy
+        ).pack(side="left", padx=6)
+
+    def sync_saves(self):
+
+        if not self.connection.connected:
+            messagebox.showerror("Error", "Connect to a MiSTer first.")
+            return
+
+        popup = tk.Toplevel(self.root)
+        popup.title("Sync Saves")
+        popup.geometry("420x220")
+        popup.resizable(False, False)
+
+        frame = ttk.Frame(popup, padding=15)
+        frame.pack(fill="both", expand=True)
+
+        ttk.Label(
+            frame,
+            text="This will synchronize the connected MiSTer\n"
+                 "with the local Sync Folder.\n\n"
+                 "The newest saves from all devices will be\n"
+                 "applied to this MiSTer.",
+            justify="center"
+        ).pack(pady=10)
+
+        backup_var = tk.BooleanVar(value=True)
+
+        ttk.Checkbutton(
+            frame,
+            text="Backup current device before syncing",
+            variable=backup_var
+        ).pack(anchor="w", pady=10)
+
+        def run_sync():
+
+            popup.destroy()
+
+            def worker():
+
+                self.root.after(0, self.disable_savemanager_buttons)
+                self.root.after(0, self.show_savemanager_log)
+                self.root.after(0, lambda: self.hide_log_button.config(state="disabled"))
+                self.root.after(0, lambda: self.savemanager_log.delete("1.0", tk.END))
+                self.root.after(0, lambda: self.savemanager_log_msg("Sync started..."))
+
+                try:
+
+                    if backup_var.get():
+                        self.root.after(0, lambda: self.savemanager_log_msg("Creating device backup..."))
+                        self.backup_saves(internal_call=True)
+
+                    sftp = self.connection.client.open_sftp()
+
+                    # -----------------------------
+                    # Download device saves
+                    # -----------------------------
+
+                    self.root.after(0, lambda: self.savemanager_log_msg("Updating sync folder..."))
+
+                    def download_dir(remote_dir, local_dir):
+
+                        os.makedirs(local_dir, exist_ok=True)
+
+                        for item in sftp.listdir_attr(remote_dir):
+
+                            remote_path = f"{remote_dir}/{item.filename}"
+                            local_path = os.path.join(local_dir, item.filename)
+
+                            if stat.S_ISDIR(item.st_mode):
+                                download_dir(remote_path, local_path)
+                            else:
+
+                                if not os.path.exists(local_path):
+                                    sftp.get(remote_path, local_path)
+                                else:
+
+                                    remote_time = item.st_mtime
+                                    local_time = os.path.getmtime(local_path)
+
+                                    if remote_time > local_time:
+                                        sftp.get(remote_path, local_path)
+
+                    download_dir("/media/fat/Saves", os.path.join(SYNC_ROOT, "Saves"))
+                    download_dir("/media/fat/savestates", os.path.join(SYNC_ROOT, "savestates"))
+
+                    # -----------------------------
+                    # Upload merged saves
+                    # -----------------------------
+
+                    self.root.after(0, lambda: self.savemanager_log_msg("Uploading newest saves to MiSTer..."))
+
+                    def upload_dir(local_dir, remote_dir):
+
+                        try:
+                            self.connection.run_command(f'mkdir -p "{remote_dir}"')
+                        except:
+                            pass
+
+                        for item in os.listdir(local_dir):
+
+                            local_path = os.path.join(local_dir, item)
+                            remote_path = f"{remote_dir}/{item}"
+
+                            if os.path.isdir(local_path):
+                                upload_dir(local_path, remote_path)
+                            else:
+                                sftp.put(local_path, remote_path)
+
+                    upload_dir(os.path.join(SYNC_ROOT, "Saves"), "/media/fat/Saves")
+                    upload_dir(os.path.join(SYNC_ROOT, "savestates"), "/media/fat/savestates")
+
+                    sftp.close()
+
+                    self.root.after(0, lambda: self.savemanager_log_msg("Sync completed successfully."))
+                    self.root.after(0, lambda: self.hide_log_button.config(state="normal"))
+                    self.root.after(0, self.enable_savemanager_buttons)
+
+                except Exception as e:
+
+                    self.root.after(0, lambda: self.savemanager_log_msg(f"Sync failed: {str(e)}"))
+                    self.root.after(0, lambda: self.hide_log_button.config(state="normal"))
+                    self.root.after(0, self.enable_savemanager_buttons)
+
+            threading.Thread(target=worker, daemon=True).start()
+
+        button_row = ttk.Frame(frame)
+        button_row.pack(pady=10)
+
+        ttk.Button(
+            button_row,
+            text="Sync",
+            width=12,
+            command=run_sync
+        ).pack(side="left", padx=6)
+
+        ttk.Button(
+            button_row,
+            text="Cancel",
+            width=12,
+            command=popup.destroy
+        ).pack(side="left", padx=6)
+
+
+    def open_backup_folder(self):
+
+        path = os.path.abspath(BACKUP_ROOT)
+
+        if sys.platform.startswith("win"):
+            subprocess.Popen(["explorer", path])
+        elif sys.platform.startswith("linux"):
+            subprocess.Popen(["xdg-open", path])
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", path])
+
+
+    def open_sync_folder(self):
+
+        path = os.path.abspath(SYNC_ROOT)
+
+        if sys.platform.startswith("win"):
+            subprocess.Popen(["explorer", path])
+        elif sys.platform.startswith("linux"):
+            subprocess.Popen(["xdg-open", path])
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", path])
 
 if __name__ == "__main__":
     root = tk.Tk()
