@@ -17,6 +17,7 @@ Supports:
 - Open MiSTer share in Windows Explorer
 - Remote reboot
 - SSH console output for script execution
+- Save Manager to backup and sync saves between multiple MiSTer devices
 
 Clean, safe, and easy MiSTer management from Windows.
 
