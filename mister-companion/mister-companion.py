@@ -132,7 +132,7 @@ class MiSTerApp:
 
     def __init__(self, root):
         self.root = root
-        self.root.title("MiSTer Companion v2.3.0 by Anime0t4ku")
+        self.root.title("MiSTer Companion v2.3.1 by Anime0t4ku")
         self.root.geometry("900x760")
 
         # ===== App Icon =====
@@ -322,16 +322,19 @@ class MiSTerApp:
         ttk.Label(conn_frame, text="IP:").pack(side="left", padx=(0, 5))
         self.ip_entry = ttk.Entry(conn_frame, width=18)
         self.ip_entry.pack(side="left", padx=5)
+        self.ip_entry.bind("<KeyRelease>", self.on_connection_field_change)
 
         ttk.Label(conn_frame, text="User:").pack(side="left", padx=(10, 5))
         self.username_entry = ttk.Entry(conn_frame, width=12)
         self.username_entry.pack(side="left", padx=5)
         self.username_entry.insert(0, "root")
+        self.username_entry.bind("<KeyRelease>", self.on_connection_field_change)
 
         ttk.Label(conn_frame, text="Pass:").pack(side="left", padx=(10, 5))
         self.password_entry = ttk.Entry(conn_frame, show="*", width=12)
         self.password_entry.pack(side="left", padx=5)
         self.password_entry.insert(0, "1")
+        self.password_entry.bind("<KeyRelease>", self.on_connection_field_change)
 
         self.password_default = True
 
@@ -352,7 +355,14 @@ class MiSTerApp:
                                          text="Connect",
                                          width=12,
                                          command=self.connect)
-        self.connect_button.pack(side="left", padx=10)
+        self.connect_button.pack(side="left", padx=5)
+
+        self.disconnect_button = ttk.Button(conn_frame,
+                                            text="Disconnect",
+                                            width=12,
+                                            command=self.disconnect,
+                                            state="disabled")
+        self.disconnect_button.pack(side="left", padx=5)
 
         ttk.Label(conn_frame,
                   text="(Defaults: root / 1)",
@@ -1157,6 +1167,12 @@ class MiSTerApp:
 
             self.set_status("CONNECTED")
             self.status_label.config(text=f"Connected ({ip})", foreground="green")
+
+            self.disable_connection_fields()
+
+            self.connect_button.config(state="disabled")
+            self.disconnect_button.config(state="normal")
+
             self.enable_controls()
             self.refresh_storage()
             self.check_services_status()
@@ -1165,6 +1181,36 @@ class MiSTerApp:
             self.set_status("DISCONNECTED")
             self.disable_controls()
             messagebox.showerror("Connection Error", message)
+
+    def disconnect(self):
+
+        if self.connection.client:
+            try:
+                self.connection.client.close()
+            except:
+                pass
+
+        self.connection.connected = False
+        self.connection.ip = None
+
+        self.set_status("DISCONNECTED")
+        self.status_label.config(text="Disconnected", foreground="red")
+
+        self.enable_connection_fields()
+        self.disable_controls()
+
+        self.connect_button.config(state="normal")
+        self.disconnect_button.config(state="disabled")
+
+    def disable_connection_fields(self):
+        self.ip_entry.config(state="disabled")
+        self.username_entry.config(state="disabled")
+        self.password_entry.config(state="disabled")
+
+    def enable_connection_fields(self):
+        self.ip_entry.config(state="normal")
+        self.username_entry.config(state="normal")
+        self.password_entry.config(state="normal")
 
     def enable_controls(self):
         self.run_button.config(state="normal")
@@ -1236,6 +1282,32 @@ class MiSTerApp:
         else:
             self.status_label.config(text=texts[state],
                                      foreground=colors[state])
+
+    def on_connection_field_change(self, event=None):
+
+        if self.connection.connected:
+            return
+
+        current_profile = self.device_combo.get()
+
+        if not current_profile:
+            return
+
+        # Check if fields still match the profile
+        for d in self.config_data.get("devices", []):
+            if d["name"] == current_profile:
+
+                saved_ip = d["ip"]
+                saved_user = d["username"]
+                saved_pass = decode_password(d["password"])
+
+                if (
+                        self.ip_entry.get().strip() != saved_ip
+                        or self.username_entry.get().strip() != saved_user
+                        or self.password_entry.get().strip() != saved_pass
+                ):
+                    self.device_combo.set("")
+                return
 
     def refresh_storage(self):
 
@@ -1687,7 +1759,7 @@ class MiSTerApp:
 
             # ===== Save config =====
 
-            def save_config():
+            def save_cifs_config():
 
                 server = server_entry.get().strip()
                 share = share_entry.get().strip()
@@ -1744,7 +1816,7 @@ class MiSTerApp:
                 button_row,
                 text="Save",
                 width=10,
-                command=save_config
+                command=save_cifs_config
             ).pack(side="left", padx=6)
 
     # ===== Thread-safe logging =====
@@ -2263,7 +2335,10 @@ class MiSTerApp:
         if not os.path.exists(device_path):
             count = 0
         else:
-            count = len(os.listdir(device_path))
+            count = len([
+                d for d in os.listdir(device_path)
+                if os.path.isdir(os.path.join(device_path, d))
+            ])
 
         self.backup_count_label.config(
             text=f"Current backups for this device: {count}"
@@ -2278,7 +2353,10 @@ class MiSTerApp:
         if not os.path.exists(device_path):
             return
 
-        backups = sorted(os.listdir(device_path))
+        backups = sorted([
+            d for d in os.listdir(device_path)
+            if os.path.isdir(os.path.join(device_path, d))
+        ])
 
         while len(backups) > retention:
             oldest = backups.pop(0)
@@ -2622,18 +2700,33 @@ class MiSTerApp:
                             local_path = os.path.join(local_dir, item.filename)
 
                             if stat.S_ISDIR(item.st_mode):
+
                                 download_dir(remote_path, local_path)
+
                             else:
 
-                                if not os.path.exists(local_path):
-                                    sftp.get(remote_path, local_path)
-                                else:
+                                remote_time = item.st_mtime
 
-                                    remote_time = item.st_mtime
-                                    local_time = os.path.getmtime(local_path)
+                                if os.path.exists(local_path):
+
+                                    try:
+                                        local_time = os.path.getmtime(local_path)
+                                    except:
+                                        local_time = 0
 
                                     if remote_time > local_time:
+
+                                        try:
+                                            os.remove(local_path)
+                                            time.sleep(0.01)
+                                        except:
+                                            pass
+
                                         sftp.get(remote_path, local_path)
+
+                                else:
+
+                                    sftp.get(remote_path, local_path)
 
                     download_dir("/media/fat/Saves", os.path.join(SYNC_ROOT, "Saves"))
                     download_dir("/media/fat/savestates", os.path.join(SYNC_ROOT, "savestates"))
