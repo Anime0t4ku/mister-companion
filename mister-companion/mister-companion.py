@@ -132,7 +132,7 @@ class MiSTerApp:
 
     def __init__(self, root):
         self.root = root
-        self.root.title("MiSTer Companion v2.3.1 by Anime0t4ku")
+        self.root.title("MiSTer Companion v2.4.0 by Anime0t4ku")
         self.root.geometry("900x760")
 
         # ===== App Icon =====
@@ -177,6 +177,14 @@ class MiSTerApp:
         wrapper = ttk.Frame(popup, padding=20)
         wrapper.pack(fill="both", expand=True)
 
+        # Detect flashing tool depending on platform
+        if sys.platform.startswith("win"):
+            flash_tool_name = "Rufus"
+            flash_tool_url = "https://rufus.ie/en/"
+        else:
+            flash_tool_name = "balenaEtcher"
+            flash_tool_url = "https://etcher.balena.io/"
+
         ttk.Label(wrapper,
                   text="MiSTer Companion Setup",
                   font=("Segoe UI", 13, "bold")).pack(pady=(5, 15))
@@ -185,7 +193,7 @@ class MiSTerApp:
                   text="This application assumes you have already flashed\n"
                        "MiSTerFusion to your SD card.\n\n"
                        "If you have not done so yet, download MiSTerFusion\n"
-                       "and flash it using Rufus before continuing.",
+                       f"and flash it using {flash_tool_name} before continuing.",
                   justify="center").pack(pady=10)
 
         button_frame = ttk.Frame(wrapper)
@@ -199,10 +207,10 @@ class MiSTerApp:
                    )).pack(side="left", padx=15)
 
         ttk.Button(button_frame,
-                   text="Download Rufus",
+                   text=f"Download {flash_tool_name}",
                    width=18,
                    command=lambda: webbrowser.open(
-                       "https://rufus.ie/en/"
+                       flash_tool_url
                    )).pack(side="left", padx=15)
 
         hide_var = tk.BooleanVar()
@@ -2232,8 +2240,14 @@ class MiSTerApp:
         try:
             if sys.platform.startswith("win"):
                 subprocess.Popen(["explorer", f"\\\\{ip}\\"])
-            elif sys.platform.startswith("linux"):
-                subprocess.Popen(["xdg-open", f"smb://{ip}/"])
+                elif sys.platform.startswith("linux"):
+                env = os.environ.copy()
+                subprocess.Popen(
+                    ["gio", "open", f"smb://{ip}/"],
+                    env=env,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
+                )
             elif sys.platform == "darwin":
                 subprocess.Popen(["open", f"smb://{ip}/"])
         except Exception as e:
@@ -2795,8 +2809,14 @@ class MiSTerApp:
 
         if sys.platform.startswith("win"):
             subprocess.Popen(["explorer", path])
-        elif sys.platform.startswith("linux"):
-            subprocess.Popen(["xdg-open", path])
+            elif sys.platform.startswith("linux"):
+            env = os.environ.copy()
+            subprocess.Popen(
+                ["gio", "open", path],
+                env=env,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
         elif sys.platform == "darwin":
             subprocess.Popen(["open", path])
 
@@ -2807,8 +2827,14 @@ class MiSTerApp:
 
         if sys.platform.startswith("win"):
             subprocess.Popen(["explorer", path])
-        elif sys.platform.startswith("linux"):
-            subprocess.Popen(["xdg-open", path])
+            elif sys.platform.startswith("linux"):
+            env = os.environ.copy()
+            subprocess.Popen(
+                ["gio", "open", path],
+                env=env,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
         elif sys.platform == "darwin":
             subprocess.Popen(["open", path])
 

@@ -65,11 +65,14 @@ jobs:
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pyinstaller paramiko requests
+          pip install pyinstaller paramiko requests websocket-client
 
       - name: Build Executable
         working-directory: mister-companion
         run: pyinstaller --clean --onefile --windowed --add-data "icon.png:." --name MiSTer-Companion mister-companion.py
+
+      - name: Make binary executable
+        run: chmod +x mister-companion/dist/MiSTer-Companion
 
       - name: Upload Linux Artifact
         uses: actions/upload-artifact@v4
