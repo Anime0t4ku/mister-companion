@@ -2245,13 +2245,14 @@ class MiSTerApp:
 
 
 
+
             elif sys.platform.startswith("linux"):
 
                 try:
 
                     subprocess.Popen(
 
-                        ["xdg-open", f"smb://{ip}/"],
+                        ["/usr/bin/xdg-open", f"smb://{ip}/"],
 
                         stdout=subprocess.DEVNULL,
 
@@ -2259,17 +2260,31 @@ class MiSTerApp:
 
                     )
 
-                except FileNotFoundError:
 
-                    subprocess.Popen(
+                except Exception:
 
-                        ["gio", "open", f"smb://{ip}/"],
+                    try:
 
-                        stdout=subprocess.DEVNULL,
+                        subprocess.Popen(
 
-                        stderr=subprocess.DEVNULL
+                            ["/usr/bin/gio", "open", f"smb://{ip}/"],
 
-                    )
+                            stdout=subprocess.DEVNULL,
+
+                            stderr=subprocess.DEVNULL
+
+                        )
+
+
+                    except Exception as e:
+
+                        messagebox.showerror(
+
+                            "SMB Error",
+
+                            f"Unable to open SMB share.\n\n{str(e)}"
+
+                        )
 
             elif sys.platform == "darwin":
                 subprocess.Popen(["open", f"smb://{ip}/"])
