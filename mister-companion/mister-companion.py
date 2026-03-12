@@ -2244,17 +2244,32 @@ class MiSTerApp:
 
 
 
+
             elif sys.platform.startswith("linux"):
 
-                subprocess.Popen(
+                try:
 
-                    ["sh", "-c", f'xdg-open "smb://{ip}/"'],
+                    subprocess.Popen(
 
-                    stdout=subprocess.DEVNULL,
+                        ["xdg-open", f"smb://{ip}/"],
 
-                    stderr=subprocess.DEVNULL
+                        stdout=subprocess.DEVNULL,
 
-                )
+                        stderr=subprocess.DEVNULL
+
+                    )
+
+                except FileNotFoundError:
+
+                    subprocess.Popen(
+
+                        ["gio", "open", f"smb://{ip}/"],
+
+                        stdout=subprocess.DEVNULL,
+
+                        stderr=subprocess.DEVNULL
+
+                    )
 
             elif sys.platform == "darwin":
                 subprocess.Popen(["open", f"smb://{ip}/"])
