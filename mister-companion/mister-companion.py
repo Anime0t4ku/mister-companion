@@ -2233,64 +2233,36 @@ class MiSTerApp:
         self.check_services_status()
 
     def open_explorer(self):
+
         if not self.connection.ip:
             return
 
         ip = self.connection.ip
 
         try:
+
             if sys.platform.startswith("win"):
                 subprocess.Popen(["explorer", f"\\\\{ip}\\"])
 
-
-
-
-
             elif sys.platform.startswith("linux"):
 
-                try:
+                env = os.environ.copy()
 
-                    subprocess.Popen(
-
-                        ["/usr/bin/xdg-open", f"smb://{ip}/"],
-
-                        stdout=subprocess.DEVNULL,
-
-                        stderr=subprocess.DEVNULL
-
-                    )
-
-
-                except Exception:
-
-                    try:
-
-                        subprocess.Popen(
-
-                            ["/usr/bin/gio", "open", f"smb://{ip}/"],
-
-                            stdout=subprocess.DEVNULL,
-
-                            stderr=subprocess.DEVNULL
-
-                        )
-
-
-                    except Exception as e:
-
-                        messagebox.showerror(
-
-                            "SMB Error",
-
-                            f"Unable to open SMB share.\n\n{str(e)}"
-
-                        )
+                subprocess.Popen(
+                    ["gio", "open", f"smb://{ip}/"],
+                    env=env,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
+                )
 
             elif sys.platform == "darwin":
                 subprocess.Popen(["open", f"smb://{ip}/"])
 
         except Exception as e:
-            messagebox.showerror("Error", f"Unable to open file share:\n{str(e)}")
+            messagebox.showerror(
+                "SMB Error",
+                f"Unable to open SMB share:\n\n{str(e)}"
+            )
 
     def reboot(self):
 
