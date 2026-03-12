@@ -169,7 +169,8 @@ class MiSTerApp:
 
         popup = tk.Toplevel(self.root)
         popup.title("MiSTer Setup Required")
-        popup.geometry("540x340")
+        popup.geometry("540x380")
+        popup.minsize(540, 380)
         popup.resizable(False, False)
         popup.grab_set()
         popup.transient(self.root)
@@ -208,7 +209,7 @@ class MiSTerApp:
 
         ttk.Button(button_frame,
                    text=f"Download {flash_tool_name}",
-                   width=18,
+                   width=22,
                    command=lambda: webbrowser.open(
                        flash_tool_url
                    )).pack(side="left", padx=15)
@@ -2083,7 +2084,7 @@ class MiSTerApp:
             "Important:\n"
             "The migration process MUST be started directly on the MiSTer\n"
             "from the Scripts menu.\n\n"
-            "It cannot be executed from MiSTer Companion.\n\n"
+            "Or Run it from the ZapScripts Tab.\n\n"
             "Install the script now?"
         )
 
@@ -2242,16 +2243,15 @@ class MiSTerApp:
                 subprocess.Popen(["explorer", f"\\\\{ip}\\"])
 
             elif sys.platform.startswith("linux"):
-                env = os.environ.copy()
                 subprocess.Popen(
-                    ["gio", "open", f"smb://{ip}/"],
-                    env=env,
+                    ["xdg-open", f"smb://{ip}/"],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL
                 )
 
             elif sys.platform == "darwin":
                 subprocess.Popen(["open", f"smb://{ip}/"])
+
         except Exception as e:
             messagebox.showerror("Error", f"Unable to open file share:\n{str(e)}")
 
