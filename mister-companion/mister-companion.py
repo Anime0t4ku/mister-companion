@@ -2243,23 +2243,12 @@ class MiSTerApp:
                 subprocess.Popen(["explorer", f"\\\\{ip}\\"])
 
 
+
             elif sys.platform.startswith("linux"):
-
-                env = os.environ.copy()
-
-                # Ensure desktop session variables exist
-
-                env.setdefault("DISPLAY", os.environ.get("DISPLAY", ""))
-
-                env.setdefault("WAYLAND_DISPLAY", os.environ.get("WAYLAND_DISPLAY", ""))
-
-                env.setdefault("XDG_RUNTIME_DIR", os.environ.get("XDG_RUNTIME_DIR", ""))
 
                 subprocess.Popen(
 
-                    ["xdg-open", f"smb://{ip}/"],
-
-                    env=env,
+                    ["sh", "-c", f'xdg-open "smb://{ip}/"'],
 
                     stdout=subprocess.DEVNULL,
 
