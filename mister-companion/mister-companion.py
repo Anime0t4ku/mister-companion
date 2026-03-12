@@ -2248,6 +2248,15 @@ class MiSTerApp:
 
                 env = os.environ.copy()
 
+                # Force mount first
+                subprocess.run(
+                    ["gio", "mount", f"smb://{ip}/"],
+                    env=env,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
+                )
+
+                # Then open
                 subprocess.Popen(
                     ["gio", "open", f"smb://{ip}/"],
                     env=env,
