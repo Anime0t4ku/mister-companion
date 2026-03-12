@@ -2675,7 +2675,7 @@ class MiSTerApp:
 
         popup = tk.Toplevel(self.root)
         popup.title("Sync Saves")
-        popup.geometry("420x220")
+        popup.geometry("420x260")
         popup.resizable(False, False)
 
         frame = ttk.Frame(popup, padding=15)
