@@ -2240,7 +2240,8 @@ class MiSTerApp:
         try:
             if sys.platform.startswith("win"):
                 subprocess.Popen(["explorer", f"\\\\{ip}\\"])
-                elif sys.platform.startswith("linux"):
+
+            elif sys.platform.startswith("linux"):
                 env = os.environ.copy()
                 subprocess.Popen(
                     ["gio", "open", f"smb://{ip}/"],
@@ -2248,6 +2249,7 @@ class MiSTerApp:
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL
                 )
+
             elif sys.platform == "darwin":
                 subprocess.Popen(["open", f"smb://{ip}/"])
         except Exception as e:
@@ -2809,7 +2811,8 @@ class MiSTerApp:
 
         if sys.platform.startswith("win"):
             subprocess.Popen(["explorer", path])
-            elif sys.platform.startswith("linux"):
+
+        elif sys.platform.startswith("linux"):
             env = os.environ.copy()
             subprocess.Popen(
                 ["gio", "open", path],
@@ -2817,6 +2820,7 @@ class MiSTerApp:
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL
             )
+
         elif sys.platform == "darwin":
             subprocess.Popen(["open", path])
 
@@ -2827,7 +2831,8 @@ class MiSTerApp:
 
         if sys.platform.startswith("win"):
             subprocess.Popen(["explorer", path])
-            elif sys.platform.startswith("linux"):
+
+        elif sys.platform.startswith("linux"):
             env = os.environ.copy()
             subprocess.Popen(
                 ["gio", "open", path],
@@ -2835,6 +2840,7 @@ class MiSTerApp:
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL
             )
+
         elif sys.platform == "darwin":
             subprocess.Popen(["open", path])
 
