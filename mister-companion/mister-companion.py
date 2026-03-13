@@ -28,13 +28,17 @@ SAVE_ROOT = "SaveManager"
 BACKUP_ROOT = os.path.join(SAVE_ROOT, "backups")
 SYNC_ROOT = os.path.join(SAVE_ROOT, "sync")
 
+# MiSTer Settings folders
+MISTER_SETTINGS_ROOT = "MiSTerSettings"
+
 DEFAULT_CONFIG = {
     "devices": [],
     "last_connected": None,
     "update_all_installed": False,
     "smb_enabled": False,
     "hide_setup_notice": False,
-    "backup_retention": 10
+    "backup_retention": 10,
+    "mister_settings_retention": 10
 }
 
 # =========================
@@ -132,7 +136,7 @@ class MiSTerApp:
 
     def __init__(self, root):
         self.root = root
-        self.root.title("MiSTer Companion v2.4.0 by Anime0t4ku")
+        self.root.title("MiSTer Companion v2.5.0 by Anime0t4ku")
         self.root.geometry("900x760")
 
         # ===== App Icon =====
@@ -145,9 +149,10 @@ class MiSTerApp:
         self.connection = MiSTerConnection()
         self.config_data = load_config()
 
-        # Create SaveManager folders
+        # Create feature folders
         os.makedirs(BACKUP_ROOT, exist_ok=True)
         os.makedirs(SYNC_ROOT, exist_ok=True)
+        os.makedirs(MISTER_SETTINGS_ROOT, exist_ok=True)
 
         self.console_visible = False
 
@@ -156,6 +161,7 @@ class MiSTerApp:
         self.load_last_device()
 
         self.disable_controls()
+        self.set_mister_settings_enabled(False)
 
         self.root.after(300, self.show_setup_notice)
 
@@ -278,20 +284,24 @@ class MiSTerApp:
 
         # ===== Notebook Layout =====
 
-        notebook = ttk.Notebook(self.root)
-        notebook.pack(fill="both", expand=True, padx=10, pady=10)
+        self.notebook = ttk.Notebook(self.root)
+        self.notebook.pack(fill="both", expand=True, padx=10, pady=10)
 
-        self.connection_tab = ttk.Frame(notebook)
-        self.device_tab = ttk.Frame(notebook)
-        self.scripts_tab = ttk.Frame(notebook)
-        self.zapscripts_tab = ttk.Frame(notebook)
-        self.savemanager_tab = ttk.Frame(notebook)
+        self.connection_tab = ttk.Frame(self.notebook)
+        self.device_tab = ttk.Frame(self.notebook)
+        self.mister_settings_tab = ttk.Frame(self.notebook)
+        self.scripts_tab = ttk.Frame(self.notebook)
+        self.zapscripts_tab = ttk.Frame(self.notebook)
+        self.savemanager_tab = ttk.Frame(self.notebook)
 
-        notebook.add(self.connection_tab, text="Connection")
-        notebook.add(self.device_tab, text="Device")
-        notebook.add(self.scripts_tab, text="Scripts")
-        notebook.add(self.zapscripts_tab, text="ZapScripts")
-        notebook.add(self.savemanager_tab, text="SaveManager")
+        self.notebook.add(self.connection_tab, text="Connection")
+        self.notebook.add(self.device_tab, text="Device")
+        self.notebook.add(self.mister_settings_tab, text="MiSTer Settings")
+        self.notebook.add(self.scripts_tab, text="Scripts")
+        self.notebook.add(self.zapscripts_tab, text="ZapScripts")
+        self.notebook.add(self.savemanager_tab, text="SaveManager")
+
+        self.notebook.bind("<<NotebookTabChanged>>", self.on_tab_changed)
 
         # ===== Device Section =====
 
@@ -763,7 +773,299 @@ class MiSTerApp:
         self.savemanager_log = tk.Text(self.savemanager_log_frame, height=10)
         self.savemanager_log.pack(fill="both", expand=True, padx=10, pady=10)
 
+        # ===== MiSTer Settings =====
 
+        mister_settings_frame = ttk.Frame(self.mister_settings_tab)
+        mister_settings_frame.pack(fill="both", expand=True, padx=20, pady=20)
+
+        self.mister_settings_info = ttk.Label(
+            mister_settings_frame,
+            text="MiSTer Settings allows you to edit MiSTer.ini with an Easy and Advanced mode.\n"
+                 "Backups are stored locally on your PC in a separate MiSTerSettings folder.\n"
+                 "Settings are only applied when you press Save.",
+            justify="center",
+            foreground="black"
+        )
+        self.mister_settings_info.pack(pady=(0, 12))
+
+        mode_row = ttk.Frame(mister_settings_frame)
+        mode_row.pack(pady=(0, 10))
+
+        ttk.Label(mode_row, text="Mode:").pack(side="left", padx=(0, 8))
+
+        self.mister_settings_mode_var = tk.StringVar(value="easy")
+
+        self.easy_mode_radio = ttk.Radiobutton(
+            mode_row,
+            text="Easy",
+            value="easy",
+            variable=self.mister_settings_mode_var,
+            command=self.update_settings_mode
+        )
+        self.easy_mode_radio.pack(side="left", padx=5)
+
+        self.advanced_mode_radio = ttk.Radiobutton(
+            mode_row,
+            text="Advanced",
+            value="advanced",
+            variable=self.mister_settings_mode_var,
+            command=self.update_settings_mode
+        )
+        self.advanced_mode_radio.pack(side="left", padx=5)
+
+        self.mister_settings_notice_label = ttk.Label(
+            mister_settings_frame,
+            text="",
+            foreground="orange",
+            justify="center"
+        )
+        self.mister_settings_notice_label.pack(pady=(0, 10))
+
+        self.mister_settings_content = ttk.Frame(mister_settings_frame)
+        self.mister_settings_content.pack(fill="both", expand=True, pady=(0, 15))
+
+        content_inner = ttk.Frame(self.mister_settings_content)
+        content_inner.pack(fill="both", expand=True)
+
+        # Easy Mode preview / placeholders
+        self.easy_frame = ttk.LabelFrame(content_inner, text="Easy Mode")
+        self.easy_frame.pack(pady=(0, 10))
+
+        easy_grid = ttk.Frame(self.easy_frame)
+        easy_grid.pack(padx=18, pady=14)
+
+        ttk.Label(easy_grid, text="HDMI Mode").grid(row=0, column=0, sticky="w", padx=5, pady=5)
+
+        self.easy_hdmi_mode_combo = ttk.Combobox(
+            easy_grid,
+            state="readonly",
+            values=[
+                "HD Output (Default)",
+                "Direct Video (CRT / Scaler)"
+            ],
+            width=28
+        )
+
+        self.easy_hdmi_mode_combo.grid(row=0, column=1, sticky="w", padx=5, pady=5)
+        self.easy_hdmi_mode_combo.bind("<<ComboboxSelected>>", self.on_easy_hdmi_mode_changed)
+        self.easy_hdmi_mode_combo.set("HD Output (Default)")
+
+        # Resolution
+        ttk.Label(easy_grid, text="Resolution").grid(row=1, column=0, sticky="w", padx=5, pady=5)
+
+        self.easy_resolution_combo = ttk.Combobox(
+            easy_grid,
+            state="readonly",
+            values=[
+                "1280x720@60",
+                "1024x768@60",
+                "720x480@60",
+                "720x576@50",
+                "1280x1024@60",
+                "800x600@60",
+                "640x480@60",
+                "1280x720@50",
+                "1920x1080@60",
+                "1920x1080@50",
+                "1366x768@60",
+                "1024x600@60",
+                "1920x1440@60",
+                "2048x1536@60",
+                "2560x1440@60"
+            ],
+            width=28
+        )
+
+        self.easy_resolution_combo.grid(row=1, column=1, sticky="w", padx=5, pady=5)
+        self.easy_resolution_combo.set("1920x1080@60")
+
+        # HDMI Scaling Mode
+        ttk.Label(easy_grid, text="HDMI Scaling Mode").grid(row=3, column=0, sticky="w", padx=5, pady=5)
+
+        self.easy_scaling_combo = ttk.Combobox(
+            easy_grid,
+            state="readonly",
+            values=[
+                "Disabled",
+                "Low Latency",
+                "Exact Refresh"
+            ],
+            width=28
+        )
+
+        self.easy_scaling_combo.grid(row=3, column=1, sticky="w", padx=5, pady=5)
+        self.easy_scaling_combo.set("Low Latency")
+
+        # HDMI Audio
+        ttk.Label(easy_grid, text="HDMI Audio").grid(row=4, column=0, sticky="w", padx=5, pady=5)
+
+        self.easy_hdmi_audio_combo = ttk.Combobox(
+            easy_grid,
+            state="readonly",
+            values=[
+                "Enabled",
+                "Disabled (DVI Mode)"
+            ],
+            width=28
+        )
+
+        self.easy_hdmi_audio_combo.grid(row=4, column=1, sticky="w", padx=5, pady=5)
+        self.easy_hdmi_audio_combo.set("Enabled")
+
+        # HDR
+        ttk.Label(easy_grid, text="HDR").grid(row=5, column=0, sticky="w", padx=5, pady=5)
+
+        self.easy_hdr_combo = ttk.Combobox(
+            easy_grid,
+            state="readonly",
+            values=[
+                "Disabled",
+                "Enabled"
+            ],
+            width=28
+        )
+
+        self.easy_hdr_combo.grid(row=5, column=1, sticky="w", padx=5, pady=5)
+        self.easy_hdr_combo.set("Disabled")
+
+        # HDMI Limited Range
+        ttk.Label(easy_grid, text="HDMI Limited Range").grid(row=6, column=0, sticky="w", padx=5, pady=5)
+
+        self.easy_hdmi_limited_combo = ttk.Combobox(
+            easy_grid,
+            state="readonly",
+            values=[
+                "Disabled",
+                "Enabled"
+            ],
+            width=28
+        )
+
+        self.easy_hdmi_limited_combo.grid(row=6, column=1, sticky="w", padx=5, pady=5)
+        self.easy_hdmi_limited_combo.set("Disabled")
+
+        # Analogue Output
+        ttk.Label(easy_grid, text="Analogue Output").grid(row=7, column=0, sticky="w", padx=5, pady=5)
+
+        self.easy_analogue_combo = ttk.Combobox(
+            easy_grid,
+            state="readonly",
+            values=[
+                "RGB (Consumer TV)",
+                "RGB (PVM/BVM)",
+                "Component (YPbPr)",
+                "S-Video",
+                "VGA Monitor"
+            ],
+            width=28
+        )
+
+        self.easy_analogue_combo.grid(row=7, column=1, sticky="w", padx=5, pady=5)
+        self.easy_analogue_combo.set("RGB (Consumer TV)")
+
+        # Advanced Mode editor
+        self.advanced_frame = ttk.LabelFrame(content_inner, text="Advanced Mode")
+        self.advanced_frame.pack(fill="both", expand=True, pady=(0, 10))
+
+        advanced_inner = ttk.Frame(self.advanced_frame)
+        advanced_inner.pack(fill="both", expand=True, padx=12, pady=12)
+
+        advanced_scroll = ttk.Scrollbar(advanced_inner)
+        advanced_scroll.pack(side="right", fill="y")
+
+        self.advanced_text = tk.Text(
+            advanced_inner,
+            height=16,
+            wrap="none",
+            font=("Consolas", 10),
+            padx=6,
+            pady=6,
+            yscrollcommand=advanced_scroll.set
+        )
+
+        self.advanced_text.pack(fill="both", expand=True)
+
+        advanced_scroll.config(command=self.advanced_text.yview)
+
+        # Buttons
+        mister_settings_button_row = ttk.Frame(mister_settings_frame)
+        mister_settings_button_row.pack(pady=10)
+
+        self.mister_settings_save_button = ttk.Button(
+            mister_settings_button_row,
+            text="Save",
+            width=16,
+            command=self.save_mister_settings,
+            state="disabled"
+        )
+        self.mister_settings_save_button.pack(side="left", padx=8)
+
+        self.mister_settings_backup_button = ttk.Button(
+            mister_settings_button_row,
+            text="Backup",
+            width=16,
+            command=self.backup_mister_settings,
+            state="disabled"
+        )
+        self.mister_settings_backup_button.pack(side="left", padx=8)
+
+        self.mister_settings_restore_button = ttk.Button(
+            mister_settings_button_row,
+            text="Restore Backup",
+            width=16,
+            command=self.restore_mister_settings,
+            state="disabled"
+        )
+        self.mister_settings_restore_button.pack(side="left", padx=8)
+
+        self.mister_settings_defaults_button = ttk.Button(
+            mister_settings_button_row,
+            text="Restore Defaults",
+            width=16,
+            command=self.restore_default_mister_settings,
+            state="disabled"
+        )
+        self.mister_settings_defaults_button.pack(side="left", padx=8)
+
+        retention_row = ttk.Frame(mister_settings_frame)
+        retention_row.pack(pady=(10, 0))
+
+        self.mister_settings_retention_label = ttk.Label(
+            retention_row,
+            text="Backups to keep per device:",
+            foreground="gray"
+        )
+        self.mister_settings_retention_label.pack(side="left", padx=5)
+
+        self.mister_settings_retention_var = tk.IntVar(
+            value=self.config_data.get("mister_settings_retention", 10)
+        )
+
+        self.mister_settings_retention_spin = ttk.Spinbox(
+            retention_row,
+            from_=1,
+            to=100,
+            width=5,
+            textvariable=self.mister_settings_retention_var,
+            command=self.save_mister_settings_retention_setting,
+            state="disabled"
+        )
+        self.mister_settings_retention_spin.pack(side="left", padx=5)
+        self.mister_settings_retention_spin.bind(
+            "<FocusOut>",
+            lambda event: self.save_mister_settings_retention_setting()
+        )
+
+        self.mister_settings_open_folder_button = ttk.Button(
+            retention_row,
+            text="Open Backup Folder",
+            width=18,
+            command=self.open_mister_settings_folder,
+            state="disabled"
+        )
+        self.mister_settings_open_folder_button.pack(side="left", padx=15)
+        self.update_easy_mode_state()
+        self.update_settings_mode()
 
     # =========================
     # Device Management
@@ -1004,6 +1306,32 @@ class MiSTerApp:
     # =========================
     # Core Logic
     # =========================
+    def set_mister_settings_enabled(self, enabled):
+
+        state = "readonly" if enabled else "disabled"
+        radio_state = "normal" if enabled else "disabled"
+
+        # Mode selector
+        self.easy_mode_radio.config(state=radio_state)
+        self.advanced_mode_radio.config(state=radio_state)
+
+        # Easy mode controls
+        self.easy_hdmi_mode_combo.config(state=state)
+
+        if enabled:
+            self.update_easy_mode_state()
+        else:
+            self.easy_resolution_combo.config(state="disabled")
+
+        self.easy_analogue_combo.config(state=state)
+
+        # Grey/black text depending on connection
+        if enabled:
+            self.mister_settings_info.config(foreground="black")
+            self.mister_settings_retention_label.config(foreground="black")
+        else:
+            self.mister_settings_info.config(foreground="gray")
+            self.mister_settings_retention_label.config(foreground="gray")
 
     def populate_zapscripts(self):
 
@@ -1186,6 +1514,7 @@ class MiSTerApp:
             self.refresh_storage()
             self.check_services_status()
             self.update_backup_count()
+            self.load_mister_ini_into_ui(silent=True)
         else:
             self.set_status("DISCONNECTED")
             self.disable_controls()
@@ -1234,6 +1563,18 @@ class MiSTerApp:
         self.backup_count_label.config(foreground="black")
         self.retention_label.config(foreground="black")
 
+        # Enable MiSTer Settings
+        self.mister_settings_save_button.config(state="normal")
+        self.mister_settings_backup_button.config(state="normal")
+        self.mister_settings_restore_button.config(state="normal")
+        self.mister_settings_defaults_button.config(state="normal")
+        self.mister_settings_retention_spin.config(state="normal")
+        self.mister_settings_open_folder_button.config(state="normal")
+        self.mister_settings_info.config(foreground="black")
+        self.mister_settings_retention_label.config(foreground="black")
+
+        self.set_mister_settings_enabled(True)
+
     def disable_controls(self):
         self.install_button.config(state="disabled")
         self.uninstall_button.config(state="disabled")
@@ -1250,6 +1591,18 @@ class MiSTerApp:
         self.savemanager_info.config(foreground="gray")
         self.backup_count_label.config(foreground="gray")
         self.retention_label.config(foreground="gray")
+
+        # Disable MiSTer Settings
+        self.mister_settings_save_button.config(state="disabled")
+        self.mister_settings_backup_button.config(state="disabled")
+        self.mister_settings_restore_button.config(state="disabled")
+        self.mister_settings_defaults_button.config(state="disabled")
+        self.mister_settings_retention_spin.config(state="disabled")
+        self.mister_settings_open_folder_button.config(state="disabled")
+        self.mister_settings_info.config(foreground="gray")
+        self.mister_settings_retention_label.config(foreground="gray")
+
+        self.set_mister_settings_enabled(False)
 
         # Disable script buttons
         self.install_zaparoo_button.config(state="disabled")
@@ -1272,6 +1625,64 @@ class MiSTerApp:
 
         self.usb_bar["value"] = 0
         self.usb_label.config(text="--")
+
+    def update_settings_mode(self):
+
+        mode = self.mister_settings_mode_var.get()
+
+        if mode == "easy":
+
+            if self.connection.connected:
+                self.apply_advanced_to_easy()
+
+            self.advanced_frame.pack_forget()
+            self.easy_frame.pack(fill="x", pady=(0, 10))
+
+        else:
+
+            settings = self.build_easy_mode_settings()
+
+            lines = []
+            for k, v in settings.items():
+                lines.append(f"{k}={v}")
+
+            self.advanced_text.delete("1.0", tk.END)
+            self.advanced_text.insert(tk.END, "\n".join(lines))
+
+            self.easy_frame.pack_forget()
+            self.advanced_frame.pack(fill="both", expand=True)
+
+    def on_tab_changed(self, event=None):
+
+        try:
+            selected_tab = self.notebook.select()
+            selected_text = self.notebook.tab(selected_tab, "text")
+        except Exception:
+            return
+
+        if selected_text == "MiSTer Settings" and self.connection.connected:
+            self.load_mister_ini_into_ui(silent=True)
+
+    def on_easy_hdmi_mode_changed(self, event=None):
+        self.update_easy_mode_state()
+
+    def update_easy_mode_state(self):
+
+        hdmi_mode = self.easy_hdmi_mode_combo.get().strip()
+
+        if hdmi_mode == "Direct Video (CRT / Scaler)":
+
+            self.easy_resolution_combo.config(state="disabled")
+            self.easy_scaling_combo.config(state="disabled")
+            self.easy_hdr_combo.config(state="disabled")
+            self.easy_hdmi_limited_combo.config(state="disabled")
+
+        else:
+
+            self.easy_resolution_combo.config(state="readonly")
+            self.easy_scaling_combo.config(state="readonly")
+            self.easy_hdr_combo.config(state="readonly")
+            self.easy_hdmi_limited_combo.config(state="readonly")
 
     def set_status(self, state):
         colors = {
@@ -2330,6 +2741,650 @@ class MiSTerApp:
         except Exception:
             pass
 
+    def save_mister_settings_retention_setting(self):
+
+        try:
+            value = int(self.mister_settings_retention_var.get())
+
+            if value < 1:
+                value = 1
+
+            self.config_data["mister_settings_retention"] = value
+            save_config(self.config_data)
+
+        except Exception:
+            pass
+
+    def get_mister_settings_device_name(self):
+
+        device_name = self.device_combo.get().strip()
+
+        if device_name:
+            return device_name
+
+        if self.connection.ip:
+            return self.connection.ip.replace(".", "_")
+
+        return ""
+
+    def get_mister_settings_device_path(self):
+
+        device_name = self.get_mister_settings_device_name()
+
+        if not device_name:
+            return os.path.abspath(MISTER_SETTINGS_ROOT)
+
+        return os.path.abspath(os.path.join(MISTER_SETTINGS_ROOT, device_name))
+
+    def ensure_mister_ini_exists(self):
+
+        if not self.connection.connected:
+            return False, "Not connected"
+
+        ini_exists = self.connection.run_command(
+            'test -f /media/fat/MiSTer.ini && echo EXISTS'
+        )
+
+        if "EXISTS" in (ini_exists or ""):
+            return True, "MiSTer.ini exists"
+
+        example_exists = self.connection.run_command(
+            'test -f /media/fat/MiSTer_example.ini && echo EXISTS'
+        )
+
+        if "EXISTS" not in (example_exists or ""):
+            return False, "Neither MiSTer.ini nor MiSTer_example.ini exists."
+
+        result = self.connection.run_command(
+            'cp /media/fat/MiSTer_example.ini /media/fat/MiSTer.ini && echo COPIED'
+        )
+
+        if "COPIED" in (result or ""):
+            return True, "MiSTer.ini created from MiSTer_example.ini"
+
+        return False, "Unable to create MiSTer.ini from MiSTer_example.ini"
+
+    def parse_mister_ini(self, text):
+
+        settings = {}
+
+        current_section = None
+
+        for raw_line in text.splitlines():
+            line = raw_line.strip()
+
+            if not line:
+                continue
+
+            if line.startswith(";"):
+                continue
+
+            if line.startswith("[") and line.endswith("]"):
+                current_section = line[1:-1].strip()
+                continue
+
+            if current_section != "MiSTer":
+                continue
+
+            if ";" in line:
+                line = line.split(";", 1)[0].strip()
+
+            if "=" not in line:
+                continue
+
+            key, value = line.split("=", 1)
+            settings[key.strip()] = value.strip()
+
+        return settings
+
+    def apply_advanced_to_easy(self):
+
+        text = self.advanced_text.get("1.0", tk.END)
+
+        settings = {}
+
+        for line in text.splitlines():
+
+            line = line.strip()
+
+            if not line:
+                continue
+
+            if line.startswith(";"):
+                continue
+
+            if "=" not in line:
+                continue
+
+            key, value = line.split("=", 1)
+
+            settings[key.strip()] = value.strip()
+
+        self.map_ini_to_easy_mode(settings)
+
+    def map_ini_to_easy_mode(self, settings):
+
+        # HDMI Mode
+        direct_video = settings.get("direct_video", "0").strip()
+        if direct_video in ("1", "2"):
+            self.easy_hdmi_mode_combo.set("Direct Video (CRT / Scaler)")
+        else:
+            self.easy_hdmi_mode_combo.set("HD Output (Default)")
+
+        # Resolution
+        video_mode = settings.get("video_mode", "").strip()
+
+        resolution_map = {
+            "0": "1280x720@60",
+            "1": "1024x768@60",
+            "2": "720x480@60",
+            "3": "720x576@50",
+            "4": "1280x1024@60",
+            "5": "800x600@60",
+            "6": "640x480@60",
+            "7": "1280x720@50",
+            "8": "1920x1080@60",
+            "9": "1920x1080@50",
+            "10": "1366x768@60",
+            "11": "1024x600@60",
+            "12": "1920x1440@60",
+            "13": "2048x1536@60",
+            "14": "2560x1440@60",
+        }
+
+        if video_mode in resolution_map:
+            self.easy_resolution_combo.set(resolution_map[video_mode])
+        elif self.easy_hdmi_mode_combo.get() == "HD Output (Default)":
+            self.easy_resolution_combo.set("1920x1080@60")
+
+        # HDMI Scaling Mode
+        vsync = settings.get("vsync_adjust", "1").strip()
+
+        scaling_map = {
+            "0": "Disabled",
+            "1": "Low Latency",
+            "2": "Exact Refresh"
+        }
+
+        self.easy_scaling_combo.set(scaling_map.get(vsync, "Low Latency"))
+
+        # HDMI Audio
+        audio = settings.get("hdmi_audio", "1").strip()
+        if audio == "0":
+            self.easy_hdmi_audio_combo.set("Disabled (DVI Mode)")
+        else:
+            self.easy_hdmi_audio_combo.set("Enabled")
+
+        # HDR
+        hdr = settings.get("hdr", "0").strip()
+        if hdr == "1":
+            self.easy_hdr_combo.set("Enabled")
+        else:
+            self.easy_hdr_combo.set("Disabled")
+
+        # HDMI Limited Range
+        limited = settings.get("hdmi_limited", "0").strip()
+        if limited == "1":
+            self.easy_hdmi_limited_combo.set("Enabled")
+        else:
+            self.easy_hdmi_limited_combo.set("Disabled")
+
+        # Analogue Output
+        vga_mode = settings.get("vga_mode", "rgb").strip().lower()
+        composite_sync = settings.get("composite_sync", "0").strip()
+        vga_sog = settings.get("vga_sog", "0").strip()
+
+        if vga_mode == "ypbpr":
+            self.easy_analogue_combo.set("Component (YPbPr)")
+        elif vga_mode == "svideo":
+            self.easy_analogue_combo.set("S-Video")
+        elif vga_mode == "rgb":
+            if vga_sog == "1":
+                self.easy_analogue_combo.set("RGB (PVM/BVM)")
+            elif composite_sync == "1":
+                self.easy_analogue_combo.set("RGB (Consumer TV)")
+            else:
+                self.easy_analogue_combo.set("VGA Monitor")
+        else:
+            self.easy_analogue_combo.set("RGB (Consumer TV)")
+
+        self.update_easy_mode_state()
+
+    def load_mister_ini_into_ui(self, silent=True):
+
+        if not self.connection.connected:
+            return False
+
+        ok, message = self.ensure_mister_ini_exists()
+
+        if not ok:
+            if not silent:
+                messagebox.showerror("MiSTer.ini Error", message)
+            return False
+
+        ini_text = self.connection.run_command("cat /media/fat/MiSTer.ini")
+
+        if not ini_text:
+            if not silent:
+                messagebox.showerror("MiSTer.ini Error", "Unable to read /media/fat/MiSTer.ini")
+            return False
+
+        settings = self.parse_mister_ini(ini_text)
+        self.map_ini_to_easy_mode(settings)
+        return True
+
+    def load_mister_ini_advanced(self):
+
+        if not self.connection.connected:
+            return
+
+        ini_text = self.connection.run_command("cat /media/fat/MiSTer.ini")
+
+        if not ini_text:
+            return
+
+        lines = ini_text.splitlines()
+
+        in_mister = False
+        mister_lines = []
+
+        for line in lines:
+
+            stripped = line.strip()
+
+            if stripped.startswith("[") and stripped.endswith("]"):
+
+                if stripped == "[MiSTer]":
+                    in_mister = True
+                    continue
+                else:
+                    if in_mister:
+                        break
+
+            if in_mister:
+                mister_lines.append(line)
+
+        self.advanced_text.delete("1.0", tk.END)
+        self.advanced_text.insert(tk.END, "\n".join(mister_lines))
+
+    def build_easy_mode_settings(self):
+
+        settings = {}
+
+        # HDMI Mode
+        hdmi_mode = self.easy_hdmi_mode_combo.get().strip()
+        if hdmi_mode == "Direct Video (CRT / Scaler)":
+            settings["direct_video"] = "1"
+        else:
+            settings["direct_video"] = "0"
+
+        # Resolution
+        resolution_reverse_map = {
+            "1280x720@60": "0",
+            "1024x768@60": "1",
+            "720x480@60": "2",
+            "720x576@50": "3",
+            "1280x1024@60": "4",
+            "800x600@60": "5",
+            "640x480@60": "6",
+            "1280x720@50": "7",
+            "1920x1080@60": "8",
+            "1920x1080@50": "9",
+            "1366x768@60": "10",
+            "1024x600@60": "11",
+            "1920x1440@60": "12",
+            "2048x1536@60": "13",
+            "2560x1440@60": "14",
+        }
+
+        resolution = self.easy_resolution_combo.get().strip()
+        if resolution in resolution_reverse_map:
+            settings["video_mode"] = resolution_reverse_map[resolution]
+
+        # HDMI Scaling Mode
+        scaling = self.easy_scaling_combo.get().strip()
+
+        scaling_map = {
+            "Disabled": "0",
+            "Low Latency": "1",
+            "Exact Refresh": "2"
+        }
+
+        settings["vsync_adjust"] = scaling_map.get(scaling, "1")
+
+        # HDMI Audio
+        audio = self.easy_hdmi_audio_combo.get().strip()
+        settings["hdmi_audio"] = "1" if audio == "Enabled" else "0"
+
+        # HDR
+        hdr = self.easy_hdr_combo.get().strip()
+        settings["hdr"] = "1" if hdr == "Enabled" else "0"
+
+        # HDMI Limited Range
+        limited = self.easy_hdmi_limited_combo.get().strip()
+        settings["hdmi_limited"] = "1" if limited == "Enabled" else "0"
+
+        # Analogue Output
+        analogue = self.easy_analogue_combo.get().strip()
+
+        if analogue == "RGB (Consumer TV)":
+            settings["vga_mode"] = "rgb"
+            settings["composite_sync"] = "1"
+            settings["vga_sog"] = "0"
+
+        elif analogue == "RGB (PVM/BVM)":
+            settings["vga_mode"] = "rgb"
+            settings["composite_sync"] = "0"
+            settings["vga_sog"] = "1"
+
+        elif analogue == "Component (YPbPr)":
+            settings["vga_mode"] = "ypbpr"
+            settings["composite_sync"] = "0"
+            settings["vga_sog"] = "0"
+
+        elif analogue == "S-Video":
+            settings["vga_mode"] = "svideo"
+            settings["composite_sync"] = "0"
+            settings["vga_sog"] = "0"
+
+        elif analogue == "VGA Monitor":
+            settings["vga_mode"] = "rgb"
+            settings["composite_sync"] = "0"
+            settings["vga_sog"] = "0"
+
+        return settings
+
+    def update_mister_ini_text(self, ini_text, updated_settings):
+
+        lines = ini_text.splitlines()
+        output = []
+
+        in_mister_section = False
+        mister_section_found = False
+        replaced_keys = set()
+
+        for line in lines:
+            stripped = line.strip()
+
+            if stripped.startswith("[") and stripped.endswith("]"):
+                if in_mister_section:
+                    for key, value in updated_settings.items():
+                        if key not in replaced_keys:
+                            output.append(f"{key}={value}")
+                    replaced_keys.clear()
+
+                section_name = stripped[1:-1].strip()
+                in_mister_section = (section_name == "MiSTer")
+
+                if section_name == "MiSTer":
+                    mister_section_found = True
+
+                output.append(line)
+                continue
+
+            if in_mister_section:
+                if stripped and not stripped.startswith(";") and "=" in stripped:
+                    key = stripped.split("=", 1)[0].strip()
+
+                    if key in updated_settings:
+                        output.append(f"{key}={updated_settings[key]}")
+                        replaced_keys.add(key)
+                        continue
+
+            output.append(line)
+
+        if in_mister_section:
+            for key, value in updated_settings.items():
+                if key not in replaced_keys:
+                    output.append(f"{key}={value}")
+
+        if not mister_section_found:
+            if output and output[-1].strip():
+                output.append("")
+            output.append("[MiSTer]")
+            for key, value in updated_settings.items():
+                output.append(f"{key}={value}")
+
+        return "\n".join(output) + "\n"
+
+    def enforce_mister_settings_retention(self, device_name):
+
+        retention = self.config_data.get("mister_settings_retention", 10)
+
+        device_path = os.path.join(MISTER_SETTINGS_ROOT, device_name)
+
+        if not os.path.exists(device_path):
+            return
+
+        backups = sorted([
+            f for f in os.listdir(device_path)
+            if os.path.isfile(os.path.join(device_path, f))
+        ])
+
+        while len(backups) > retention:
+            oldest = backups.pop(0)
+            try:
+                os.remove(os.path.join(device_path, oldest))
+            except Exception:
+                pass
+
+    def backup_mister_settings(self, silent=False):
+
+        if not self.connection.connected:
+            if not silent:
+                messagebox.showerror("Error", "Connect to a MiSTer first.")
+            return False
+
+        device_name = self.get_mister_settings_device_name()
+
+        if not device_name:
+            if not silent:
+                messagebox.showerror("Error", "No device name or IP available.")
+            return False
+
+        device_path = os.path.join(MISTER_SETTINGS_ROOT, device_name)
+        os.makedirs(device_path, exist_ok=True)
+
+        timestamp = time.strftime("%Y-%m-%d_%H-%M-%S")
+        backup_file = os.path.join(device_path, f"MiSTer.ini.{timestamp}.bak")
+
+        try:
+            sftp = self.connection.client.open_sftp()
+            sftp.get("/media/fat/MiSTer.ini", backup_file)
+            sftp.close()
+
+            self.enforce_mister_settings_retention(device_name)
+
+            if not silent:
+                messagebox.showinfo(
+                    "Backup Created",
+                    f"MiSTer.ini backup created successfully.\n\n{backup_file}"
+                )
+
+            return True
+
+        except Exception as e:
+            if not silent:
+                messagebox.showerror(
+                    "Backup Failed",
+                    f"Unable to create MiSTer.ini backup:\n{str(e)}"
+                )
+            return False
+
+    def save_mister_settings(self):
+
+        if not self.connection.connected:
+            messagebox.showerror("Error", "Connect to a MiSTer first.")
+            return
+
+        ok, message = self.ensure_mister_ini_exists()
+        if not ok:
+            messagebox.showerror("MiSTer.ini Error", message)
+            return
+
+        choice = messagebox.askyesnocancel(
+            "Backup Before Apply",
+            "Do you want to create a backup of the current MiSTer.ini before applying settings?\n\n"
+            "Yes = Continue with Backup\n"
+            "No = Continue Without Backup\n"
+            "Cancel = Cancel"
+        )
+
+        if choice is None:
+            return
+
+        if choice is True:
+            backup_ok = self.backup_mister_settings(silent=True)
+            if not backup_ok:
+                proceed = messagebox.askyesno(
+                    "Backup Failed",
+                    "Unable to create backup before applying settings.\n\nContinue anyway?"
+                )
+                if not proceed:
+                    return
+
+        try:
+            ini_text = self.connection.run_command("cat /media/fat/MiSTer.ini")
+
+            if not ini_text:
+                messagebox.showerror("MiSTer.ini Error", "Unable to read /media/fat/MiSTer.ini")
+                return
+
+            mode = self.mister_settings_mode_var.get()
+
+            if mode == "easy":
+
+                updated_settings = self.build_easy_mode_settings()
+                new_ini_text = self.update_mister_ini_text(ini_text, updated_settings)
+
+            else:
+
+                advanced_text = self.advanced_text.get("1.0", tk.END).strip()
+
+                new_ini_text = self.update_mister_ini_text(
+                    ini_text,
+                    {}
+                )
+
+                # Replace MiSTer section with advanced content
+                lines = new_ini_text.splitlines()
+
+                output = []
+                in_mister = False
+                replaced = False
+
+                for line in lines:
+
+                    stripped = line.strip()
+
+                    if stripped == "[MiSTer]":
+                        output.append(line)
+                        output.append(advanced_text)
+                        in_mister = True
+                        replaced = True
+                        continue
+
+                    if in_mister and stripped.startswith("[") and stripped.endswith("]"):
+                        in_mister = False
+
+                    if not in_mister:
+                        output.append(line)
+
+                if not replaced:
+                    output.append("")
+                    output.append("[MiSTer]")
+                    output.append(advanced_text)
+
+                new_ini_text = "\n".join(output) + "\n"
+
+            sftp = self.connection.client.open_sftp()
+            with sftp.open("/media/fat/MiSTer.ini", "w") as f:
+                f.write(new_ini_text)
+            sftp.close()
+
+            self.load_mister_ini_into_ui(silent=True)
+
+            reboot_now = messagebox.askyesno(
+                "Settings Applied",
+                "MiSTer settings were applied successfully.\n\nA reboot is recommended.\n\nReboot now?"
+            )
+
+            if reboot_now:
+                self.reboot()
+
+        except Exception as e:
+            messagebox.showerror(
+                "Save Failed",
+                f"Unable to save MiSTer settings:\n{str(e)}"
+            )
+
+    def restore_default_mister_settings(self):
+
+        if not self.connection.connected:
+            messagebox.showerror("Error", "Connect to a MiSTer first.")
+            return
+
+        confirm = messagebox.askyesno(
+            "Restore Default Settings",
+            "This will replace the current MiSTer.ini with the default settings from MiSTer_example.ini.\n\nContinue?"
+        )
+
+        if not confirm:
+            return
+
+        example_exists = self.connection.run_command(
+            'test -f /media/fat/MiSTer_example.ini && echo EXISTS'
+        )
+
+        if "EXISTS" not in (example_exists or ""):
+            messagebox.showerror(
+                "Restore Defaults Failed",
+                "MiSTer_example.ini was not found on the MiSTer."
+            )
+            return
+
+        choice = messagebox.askyesnocancel(
+            "Backup Current Settings",
+            "Do you want to create a backup of the current MiSTer.ini before restoring defaults?\n\n"
+            "Yes = Continue with Backup\n"
+            "No = Continue Without Backup\n"
+            "Cancel = Cancel"
+        )
+
+        if choice is None:
+            return
+
+        if choice is True:
+            backup_ok = self.backup_mister_settings(silent=True)
+            if not backup_ok:
+                proceed = messagebox.askyesno(
+                    "Backup Failed",
+                    "Unable to create backup before restoring defaults.\n\nContinue anyway?"
+                )
+                if not proceed:
+                    return
+
+        result = self.connection.run_command(
+            'cp /media/fat/MiSTer_example.ini /media/fat/MiSTer.ini && echo RESTORED'
+        )
+
+        if "RESTORED" not in (result or ""):
+            messagebox.showerror(
+                "Restore Defaults Failed",
+                "Unable to restore MiSTer.ini from MiSTer_example.ini."
+            )
+            return
+
+        self.load_mister_ini_into_ui(silent=True)
+
+        reboot_now = messagebox.askyesno(
+            "Defaults Restored",
+            "Default MiSTer settings were restored successfully.\n\nA reboot is recommended.\n\nReboot now?"
+        )
+
+        if reboot_now:
+            self.reboot()
+
     def show_savemanager_log(self):
 
         if not self.savemanager_log_frame.winfo_ismapped():
@@ -2850,6 +3905,143 @@ class MiSTerApp:
 
         elif sys.platform == "darwin":
             subprocess.Popen(["open", path])
+
+    def open_mister_settings_folder(self):
+
+        path = self.get_mister_settings_device_path()
+
+        os.makedirs(path, exist_ok=True)
+
+        if sys.platform.startswith("win"):
+            subprocess.Popen(["explorer", path])
+
+        elif sys.platform.startswith("linux"):
+            env = os.environ.copy()
+            subprocess.Popen(
+                ["gio", "open", path],
+                env=env,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", path])
+
+    def restore_mister_settings(self):
+
+        if not self.connection.connected:
+            messagebox.showerror("Error", "Connect to a MiSTer first.")
+            return
+
+        device_name = self.get_mister_settings_device_name()
+
+        if not device_name:
+            messagebox.showerror("Error", "No device name or IP available.")
+            return
+
+        device_path = os.path.join(MISTER_SETTINGS_ROOT, device_name)
+
+        if not os.path.exists(device_path):
+            messagebox.showerror("Error", "No MiSTer.ini backups found for this device.")
+            return
+
+        backups = sorted([
+            f for f in os.listdir(device_path)
+            if os.path.isfile(os.path.join(device_path, f))
+        ], reverse=True)
+
+        if not backups:
+            messagebox.showerror("Error", "No MiSTer.ini backups found for this device.")
+            return
+
+        popup = tk.Toplevel(self.root)
+        popup.title("Restore MiSTer Settings Backup")
+        popup.geometry("400x260")
+        popup.resizable(False, False)
+
+        frame = ttk.Frame(popup, padding=15)
+        frame.pack(fill="both", expand=True)
+
+        ttk.Label(
+            frame,
+            text="Select a MiSTer.ini backup to restore to the currently connected device.",
+            justify="center",
+            wraplength=340
+        ).pack(pady=(0, 10))
+
+        ttk.Label(frame, text="Backup Version").pack(anchor="w")
+        backup_combo = ttk.Combobox(frame, values=backups, state="readonly")
+        backup_combo.pack(fill="x", pady=5)
+
+        if backups:
+            backup_combo.current(0)
+
+        backup_before_restore = tk.BooleanVar(value=True)
+
+        ttk.Checkbutton(
+            frame,
+            text="Backup current MiSTer.ini before restore",
+            variable=backup_before_restore
+        ).pack(anchor="w", pady=10)
+
+        def run_restore():
+
+            backup_name = backup_combo.get().strip()
+
+            if not backup_name:
+                messagebox.showerror("Error", "Select a backup.")
+                return
+
+            backup_path = os.path.join(device_path, backup_name)
+
+            try:
+                if backup_before_restore.get():
+                    ok = self.backup_mister_settings(silent=True)
+                    if not ok:
+                        proceed = messagebox.askyesno(
+                            "Backup Failed",
+                            "Unable to create a safety backup before restore.\n\nContinue anyway?"
+                        )
+                        if not proceed:
+                            return
+
+                sftp = self.connection.client.open_sftp()
+                sftp.put(backup_path, "/media/fat/MiSTer.ini")
+                sftp.close()
+
+                popup.destroy()
+                self.load_mister_ini_into_ui(silent=True)
+
+                reboot_now = messagebox.askyesno(
+                    "Restore Complete",
+                    "MiSTer.ini backup restored successfully.\n\nA reboot is recommended.\n\nReboot now?"
+                )
+
+                if reboot_now:
+                    self.reboot()
+
+            except Exception as e:
+                messagebox.showerror(
+                    "Restore Failed",
+                    f"Unable to restore MiSTer.ini backup:\n{str(e)}"
+                )
+
+        button_row = ttk.Frame(frame)
+        button_row.pack(pady=12)
+
+        ttk.Button(
+            button_row,
+            text="Restore",
+            width=12,
+            command=run_restore
+        ).pack(side="left", padx=6)
+
+        ttk.Button(
+            button_row,
+            text="Cancel",
+            width=12,
+            command=popup.destroy
+        ).pack(side="left", padx=6)
 
 if __name__ == "__main__":
     root = tk.Tk()
