@@ -41,6 +41,21 @@ MiSTer Companion uses a **tabbed interface** to organize functionality.
 - Open the MiSTer network share directly in the system file manager
 - Reboot MiSTer remotely
 
+### MiSTerSettings
+- Easy Mode for simplified configuration of common MiSTer.ini settings
+- Advanced Mode editor for the [MiSTer] section of MiSTer.ini
+- Switch between Easy Mode and Advanced Mode
+- Automatic backups before applying configuration changes
+- Restore MiSTer.ini from backups or defaults
+- Configure HDMI Mode (HD Output or Direct Video)
+- Select HDMI video resolution
+- Configure HDMI Sync Mode (vsync_adjust)
+- Enable or disable HDMI Audio (DVI mode)
+- Enable or disable HDR output
+- Enable or disable HDMI Limited Range
+- Configure analogue video output (RGB, Component, S-Video, VGA)
+- Automatically disable unsupported settings when Direct Video is selected
+
 ### Scripts
 - Install and run **update_all**
 - Install **Zaparoo**
