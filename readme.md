@@ -57,10 +57,6 @@ MiSTer Companion uses a **tabbed interface** to organize functionality.
 - Return to **MiSTer home**
 
 ### SaveManager
-Backup and synchronize saves between multiple MiSTer systems.
-
-Features:
-
 - Create **timestamped backups** of MiSTer saves
 - Optional **savestate backups**
 - **Automatic backup retention** per device
