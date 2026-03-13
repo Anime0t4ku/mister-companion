@@ -1640,14 +1640,21 @@ class MiSTerApp:
 
         else:
 
-            settings = self.build_easy_mode_settings()
+            if self.connection.connected:
 
-            lines = []
-            for k, v in settings.items():
-                lines.append(f"{k}={v}")
+                # Load full MiSTer.ini first
+                if not self.advanced_text.get("1.0", "end").strip():
+                    self.load_mister_ini_advanced()
 
-            self.advanced_text.delete("1.0", tk.END)
-            self.advanced_text.insert(tk.END, "\n".join(lines))
+                # Apply Easy Mode changes to the full file
+                settings = self.build_easy_mode_settings()
+
+                current_text = self.advanced_text.get("1.0", "end")
+
+                updated_text = self.update_mister_ini_text(current_text, settings)
+
+                self.advanced_text.delete("1.0", tk.END)
+                self.advanced_text.insert("1.0", updated_text)
 
             self.easy_frame.pack_forget()
             self.advanced_frame.pack(fill="both", expand=True)
@@ -2994,29 +3001,8 @@ class MiSTerApp:
         if not ini_text:
             return
 
-        lines = ini_text.splitlines()
-
-        in_mister = False
-        mister_lines = []
-
-        for line in lines:
-
-            stripped = line.strip()
-
-            if stripped.startswith("[") and stripped.endswith("]"):
-
-                if stripped == "[MiSTer]":
-                    in_mister = True
-                    continue
-                else:
-                    if in_mister:
-                        break
-
-            if in_mister:
-                mister_lines.append(line)
-
         self.advanced_text.delete("1.0", tk.END)
-        self.advanced_text.insert(tk.END, "\n".join(mister_lines))
+        self.advanced_text.insert("1.0", ini_text)
 
     def build_easy_mode_settings(self):
 
@@ -3115,9 +3101,12 @@ class MiSTerApp:
         replaced_keys = set()
 
         for line in lines:
+
             stripped = line.strip()
 
+            # Detect section
             if stripped.startswith("[") and stripped.endswith("]"):
+
                 if in_mister_section:
                     for key, value in updated_settings.items():
                         if key not in replaced_keys:
@@ -3134,8 +3123,11 @@ class MiSTerApp:
                 continue
 
             if in_mister_section:
-                if stripped and not stripped.startswith(";") and "=" in stripped:
-                    key = stripped.split("=", 1)[0].strip()
+
+                clean = stripped.lstrip(";").strip()
+
+                if "=" in clean:
+                    key = clean.split("=", 1)[0].strip()
 
                     if key in updated_settings:
                         output.append(f"{key}={updated_settings[key]}")
@@ -3314,6 +3306,7 @@ class MiSTerApp:
             sftp.close()
 
             self.load_mister_ini_into_ui(silent=True)
+            self.load_mister_ini_advanced()
 
             reboot_now = messagebox.askyesno(
                 "Settings Applied",
