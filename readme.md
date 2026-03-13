@@ -8,6 +8,7 @@ Supports:
 
 - Device management (save multiple MiSTer systems)
 - Storage usage monitoring (SD and USB)
+- Edit MiSTer.ini in Easy Mode (Presets) and Advanced Mode (Manual)
 - update_all installation and execution
 - Zaparoo installation and setup
 - ZapScripts launcher via Zaparoo Core API
