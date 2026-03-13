@@ -1,6 +1,6 @@
 # MiSTer Companion
 
-MiSTer Companion is a lightweight Windows GUI utility for managing and maintaining your MiSTer FPGA system over SSH.
+MiSTer Companion is a lightweight cross-platform GUI utility for managing and maintaining your MiSTer FPGA system over SSH.
 
 It provides a simple interface for common maintenance tasks without needing to use a terminal.
 
@@ -14,12 +14,12 @@ Supports:
 - SD migration tool (migrate_sd) installer
 - cifs_mount installer and config
 - SMB enable / disable
-- Open MiSTer share in Windows Explorer
+- Open MiSTer share directly in the system file manager
 - Remote reboot
 - SSH console output for script execution
 - Save Manager to backup and sync saves between multiple MiSTer devices
 
-Clean, safe, and easy MiSTer management from Windows.
+Clean, safe, and easy MiSTer management from Windows and Linux.
 
 ![Screenshot](assets/screenshot.png)
 
@@ -38,7 +38,7 @@ MiSTer Companion uses a **tabbed interface** to organize functionality.
 - View **SD card storage usage**
 - Detect **USB storage usage**
 - Enable or disable **SMB file sharing**
-- Open the MiSTer network share directly in Windows Explorer
+- Open the MiSTer network share directly in the system file manager
 - Reboot MiSTer remotely
 
 ### Scripts
@@ -56,6 +56,16 @@ MiSTer Companion uses a **tabbed interface** to organize functionality.
 - Cycle **wallpaper**
 - Return to **MiSTer home**
 
+### SaveManager
+- Create **timestamped backups** of MiSTer saves
+- Optional **savestate backups**
+- **Automatic backup retention** per device
+- Restore backups to any connected MiSTer
+- **Sync saves between multiple MiSTer systems**
+- Local **Sync Folder** used to merge the newest save files
+- Safety backup option before restore or sync
+- Built-in **status log** for operations
+
 ---
 
 ## Requirements
@@ -63,15 +73,13 @@ MiSTer Companion uses a **tabbed interface** to organize functionality.
 Before using MiSTer Companion, make sure:
 
 - Your MiSTer SD card is flashed with **MiSTerFusion**
-- You used **Rufus** (or similar) to flash the image
+- You used **Rufus**, **balenaEtcher**, or a similar flashing tool
 - Your MiSTer is connected to your local network
 - Your MiSTer has an active internet connection
 
 Default credentials are:
 
-```
-root / 1
-```
+    root / 1
 
 (unless you changed them)
 
@@ -81,15 +89,39 @@ https://github.com/MiSTer-devel/mr-fusion/releases
 Rufus download:  
 https://rufus.ie/
 
+balenaEtcher download:  
+https://etcher.balena.io/
+
 ---
 
-## Download (Windows)
+## Download
 
-Download the latest automatic build:
+Pre-built binaries are generated automatically via GitHub Actions.
 
 | Platform | Status | Download |
 |----------|--------|----------|
-| Windows | ![Build Status](https://github.com/Anime0t4ku/mister-companion/actions/workflows/build.yaml/badge.svg) | [Download Pre-release](https://github.com/Anime0t4ku/mister-companion/releases/download/Pre-release/MiSTer-Companion-Windows-x86_64.zip) |
+| Windows | ![Build Status](https://github.com/Anime0t4ku/mister-companion/actions/workflows/build.yaml/badge.svg) | [Download Windows Build](https://github.com/Anime0t4ku/mister-companion/releases/download/Pre-release/MiSTer-Companion-Windows-x86_64.zip) |
+| Linux | ![Build Status](https://github.com/Anime0t4ku/mister-companion/actions/workflows/build.yaml/badge.svg) | [Download Linux Build](https://github.com/Anime0t4ku/mister-companion/releases/download/Pre-release/MiSTer-Companion-Linux-x86_64.zip) |
+
+---
+
+## Linux Notes
+
+Opening the MiSTer network share requires **GVFS SMB support**.
+
+Most desktop distributions already include this, but if needed install:
+
+Ubuntu / Debian / Linux Mint
+
+    sudo apt install gvfs-backends
+
+Fedora
+
+    sudo dnf install gvfs-smb
+
+Arch Linux
+
+    sudo pacman -S gvfs gvfs-smb
 
 ---
 
@@ -105,15 +137,11 @@ If running the script directly:
 
 Install dependencies:
 
-```
-pip install paramiko requests websocket-client
-```
+    pip install paramiko requests websocket-client
 
 Run with:
 
-```
-python mister-companion.py
-```
+    python mister-companion.py
 
 ---
 

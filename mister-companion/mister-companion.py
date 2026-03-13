@@ -2644,34 +2644,45 @@ class MiSTerApp:
         self.check_services_status()
 
     def open_explorer(self):
+
         if not self.connection.ip:
             return
 
         ip = self.connection.ip
 
         try:
+
             if sys.platform.startswith("win"):
                 subprocess.Popen(["explorer", f"\\\\{ip}\\"])
 
-
-
             elif sys.platform.startswith("linux"):
 
-                subprocess.Popen(
+                env = os.environ.copy()
 
-                    ["sh", "-c", f'xdg-open "smb://{ip}/"'],
-
+                # Force mount first
+                subprocess.run(
+                    ["gio", "mount", f"smb://{ip}/"],
+                    env=env,
                     stdout=subprocess.DEVNULL,
-
                     stderr=subprocess.DEVNULL
+                )
 
+                # Then open
+                subprocess.Popen(
+                    ["gio", "open", f"smb://{ip}/"],
+                    env=env,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
                 )
 
             elif sys.platform == "darwin":
                 subprocess.Popen(["open", f"smb://{ip}/"])
 
         except Exception as e:
-            messagebox.showerror("Error", f"Unable to open file share:\n{str(e)}")
+            messagebox.showerror(
+                "SMB Error",
+                f"Unable to open SMB share:\n\n{str(e)}"
+            )
 
     def reboot(self):
 
@@ -3719,7 +3730,7 @@ class MiSTerApp:
 
         popup = tk.Toplevel(self.root)
         popup.title("Sync Saves")
-        popup.geometry("420x220")
+        popup.geometry("420x260")
         popup.resizable(False, False)
 
         frame = ttk.Frame(popup, padding=15)
