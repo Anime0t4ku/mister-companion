@@ -2926,9 +2926,10 @@ class MiSTerApp:
 
         self.easy_scaling_combo.set(scaling_map.get(vsync, "Low Latency"))
 
-        # HDMI Audio
-        audio = settings.get("hdmi_audio", "1").strip()
-        if audio == "0":
+        # HDMI Audio (DVI Mode)
+        dvi = settings.get("dvi_mode", "0").strip()
+
+        if dvi == "1":
             self.easy_hdmi_audio_combo.set("Disabled (DVI Mode)")
         else:
             self.easy_hdmi_audio_combo.set("Enabled")
@@ -3049,9 +3050,13 @@ class MiSTerApp:
 
         settings["vsync_adjust"] = scaling_map.get(scaling, "1")
 
-        # HDMI Audio
+        # HDMI Audio (DVI Mode)
         audio = self.easy_hdmi_audio_combo.get().strip()
-        settings["hdmi_audio"] = "1" if audio == "Enabled" else "0"
+
+        if audio == "Enabled":
+            settings["dvi_mode"] = "0"
+        else:
+            settings["dvi_mode"] = "1"
 
         # HDR
         hdr = self.easy_hdr_combo.get().strip()
@@ -3094,32 +3099,29 @@ class MiSTerApp:
     def update_mister_ini_text(self, ini_text, updated_settings):
 
         lines = ini_text.splitlines()
-        output = []
+        new_lines = []
 
         in_mister_section = False
-        mister_section_found = False
         replaced_keys = set()
 
         for line in lines:
 
             stripped = line.strip()
 
-            # Detect section
+            # Detect section start
             if stripped.startswith("[") and stripped.endswith("]"):
 
-                if in_mister_section:
+                section_name = stripped[1:-1].strip()
+
+                # Leaving MiSTer section
+                if in_mister_section and section_name != "MiSTer":
                     for key, value in updated_settings.items():
                         if key not in replaced_keys:
-                            output.append(f"{key}={value}")
-                    replaced_keys.clear()
+                            new_lines.append(f"{key}={value}")
 
-                section_name = stripped[1:-1].strip()
                 in_mister_section = (section_name == "MiSTer")
 
-                if section_name == "MiSTer":
-                    mister_section_found = True
-
-                output.append(line)
+                new_lines.append(line)
                 continue
 
             if in_mister_section:
@@ -3127,28 +3129,23 @@ class MiSTerApp:
                 clean = stripped.lstrip(";").strip()
 
                 if "=" in clean:
+
                     key = clean.split("=", 1)[0].strip()
 
                     if key in updated_settings:
-                        output.append(f"{key}={updated_settings[key]}")
+                        new_lines.append(f"{key}={updated_settings[key]}")
                         replaced_keys.add(key)
                         continue
 
-            output.append(line)
+            new_lines.append(line)
 
+        # If MiSTer section was at end of file
         if in_mister_section:
             for key, value in updated_settings.items():
                 if key not in replaced_keys:
-                    output.append(f"{key}={value}")
+                    new_lines.append(f"{key}={value}")
 
-        if not mister_section_found:
-            if output and output[-1].strip():
-                output.append("")
-            output.append("[MiSTer]")
-            for key, value in updated_settings.items():
-                output.append(f"{key}={value}")
-
-        return "\n".join(output) + "\n"
+        return "\n".join(new_lines) + "\n"
 
     def enforce_mister_settings_retention(self, device_name):
 
