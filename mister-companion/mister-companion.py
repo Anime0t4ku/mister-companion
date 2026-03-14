@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog
 import paramiko
 import requests
+import psutil
 from websocket import create_connection
 import threading
 import subprocess
@@ -136,7 +137,7 @@ class MiSTerApp:
 
     def __init__(self, root):
         self.root = root
-        self.root.title("MiSTer Companion v2.5.0 by Anime0t4ku")
+        self.root.title("MiSTer Companion v2.5.1 by Anime0t4ku")
         self.root.geometry("900x760")
 
         # ===== App Icon =====
@@ -369,6 +370,12 @@ class MiSTerApp:
 
         self.password_entry.bind("<FocusIn>", clear_default_password)
         self.password_entry.bind("<FocusOut>", restore_default_password)
+
+        self.scan_button = ttk.Button(conn_frame,
+                                      text="Scan Network",
+                                      width=14,
+                                      command=self.open_network_scanner)
+        self.scan_button.pack(side="left", padx=5)
 
         self.connect_button = ttk.Button(conn_frame,
                                          text="Connect",
@@ -716,7 +723,7 @@ class MiSTerApp:
 
         self.backup_button = ttk.Button(
             button_row,
-            text="Backup Device",
+            text="Backup Saves",
             width=18,
             command=self.backup_saves
         )
@@ -1306,9 +1313,10 @@ class MiSTerApp:
     # =========================
     # Core Logic
     # =========================
+    
     def set_mister_settings_enabled(self, enabled):
 
-        state = "readonly" if enabled else "disabled"
+        combo_state = "readonly" if enabled else "disabled"
         radio_state = "normal" if enabled else "disabled"
 
         # Mode selector
@@ -1316,14 +1324,19 @@ class MiSTerApp:
         self.advanced_mode_radio.config(state=radio_state)
 
         # Easy mode controls
-        self.easy_hdmi_mode_combo.config(state=state)
+        self.easy_hdmi_mode_combo.config(state=combo_state)
+        self.easy_resolution_combo.config(state=combo_state if enabled else "disabled")
+        self.easy_scaling_combo.config(state=combo_state)
+        self.easy_hdmi_audio_combo.config(state=combo_state)
+        self.easy_hdr_combo.config(state=combo_state)
+        self.easy_hdmi_limited_combo.config(state=combo_state)
+        self.easy_analogue_combo.config(state=combo_state)
 
+        # Advanced editor
         if enabled:
-            self.update_easy_mode_state()
+            self.advanced_text.config(state="normal")
         else:
-            self.easy_resolution_combo.config(state="disabled")
-
-        self.easy_analogue_combo.config(state=state)
+            self.advanced_text.config(state="disabled")
 
         # Grey/black text depending on connection
         if enabled:
@@ -1332,6 +1345,10 @@ class MiSTerApp:
         else:
             self.mister_settings_info.config(foreground="gray")
             self.mister_settings_retention_label.config(foreground="gray")
+
+        # Apply HDMI mode logic
+        if enabled:
+            self.update_easy_mode_state()
 
     def populate_zapscripts(self):
 
@@ -2691,6 +2708,166 @@ class MiSTerApp:
                 f"Unable to open SMB share:\n\n{str(e)}"
             )
 
+    def open_network_scanner(self):
+
+        popup = tk.Toplevel(self.root)
+        popup.title("Scan Network for MiSTer")
+        popup.geometry("420x360")
+        popup.resizable(False, False)
+
+        frame = ttk.Frame(popup, padding=10)
+        frame.pack(fill="both", expand=True)
+
+        listbox = tk.Listbox(frame)
+        listbox.pack(fill="both", expand=True, pady=10)
+
+        status = ttk.Label(frame, text="Idle")
+        status.pack(pady=(0, 10))
+
+        select_button = ttk.Button(frame, text="Use Selected IP", state="disabled")
+        select_button.pack()
+
+        found_ips = []
+
+        # ---------------------------------
+
+        def get_local_subnets():
+
+            subnets = []
+            interfaces = psutil.net_if_addrs()
+
+            for interface_name, addresses in interfaces.items():
+
+                if any(v in interface_name.lower() for v in
+                       ["vpn", "docker", "virtual", "vmware", "loopback", "hamachi", "tailscale"]):
+                    continue
+
+                for addr in addresses:
+                    if addr.family == socket.AF_INET:
+
+                        ip = addr.address
+
+                        if ip.startswith("127."):
+                            continue
+
+                        subnet = ".".join(ip.split(".")[:3])
+                        subnets.append(subnet)
+
+            return list(set(subnets))
+
+        # ---------------------------------
+
+        def is_port_open(ip, port=22):
+
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(0.3)
+                result = sock.connect_ex((ip, port))
+                sock.close()
+                return result == 0
+            except:
+                return False
+
+        # ---------------------------------
+
+        def verify_mister(ip):
+
+            try:
+                ssh = paramiko.SSHClient()
+                ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+                ssh.connect(ip, username="root", password="1", timeout=0.3)
+
+                stdin, stdout, stderr = ssh.exec_command("ls /media/fat")
+                result = stdout.read().decode()
+
+                ssh.close()
+
+                if result:
+                    def add_result():
+                        listbox.insert(tk.END, ip)
+                        found_ips.append(ip)
+
+                    self.root.after(0, add_result)
+
+            except:
+                pass
+
+        # ---------------------------------
+
+        def check_device(ip):
+
+            if is_port_open(ip):
+                verify_mister(ip)
+
+        # ---------------------------------
+
+        def scan_network():
+
+            subnets = get_local_subnets()
+
+            if not subnets:
+                self.root.after(0, lambda: status.config(text="No valid network detected"))
+                return
+
+            threads = []
+
+            for subnet in subnets:
+
+                self.root.after(0, lambda s=subnet: status.config(text=f"Scanning {s}.0/24"))
+
+                for i in range(1, 255):
+                    ip = f"{subnet}.{i}"
+
+                    t = threading.Thread(target=check_device, args=(ip,))
+                    t.daemon = True
+                    t.start()
+
+                    threads.append(t)
+
+            for t in threads:
+                t.join()
+
+            self.root.after(0, lambda: status.config(text="Scan complete"))
+
+        # ---------------------------------
+
+        def start_scan():
+
+            listbox.delete(0, tk.END)
+            status.config(text="Scanning network...")
+
+            threading.Thread(target=scan_network, daemon=True).start()
+
+        # ---------------------------------
+
+        def on_select(event=None):
+
+            if not listbox.curselection():
+                return
+
+            select_button.config(state="normal")
+
+        listbox.bind("<<ListboxSelect>>", on_select)
+
+        # ---------------------------------
+
+        def use_selected():
+
+            if not listbox.curselection():
+                return
+
+            ip = listbox.get(listbox.curselection())
+
+            self.ip_entry.delete(0, tk.END)
+            self.ip_entry.insert(0, ip)
+
+            popup.destroy()
+
+        select_button.config(command=use_selected)
+
+        popup.after(100, start_scan)
+
     def reboot(self):
 
         if not self.connection.connected:
@@ -3693,7 +3870,7 @@ class MiSTerApp:
 
             threading.Thread(target=worker, daemon=True).start()
 
-        # ===== Restore popup buttons (THIS MUST BE OUTSIDE run_restore) =====
+        # ===== Restore popup buttons  =====
 
         button_row = ttk.Frame(frame)
         button_row.pack(pady=12)
