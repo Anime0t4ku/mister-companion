@@ -107,10 +107,10 @@ jobs:
           cd dist
           zip ../MiSTer-Companion-Windows-x86_64.zip MiSTer-Companion.exe
 
-      - name: Zip Linux Build
+      - name: Package Linux Build (.tar.gz)
         run: |
           cd dist
-          zip ../MiSTer-Companion-Linux-x86_64.zip MiSTer-Companion
+          tar -czvf ../MiSTer-Companion-Linux-x86_64.tar.gz MiSTer-Companion
 
       - name: Update Git Tag
         run: |
@@ -126,4 +126,4 @@ jobs:
           tag: Pre-release
           artifacts: |
             MiSTer-Companion-Windows-x86_64.zip
-            MiSTer-Companion-Linux-x86_64.zip
+            MiSTer-Companion-Linux-x86_64.tar.gz
