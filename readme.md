@@ -150,10 +150,11 @@ If running the script directly:
 - paramiko
 - requests
 - websocket-client
+- psutil
 
 Install dependencies:
 
-    pip install paramiko requests websocket-client
+    pip install paramiko requests websocket-client psutil
 
 Run with:
 
