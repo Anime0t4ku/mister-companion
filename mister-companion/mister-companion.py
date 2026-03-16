@@ -137,7 +137,7 @@ class MiSTerApp:
 
     def __init__(self, root):
         self.root = root
-        self.root.title("MiSTer Companion v2.5.1 by Anime0t4ku")
+        self.root.title("MiSTer Companion v2.6.0 by Anime0t4ku")
         self.root.geometry("900x760")
 
         # ===== App Icon =====
@@ -294,6 +294,7 @@ class MiSTerApp:
         self.scripts_tab = ttk.Frame(self.notebook)
         self.zapscripts_tab = ttk.Frame(self.notebook)
         self.savemanager_tab = ttk.Frame(self.notebook)
+        self.wallpapers_tab = ttk.Frame(self.notebook)
 
         self.notebook.add(self.connection_tab, text="Connection")
         self.notebook.add(self.device_tab, text="Device")
@@ -301,6 +302,7 @@ class MiSTerApp:
         self.notebook.add(self.scripts_tab, text="Scripts")
         self.notebook.add(self.zapscripts_tab, text="ZapScripts")
         self.notebook.add(self.savemanager_tab, text="SaveManager")
+        self.notebook.add(self.wallpapers_tab, text="Wallpapers")
 
         self.notebook.bind("<<NotebookTabChanged>>", self.on_tab_changed)
 
@@ -589,6 +591,18 @@ class MiSTerApp:
         )
         self.uninstall_cifs_button.pack(side="left", padx=6)
 
+        # ===== Open Scripts Folder Button =====
+
+        self.open_scripts_folder_button = ttk.Button(
+            self.scripts_tab,
+            text="Open Scripts Folder",
+            width=22,
+            command=self.open_scripts_folder,
+            state="disabled"
+        )
+
+        self.open_scripts_folder_button.pack(pady=(10, 5))
+
         # ===== SSH Output =====
 
         self.console_frame = ttk.LabelFrame(self.scripts_tab, text="SSH Output")
@@ -780,6 +794,94 @@ class MiSTerApp:
         self.savemanager_log = tk.Text(self.savemanager_log_frame, height=10)
         self.savemanager_log.pack(fill="both", expand=True, padx=10, pady=10)
 
+        # ===== Wallpapers =====
+
+        wallpapers_frame = ttk.Frame(self.wallpapers_tab)
+        wallpapers_frame.pack(fill="both", expand=True, padx=20, pady=20)
+
+        # ===== Ranny Snice Wallpapers =====
+
+        ranny_frame = ttk.LabelFrame(
+            wallpapers_frame,
+            text="Ranny Snice Wallpapers"
+        )
+        ranny_frame.pack(fill="x", pady=10)
+
+        ranny_buttons = ttk.Frame(ranny_frame)
+        ranny_buttons.pack(pady=15)
+
+        self.install_169_wallpapers_button = ttk.Button(
+            ranny_buttons,
+            text="Install 16:9 Wallpapers",
+            width=22,
+            command=self.install_169_wallpapers,
+            state="disabled"
+        )
+        self.install_169_wallpapers_button.pack(side="left", padx=8)
+
+        self.install_43_wallpapers_button = ttk.Button(
+            ranny_buttons,
+            text="Install 4:3 Wallpapers",
+            width=22,
+            command=self.install_43_wallpapers,
+            state="disabled"
+        )
+        self.install_43_wallpapers_button.pack(side="left", padx=8)
+
+        self.remove_wallpapers_button = ttk.Button(
+            ranny_buttons,
+            text="Remove Installed Wallpapers",
+            width=26,
+            command=self.remove_ranny_wallpapers,
+            state="disabled"
+        )
+        self.remove_wallpapers_button.pack(side="left", padx=8)
+        # Open wallpaper folder button (below wallpaper sources)
+
+        self.open_wallpaper_folder_button = ttk.Button(
+            wallpapers_frame,
+            text="Open Wallpaper Folder",
+            width=24,
+            command=self.open_wallpaper_folder,
+            state="disabled"
+        )
+        self.open_wallpaper_folder_button.pack(pady=(12, 10))
+
+        # ===== Wallpapers Console =====
+
+        self.wallpaper_console_visible = False
+
+        self.wallpaper_console_frame = ttk.LabelFrame(
+            wallpapers_frame,
+            text="SSH Output"
+        )
+
+        console_header = ttk.Frame(self.wallpaper_console_frame)
+        console_header.pack(fill="x")
+
+        ttk.Button(
+            console_header,
+            text="Hide",
+            width=8,
+            command=self.toggle_wallpaper_console
+        ).pack(side="right", padx=5)
+
+        console_container = ttk.Frame(self.wallpaper_console_frame)
+        console_container.pack(fill="both", padx=20, pady=10)
+
+        scrollbar = ttk.Scrollbar(console_container)
+        scrollbar.pack(side="right", fill="y")
+
+        self.wallpaper_console = tk.Text(
+            console_container,
+            height=12,
+            yscrollcommand=scrollbar.set
+        )
+
+        self.wallpaper_console.pack(side="left", fill="both", expand=True)
+
+        scrollbar.config(command=self.wallpaper_console.yview)
+
         # ===== MiSTer Settings =====
 
         mister_settings_frame = ttk.Frame(self.mister_settings_tab)
@@ -969,6 +1071,22 @@ class MiSTerApp:
 
         self.easy_analogue_combo.grid(row=7, column=1, sticky="w", padx=5, pady=5)
         self.easy_analogue_combo.set("RGB (Consumer TV)")
+
+        # MiSTer Logo
+        ttk.Label(easy_grid, text="MiSTer Logo").grid(row=8, column=0, sticky="w", padx=5, pady=5)
+
+        self.easy_logo_combo = ttk.Combobox(
+            easy_grid,
+            state="readonly",
+            values=[
+                "Enabled",
+                "Disabled"
+            ],
+            width=28
+        )
+
+        self.easy_logo_combo.grid(row=8, column=1, sticky="w", padx=5, pady=5)
+        self.easy_logo_combo.set("Enabled")
 
         # Advanced Mode editor
         self.advanced_frame = ttk.LabelFrame(content_inner, text="Advanced Mode")
@@ -1331,7 +1449,8 @@ class MiSTerApp:
         self.easy_hdr_combo.config(state=combo_state)
         self.easy_hdmi_limited_combo.config(state=combo_state)
         self.easy_analogue_combo.config(state=combo_state)
-
+        self.easy_logo_combo.config(state=combo_state)
+        
         # Advanced editor
         if enabled:
             self.advanced_text.config(state="normal")
@@ -1522,14 +1641,15 @@ class MiSTerApp:
             self.set_status("CONNECTED")
             self.status_label.config(text=f"Connected ({ip})", foreground="green")
 
-            self.disable_connection_fields()
+            self.scan_button.config(state="disabled")
 
             self.connect_button.config(state="disabled")
             self.disconnect_button.config(state="normal")
-
+            
             self.enable_controls()
             self.refresh_storage()
             self.check_services_status()
+            self.update_wallpaper_tab_state()
             self.update_backup_count()
             self.load_mister_ini_into_ui(silent=True)
         else:
@@ -1556,6 +1676,9 @@ class MiSTerApp:
 
         self.connect_button.config(state="normal")
         self.disconnect_button.config(state="disabled")
+        self.scan_button.config(state="normal")
+
+        self.update_wallpaper_tab_state()
 
     def disable_connection_fields(self):
         self.ip_entry.config(state="disabled")
@@ -1571,6 +1694,8 @@ class MiSTerApp:
         self.run_button.config(state="normal")
         self.explorer_button.config(state="normal")
         self.reboot_button.config(state="normal")
+
+        self.open_scripts_folder_button.config(state="normal")
 
         # Enable SaveManager
         self.enable_savemanager_buttons()
@@ -1596,6 +1721,9 @@ class MiSTerApp:
         self.install_button.config(state="disabled")
         self.uninstall_button.config(state="disabled")
         self.run_button.config(state="disabled")
+
+        self.open_scripts_folder_button.config(state="disabled")
+        
         self.enable_smb_button.config(state="disabled")
         self.disable_smb_button.config(state="disabled")
         self.explorer_button.config(state="disabled")
@@ -1687,6 +1815,12 @@ class MiSTerApp:
         if selected_text == "MiSTer Settings" and self.connection.connected:
             self.load_mister_ini_into_ui(silent=True)
 
+        if selected_text == "Wallpapers" and self.connection.connected:
+            threading.Thread(
+                target=self.check_ranny_wallpapers,
+                daemon=True
+            ).start()
+
     def on_easy_hdmi_mode_changed(self, event=None):
         self.update_easy_mode_state()
 
@@ -1700,6 +1834,7 @@ class MiSTerApp:
             self.easy_scaling_combo.config(state="disabled")
             self.easy_hdr_combo.config(state="disabled")
             self.easy_hdmi_limited_combo.config(state="disabled")
+            self.easy_logo_combo.config(state="disabled")
 
         else:
 
@@ -1707,6 +1842,7 @@ class MiSTerApp:
             self.easy_scaling_combo.config(state="readonly")
             self.easy_hdr_combo.config(state="readonly")
             self.easy_hdmi_limited_combo.config(state="readonly")
+            self.easy_logo_combo.config(state="readonly")
 
     def set_status(self, state):
         colors = {
@@ -2384,7 +2520,7 @@ class MiSTerApp:
         def worker():
             try:
                 api_url = "https://api.github.com/repos/theypsilon/Update_All_MiSTer/releases/latest"
-                r = requests.get(api_url)
+                r = requests.get(api_url, timeout=10)
                 data = r.json()
 
                 download_url = None
@@ -2435,7 +2571,7 @@ class MiSTerApp:
             try:
 
                 api_url = "https://api.github.com/repos/ZaparooProject/zaparoo-core/releases/latest"
-                r = requests.get(api_url)
+                r = requests.get(api_url, timeout=10)
                 data = r.json()
 
                 download_url = None
@@ -2814,7 +2950,7 @@ class MiSTerApp:
 
             for subnet in subnets:
 
-                self.root.after(0, lambda s=subnet: status.config(text=f"Scanning {s}.0/24"))
+                self.root.after(0, lambda: status.winfo_exists() and status.config(text="Scanning..."))
 
                 for i in range(1, 255):
                     ip = f"{subnet}.{i}"
@@ -2828,7 +2964,7 @@ class MiSTerApp:
             for t in threads:
                 t.join()
 
-            self.root.after(0, lambda: status.config(text="Scan complete"))
+            self.root.after(0, lambda: status.winfo_exists() and status.config(text="Scan complete"))
 
         # ---------------------------------
 
@@ -3144,6 +3280,14 @@ class MiSTerApp:
         else:
             self.easy_analogue_combo.set("RGB (Consumer TV)")
 
+        # MiSTer Logo
+        logo = settings.get("logo", "1").strip()
+
+        if logo == "0":
+            self.easy_logo_combo.set("Disabled")
+        else:
+            self.easy_logo_combo.set("Enabled")
+            
         self.update_easy_mode_state()
 
     def load_mister_ini_into_ui(self, silent=True):
@@ -3270,6 +3414,10 @@ class MiSTerApp:
             settings["vga_mode"] = "rgb"
             settings["composite_sync"] = "0"
             settings["vga_sog"] = "0"
+
+        # MiSTer Logo
+        logo = self.easy_logo_combo.get().strip()
+        settings["logo"] = "1" if logo == "Enabled" else "0"
 
         return settings
 
@@ -4220,6 +4368,421 @@ class MiSTerApp:
             width=12,
             command=popup.destroy
         ).pack(side="left", padx=6)
+
+    # =========================
+    # Wallpapers Functions
+    # =========================
+
+    def fetch_ranny_wallpapers(self):
+
+        try:
+
+            url = "https://api.github.com/repos/Ranny-Snice/Ranny-Snice-Wallpapers/contents/Wallpapers"
+
+            r = requests.get(url, timeout=10)
+
+            if r.status_code != 200:
+                return [], []
+
+            data = r.json()
+
+            w169 = []
+            w43 = []
+
+            for item in data:
+
+                if item["type"] != "file":
+                    continue
+
+                name = item["name"]
+
+                if "4x3" in name.lower():
+                    w43.append(item)
+                else:
+                    w169.append(item)
+
+            return w169, w43
+
+        except:
+            return [], []
+
+    def get_installed_wallpapers(self):
+
+        if not self.connection.connected:
+            return []
+
+        try:
+
+            result = self.connection.run_command("ls /media/fat/wallpapers 2>/dev/null")
+
+            if not result:
+                return []
+
+            files = result.splitlines()
+
+            return [f.strip() for f in files if f.strip()]
+
+        except:
+            return []
+
+    def check_ranny_wallpapers(self):
+
+        if not self.connection.connected:
+            return
+
+        gh_169, gh_43 = self.fetch_ranny_wallpapers()
+        installed = self.get_installed_wallpapers()
+
+        installed_set = set(installed)
+
+        gh169_names = {item["name"] for item in gh_169}
+        gh43_names = {item["name"] for item in gh_43}
+
+        installed_169 = gh169_names & installed_set
+        installed_43 = gh43_names & installed_set
+
+        missing_169 = gh169_names - installed_set
+        missing_43 = gh43_names - installed_set
+
+        # ---- 16:9 button ----
+
+        if not installed_169:
+            self.install_169_wallpapers_button.config(
+                text="Install 16:9 Wallpapers",
+                state="normal"
+            )
+
+        elif missing_169:
+            self.install_169_wallpapers_button.config(
+                text="Update 16:9 Wallpapers",
+                state="normal"
+            )
+
+        else:
+            self.install_169_wallpapers_button.config(
+                text="Install 16:9 Wallpapers",
+                state="disabled"
+            )
+
+        # ---- 4:3 button ----
+
+        if not installed_43:
+            self.install_43_wallpapers_button.config(
+                text="Install 4:3 Wallpapers",
+                state="normal"
+            )
+
+        elif missing_43:
+            self.install_43_wallpapers_button.config(
+                text="Update 4:3 Wallpapers",
+                state="normal"
+            )
+
+        else:
+            self.install_43_wallpapers_button.config(
+                text="Install 4:3 Wallpapers",
+                state="disabled"
+            )
+
+        # ---- Remove button ----
+
+        if installed_169 or installed_43:
+            self.remove_wallpapers_button.config(state="normal")
+        else:
+            self.remove_wallpapers_button.config(state="disabled")
+
+    def download_wallpaper(self, url):
+
+        try:
+            r = requests.get(url, timeout=20)
+            if r.status_code == 200:
+                return r.content
+        except:
+            pass
+
+        return None
+
+
+    def upload_wallpaper(self, name, data):
+
+        try:
+
+            sftp = self.connection.client.open_sftp()
+
+            path = f"/media/fat/wallpapers/{name}"
+
+            with sftp.file(path, "wb") as f:
+                f.write(data)
+
+            sftp.close()
+
+            return True
+
+        except Exception as e:
+
+            self.wallpaper_log(f"Upload failed: {name}\n")
+            self.wallpaper_log(str(e) + "\n")
+
+            return False
+
+
+    def install_ranny_wallpapers(self, mode):
+
+        if not self.connection.connected:
+            return
+
+        # show wallpaper console automatically
+        if not self.wallpaper_console_visible:
+            self.wallpaper_console_frame.pack(fill="x", pady=10)
+            self.wallpaper_console_visible = True
+
+        self.wallpaper_log("Fetching wallpaper list...\n")
+
+        gh_169, gh_43 = self.fetch_ranny_wallpapers()
+
+        wallpapers = gh_169 if mode == "169" else gh_43
+
+        if not wallpapers:
+            self.wallpaper_log("No wallpapers found.\n")
+            return
+
+        self.ensure_wallpaper_folder()
+
+        installed = self.get_installed_wallpapers()
+
+        new_count = 0
+
+        for item in wallpapers:
+
+            name = item["name"]
+
+            if name in installed:
+                continue
+
+            self.wallpaper_log(f"Downloading {name}...\n")
+
+            data = self.download_wallpaper(item["download_url"])
+
+            if not data:
+                self.wallpaper_log("Download failed\n")
+                continue
+
+            self.wallpaper_log(f"Uploading {name}...\n")
+
+            ok = self.upload_wallpaper(name, data)
+
+            if ok:
+                new_count += 1
+                self.wallpaper_log(f"Installed {name}\n")
+
+        self.wallpaper_log(f"\nFinished. {new_count} wallpapers installed.\n")
+
+        self.check_ranny_wallpapers()
+
+
+    def install_169_wallpapers(self):
+
+        threading.Thread(
+            target=lambda: self.install_ranny_wallpapers("169"),
+            daemon=True
+        ).start()
+
+
+    def install_43_wallpapers(self):
+
+        threading.Thread(
+            target=lambda: self.install_ranny_wallpapers("43"),
+            daemon=True
+        ).start()
+
+    def remove_ranny_wallpapers(self):
+
+        if not self.connection.connected:
+            return
+
+        confirm = messagebox.askyesno(
+            "Remove Wallpapers",
+            "Remove all Ranny Snice wallpapers from the MiSTer?"
+        )
+
+        if not confirm:
+            return
+
+        # show wallpaper console automatically
+        if not self.wallpaper_console_visible:
+            self.wallpaper_console_frame.pack(fill="x", pady=10)
+            self.wallpaper_console_visible = True
+
+        self.wallpaper_console.delete("1.0", tk.END)
+
+        def worker():
+
+            self.wallpaper_log("Removing Ranny Snice wallpapers...\n")
+
+            gh_169, gh_43 = self.fetch_ranny_wallpapers()
+            repo_files = {item["name"] for item in gh_169 + gh_43}
+
+            installed = self.get_installed_wallpapers()
+
+            removed = 0
+
+            for name in installed:
+
+                if name in repo_files:
+                    self.connection.run_command(
+                        f'rm "/media/fat/wallpapers/{name}"'
+                    )
+
+                    removed += 1
+                    self.wallpaper_log(f"Removed {name}\n")
+
+            self.wallpaper_log(f"\nFinished. {removed} wallpapers removed.\n")
+
+            self.root.after(0, self.check_ranny_wallpapers)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def wallpaper_folder_exists(self):
+
+        if not self.connection.connected:
+            return False
+
+        try:
+            result = self.connection.run_command("test -d /media/fat/wallpapers && echo EXISTS")
+            return result and "EXISTS" in result
+        except:
+            return False
+
+    def ensure_wallpaper_folder(self):
+
+        if not self.connection.connected:
+            return
+
+        try:
+            self.connection.run_command("mkdir -p /media/fat/wallpapers")
+        except:
+            pass
+
+    def update_wallpaper_tab_state(self):
+
+        connected = self.connection.connected
+
+        try:
+
+            if not connected:
+                self.install_169_wallpapers_button.config(state="disabled")
+                self.install_43_wallpapers_button.config(state="disabled")
+                self.remove_wallpapers_button.config(state="disabled")
+                self.open_wallpaper_folder_button.config(state="disabled")
+
+                return
+
+            self.install_169_wallpapers_button.config(state="normal")
+            self.install_43_wallpapers_button.config(state="normal")
+
+            if self.wallpaper_folder_exists():
+                self.open_wallpaper_folder_button.config(state="normal")
+            else:
+                self.open_wallpaper_folder_button.config(state="disabled")
+
+        except:
+            pass
+
+    def toggle_wallpaper_console(self):
+
+        if self.wallpaper_console_visible:
+            self.wallpaper_console_frame.pack_forget()
+            self.wallpaper_console_visible = False
+        else:
+            self.wallpaper_console_frame.pack(fill="x", pady=10)
+            self.wallpaper_console_visible = True
+
+
+    def wallpaper_log(self, text):
+        self.root.after(0, lambda: self._wallpaper_log_ui(text))
+
+
+    def _wallpaper_log_ui(self, text):
+        self.wallpaper_console.insert(tk.END, text)
+        self.wallpaper_console.see(tk.END)
+
+    def open_wallpaper_folder(self):
+
+        if not self.connection.ip:
+            return
+
+        ip = self.connection.ip
+
+        try:
+
+            # Windows
+            if sys.platform.startswith("win"):
+                subprocess.Popen(f'explorer "\\\\{ip}\\sdcard\\wallpapers"')
+
+            # Linux
+            elif sys.platform.startswith("linux"):
+
+                env = os.environ.copy()
+
+                subprocess.run(
+                    ["gio", "mount", f"smb://{ip}/"],
+                    env=env,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
+                )
+
+                subprocess.Popen(
+                    ["gio", "open", f"smb://{ip}/sdcard/wallpapers"],
+                    env=env,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
+                )
+
+            # macOS
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", f"smb://{ip}/sdcard/wallpapers"])
+
+        except Exception as e:
+            messagebox.showerror("SMB Error", str(e))
+
+    def open_scripts_folder(self):
+
+        if not self.connection.ip:
+            return
+
+        ip = self.connection.ip
+
+        try:
+
+            # Windows
+            if sys.platform.startswith("win"):
+                subprocess.Popen(f'explorer "\\\\{ip}\\sdcard\\Scripts"')
+
+            # Linux
+            elif sys.platform.startswith("linux"):
+
+                env = os.environ.copy()
+
+                subprocess.run(
+                    ["gio", "mount", f"smb://{ip}/"],
+                    env=env,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
+                )
+
+                subprocess.Popen(
+                    ["gio", "open", f"smb://{ip}/sdcard/Scripts"],
+                    env=env,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
+                )
+
+            # macOS
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", f"smb://{ip}/sdcard/Scripts"])
+
+        except Exception as e:
+            messagebox.showerror("SMB Error", str(e))
 
 if __name__ == "__main__":
     root = tk.Tk()
