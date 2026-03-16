@@ -19,6 +19,7 @@ Supports:
 - Remote reboot
 - SSH console output for script execution
 - Save Manager to backup and sync saves between multiple MiSTer devices
+- Download & Remove Ranny Snice Wallpapers
 
 Clean, safe, and easy MiSTer management from Windows and Linux.
 
@@ -81,6 +82,14 @@ MiSTer Companion uses a **tabbed interface** to organize functionality.
 - Local **Sync Folder** used to merge the newest save files
 - Safety backup option before restore or sync
 - Built-in **status log** for operations
+
+### Wallpapers
+- Install the **Ranny Snice wallpaper packs** directly from GitHub
+- Support for both **16:9 and 4:3 wallpaper sets**
+- Automatically detects when **new wallpapers are available**
+- **Remove installed wallpapers** from the MiSTer system
+- Built-in **SSH output log** to show installation progress
+- Quick access to the **wallpapers folder via SMB**
 
 ---
 
