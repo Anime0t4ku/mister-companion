@@ -137,7 +137,7 @@ class MiSTerApp:
 
     def __init__(self, root):
         self.root = root
-        self.root.title("MiSTer Companion v2.6.0 by Anime0t4ku")
+        self.root.title("MiSTer Companion v2.6.1 by Anime0t4ku")
         self.root.geometry("900x760")
 
         # ===== App Icon =====
@@ -4412,15 +4412,20 @@ class MiSTerApp:
             return []
 
         try:
-
-            result = self.connection.run_command("ls /media/fat/wallpapers 2>/dev/null")
+            result = self.connection.run_command(
+                "ls -1 /media/fat/wallpapers 2>/dev/null"
+            )
 
             if not result:
                 return []
 
-            files = result.splitlines()
+            files = [
+                f.strip().replace("\r", "")
+                for f in result.splitlines()
+                if f.strip()
+            ]
 
-            return [f.strip() for f in files if f.strip()]
+            return files  # ← KEEP ORIGINAL CASE
 
         except:
             return []
@@ -4433,10 +4438,10 @@ class MiSTerApp:
         gh_169, gh_43 = self.fetch_ranny_wallpapers()
         installed = self.get_installed_wallpapers()
 
-        installed_set = set(installed)
+        installed_set = {f.lower() for f in installed}
 
-        gh169_names = {item["name"] for item in gh_169}
-        gh43_names = {item["name"] for item in gh_43}
+        gh169_names = {item["name"].lower() for item in gh_169}
+        gh43_names = {item["name"].lower() for item in gh_43}
 
         installed_169 = gh169_names & installed_set
         installed_43 = gh43_names & installed_set
@@ -4556,7 +4561,7 @@ class MiSTerApp:
 
             name = item["name"]
 
-            if name in installed:
+            if any(name.lower() == f.lower() for f in installed):
                 continue
 
             self.wallpaper_log(f"Downloading {name}...\n")
