@@ -137,8 +137,8 @@ class MiSTerApp:
 
     def __init__(self, root):
         self.root = root
-        self.root.title("MiSTer Companion v2.6.1 by Anime0t4ku")
-        self.root.geometry("900x760")
+        self.root.title("MiSTer Companion v2.7.0 by Anime0t4ku")
+        self.root.geometry("900x900")
 
         # ===== App Icon =====
         try:
@@ -176,8 +176,8 @@ class MiSTerApp:
 
         popup = tk.Toplevel(self.root)
         popup.title("MiSTer Setup Required")
-        popup.geometry("540x380")
-        popup.minsize(540, 380)
+        popup.geometry("540x360")
+        popup.minsize(540, 360)
         popup.resizable(False, False)
         popup.grab_set()
         popup.transient(self.root)
@@ -451,13 +451,21 @@ class MiSTerApp:
                                            command=self.uninstall_update_all)
         self.uninstall_button.pack(side="left", padx=8)
 
+        self.configure_button = ttk.Button(
+            button_row,
+            text="Configure update_all",
+            width=20,
+            command=self.open_update_all_configurator,
+            state="disabled"
+        )
+        self.configure_button.pack(side="left", padx=8)
+
         self.run_button = ttk.Button(button_row,
                                      text="Run update_all",
                                      width=18,
                                      command=self.run_update_all)
         self.run_button.pack(side="left", padx=8)
 
-        
         # ===== Zaparoo =====
 
         zaparoo_frame = ttk.LabelFrame(self.scripts_tab, text="Zaparoo")
@@ -1038,14 +1046,14 @@ class MiSTerApp:
         self.easy_hdr_combo.set("Disabled")
 
         # HDMI Limited Range
-        ttk.Label(easy_grid, text="HDMI Limited Range").grid(row=6, column=0, sticky="w", padx=5, pady=5)
+        ttk.Label(easy_grid, text="HDMI Range").grid(row=6, column=0, sticky="w", padx=5, pady=5)
 
         self.easy_hdmi_limited_combo = ttk.Combobox(
             easy_grid,
             state="readonly",
             values=[
-                "Disabled",
-                "Enabled"
+                "Full Range",
+                "Limited Range"
             ],
             width=28
         )
@@ -1482,30 +1490,48 @@ class MiSTerApp:
         button_row = ttk.Frame(launch_frame)
         button_row.pack(pady=10)
 
+        # ===== Run update_all =====
         run_update_button = ttk.Button(
             button_row,
             text="Run update_all",
             width=22,
             command=lambda: self.run_zaparoo_api("update_all")
         )
-
         run_update_button.pack(side="left", padx=6)
 
-        # Disable button if update_all is not installed
         if not getattr(self, "update_all_installed", False):
             run_update_button.config(state="disabled")
 
+        # ===== Run migrate_sd =====
         run_migrate_button = ttk.Button(
             button_row,
             text="Run migrate_sd",
             width=22,
             command=lambda: self.run_zaparoo_api("migrate_sd")
         )
-
         run_migrate_button.pack(side="left", padx=6)
 
         if not getattr(self, "migrate_sd_installed", False):
             run_migrate_button.config(state="disabled")
+
+        # ===== Run update_all_insertcoin =====
+        run_insertcoin_button = ttk.Button(
+            button_row,
+            text="Run update_all_insertcoin",
+            width=26,
+            command=lambda: self.run_zaparoo_api("update_all_insertcoin")
+        )
+        run_insertcoin_button.pack(side="left", padx=6)
+
+        # Check if script exists on MiSTer
+        insertcoin_check = self.connection.run_command(
+            "test -f /media/fat/Scripts/update_all_insertcoin.sh && echo EXISTS"
+        )
+
+        insertcoin_installed = "EXISTS" in (insertcoin_check or "")
+
+        if not insertcoin_installed:
+            run_insertcoin_button.config(state="disabled")
 
         # ===== Launch Misc =====
 
@@ -1668,6 +1694,9 @@ class MiSTerApp:
         self.connection.connected = False
         self.connection.ip = None
 
+        self.update_all_installed = False
+        self.update_all_initialized = False
+
         self.set_status("DISCONNECTED")
         self.status_label.config(text="Disconnected", foreground="red")
 
@@ -1721,6 +1750,7 @@ class MiSTerApp:
         self.install_button.config(state="disabled")
         self.uninstall_button.config(state="disabled")
         self.run_button.config(state="disabled")
+        self.configure_button.config(state="disabled")
 
         self.open_scripts_folder_button.config(state="disabled")
         
@@ -2141,19 +2171,53 @@ class MiSTerApp:
             self.remove_cifs_config_button.config(state="normal")
             self.uninstall_cifs_button.config(state="normal")
 
+    def check_update_all_initialized(self):
+        if not self.connection.connected:
+            return False
+
+        try:
+            sftp = self.connection.client.open_sftp()
+            sftp.stat("/media/fat/Scripts/.config/update_all/update_all.json")
+            sftp.close()
+            return True
+        except Exception:
+            return False
+
     def update_button_states(self, update_installed=False, smb_enabled=False):
 
+        # Track install / init state
+        self.update_all_installed = update_installed
+        self.update_all_initialized = (
+            self.check_update_all_initialized() if update_installed else False
+        )
+
+        # =========================
         # update_all buttons
-        if update_installed:
+        # =========================
+
+        if not self.connection.connected:
             self.install_button.config(state="disabled")
-            self.uninstall_button.config(state="normal")
-            self.run_button.config(state="normal")
-        else:
-            self.install_button.config(state="normal")
             self.uninstall_button.config(state="disabled")
             self.run_button.config(state="disabled")
+            self.configure_button.config(state="disabled")
 
+        else:
+            if update_installed:
+                self.install_button.config(state="disabled")
+                self.uninstall_button.config(state="normal")
+                self.run_button.config(state="normal")
+
+                self.configure_button.config(state="normal")
+            else:
+                self.install_button.config(state="normal")
+                self.uninstall_button.config(state="disabled")
+                self.run_button.config(state="disabled")
+                self.configure_button.config(state="disabled")
+
+        # =========================
         # SMB buttons
+        # =========================
+
         if smb_enabled:
             self.enable_smb_button.config(state="disabled")
             self.disable_smb_button.config(state="normal")
@@ -2432,13 +2496,20 @@ class MiSTerApp:
             self.console_visible = True
 
         self.console.delete("1.0", tk.END)
+        self.log("Running update_all...\n\n")
 
-        threading.Thread(
-            target=lambda: self.connection.run_command_stream(
+        def worker():
+            self.connection.run_command_stream(
                 "/media/fat/Scripts/update_all.sh",
                 self.log
             )
-        ).start()
+
+            self.log("\nupdate_all finished.\n")
+
+            # Refresh install/init/button state after completion
+            self.root.after(0, self.check_services_status)
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def run_zaparoo(self):
 
@@ -3257,9 +3328,9 @@ class MiSTerApp:
         # HDMI Limited Range
         limited = settings.get("hdmi_limited", "0").strip()
         if limited == "1":
-            self.easy_hdmi_limited_combo.set("Enabled")
+            self.easy_hdmi_limited_combo.set("Limited Range")
         else:
-            self.easy_hdmi_limited_combo.set("Disabled")
+            self.easy_hdmi_limited_combo.set("Full Range")
 
         # Analogue Output
         vga_mode = settings.get("vga_mode", "rgb").strip().lower()
@@ -4788,6 +4859,754 @@ class MiSTerApp:
 
         except Exception as e:
             messagebox.showerror("SMB Error", str(e))
+
+    def open_update_all_configurator(self):
+
+        if not self.connection.connected:
+            messagebox.showerror("Error", "Connect to a MiSTer first.")
+            return
+
+        if not getattr(self, "update_all_installed", False):
+            messagebox.showerror(
+                "update_all not installed",
+                "Install update_all first before opening the configurator."
+            )
+            return
+
+        initialized = self.check_update_all_initialized()
+        self.update_all_initialized = initialized
+
+        if not initialized:
+            popup = tk.Toplevel(self.root)
+            popup.title("update_all not initialized")
+            popup.geometry("420x180")
+            popup.resizable(False, False)
+            popup.transient(self.root)
+            popup.grab_set()
+
+            frame = ttk.Frame(popup, padding=15)
+            frame.pack(fill="both", expand=True)
+
+            ttk.Label(
+                frame,
+                text="update_all needs to run at least once before you can configure it.",
+                justify="center",
+                wraplength=360
+            ).pack(pady=(10, 20))
+
+            button_row = ttk.Frame(frame)
+            button_row.pack()
+
+            def run_and_close():
+                popup.destroy()
+                self.run_update_all()
+
+            ttk.Button(
+                button_row,
+                text="Run Update All",
+                width=16,
+                command=run_and_close
+            ).pack(side="left", padx=6)
+
+            ttk.Button(
+                button_row,
+                text="Close",
+                width=12,
+                command=popup.destroy
+            ).pack(side="left", padx=6)
+
+            return
+
+        popup = tk.Toplevel(self.root)
+        popup.title("Update_All Configuration")
+        popup.geometry("500x950")
+        popup.transient(self.root)
+        popup.grab_set()
+
+        frame = ttk.Frame(popup, padding=15)
+        frame.pack(fill="both", expand=True)
+
+        ttk.Label(
+            frame,
+            text="Update_All Configuration",
+            font=("Segoe UI", 12, "bold")
+        ).pack(pady=(0, 10))
+
+        # ===== Main Cores =====
+        main_frame = ttk.LabelFrame(frame, text="Main Cores")
+        main_frame.pack(fill="x", pady=8)
+
+        self.main_cores_var = tk.BooleanVar()
+
+        ttk.Checkbutton(
+            main_frame,
+            text="Enable Main Cores",
+            variable=self.main_cores_var
+        ).pack(anchor="w", padx=10, pady=5)
+
+        source_frame = ttk.Frame(main_frame)
+        source_frame.pack(fill="x", padx=20, pady=5)
+
+        ttk.Label(source_frame, text="Source:").pack(side="left")
+
+        self.main_source_var = tk.StringVar()
+
+        self.main_source_combo = ttk.Combobox(
+            source_frame,
+            textvariable=self.main_source_var,
+            state="readonly",
+            values=[
+                "MiSTer-devel (Recommended)",
+                "DB9 / SNAC8 forks with ENCC",
+                "AitorGomez fork"
+            ],
+            width=30
+        )
+        self.main_source_combo.pack(side="left", padx=10)
+        self.main_source_combo.set("MiSTer-devel (Recommended)")
+
+        # ===== JTCores =====
+        jt_frame = ttk.LabelFrame(frame, text="JTCores")
+        jt_frame.pack(fill="x", pady=8)
+
+        self.jtcores_var = tk.BooleanVar()
+        self.jtbeta_var = tk.BooleanVar()
+
+        ttk.Checkbutton(
+            jt_frame,
+            text="Enable JTCores",
+            variable=self.jtcores_var,
+            command=self.update_jt_beta_state
+        ).pack(anchor="w", padx=10, pady=5)
+
+        self.jtbeta_check = ttk.Checkbutton(
+            jt_frame,
+            text="Enable Beta Cores",
+            variable=self.jtbeta_var
+        )
+        self.jtbeta_check.pack(anchor="w", padx=30, pady=5)
+
+        # ===== Other Cores =====
+        other_frame = ttk.LabelFrame(frame, text="Other Cores")
+        other_frame.pack(fill="x", pady=8)
+
+        self.coinop_var = tk.BooleanVar()
+        self.arcade_offset_var = tk.BooleanVar()
+        self.llapi_var = tk.BooleanVar()
+        self.unofficial_var = tk.BooleanVar()
+        self.yc_var = tk.BooleanVar()
+        self.agg23_var = tk.BooleanVar()
+        self.altcores_var = tk.BooleanVar()
+        self.dualram_var = tk.BooleanVar()
+
+        ttk.Checkbutton(other_frame, text="Coin-Op Collection", variable=self.coinop_var).pack(anchor="w", padx=10,
+                                                                                               pady=2)
+        ttk.Checkbutton(other_frame, text="Arcade Offset", variable=self.arcade_offset_var).pack(anchor="w", padx=10,
+                                                                                                 pady=2)
+        ttk.Checkbutton(other_frame, text="LLAPI Forks Folder", variable=self.llapi_var).pack(anchor="w", padx=10,
+                                                                                              pady=2)
+        ttk.Checkbutton(other_frame, text="Unofficial Distribution", variable=self.unofficial_var).pack(anchor="w",
+                                                                                                        padx=10, pady=2)
+        ttk.Checkbutton(other_frame, text="Y/C Builds (Special VGA Cable Required)", variable=self.yc_var).pack(anchor="w", padx=10,
+                                                                                                  pady=2)
+        ttk.Checkbutton(other_frame, text="agg23’s MiSTer Cores", variable=self.agg23_var).pack(anchor="w", padx=10,
+                                                                                                pady=2)
+        ttk.Checkbutton(other_frame, text="Alt Cores", variable=self.altcores_var).pack(anchor="w", padx=10, pady=2)
+        ttk.Checkbutton(other_frame, text="Dual RAM Console Cores", variable=self.dualram_var).pack(anchor="w", padx=10,
+                                                                                                    pady=2)
+
+        # ===== Tools & Scripts =====
+        tools_frame = ttk.LabelFrame(frame, text="Tools & Scripts")
+        tools_frame.pack(fill="x", pady=8)
+
+        self.arcade_org_var = tk.BooleanVar()
+        self.mrext_var = tk.BooleanVar()
+        self.sam_var = tk.BooleanVar()
+        self.tty2oled_var = tk.BooleanVar()
+        self.i2c2oled_var = tk.BooleanVar()
+        self.retrospy_var = tk.BooleanVar()
+
+        ttk.Checkbutton(
+            tools_frame,
+            text="Arcade Organizer (folder structure)",
+            variable=self.arcade_org_var
+        ).pack(anchor="w", padx=10, pady=2)
+
+        ttk.Checkbutton(
+            tools_frame,
+            text="MiSTer Extensions (Wizzo Scripts)",
+            variable=self.mrext_var
+        ).pack(anchor="w", padx=10, pady=2)
+
+        ttk.Checkbutton(
+            tools_frame,
+            text="MiSTer Super Attract Mode",
+            variable=self.sam_var
+        ).pack(anchor="w", padx=10, pady=2)
+
+        ttk.Checkbutton(
+            tools_frame,
+            text="tty2oled Add-on Script",
+            variable=self.tty2oled_var
+        ).pack(anchor="w", padx=10, pady=2)
+
+        ttk.Checkbutton(
+            tools_frame,
+            text="i2c2oled Add-on Script",
+            variable=self.i2c2oled_var
+        ).pack(anchor="w", padx=10, pady=2)
+
+        ttk.Checkbutton(
+            tools_frame,
+            text="RetroSpy Utility",
+            variable=self.retrospy_var
+        ).pack(anchor="w", padx=10, pady=2)
+
+        # ===== Extra Content =====
+        extra_frame = ttk.LabelFrame(frame, text="Extra Content")
+        extra_frame.pack(fill="x", pady=8)
+
+        self.bios_var = tk.BooleanVar()
+        self.arcade_roms_var = tk.BooleanVar()
+        self.bootroms_var = tk.BooleanVar()
+        self.gbaborders_var = tk.BooleanVar()
+        self.insert_coin_var = tk.BooleanVar()
+
+        ttk.Checkbutton(
+            extra_frame,
+            text="BIOS Database",
+            variable=self.bios_var
+        ).pack(anchor="w", padx=10, pady=2)
+
+        ttk.Checkbutton(
+            extra_frame,
+            text="Arcade ROMs Database",
+            variable=self.arcade_roms_var
+        ).pack(anchor="w", padx=10, pady=2)
+
+        ttk.Checkbutton(
+            extra_frame,
+            text="Uberyoji Boot ROMs",
+            variable=self.bootroms_var
+        ).pack(anchor="w", padx=10, pady=2)
+
+        ttk.Checkbutton(
+            extra_frame,
+            text="Dinierto GBA Borders",
+            variable=self.gbaborders_var
+        ).pack(anchor="w", padx=10, pady=2)
+
+        ttk.Checkbutton(
+            extra_frame,
+            text="Insert-Coin",
+            variable=self.insert_coin_var
+        ).pack(anchor="w", padx=10, pady=2)
+
+        # ===== Wallpapers =====
+        self.wallpapers_var = tk.BooleanVar()
+        self.wallpapers_source_var = tk.StringVar()
+
+        ttk.Checkbutton(
+            extra_frame,
+            text="Ranny Snice Wallpapers",
+            variable=self.wallpapers_var,
+            command=self.update_wallpaper_state
+        ).pack(anchor="w", padx=10, pady=2)
+
+        wallpaper_frame = ttk.Frame(extra_frame)
+        wallpaper_frame.pack(fill="x", padx=25, pady=2)
+
+        ttk.Label(wallpaper_frame, text="Source:").pack(side="left")
+
+        self.wallpaper_combo = ttk.Combobox(
+            wallpaper_frame,
+            textvariable=self.wallpapers_source_var,
+            state="readonly",
+            values=[
+                "16:9 Wallpapers",
+                "4:3 Wallpapers",
+                "All Wallpapers"
+            ],
+            width=20
+        )
+        self.wallpaper_combo.pack(side="left", padx=10)
+
+        self.wallpaper_combo.set("All Wallpapers")
+
+        # ===== Buttons =====
+        button_row = ttk.Frame(frame)
+        button_row.pack(pady=15)
+
+        ttk.Button(
+            button_row,
+            text="Save",
+            width=12,
+            command=self.save_update_all_config
+        ).pack(side="left", padx=5)
+
+        ttk.Button(
+            button_row,
+            text="Close",
+            width=12,
+            command=popup.destroy
+        ).pack(side="left", padx=5)
+
+        # Load current configuration AFTER UI is built
+        self.load_update_all_config()
+
+    def load_update_all_config(self):
+
+        try:
+            sftp = self.connection.client.open_sftp()
+
+            # === Read downloader.ini ===
+            ini_path = "/media/fat/downloader.ini"
+            try:
+                with sftp.open(ini_path, "r") as f:
+                    ini_data = f.read().decode()
+            except:
+                ini_data = ""
+
+            # === Read update_all.json ===
+            json_path = "/media/fat/Scripts/.config/update_all/update_all.json"
+            try:
+                with sftp.open(json_path, "r") as f:
+                    json_data = json.loads(f.read().decode())
+            except:
+                json_data = {}
+
+            sftp.close()
+
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to load config:\n{e}")
+            return
+
+        # =========================
+        # PARSE INI (simple version)
+        # =========================
+
+        # Helper: check if section is enabled
+        def is_enabled(section):
+            return f"[{section}]" in ini_data and f";[{section}]" not in ini_data
+
+        # === Main Cores ===
+        self.main_cores_var.set(is_enabled("distribution_mister"))
+
+        if "aitorgomez.net" in ini_data:
+            self.main_source_var.set("AitorGomez fork")
+        elif "MiSTer-DB9" in ini_data:
+            self.main_source_var.set("DB9 / SNAC8 forks with ENCC")
+        else:
+            self.main_source_var.set("MiSTer-devel (Recommended)")
+
+        # === JTCores ===
+        self.jtcores_var.set(is_enabled("jtcores"))
+
+        # === Other Cores ===
+        self.coinop_var.set(is_enabled("Coin-OpCollection/Distribution-MiSTerFPGA"))
+        self.arcade_offset_var.set(is_enabled("arcade_offset_folder"))
+        self.llapi_var.set(is_enabled("llapi_folder"))
+        self.unofficial_var.set(is_enabled("theypsilon_unofficial_distribution"))
+        self.yc_var.set(is_enabled("MikeS11/YC_Builds-MiSTer"))
+        self.agg23_var.set(is_enabled("agg23_db"))
+        self.altcores_var.set(is_enabled("ajgowans/alt-cores"))
+        self.dualram_var.set(is_enabled("TheJesusFish/Dual-Ram-Console-Cores"))
+
+        # =========================
+        # PARSE JSON
+        # =========================
+
+        self.jtbeta_var.set(json_data.get("download_beta_cores", False))
+
+        # === Tools & Scripts (JSON) ===
+        self.arcade_org_var.set(json_data.get("introduced_arcade_names_txt", False))
+
+        # === Tools & Scripts (INI) ===
+        self.mrext_var.set(is_enabled("mrext/all"))
+        self.sam_var.set(is_enabled("MiSTer_SAM_files"))
+        self.tty2oled_var.set(is_enabled("tty2oled_files"))
+        self.i2c2oled_var.set(is_enabled("i2c2oled_files"))
+        self.retrospy_var.set(is_enabled("retrospy/retrospy-MiSTer"))
+
+        # === Extra Content ===
+        self.bios_var.set(is_enabled("bios_db"))
+        self.arcade_roms_var.set(is_enabled("arcade_roms_db"))
+        self.bootroms_var.set(is_enabled("uberyoji_mister_boot_roms_mgl"))
+        self.gbaborders_var.set(is_enabled("Dinierto/MiSTer-GBA-Borders"))
+        self.insert_coin_var.set(is_enabled("funkycochise/Insert-Coin"))
+
+        # === Wallpapers ===
+        wallpaper_enabled = is_enabled("Ranny-Snice/Ranny-Snice-Wallpapers")
+        self.wallpapers_var.set(wallpaper_enabled)
+
+        # Detect filter
+        if wallpaper_enabled:
+            if "filter = ar16-9" in ini_data:
+                self.wallpapers_source_var.set("16:9 Wallpapers")
+            elif "filter = ar4-3" in ini_data:
+                self.wallpapers_source_var.set("4:3 Wallpapers")
+            else:
+                self.wallpapers_source_var.set("All Wallpapers")
+        else:
+            self.wallpapers_source_var.set("All Wallpapers")
+
+        self.update_wallpaper_state()
+
+        # Apply dependency UI
+        self.update_jt_beta_state()
+
+    def update_jt_beta_state(self):
+        if self.jtcores_var.get():
+            self.jtbeta_check.config(state="normal")
+        else:
+            self.jtbeta_check.config(state="disabled")
+
+    def update_wallpaper_state(self):
+        if self.wallpapers_var.get():
+            self.wallpaper_combo.config(state="readonly")
+        else:
+            self.wallpaper_combo.config(state="disabled")
+
+    def save_update_all_config(self):
+
+        try:
+            sftp = self.connection.client.open_sftp()
+
+            # =========================
+            # LOAD CURRENT FILES
+            # =========================
+
+            ini_path = "/media/fat/downloader.ini"
+            json_path = "/media/fat/Scripts/.config/update_all/update_all.json"
+
+            try:
+                with sftp.open(ini_path, "r") as f:
+                    ini_lines = f.read().decode().splitlines()
+            except:
+                ini_lines = []
+
+            ini_data = "\n".join(ini_lines)
+
+            try:
+                with sftp.open(json_path, "r") as f:
+                    json_data = json.loads(f.read().decode())
+            except:
+                json_data = {}
+
+            # =========================
+            # UPDATE JSON
+            # =========================
+
+            json_data["download_beta_cores"] = self.jtbeta_var.get()
+
+            # =========================
+            # HELPER: REMOVE SECTION
+            # =========================
+
+            def remove_section(lines, section):
+                new_lines = []
+                skip = False
+
+                for line in lines:
+                    stripped = line.strip()
+
+                    if stripped.startswith("[") and stripped.endswith("]"):
+                        skip = (stripped.strip("[]") == section)
+
+                    if not skip:
+                        new_lines.append(line)
+
+                return new_lines
+
+            # =========================
+            # MAIN CORES (distribution_mister)
+            # =========================
+
+            ini_lines = remove_section(ini_lines, "distribution_mister")
+
+            if self.main_cores_var.get():
+
+                source = self.main_source_var.get()
+
+                if "AitorGomez" in source:
+                    url = "https://www.aitorgomez.net/static/mistermain/db.json.zip"
+                elif "DB9" in source:
+                    url = "https://raw.githubusercontent.com/MiSTer-DB9/Distribution_MiSTer/main/dbencc.json.zip"
+                else:
+                    url = "https://raw.githubusercontent.com/MiSTer-devel/Distribution_MiSTer/main/db.json.zip"
+
+                ini_lines += [
+                    "",
+                    "[distribution_mister]",
+                    f"db_url = {url}"
+                ]
+
+            # =========================
+            # JTCORES
+            # =========================
+
+            ini_lines = remove_section(ini_lines, "jtcores")
+
+            if self.jtcores_var.get():
+                ini_lines += [
+                    "",
+                    "[jtcores]",
+                    "db_url = https://raw.githubusercontent.com/jotego/jtcores_mister/main/jtbindb.json.zip",
+                    "filter = [MiSTer]"
+                ]
+
+            # =========================
+            # OTHER CORES
+            # =========================
+
+            def handle_simple_section(section, enabled, lines, content_lines):
+                lines = remove_section(lines, section)
+                if enabled:
+                    lines += [""] + content_lines
+                return lines
+
+            ini_lines = handle_simple_section(
+                "Coin-OpCollection/Distribution-MiSTerFPGA",
+                self.coinop_var.get(),
+                ini_lines,
+                [
+                    "[Coin-OpCollection/Distribution-MiSTerFPGA]",
+                    "db_url = https://raw.githubusercontent.com/Coin-OpCollection/Distribution-MiSTerFPGA/db/db.json.zip"
+                ]
+            )
+
+            ini_lines = handle_simple_section(
+                "arcade_offset_folder",
+                self.arcade_offset_var.get(),
+                ini_lines,
+                [
+                    "[arcade_offset_folder]",
+                    "db_url = https://raw.githubusercontent.com/Toryalai1/Arcade_Offset/db/arcadeoffsetdb.json.zip"
+                ]
+            )
+
+            ini_lines = handle_simple_section(
+                "llapi_folder",
+                self.llapi_var.get(),
+                ini_lines,
+                [
+                    "[llapi_folder]",
+                    "db_url = https://raw.githubusercontent.com/MiSTer-LLAPI/LLAPI_folder_MiSTer/main/llapidb.json.zip"
+                ]
+            )
+
+            ini_lines = handle_simple_section(
+                "theypsilon_unofficial_distribution",
+                self.unofficial_var.get(),
+                ini_lines,
+                [
+                    "[theypsilon_unofficial_distribution]",
+                    "db_url = https://raw.githubusercontent.com/theypsilon/Distribution_Unofficial_MiSTer/main/unofficialdb.json.zip"
+                ]
+            )
+
+            ini_lines = handle_simple_section(
+                "MikeS11/YC_Builds-MiSTer",
+                self.yc_var.get(),
+                ini_lines,
+                [
+                    "[MikeS11/YC_Builds-MiSTer]",
+                    "db_url = https://raw.githubusercontent.com/MikeS11/YC_Builds-MiSTer/db/db.json.zip"
+                ]
+            )
+
+            ini_lines = handle_simple_section(
+                "agg23_db",
+                self.agg23_var.get(),
+                ini_lines,
+                [
+                    "[agg23_db]",
+                    "db_url = https://raw.githubusercontent.com/agg23/mister-repository/db/manifest.json"
+                ]
+            )
+
+            ini_lines = handle_simple_section(
+                "ajgowans/alt-cores",
+                self.altcores_var.get(),
+                ini_lines,
+                [
+                    "[ajgowans/alt-cores]",
+                    "db_url = https://raw.githubusercontent.com/ajgowans/alt-cores/db/db.json.zip"
+                ]
+            )
+
+            ini_lines = handle_simple_section(
+                "TheJesusFish/Dual-Ram-Console-Cores",
+                self.dualram_var.get(),
+                ini_lines,
+                [
+                    "[TheJesusFish/Dual-Ram-Console-Cores]",
+                    "db_url = https://raw.githubusercontent.com/TheJesusFish/Dual-Ram-Console-Cores/db/db.json.zip"
+                ]
+            )
+
+            # =========================
+            # TOOLS & SCRIPTS
+            # =========================
+
+            # JSON (Arcade Organizer)
+            json_data["introduced_arcade_names_txt"] = self.arcade_org_var.get()
+
+            # INI-based scripts
+            ini_lines = handle_simple_section(
+                "mrext/all",
+                self.mrext_var.get(),
+                ini_lines,
+                [
+                    "[mrext/all]",
+                    "db_url = https://raw.githubusercontent.com/wizzomafizzo/mrext/main/releases/all.json"
+                ]
+            )
+
+            ini_lines = handle_simple_section(
+                "MiSTer_SAM_files",
+                self.sam_var.get(),
+                ini_lines,
+                [
+                    "[MiSTer_SAM_files]",
+                    "db_url = https://raw.githubusercontent.com/mrchrisster/MiSTer_SAM/db/db.json.zip"
+                ]
+            )
+
+            ini_lines = handle_simple_section(
+                "tty2oled_files",
+                self.tty2oled_var.get(),
+                ini_lines,
+                [
+                    "[tty2oled_files]",
+                    "db_url = https://raw.githubusercontent.com/venice1200/MiSTer_tty2oled/main/tty2oleddb.json"
+                ]
+            )
+
+            ini_lines = handle_simple_section(
+                "i2c2oled_files",
+                self.i2c2oled_var.get(),
+                ini_lines,
+                [
+                    "[i2c2oled_files]",
+                    "db_url = https://raw.githubusercontent.com/venice1200/MiSTer_i2c2oled/main/i2c2oleddb.json"
+                ]
+            )
+
+            ini_lines = handle_simple_section(
+                "retrospy/retrospy-MiSTer",
+                self.retrospy_var.get(),
+                ini_lines,
+                [
+                    "[retrospy/retrospy-MiSTer]",
+                    "db_url = https://raw.githubusercontent.com/retrospy/retrospy-MiSTer/db/db.json.zip"
+                ]
+            )
+
+            # =========================
+            # EXTRA CONTENT
+            # =========================
+
+            ini_lines = handle_simple_section(
+                "bios_db",
+                self.bios_var.get(),
+                ini_lines,
+                [
+                    "[bios_db]",
+                    "db_url = https://raw.githubusercontent.com/ajgowans/BiosDB_MiSTer/db/bios_db.json.zip"
+                ]
+            )
+
+            ini_lines = handle_simple_section(
+                "arcade_roms_db",
+                self.arcade_roms_var.get(),
+                ini_lines,
+                [
+                    "[arcade_roms_db]",
+                    "db_url = https://raw.githubusercontent.com/zakk4223/ArcadeROMsDB_MiSTer/db/arcade_roms_db.json.zip"
+                ]
+            )
+
+            ini_lines = handle_simple_section(
+                "uberyoji_mister_boot_roms_mgl",
+                self.bootroms_var.get(),
+                ini_lines,
+                [
+                    "[uberyoji_mister_boot_roms_mgl]",
+                    "db_url = https://raw.githubusercontent.com/uberyoji/mister-boot-roms/main/db/uberyoji_mister_boot_roms_mgl.json"
+                ]
+            )
+
+            ini_lines = handle_simple_section(
+                "Dinierto/MiSTer-GBA-Borders",
+                self.gbaborders_var.get(),
+                ini_lines,
+                [
+                    "[Dinierto/MiSTer-GBA-Borders]",
+                    "db_url = https://raw.githubusercontent.com/Dinierto/MiSTer-GBA-Borders/db/db.json.zip"
+                ]
+            )
+
+            ini_lines = handle_simple_section(
+                "funkycochise/Insert-Coin",
+                self.insert_coin_var.get(),
+                ini_lines,
+                [
+                    "[funkycochise/Insert-Coin]",
+                    "db_url = https://raw.githubusercontent.com/funkycochise/Insert-Coin/db/db.json.zip"
+                ]
+            )
+
+            # =========================
+            # WALLPAPERS
+            # =========================
+
+            ini_lines = remove_section(
+                ini_lines,
+                "Ranny-Snice/Ranny-Snice-Wallpapers"
+            )
+
+            if self.wallpapers_var.get():
+
+                source = self.wallpapers_source_var.get()
+
+                if "16:9" in source:
+                    filter_value = "ar16-9"
+                elif "4:3" in source:
+                    filter_value = "ar4-3"
+                else:
+                    filter_value = "all"
+
+                ini_lines += [
+                    "",
+                    "[Ranny-Snice/Ranny-Snice-Wallpapers]",
+                    "db_url = https://raw.githubusercontent.com/Ranny-Snice/Ranny-Snice-Wallpapers/db/db.json.zip",
+                    f"filter = {filter_value}"
+                ]
+                
+            # =========================
+            # WRITE FILES BACK
+            # =========================
+
+            # Ensure config folder exists
+            self.connection.run_command(
+                "mkdir -p /media/fat/Scripts/.config/update_all"
+            )
+
+            # Write INI
+            with sftp.open(ini_path, "w") as f:
+                f.write("\n".join(ini_lines) + "\n")
+
+            # Write JSON
+            with sftp.open(json_path, "w") as f:
+                f.write(json.dumps(json_data, indent=4))
+
+            sftp.close()
+
+            messagebox.showinfo("Success", "Configuration saved successfully.")
+
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to save config:\n{e}")
 
 if __name__ == "__main__":
     root = tk.Tk()
