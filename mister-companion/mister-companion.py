@@ -4919,12 +4919,116 @@ class MiSTerApp:
 
         popup = tk.Toplevel(self.root)
         popup.title("Update_All Configuration")
-        popup.geometry("500x950")
         popup.transient(self.root)
         popup.grab_set()
 
-        frame = ttk.Frame(popup, padding=15)
-        frame.pack(fill="both", expand=True)
+        screen_w = popup.winfo_screenwidth()
+        screen_h = popup.winfo_screenheight()
+
+        popup_width = min(500, max(460, screen_w - 80))
+        popup_height = min(900, max(500, screen_h - 80))
+
+        x = max((screen_w // 2) - (popup_width // 2), 20)
+        y = max((screen_h // 2) - (popup_height // 2), 20)
+
+        popup.geometry(f"{popup_width}x{popup_height}+{x}+{y}")
+        popup.minsize(460, 500)
+
+        outer = ttk.Frame(popup, padding=15)
+        outer.pack(fill="both", expand=True)
+
+        canvas = tk.Canvas(outer, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(outer, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        scrollbar.pack(side="right", fill="y")
+        canvas.pack(side="top", fill="both", expand=True)
+
+        frame = ttk.Frame(canvas)
+        canvas_window = canvas.create_window((0, 0), window=frame, anchor="nw")
+
+        def _on_frame_configure(event=None):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+
+        def _on_canvas_configure(event):
+            canvas.itemconfigure(canvas_window, width=event.width)
+
+        frame.bind("<Configure>", _on_frame_configure)
+        canvas.bind("<Configure>", _on_canvas_configure)
+
+        def _on_mousewheel(event):
+            try:
+                widget = popup.winfo_containing(event.x_root, event.y_root)
+                if widget is None:
+                    return
+
+                current = widget
+                while current is not None:
+                    if current == popup:
+                        break
+                    current = current.master
+
+                if current != popup:
+                    return
+
+                if hasattr(event, "delta") and event.delta:
+                    if sys.platform == "darwin":
+                        canvas.yview_scroll(int(-1 * event.delta), "units")
+                    else:
+                        canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+            except Exception:
+                pass
+
+        def _on_mousewheel_linux_up(event):
+            try:
+                widget = popup.winfo_containing(event.x_root, event.y_root)
+                if widget is None:
+                    return
+
+                current = widget
+                while current is not None:
+                    if current == popup:
+                        break
+                    current = current.master
+
+                if current == popup:
+                    canvas.yview_scroll(-1, "units")
+            except Exception:
+                pass
+
+        def _on_mousewheel_linux_down(event):
+            try:
+                widget = popup.winfo_containing(event.x_root, event.y_root)
+                if widget is None:
+                    return
+
+                current = widget
+                while current is not None:
+                    if current == popup:
+                        break
+                    current = current.master
+
+                if current == popup:
+                    canvas.yview_scroll(1, "units")
+            except Exception:
+                pass
+
+        def _bind_mousewheel_global():
+            popup.bind_all("<MouseWheel>", _on_mousewheel)
+            popup.bind_all("<Button-4>", _on_mousewheel_linux_up)
+            popup.bind_all("<Button-5>", _on_mousewheel_linux_down)
+
+        def _unbind_mousewheel_global():
+            popup.unbind_all("<MouseWheel>")
+            popup.unbind_all("<Button-4>")
+            popup.unbind_all("<Button-5>")
+
+        def _close_popup():
+            _unbind_mousewheel_global()
+            popup.destroy()
+
+        _bind_mousewheel_global()
+        popup.protocol("WM_DELETE_WINDOW", _close_popup)
 
         ttk.Label(
             frame,
@@ -5007,8 +5111,8 @@ class MiSTerApp:
                                                                                               pady=2)
         ttk.Checkbutton(other_frame, text="Unofficial Distribution", variable=self.unofficial_var).pack(anchor="w",
                                                                                                         padx=10, pady=2)
-        ttk.Checkbutton(other_frame, text="Y/C Builds (Special VGA Cable Required)", variable=self.yc_var).pack(anchor="w", padx=10,
-                                                                                                  pady=2)
+        ttk.Checkbutton(other_frame, text="Y/C Builds (Special VGA Cable Required)", variable=self.yc_var).pack(
+            anchor="w", padx=10, pady=2)
         ttk.Checkbutton(other_frame, text="agg23’s MiSTer Cores", variable=self.agg23_var).pack(anchor="w", padx=10,
                                                                                                 pady=2)
         ttk.Checkbutton(other_frame, text="Alt Cores", variable=self.altcores_var).pack(anchor="w", padx=10, pady=2)
@@ -5133,9 +5237,17 @@ class MiSTerApp:
 
         self.wallpaper_combo.set("All Wallpapers")
 
-        # ===== Buttons =====
-        button_row = ttk.Frame(frame)
-        button_row.pack(pady=15)
+        # Spacer so last section is not glued to bottom bar
+        ttk.Frame(frame, height=8).pack()
+
+        # ===== Fixed bottom buttons =====
+        button_bar = ttk.Frame(outer)
+        button_bar.pack(fill="x", side="bottom", pady=(10, 0))
+
+        ttk.Separator(button_bar, orient="horizontal").pack(fill="x", pady=(0, 10))
+
+        button_row = ttk.Frame(button_bar)
+        button_row.pack()
 
         ttk.Button(
             button_row,
@@ -5148,11 +5260,15 @@ class MiSTerApp:
             button_row,
             text="Close",
             width=12,
-            command=popup.destroy
+            command=_close_popup
         ).pack(side="left", padx=5)
 
         # Load current configuration AFTER UI is built
         self.load_update_all_config()
+        self.update_jt_beta_state()
+        self.update_wallpaper_state()
+        canvas.update_idletasks()
+        canvas.configure(scrollregion=canvas.bbox("all"))
 
     def load_update_all_config(self):
 
