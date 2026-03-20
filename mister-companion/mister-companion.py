@@ -137,7 +137,7 @@ class MiSTerApp:
 
     def __init__(self, root):
         self.root = root
-        self.root.title("MiSTer Companion v2.7.1 by Anime0t4ku")
+        self.root.title("MiSTer Companion v2.7.2 by Anime0t4ku")
         self.root.geometry("900x900")
 
         # ===== App Icon =====
@@ -2968,7 +2968,7 @@ class MiSTerApp:
 
             try:
                 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.settimeout(0.3)
+                sock.settimeout(1.3)
                 result = sock.connect_ex((ip, port))
                 sock.close()
                 return result == 0
