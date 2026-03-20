@@ -9,7 +9,7 @@ Supports:
 - Device management (save multiple MiSTer systems)
 - Storage usage monitoring (SD and USB)
 - Edit MiSTer.ini in Easy Mode (Presets) and Advanced Mode (Manual)
-- update_all installation and execution
+- update_all installation, configuration and execution
 - Zaparoo installation and setup
 - ZapScripts launcher via Zaparoo Core API
 - SD migration tool (migrate_sd) installer
@@ -19,7 +19,9 @@ Supports:
 - Remote reboot
 - SSH console output for script execution
 - Save Manager to backup and sync saves between multiple MiSTer devices
-- Download & Remove Ranny Snice Wallpapers
+- Download & Remove Ranny Snice Wallpaper
+- Scan network for MiSTer devices
+- Install Insert-Coin via update_all configurator
 
 Clean, safe, and easy MiSTer management from Windows and Linux.
 
@@ -34,6 +36,7 @@ MiSTer Companion uses a **tabbed interface** to organize functionality.
 ### Connection
 - Connect to your MiSTer over SSH
 - Save and manage multiple devices
+- Scan for MiSTer devices on your local network
 - Automatic reconnect after reboot
 
 ### Device
@@ -59,7 +62,7 @@ MiSTer Companion uses a **tabbed interface** to organize functionality.
 - Automatically disable unsupported settings when Direct Video is selected
 
 ### Scripts
-- Install and run **update_all**
+- Install, configure and run **update_all**
 - Install **Zaparoo**
 - Install **migrate_sd** (SD card migration utility)
 - Install **cifs_mount / cifs_umount** (add network location to MiSTer)
@@ -68,6 +71,7 @@ MiSTer Companion uses a **tabbed interface** to organize functionality.
 ### ZapScripts
 - Run **update_all** via the Zaparoo Core API
 - Run **migrate_sd** via the Zaparoo Core API
+- Run **Inser-Coin** via the Zaparoo Core API
 - Open **Bluetooth menu**
 - Open **MiSTer OSD menu**
 - Cycle **wallpaper**
