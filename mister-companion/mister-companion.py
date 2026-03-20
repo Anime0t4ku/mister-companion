@@ -138,7 +138,7 @@ class MiSTerApp:
 
     def __init__(self, root):
         self.root = root
-        self.root.title("MiSTer Companion v2.7.4 by Anime0t4ku")
+        self.root.title("MiSTer Companion v2.7.5 by Anime0t4ku")
         self.root.geometry("900x900")
 
         # ===== App Icon =====
@@ -1668,11 +1668,11 @@ class MiSTerApp:
             self.set_status("CONNECTED")
             self.status_label.config(text=f"Connected ({ip})", foreground="green")
 
+            self.disable_connection_fields()
             self.scan_button.config(state="disabled")
-
             self.connect_button.config(state="disabled")
             self.disconnect_button.config(state="normal")
-            
+
             self.enable_controls()
             self.refresh_storage()
             self.check_services_status()
@@ -1682,6 +1682,7 @@ class MiSTerApp:
         else:
             self.set_status("DISCONNECTED")
             self.disable_controls()
+            self.enable_connection_fields()
             messagebox.showerror("Connection Error", message)
 
     def disconnect(self):
@@ -2922,6 +2923,7 @@ class MiSTerApp:
         popup.title("Scan Network for MiSTer")
         popup.geometry("420x360")
         popup.resizable(False, False)
+        popup.transient(self.root)
 
         frame = ttk.Frame(popup, padding=10)
         frame.pack(fill="both", expand=True)
@@ -2946,8 +2948,11 @@ class MiSTerApp:
 
             for interface_name, addresses in interfaces.items():
 
-                if any(v in interface_name.lower() for v in
-                       ["vpn", "docker", "virtual", "vmware", "loopback", "hamachi", "tailscale"]):
+                lowered = interface_name.lower()
+
+                if any(v in lowered for v in [
+                    "vpn", "docker", "virtual", "vmware", "loopback", "hamachi", "tailscale"
+                ]):
                     continue
 
                 for addr in addresses:
@@ -2958,7 +2963,11 @@ class MiSTerApp:
                         if ip.startswith("127."):
                             continue
 
-                        subnet = ".".join(ip.split(".")[:3])
+                        parts = ip.split(".")
+                        if len(parts) != 4:
+                            continue
+
+                        subnet = ".".join(parts[:3])
                         subnets.append(subnet)
 
             return list(set(subnets))
@@ -2969,11 +2978,11 @@ class MiSTerApp:
 
             try:
                 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.settimeout(1.3)
+                sock.settimeout(0.35)
                 result = sock.connect_ex((ip, port))
                 sock.close()
                 return result == 0
-            except:
+            except Exception:
                 return False
 
         # ---------------------------------
@@ -2984,27 +2993,37 @@ class MiSTerApp:
                 ssh = paramiko.SSHClient()
                 ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
-                ssh.connect(ip, username="root", password="1", timeout=0.3)
+                ssh.connect(
+                    ip,
+                    username="root",
+                    password="1",
+                    timeout=0.5,
+                    banner_timeout=0.5,
+                    auth_timeout=0.5
+                )
 
-                stdin, stdout, stderr = ssh.exec_command("ls /media/fat")
-                result = stdout.read().decode()
+                stdin, stdout, stderr = ssh.exec_command("test -d /media/fat && echo OK")
+                result = stdout.read().decode().strip()
 
                 ssh.close()
 
-                if result:
+                if result == "OK":
+
                     def add_result():
-                        listbox.insert(tk.END, ip)
-                        found_ips.append(ip)
+                        if not popup.winfo_exists():
+                            return
+                        if ip not in found_ips:
+                            found_ips.append(ip)
+                            listbox.insert(tk.END, ip)
 
                     self.root.after(0, add_result)
 
-            except:
+            except Exception:
                 pass
 
         # ---------------------------------
 
         def check_device(ip):
-
             if is_port_open(ip):
                 verify_mister(ip)
 
@@ -3012,38 +3031,61 @@ class MiSTerApp:
 
         def scan_network():
 
-            subnets = get_local_subnets()
+            try:
+                subnets = get_local_subnets()
 
-            if not subnets:
-                self.root.after(0, lambda: status.config(text="No valid network detected"))
-                return
+                if not subnets:
+                    self.root.after(
+                        0,
+                        lambda: status.winfo_exists() and status.config(text="No valid network detected")
+                    )
+                    return
 
-            threads = []
+                self.root.after(
+                    0,
+                    lambda: status.winfo_exists() and status.config(text="Scanning network...")
+                )
 
-            for subnet in subnets:
+                threads = []
 
-                self.root.after(0, lambda: status.winfo_exists() and status.config(text="Scanning..."))
+                for subnet in subnets:
+                    for i in range(1, 255):
+                        ip = f"{subnet}.{i}"
 
-                for i in range(1, 255):
-                    ip = f"{subnet}.{i}"
+                        t = threading.Thread(target=check_device, args=(ip,), daemon=True)
+                        t.start()
+                        threads.append(t)
 
-                    t = threading.Thread(target=check_device, args=(ip,))
-                    t.daemon = True
-                    t.start()
+                for t in threads:
+                    t.join()
 
-                    threads.append(t)
+                def finish_scan():
+                    if not popup.winfo_exists():
+                        return
+                    if found_ips:
+                        status.config(text=f"Scan complete, found {len(found_ips)} device(s)")
+                    else:
+                        status.config(text="Scan complete, no MiSTer found")
 
-            for t in threads:
-                t.join()
+                self.root.after(0, finish_scan)
 
-            self.root.after(0, lambda: status.winfo_exists() and status.config(text="Scan complete"))
+            except Exception as e:
+                self.root.after(
+                    0,
+                    lambda: status.winfo_exists() and status.config(text=f"Scan failed: {str(e)}")
+                )
 
         # ---------------------------------
 
         def start_scan():
 
+            if not popup.winfo_exists():
+                return
+
             listbox.delete(0, tk.END)
-            status.config(text="Scanning network...")
+            found_ips.clear()
+            select_button.config(state="disabled")
+            status.config(text="Starting scan...")
 
             threading.Thread(target=scan_network, daemon=True).start()
 
@@ -3052,6 +3094,7 @@ class MiSTerApp:
         def on_select(event=None):
 
             if not listbox.curselection():
+                select_button.config(state="disabled")
                 return
 
             select_button.config(state="normal")
@@ -3065,16 +3108,20 @@ class MiSTerApp:
             if not listbox.curselection():
                 return
 
-            ip = listbox.get(listbox.curselection())
+            ip = listbox.get(listbox.curselection()[0])
 
             self.ip_entry.delete(0, tk.END)
             self.ip_entry.insert(0, ip)
+
+            # Unload current saved profile when scanned IP is chosen
+            self.device_combo.set("")
 
             popup.destroy()
 
         select_button.config(command=use_selected)
 
-        popup.after(100, start_scan)
+        popup.update_idletasks()
+        popup.after(200, start_scan)
 
     def reboot(self):
 
