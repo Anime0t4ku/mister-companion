@@ -138,7 +138,7 @@ class MiSTerApp:
 
     def __init__(self, root):
         self.root = root
-        self.root.title("MiSTer Companion v2.7.5 by Anime0t4ku")
+        self.root.title("MiSTer Companion v2.7.6 by Anime0t4ku")
         self.root.geometry("900x900")
 
         # ===== App Icon =====
@@ -157,6 +157,11 @@ class MiSTerApp:
         os.makedirs(MISTER_SETTINGS_ROOT, exist_ok=True)
 
         self.console_visible = False
+
+        self.connection_monitor_running = False
+        self.connection_monitor_thread = None
+        self.connection_monitor_failures = 0
+        self.connection_monitor_suspended = False
 
         self.build_ui()
         self.load_devices()
@@ -1440,7 +1445,90 @@ class MiSTerApp:
     # =========================
     # Core Logic
     # =========================
-    
+
+    def start_connection_monitor(self):
+        if self.connection_monitor_running:
+            return
+
+        self.connection_monitor_running = True
+        self.connection_monitor_failures = 0
+        self.connection_monitor_suspended = False
+
+        self.connection_monitor_thread = threading.Thread(
+            target=self._connection_monitor_loop,
+            daemon=True
+        )
+        self.connection_monitor_thread.start()
+
+    def stop_connection_monitor(self):
+        self.connection_monitor_running = False
+
+    def suspend_connection_monitor(self):
+        self.connection_monitor_suspended = True
+
+    def resume_connection_monitor(self):
+        if self.connection.connected:
+            self.connection_monitor_failures = 0
+            self.connection_monitor_suspended = False
+
+    def _connection_monitor_loop(self):
+        while self.connection_monitor_running:
+            time.sleep(4)
+
+            if not self.connection_monitor_running:
+                break
+
+            if self.connection_monitor_suspended:
+                continue
+
+            if not self.connection.connected or not self.connection.ip:
+                break
+
+            ip = self.connection.ip
+
+            try:
+                test_sock = socket.create_connection((ip, 22), timeout=1.5)
+                test_sock.close()
+                self.connection_monitor_failures = 0
+            except Exception:
+                self.connection_monitor_failures += 1
+
+                if self.connection_monitor_failures >= 3:
+                    self.connection_monitor_running = False
+                    self.root.after(0, self.handle_connection_lost)
+                    break
+
+    def handle_connection_lost(self):
+        try:
+            if self.connection.client:
+                self.connection.client.close()
+        except Exception:
+            pass
+
+        self.connection.client = None
+        self.connection.connected = False
+        self.connection.ip = None
+        self.connection.username = None
+        self.connection.password = None
+
+        self.update_all_installed = False
+        self.update_all_initialized = False
+
+        self.set_status("DISCONNECTED")
+        self.status_label.config(
+            text="Disconnected, MiSTer no longer reachable",
+            foreground="red"
+        )
+
+        self.enable_connection_fields()
+        self.disable_controls()
+
+        self.connect_button.config(state="normal")
+        self.disconnect_button.config(state="disabled")
+        self.scan_button.config(state="normal")
+
+        self.update_wallpaper_tab_state()
+
     def set_mister_settings_enabled(self, enabled):
 
         combo_state = "readonly" if enabled else "disabled"
@@ -1679,7 +1767,10 @@ class MiSTerApp:
             self.update_wallpaper_tab_state()
             self.update_backup_count()
             self.load_mister_ini_into_ui(silent=True)
+
+            self.start_connection_monitor()
         else:
+            self.stop_connection_monitor()
             self.set_status("DISCONNECTED")
             self.disable_controls()
             self.enable_connection_fields()
@@ -1687,14 +1778,19 @@ class MiSTerApp:
 
     def disconnect(self):
 
+        self.stop_connection_monitor()
+
         if self.connection.client:
             try:
                 self.connection.client.close()
             except:
                 pass
 
+        self.connection.client = None
         self.connection.connected = False
         self.connection.ip = None
+        self.connection.username = None
+        self.connection.password = None
 
         self.update_all_installed = False
         self.update_all_initialized = False
