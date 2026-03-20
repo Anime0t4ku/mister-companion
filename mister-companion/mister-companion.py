@@ -138,7 +138,7 @@ class MiSTerApp:
 
     def __init__(self, root):
         self.root = root
-        self.root.title("MiSTer Companion v2.7.3 by Anime0t4ku")
+        self.root.title("MiSTer Companion v2.7.4 by Anime0t4ku")
         self.root.geometry("900x900")
 
         # ===== App Icon =====
@@ -5339,8 +5339,11 @@ class MiSTerApp:
     def _upsert_section_lines(self, lines, section, new_section_lines):
         lines = self._remove_section_from_lines(lines, section)
 
-        if lines and lines[-1].strip():
-            lines.append("")
+        while lines and not lines[0].strip():
+            lines.pop(0)
+
+        while lines and not lines[-1].strip():
+            lines.pop()
 
         lines.extend(new_section_lines)
         return lines
@@ -5542,8 +5545,19 @@ class MiSTerApp:
 
             def handle_simple_section(section, enabled, lines, content_lines):
                 lines = remove_section(lines, section)
+
+                while lines and not lines[0].strip():
+                    lines.pop(0)
+
+                while lines and not lines[-1].strip():
+                    lines.pop()
+
                 if enabled:
-                    lines += [""] + content_lines
+                    if lines:
+                        lines += [""] + content_lines
+                    else:
+                        lines += content_lines
+
                 return lines
 
             # =========================
@@ -5563,8 +5577,10 @@ class MiSTerApp:
                 else:
                     url = "https://raw.githubusercontent.com/MiSTer-devel/Distribution_MiSTer/main/db.json.zip"
 
+                if main_lines and main_lines[-1].strip():
+                    main_lines += [""]
+
                 main_lines += [
-                    "",
                     "[distribution_mister]",
                     f"db_url = {url}"
                 ]
@@ -5576,8 +5592,10 @@ class MiSTerApp:
             main_lines = remove_section(main_lines, "jtcores")
 
             if self.jtcores_var.get():
+                if main_lines and main_lines[-1].strip():
+                    main_lines += [""]
+
                 main_lines += [
-                    "",
                     "[jtcores]",
                     "db_url = https://raw.githubusercontent.com/jotego/jtcores_mister/main/jtbindb.json.zip",
                     "filter = [MiSTer]"
@@ -5804,8 +5822,10 @@ class MiSTerApp:
                 else:
                     filter_value = "all"
 
+                if main_lines and main_lines[-1].strip():
+                    main_lines += [""]
+
                 main_lines += [
-                    "",
                     "[Ranny-Snice/Ranny-Snice-Wallpapers]",
                     "db_url = https://raw.githubusercontent.com/Ranny-Snice/Ranny-Snice-Wallpapers/db/db.json.zip",
                     f"filter = {filter_value}"
@@ -5815,9 +5835,24 @@ class MiSTerApp:
             # WRITE FILES BACK
             # =========================
 
+            def normalize_ini_lines(lines):
+                lines = list(lines)
+
+                while lines and not lines[0].strip():
+                    lines.pop(0)
+
+                while lines and not lines[-1].strip():
+                    lines.pop()
+
+                return lines
+
             self.connection.run_command(
                 "mkdir -p /media/fat/Scripts/.config/update_all"
             )
+
+            main_lines = normalize_ini_lines(main_lines)
+            arcade_lines = normalize_ini_lines(arcade_lines)
+            bios_lines = normalize_ini_lines(bios_lines)
 
             self._write_remote_text(
                 sftp,
