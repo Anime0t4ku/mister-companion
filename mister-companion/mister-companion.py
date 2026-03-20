@@ -14,6 +14,7 @@ import socket
 import webbrowser
 import sys
 import stat
+from io import StringIO
 
 def resource_path(relative_path):
     try:
@@ -137,7 +138,7 @@ class MiSTerApp:
 
     def __init__(self, root):
         self.root = root
-        self.root.title("MiSTer Companion v2.7.1 by Anime0t4ku")
+        self.root.title("MiSTer Companion v2.7.3 by Anime0t4ku")
         self.root.geometry("900x900")
 
         # ===== App Icon =====
@@ -2968,7 +2969,7 @@ class MiSTerApp:
 
             try:
                 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.settimeout(0.3)
+                sock.settimeout(1.3)
                 result = sock.connect_ex((ip, port))
                 sock.close()
                 return result == 0
@@ -5270,25 +5271,144 @@ class MiSTerApp:
         canvas.update_idletasks()
         canvas.configure(scrollregion=canvas.bbox("all"))
 
+    def _read_remote_text(self, sftp, path, default=""):
+        try:
+            with sftp.open(path, "r") as f:
+                data = f.read()
+                if isinstance(data, bytes):
+                    return data.decode()
+                return data
+        except Exception:
+            return default
+
+    def _write_remote_text(self, sftp, path, text):
+        with sftp.open(path, "w") as f:
+            f.write(text)
+
+    def _split_downloader_paths(self):
+        return {
+            "main": "/media/fat/downloader.ini",
+            "arcade": "/media/fat/downloader_arcade_roms_db.ini",
+            "bios": "/media/fat/downloader_bios_db.ini",
+        }
+
+    def _read_downloader_files(self, sftp):
+        paths = self._split_downloader_paths()
+        return {
+            "main": self._read_remote_text(sftp, paths["main"], ""),
+            "arcade": self._read_remote_text(sftp, paths["arcade"], ""),
+            "bios": self._read_remote_text(sftp, paths["bios"], ""),
+        }
+
+    def _remove_section_from_lines(self, lines, section):
+        new_lines = []
+        skip = False
+
+        for line in lines:
+            stripped = line.strip()
+
+            if stripped.startswith("[") and stripped.endswith("]"):
+                skip = (stripped.strip("[]") == section)
+
+            if not skip:
+                new_lines.append(line)
+
+        return new_lines
+
+    def _extract_section_from_lines(self, lines, section):
+        section_lines = []
+        capturing = False
+
+        for line in lines:
+            stripped = line.strip()
+
+            if stripped.startswith("[") and stripped.endswith("]"):
+                current = stripped.strip("[]")
+                if current == section:
+                    capturing = True
+                    section_lines = [line]
+                    continue
+                elif capturing:
+                    break
+
+            if capturing:
+                section_lines.append(line)
+
+        return section_lines
+
+    def _upsert_section_lines(self, lines, section, new_section_lines):
+        lines = self._remove_section_from_lines(lines, section)
+
+        if lines and lines[-1].strip():
+            lines.append("")
+
+        lines.extend(new_section_lines)
+        return lines
+
+    def _section_enabled_in_text(self, text, section):
+        return f"[{section}]" in text and f";[{section}]" not in text
+
+    def ensure_split_downloader_configs(self, sftp):
+        paths = self._split_downloader_paths()
+
+        main_lines = self._read_remote_text(sftp, paths["main"], "").splitlines()
+        arcade_lines = self._read_remote_text(sftp, paths["arcade"], "").splitlines()
+        bios_lines = self._read_remote_text(sftp, paths["bios"], "").splitlines()
+
+        changed_main = False
+        changed_arcade = False
+        changed_bios = False
+
+        arcade_section = self._extract_section_from_lines(main_lines, "arcade_roms_db")
+        if arcade_section:
+            arcade_lines = self._upsert_section_lines(
+                arcade_lines,
+                "arcade_roms_db",
+                arcade_section
+            )
+            main_lines = self._remove_section_from_lines(main_lines, "arcade_roms_db")
+            changed_main = True
+            changed_arcade = True
+
+        bios_section = self._extract_section_from_lines(main_lines, "bios_db")
+        if bios_section:
+            bios_lines = self._upsert_section_lines(
+                bios_lines,
+                "bios_db",
+                bios_section
+            )
+            main_lines = self._remove_section_from_lines(main_lines, "bios_db")
+            changed_main = True
+            changed_bios = True
+
+        if changed_main:
+            self._write_remote_text(sftp, paths["main"], "\n".join(main_lines).rstrip() + "\n")
+        if changed_arcade:
+            self._write_remote_text(sftp, paths["arcade"], "\n".join(arcade_lines).rstrip() + "\n")
+        if changed_bios:
+            self._write_remote_text(sftp, paths["bios"], "\n".join(bios_lines).rstrip() + "\n")
+
     def load_update_all_config(self):
 
         try:
             sftp = self.connection.client.open_sftp()
 
-            # === Read downloader.ini ===
-            ini_path = "/media/fat/downloader.ini"
-            try:
-                with sftp.open(ini_path, "r") as f:
-                    ini_data = f.read().decode()
-            except:
-                ini_data = ""
+            # Migrate old entries from downloader.ini if needed
+            self.ensure_split_downloader_configs(sftp)
+
+            files = self._read_downloader_files(sftp)
+            ini_data = "\n".join([
+                files["main"],
+                files["arcade"],
+                files["bios"]
+            ])
 
             # === Read update_all.json ===
             json_path = "/media/fat/Scripts/.config/update_all/update_all.json"
             try:
                 with sftp.open(json_path, "r") as f:
                     json_data = json.loads(f.read().decode())
-            except:
+            except Exception:
                 json_data = {}
 
             sftp.close()
@@ -5297,13 +5417,8 @@ class MiSTerApp:
             messagebox.showerror("Error", f"Failed to load config:\n{e}")
             return
 
-        # =========================
-        # PARSE INI (simple version)
-        # =========================
-
-        # Helper: check if section is enabled
         def is_enabled(section):
-            return f"[{section}]" in ini_data and f";[{section}]" not in ini_data
+            return self._section_enabled_in_text(ini_data, section)
 
         # === Main Cores ===
         self.main_cores_var.set(is_enabled("distribution_mister"))
@@ -5328,13 +5443,8 @@ class MiSTerApp:
         self.altcores_var.set(is_enabled("ajgowans/alt-cores"))
         self.dualram_var.set(is_enabled("TheJesusFish/Dual-Ram-Console-Cores"))
 
-        # =========================
-        # PARSE JSON
-        # =========================
-
+        # === JSON ===
         self.jtbeta_var.set(json_data.get("download_beta_cores", False))
-
-        # === Tools & Scripts (JSON) ===
         self.arcade_org_var.set(json_data.get("introduced_arcade_names_txt", False))
 
         # === Tools & Scripts (INI) ===
@@ -5355,7 +5465,6 @@ class MiSTerApp:
         wallpaper_enabled = is_enabled("Ranny-Snice/Ranny-Snice-Wallpapers")
         self.wallpapers_var.set(wallpaper_enabled)
 
-        # Detect filter
         if wallpaper_enabled:
             if "filter = ar16-9" in ini_data:
                 self.wallpapers_source_var.set("16:9 Wallpapers")
@@ -5367,8 +5476,6 @@ class MiSTerApp:
             self.wallpapers_source_var.set("All Wallpapers")
 
         self.update_wallpaper_state()
-
-        # Apply dependency UI
         self.update_jt_beta_state()
 
     def update_jt_beta_state(self):
@@ -5388,25 +5495,20 @@ class MiSTerApp:
         try:
             sftp = self.connection.client.open_sftp()
 
-            # =========================
-            # LOAD CURRENT FILES
-            # =========================
+            # Migrate old entries first
+            self.ensure_split_downloader_configs(sftp)
 
-            ini_path = "/media/fat/downloader.ini"
+            paths = self._split_downloader_paths()
             json_path = "/media/fat/Scripts/.config/update_all/update_all.json"
 
-            try:
-                with sftp.open(ini_path, "r") as f:
-                    ini_lines = f.read().decode().splitlines()
-            except:
-                ini_lines = []
-
-            ini_data = "\n".join(ini_lines)
+            main_lines = self._read_remote_text(sftp, paths["main"], "").splitlines()
+            arcade_lines = self._read_remote_text(sftp, paths["arcade"], "").splitlines()
+            bios_lines = self._read_remote_text(sftp, paths["bios"], "").splitlines()
 
             try:
                 with sftp.open(json_path, "r") as f:
                     json_data = json.loads(f.read().decode())
-            except:
+            except Exception:
                 json_data = {}
 
             # =========================
@@ -5435,10 +5537,20 @@ class MiSTerApp:
                 return new_lines
 
             # =========================
+            # OTHER HELPER
+            # =========================
+
+            def handle_simple_section(section, enabled, lines, content_lines):
+                lines = remove_section(lines, section)
+                if enabled:
+                    lines += [""] + content_lines
+                return lines
+
+            # =========================
             # MAIN CORES (distribution_mister)
             # =========================
 
-            ini_lines = remove_section(ini_lines, "distribution_mister")
+            main_lines = remove_section(main_lines, "distribution_mister")
 
             if self.main_cores_var.get():
 
@@ -5451,7 +5563,7 @@ class MiSTerApp:
                 else:
                     url = "https://raw.githubusercontent.com/MiSTer-devel/Distribution_MiSTer/main/db.json.zip"
 
-                ini_lines += [
+                main_lines += [
                     "",
                     "[distribution_mister]",
                     f"db_url = {url}"
@@ -5461,10 +5573,10 @@ class MiSTerApp:
             # JTCORES
             # =========================
 
-            ini_lines = remove_section(ini_lines, "jtcores")
+            main_lines = remove_section(main_lines, "jtcores")
 
             if self.jtcores_var.get():
-                ini_lines += [
+                main_lines += [
                     "",
                     "[jtcores]",
                     "db_url = https://raw.githubusercontent.com/jotego/jtcores_mister/main/jtbindb.json.zip",
@@ -5475,86 +5587,80 @@ class MiSTerApp:
             # OTHER CORES
             # =========================
 
-            def handle_simple_section(section, enabled, lines, content_lines):
-                lines = remove_section(lines, section)
-                if enabled:
-                    lines += [""] + content_lines
-                return lines
-
-            ini_lines = handle_simple_section(
+            main_lines = handle_simple_section(
                 "Coin-OpCollection/Distribution-MiSTerFPGA",
                 self.coinop_var.get(),
-                ini_lines,
+                main_lines,
                 [
                     "[Coin-OpCollection/Distribution-MiSTerFPGA]",
                     "db_url = https://raw.githubusercontent.com/Coin-OpCollection/Distribution-MiSTerFPGA/db/db.json.zip"
                 ]
             )
 
-            ini_lines = handle_simple_section(
+            main_lines = handle_simple_section(
                 "arcade_offset_folder",
                 self.arcade_offset_var.get(),
-                ini_lines,
+                main_lines,
                 [
                     "[arcade_offset_folder]",
                     "db_url = https://raw.githubusercontent.com/Toryalai1/Arcade_Offset/db/arcadeoffsetdb.json.zip"
                 ]
             )
 
-            ini_lines = handle_simple_section(
+            main_lines = handle_simple_section(
                 "llapi_folder",
                 self.llapi_var.get(),
-                ini_lines,
+                main_lines,
                 [
                     "[llapi_folder]",
                     "db_url = https://raw.githubusercontent.com/MiSTer-LLAPI/LLAPI_folder_MiSTer/main/llapidb.json.zip"
                 ]
             )
 
-            ini_lines = handle_simple_section(
+            main_lines = handle_simple_section(
                 "theypsilon_unofficial_distribution",
                 self.unofficial_var.get(),
-                ini_lines,
+                main_lines,
                 [
                     "[theypsilon_unofficial_distribution]",
                     "db_url = https://raw.githubusercontent.com/theypsilon/Distribution_Unofficial_MiSTer/main/unofficialdb.json.zip"
                 ]
             )
 
-            ini_lines = handle_simple_section(
+            main_lines = handle_simple_section(
                 "MikeS11/YC_Builds-MiSTer",
                 self.yc_var.get(),
-                ini_lines,
+                main_lines,
                 [
                     "[MikeS11/YC_Builds-MiSTer]",
                     "db_url = https://raw.githubusercontent.com/MikeS11/YC_Builds-MiSTer/db/db.json.zip"
                 ]
             )
 
-            ini_lines = handle_simple_section(
+            main_lines = handle_simple_section(
                 "agg23_db",
                 self.agg23_var.get(),
-                ini_lines,
+                main_lines,
                 [
                     "[agg23_db]",
                     "db_url = https://raw.githubusercontent.com/agg23/mister-repository/db/manifest.json"
                 ]
             )
 
-            ini_lines = handle_simple_section(
+            main_lines = handle_simple_section(
                 "ajgowans/alt-cores",
                 self.altcores_var.get(),
-                ini_lines,
+                main_lines,
                 [
                     "[ajgowans/alt-cores]",
                     "db_url = https://raw.githubusercontent.com/ajgowans/alt-cores/db/db.json.zip"
                 ]
             )
 
-            ini_lines = handle_simple_section(
+            main_lines = handle_simple_section(
                 "TheJesusFish/Dual-Ram-Console-Cores",
                 self.dualram_var.get(),
-                ini_lines,
+                main_lines,
                 [
                     "[TheJesusFish/Dual-Ram-Console-Cores]",
                     "db_url = https://raw.githubusercontent.com/TheJesusFish/Dual-Ram-Console-Cores/db/db.json.zip"
@@ -5565,54 +5671,52 @@ class MiSTerApp:
             # TOOLS & SCRIPTS
             # =========================
 
-            # JSON (Arcade Organizer)
             json_data["introduced_arcade_names_txt"] = self.arcade_org_var.get()
 
-            # INI-based scripts
-            ini_lines = handle_simple_section(
+            main_lines = handle_simple_section(
                 "mrext/all",
                 self.mrext_var.get(),
-                ini_lines,
+                main_lines,
                 [
                     "[mrext/all]",
                     "db_url = https://raw.githubusercontent.com/wizzomafizzo/mrext/main/releases/all.json"
                 ]
             )
 
-            ini_lines = handle_simple_section(
+            main_lines = handle_simple_section(
                 "MiSTer_SAM_files",
                 self.sam_var.get(),
-                ini_lines,
+                main_lines,
                 [
                     "[MiSTer_SAM_files]",
                     "db_url = https://raw.githubusercontent.com/mrchrisster/MiSTer_SAM/db/db.json.zip"
                 ]
             )
 
-            ini_lines = handle_simple_section(
+            main_lines = handle_simple_section(
                 "tty2oled_files",
                 self.tty2oled_var.get(),
-                ini_lines,
+                main_lines,
                 [
                     "[tty2oled_files]",
                     "db_url = https://raw.githubusercontent.com/venice1200/MiSTer_tty2oled/main/tty2oleddb.json"
                 ]
             )
 
-            ini_lines = handle_simple_section(
+            main_lines = handle_simple_section(
                 "i2c2oled_files",
                 self.i2c2oled_var.get(),
-                ini_lines,
+                main_lines,
                 [
                     "[i2c2oled_files]",
                     "db_url = https://raw.githubusercontent.com/venice1200/MiSTer_i2c2oled/main/i2c2oleddb.json"
                 ]
             )
 
-            ini_lines = handle_simple_section(
+            main_lines = handle_simple_section(
                 "retrospy/retrospy-MiSTer",
                 self.retrospy_var.get(),
-                ini_lines,
+                main_lines,
                 [
                     "[retrospy/retrospy-MiSTer]",
                     "db_url = https://raw.githubusercontent.com/retrospy/retrospy-MiSTer/db/db.json.zip"
@@ -5623,50 +5727,57 @@ class MiSTerApp:
             # EXTRA CONTENT
             # =========================
 
-            ini_lines = handle_simple_section(
+            # bios_db goes into downloader_bios_db.ini
+            bios_lines = handle_simple_section(
                 "bios_db",
                 self.bios_var.get(),
-                ini_lines,
+                bios_lines,
                 [
                     "[bios_db]",
                     "db_url = https://raw.githubusercontent.com/ajgowans/BiosDB_MiSTer/db/bios_db.json.zip"
                 ]
             )
 
-            ini_lines = handle_simple_section(
+            # arcade_roms_db goes into downloader_arcade_roms_db.ini
+            arcade_lines = handle_simple_section(
                 "arcade_roms_db",
                 self.arcade_roms_var.get(),
-                ini_lines,
+                arcade_lines,
                 [
                     "[arcade_roms_db]",
                     "db_url = https://raw.githubusercontent.com/zakk4223/ArcadeROMsDB_MiSTer/db/arcade_roms_db.json.zip"
                 ]
             )
 
-            ini_lines = handle_simple_section(
+            # Safety cleanup, never leave these in downloader.ini
+            main_lines = remove_section(main_lines, "bios_db")
+            main_lines = remove_section(main_lines, "arcade_roms_db")
+
+            # These still stay in downloader.ini
+            main_lines = handle_simple_section(
                 "uberyoji_mister_boot_roms_mgl",
                 self.bootroms_var.get(),
-                ini_lines,
+                main_lines,
                 [
                     "[uberyoji_mister_boot_roms_mgl]",
                     "db_url = https://raw.githubusercontent.com/uberyoji/mister-boot-roms/main/db/uberyoji_mister_boot_roms_mgl.json"
                 ]
             )
 
-            ini_lines = handle_simple_section(
+            main_lines = handle_simple_section(
                 "Dinierto/MiSTer-GBA-Borders",
                 self.gbaborders_var.get(),
-                ini_lines,
+                main_lines,
                 [
                     "[Dinierto/MiSTer-GBA-Borders]",
                     "db_url = https://raw.githubusercontent.com/Dinierto/MiSTer-GBA-Borders/db/db.json.zip"
                 ]
             )
 
-            ini_lines = handle_simple_section(
+            main_lines = handle_simple_section(
                 "funkycochise/Insert-Coin",
                 self.insert_coin_var.get(),
-                ini_lines,
+                main_lines,
                 [
                     "[funkycochise/Insert-Coin]",
                     "db_url = https://raw.githubusercontent.com/funkycochise/Insert-Coin/db/db.json.zip"
@@ -5677,8 +5788,8 @@ class MiSTerApp:
             # WALLPAPERS
             # =========================
 
-            ini_lines = remove_section(
-                ini_lines,
+            main_lines = remove_section(
+                main_lines,
                 "Ranny-Snice/Ranny-Snice-Wallpapers"
             )
 
@@ -5693,27 +5804,39 @@ class MiSTerApp:
                 else:
                     filter_value = "all"
 
-                ini_lines += [
+                main_lines += [
                     "",
                     "[Ranny-Snice/Ranny-Snice-Wallpapers]",
                     "db_url = https://raw.githubusercontent.com/Ranny-Snice/Ranny-Snice-Wallpapers/db/db.json.zip",
                     f"filter = {filter_value}"
                 ]
-                
+
             # =========================
             # WRITE FILES BACK
             # =========================
 
-            # Ensure config folder exists
             self.connection.run_command(
                 "mkdir -p /media/fat/Scripts/.config/update_all"
             )
 
-            # Write INI
-            with sftp.open(ini_path, "w") as f:
-                f.write("\n".join(ini_lines) + "\n")
+            self._write_remote_text(
+                sftp,
+                paths["main"],
+                "\n".join(main_lines).rstrip() + "\n"
+            )
 
-            # Write JSON
+            self._write_remote_text(
+                sftp,
+                paths["arcade"],
+                "\n".join(arcade_lines).rstrip() + "\n"
+            )
+
+            self._write_remote_text(
+                sftp,
+                paths["bios"],
+                "\n".join(bios_lines).rstrip() + "\n"
+            )
+
             with sftp.open(json_path, "w") as f:
                 f.write(json.dumps(json_data, indent=4))
 
