@@ -138,7 +138,7 @@ class MiSTerApp:
 
     def __init__(self, root):
         self.root = root
-        self.root.title("MiSTer Companion v2.7.6 by Anime0t4ku")
+        self.root.title("MiSTer Companion v2.8.0 by Anime0t4ku")
         self.root.geometry("900x900")
 
         # ===== App Icon =====
@@ -850,6 +850,65 @@ class MiSTerApp:
             state="disabled"
         )
         self.remove_wallpapers_button.pack(side="left", padx=8)
+
+        # ===== PCN Challenge Wallpapers =====
+
+        pcn_frame = ttk.LabelFrame(
+            wallpapers_frame,
+            text="PCN Challenge Wallpapers"
+        )
+        pcn_frame.pack(fill="x", pady=10)
+
+        pcn_buttons = ttk.Frame(pcn_frame)
+        pcn_buttons.pack(pady=15)
+
+        self.install_pcn_wallpapers_button = ttk.Button(
+            pcn_buttons,
+            text="Install Wallpapers",
+            width=22,
+            command=self.install_pcn_wallpapers,
+            state="disabled"
+        )
+        self.install_pcn_wallpapers_button.pack(side="left", padx=8)
+
+        self.remove_pcn_wallpapers_button = ttk.Button(
+            pcn_buttons,
+            text="Remove Installed Wallpapers",
+            width=26,
+            command=self.remove_pcn_wallpapers,
+            state="disabled"
+        )
+        self.remove_pcn_wallpapers_button.pack(side="left", padx=8)
+
+        # ===== 0t4ku Wallpapers =====
+
+        ot4ku_frame = ttk.LabelFrame(
+            wallpapers_frame,
+            text="0t4ku Wallpapers"
+        )
+        ot4ku_frame.pack(fill="x", pady=10)
+
+        ot4ku_buttons = ttk.Frame(ot4ku_frame)
+        ot4ku_buttons.pack(pady=15)
+
+        self.install_ot4ku_wallpapers_button = ttk.Button(
+            ot4ku_buttons,
+            text="Install Wallpapers",
+            width=22,
+            command=self.install_ot4ku_wallpapers,
+            state="disabled"
+        )
+        self.install_ot4ku_wallpapers_button.pack(side="left", padx=8)
+
+        self.remove_ot4ku_wallpapers_button = ttk.Button(
+            ot4ku_buttons,
+            text="Remove Installed Wallpapers",
+            width=26,
+            command=self.remove_ot4ku_wallpapers,
+            state="disabled"
+        )
+        self.remove_ot4ku_wallpapers_button.pack(side="left", padx=8)
+
         # Open wallpaper folder button (below wallpaper sources)
 
         self.open_wallpaper_folder_button = ttk.Button(
@@ -1944,8 +2003,13 @@ class MiSTerApp:
             self.load_mister_ini_into_ui(silent=True)
 
         if selected_text == "Wallpapers" and self.connection.connected:
+            def refresh_wallpapers():
+                self.check_ranny_wallpapers()
+                self.check_pcn_wallpapers()
+                self.check_ot4ku_wallpapers()
+
             threading.Thread(
-                target=self.check_ranny_wallpapers,
+                target=refresh_wallpapers,
                 daemon=True
             ).start()
 
@@ -4797,7 +4861,9 @@ class MiSTerApp:
 
         self.wallpaper_log(f"\nFinished. {new_count} wallpapers installed.\n")
 
-        self.check_ranny_wallpapers()
+        self.root.after(0, self.check_ranny_wallpapers)
+        self.root.after(0, self.check_pcn_wallpapers)
+        self.root.after(0, self.check_ot4ku_wallpapers)
 
 
     def install_169_wallpapers(self):
@@ -4859,6 +4925,338 @@ class MiSTerApp:
             self.wallpaper_log(f"\nFinished. {removed} wallpapers removed.\n")
 
             self.root.after(0, self.check_ranny_wallpapers)
+            self.root.after(0, self.check_pcn_wallpapers)
+            self.root.after(0, self.check_ot4ku_wallpapers)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def fetch_pcn_wallpapers(self):
+
+        try:
+            url = "https://api.github.com/repos/Anime0t4ku/MiSTerWallpapers/contents/pcnchallenge"
+
+            r = requests.get(url, timeout=10)
+
+            if r.status_code != 200:
+                return []
+
+            data = r.json()
+
+            wallpapers = []
+
+            for item in data:
+                if item.get("type") == "file":
+                    wallpapers.append(item)
+
+            return wallpapers
+
+        except:
+            return []
+
+    def check_pcn_wallpapers(self):
+
+        if not self.connection.connected:
+            return
+
+        github_wallpapers = self.fetch_pcn_wallpapers()
+        installed = self.get_installed_wallpapers()
+
+        installed_set = {f.lower() for f in installed}
+        github_names = {item["name"].lower() for item in github_wallpapers}
+
+        installed_matches = github_names & installed_set
+        missing = github_names - installed_set
+
+        if not installed_matches:
+            self.install_pcn_wallpapers_button.config(
+                text="Install Wallpapers",
+                state="normal"
+            )
+        elif missing:
+            self.install_pcn_wallpapers_button.config(
+                text="Update Wallpapers",
+                state="normal"
+            )
+        else:
+            self.install_pcn_wallpapers_button.config(
+                text="Install Wallpapers",
+                state="disabled"
+            )
+
+        if installed_matches:
+            self.remove_pcn_wallpapers_button.config(state="normal")
+        else:
+            self.remove_pcn_wallpapers_button.config(state="disabled")
+
+    def install_pcn_wallpapers(self):
+
+        threading.Thread(
+            target=self._install_pcn_wallpapers_worker,
+            daemon=True
+        ).start()
+
+    def _install_pcn_wallpapers_worker(self):
+
+        if not self.connection.connected:
+            return
+
+        if not self.wallpaper_console_visible:
+            self.wallpaper_console_frame.pack(fill="x", pady=10)
+            self.wallpaper_console_visible = True
+
+        self.wallpaper_console.delete("1.0", tk.END)
+        self.wallpaper_log("Fetching wallpaper list...\n")
+
+        wallpapers = self.fetch_pcn_wallpapers()
+
+        if not wallpapers:
+            self.wallpaper_log("No wallpapers found.\n")
+            return
+
+        self.ensure_wallpaper_folder()
+
+        installed = self.get_installed_wallpapers()
+        new_count = 0
+
+        for item in wallpapers:
+
+            name = item["name"]
+
+            if any(name.lower() == f.lower() for f in installed):
+                continue
+
+            self.wallpaper_log(f"Downloading {name}...\n")
+
+            data = self.download_wallpaper(item["download_url"])
+
+            if not data:
+                self.wallpaper_log("Download failed\n")
+                continue
+
+            self.wallpaper_log(f"Uploading {name}...\n")
+
+            ok = self.upload_wallpaper(name, data)
+
+            if ok:
+                new_count += 1
+                self.wallpaper_log(f"Installed {name}\n")
+
+        self.wallpaper_log(f"\nFinished. {new_count} wallpapers installed.\n")
+
+        self.root.after(0, self.check_ranny_wallpapers)
+        self.root.after(0, self.check_pcn_wallpapers)
+        self.root.after(0, self.check_ot4ku_wallpapers)
+
+    def remove_pcn_wallpapers(self):
+
+        if not self.connection.connected:
+            return
+
+        confirm = messagebox.askyesno(
+            "Remove Wallpapers",
+            "Remove all PCN Challenge wallpapers from the MiSTer?"
+        )
+
+        if not confirm:
+            return
+
+        if not self.wallpaper_console_visible:
+            self.wallpaper_console_frame.pack(fill="x", pady=10)
+            self.wallpaper_console_visible = True
+
+        self.wallpaper_console.delete("1.0", tk.END)
+
+        def worker():
+
+            self.wallpaper_log("Removing PCN Challenge wallpapers...\n")
+
+            repo_files = {
+                item["name"]
+                for item in self.fetch_pcn_wallpapers()
+            }
+
+            installed = self.get_installed_wallpapers()
+
+            removed = 0
+
+            for name in installed:
+
+                if name in repo_files:
+                    self.connection.run_command(
+                        f'rm "/media/fat/wallpapers/{name}"'
+                    )
+
+                    removed += 1
+                    self.wallpaper_log(f"Removed {name}\n")
+
+            self.wallpaper_log(f"\nFinished. {removed} wallpapers removed.\n")
+
+            self.root.after(0, self.check_ranny_wallpapers)
+            self.root.after(0, self.check_pcn_wallpapers)
+            self.root.after(0, self.check_ot4ku_wallpapers)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def fetch_ot4ku_wallpapers(self):
+
+        try:
+            url = "https://api.github.com/repos/Anime0t4ku/MiSTerWallpapers/contents/0t4kuwallpapers"
+
+            r = requests.get(url, timeout=10)
+
+            if r.status_code != 200:
+                return []
+
+            data = r.json()
+
+            wallpapers = []
+
+            for item in data:
+                if item.get("type") == "file":
+                    wallpapers.append(item)
+
+            return wallpapers
+
+        except:
+            return []
+
+    def check_ot4ku_wallpapers(self):
+
+        if not self.connection.connected:
+            return
+
+        github_wallpapers = self.fetch_ot4ku_wallpapers()
+        installed = self.get_installed_wallpapers()
+
+        installed_set = {f.lower() for f in installed}
+        github_names = {item["name"].lower() for item in github_wallpapers}
+
+        installed_matches = github_names & installed_set
+        missing = github_names - installed_set
+
+        if not installed_matches:
+            self.install_ot4ku_wallpapers_button.config(
+                text="Install Wallpapers",
+                state="normal"
+            )
+        elif missing:
+            self.install_ot4ku_wallpapers_button.config(
+                text="Update Wallpapers",
+                state="normal"
+            )
+        else:
+            self.install_ot4ku_wallpapers_button.config(
+                text="Install Wallpapers",
+                state="disabled"
+            )
+
+        if installed_matches:
+            self.remove_ot4ku_wallpapers_button.config(state="normal")
+        else:
+            self.remove_ot4ku_wallpapers_button.config(state="disabled")
+
+    def install_ot4ku_wallpapers(self):
+
+        threading.Thread(
+            target=self._install_ot4ku_wallpapers_worker,
+            daemon=True
+        ).start()
+
+    def _install_ot4ku_wallpapers_worker(self):
+
+        if not self.connection.connected:
+            return
+
+        if not self.wallpaper_console_visible:
+            self.wallpaper_console_frame.pack(fill="x", pady=10)
+            self.wallpaper_console_visible = True
+
+        self.wallpaper_console.delete("1.0", tk.END)
+        self.wallpaper_log("Fetching wallpaper list...\n")
+
+        wallpapers = self.fetch_ot4ku_wallpapers()
+
+        if not wallpapers:
+            self.wallpaper_log("No wallpapers found.\n")
+            return
+
+        self.ensure_wallpaper_folder()
+
+        installed = self.get_installed_wallpapers()
+        new_count = 0
+
+        for item in wallpapers:
+
+            name = item["name"]
+
+            if any(name.lower() == f.lower() for f in installed):
+                continue
+
+            self.wallpaper_log(f"Downloading {name}...\n")
+
+            data = self.download_wallpaper(item["download_url"])
+
+            if not data:
+                self.wallpaper_log("Download failed\n")
+                continue
+
+            self.wallpaper_log(f"Uploading {name}...\n")
+
+            ok = self.upload_wallpaper(name, data)
+
+            if ok:
+                new_count += 1
+                self.wallpaper_log(f"Installed {name}\n")
+
+        self.wallpaper_log(f"\nFinished. {new_count} wallpapers installed.\n")
+
+        self.root.after(0, self.check_ot4ku_wallpapers)
+
+    def remove_ot4ku_wallpapers(self):
+
+        if not self.connection.connected:
+            return
+
+        confirm = messagebox.askyesno(
+            "Remove Wallpapers",
+            "Remove all 0t4ku wallpapers from the MiSTer?"
+        )
+
+        if not confirm:
+            return
+
+        if not self.wallpaper_console_visible:
+            self.wallpaper_console_frame.pack(fill="x", pady=10)
+            self.wallpaper_console_visible = True
+
+        self.wallpaper_console.delete("1.0", tk.END)
+
+        def worker():
+
+            self.wallpaper_log("Removing 0t4ku wallpapers...\n")
+
+            repo_files = {
+                item["name"]
+                for item in self.fetch_ot4ku_wallpapers()
+            }
+
+            installed = self.get_installed_wallpapers()
+
+            removed = 0
+
+            for name in installed:
+
+                if name in repo_files:
+                    self.connection.run_command(
+                        f'rm "/media/fat/wallpapers/{name}"'
+                    )
+
+                    removed += 1
+                    self.wallpaper_log(f"Removed {name}\n")
+
+            self.wallpaper_log(f"\nFinished. {removed} wallpapers removed.\n")
+
+            self.root.after(0, self.check_ot4ku_wallpapers)
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -4893,12 +5291,17 @@ class MiSTerApp:
                 self.install_169_wallpapers_button.config(state="disabled")
                 self.install_43_wallpapers_button.config(state="disabled")
                 self.remove_wallpapers_button.config(state="disabled")
+                self.install_pcn_wallpapers_button.config(state="disabled")
+                self.remove_pcn_wallpapers_button.config(state="disabled")
+                self.install_ot4ku_wallpapers_button.config(state="disabled")
+                self.remove_ot4ku_wallpapers_button.config(state="disabled")
                 self.open_wallpaper_folder_button.config(state="disabled")
-
                 return
 
             self.install_169_wallpapers_button.config(state="normal")
             self.install_43_wallpapers_button.config(state="normal")
+            self.install_pcn_wallpapers_button.config(state="normal")
+            self.install_ot4ku_wallpapers_button.config(state="normal")
 
             if self.wallpaper_folder_exists():
                 self.open_wallpaper_folder_button.config(state="normal")
