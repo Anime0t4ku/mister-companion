@@ -3260,11 +3260,9 @@ class MiSTerApp:
 
             select_button.config(state="normal")
 
-        listbox.bind("<<ListboxSelect>>", on_select)
-
         # ---------------------------------
 
-        def use_selected():
+        def use_selected(event=None):
 
             if not listbox.curselection():
                 return
@@ -3279,9 +3277,11 @@ class MiSTerApp:
 
             popup.destroy()
 
+        listbox.bind("<<ListboxSelect>>", on_select)
+        listbox.bind("<Double-Button-1>", use_selected)
+
         select_button.config(command=use_selected)
 
-        popup.update_idletasks()
         popup.after(200, start_scan)
 
     def reboot(self):
