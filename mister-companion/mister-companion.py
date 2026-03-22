@@ -2001,6 +2001,7 @@ class MiSTerApp:
 
         if selected_text == "MiSTer Settings" and self.connection.connected:
             self.load_mister_ini_into_ui(silent=True)
+            self.load_mister_ini_advanced()
 
         if selected_text == "Wallpapers" and self.connection.connected:
             def refresh_wallpapers():
@@ -3259,11 +3260,9 @@ class MiSTerApp:
 
             select_button.config(state="normal")
 
-        listbox.bind("<<ListboxSelect>>", on_select)
-
         # ---------------------------------
 
-        def use_selected():
+        def use_selected(event=None):
 
             if not listbox.curselection():
                 return
@@ -3278,9 +3277,11 @@ class MiSTerApp:
 
             popup.destroy()
 
+        listbox.bind("<<ListboxSelect>>", on_select)
+        listbox.bind("<Double-Button-1>", use_selected)
+
         select_button.config(command=use_selected)
 
-        popup.update_idletasks()
         popup.after(200, start_scan)
 
     def reboot(self):
@@ -3861,45 +3862,26 @@ class MiSTerApp:
                 updated_settings = self.build_easy_mode_settings()
                 new_ini_text = self.update_mister_ini_text(ini_text, updated_settings)
 
+
+
             else:
 
                 advanced_text = self.advanced_text.get("1.0", tk.END).strip()
 
-                new_ini_text = self.update_mister_ini_text(
-                    ini_text,
-                    {}
-                )
+                if not advanced_text:
+                    messagebox.showerror(
 
-                # Replace MiSTer section with advanced content
-                lines = new_ini_text.splitlines()
+                        "MiSTer.ini Error",
 
-                output = []
-                in_mister = False
-                replaced = False
+                        "Advanced editor is empty."
 
-                for line in lines:
+                    )
 
-                    stripped = line.strip()
+                    return
 
-                    if stripped == "[MiSTer]":
-                        output.append(line)
-                        output.append(advanced_text)
-                        in_mister = True
-                        replaced = True
-                        continue
+                # Advanced mode edits the full MiSTer.ini directly
 
-                    if in_mister and stripped.startswith("[") and stripped.endswith("]"):
-                        in_mister = False
-
-                    if not in_mister:
-                        output.append(line)
-
-                if not replaced:
-                    output.append("")
-                    output.append("[MiSTer]")
-                    output.append(advanced_text)
-
-                new_ini_text = "\n".join(output) + "\n"
+                new_ini_text = advanced_text + "\n"
 
             sftp = self.connection.client.open_sftp()
             with sftp.open("/media/fat/MiSTer.ini", "w") as f:
