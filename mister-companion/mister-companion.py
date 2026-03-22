@@ -6037,6 +6037,8 @@ class MiSTerApp:
         self.bootroms_var.set(is_enabled("uberyoji_mister_boot_roms_mgl"))
         self.gbaborders_var.set(is_enabled("Dinierto/MiSTer-GBA-Borders"))
         self.insert_coin_var.set(is_enabled("funkycochise/Insert-Coin"))
+        self.anime0t4ku_wallpapers_var.set(is_enabled("anime0t4ku_wallpapers"))
+        self.pcn_challenge_wallpapers_var.set(is_enabled("pcn_challenge_wallpapers"))
 
         # === Wallpapers ===
         wallpaper_enabled = is_enabled("Ranny-Snice/Ranny-Snice-Wallpapers")
