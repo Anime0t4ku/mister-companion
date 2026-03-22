@@ -669,7 +669,7 @@ class MiSTerApp:
         self.disable_smb_button.pack(side="left", padx=10)
 
         self.explorer_button = ttk.Button(files_inner,
-                                          text="Open in Explorer",
+                                          text="Open in Finder" if sys.platform == "darwin" else "Open in Explorer",
                                           width=22,
                                           command=self.open_explorer)
         self.explorer_button.pack(side="left", padx=20)
@@ -3070,7 +3070,21 @@ class MiSTerApp:
                 )
 
             elif sys.platform == "darwin":
-                subprocess.Popen(["open", f"smb://{ip}/"])
+                username = self.connection.username or "root"
+                password = self.connection.password or "1"
+                home = os.path.expanduser("~")
+
+                # Silently mount sdcard and usb0 directly, skipping the picker
+                for share in ["sdcard", "usb0"]:
+                    mount_point = os.path.join(home, f"MiSTer_{share}")
+                    subprocess.run(["mkdir", "-p", mount_point], capture_output=True)
+                    subprocess.run(
+                        ["mount_smbfs", f"//{username}:{password}@{ip}/{share}", mount_point],
+                        capture_output=True
+                    )
+
+                # Open a new Finder window showing sdcard
+                subprocess.Popen(["open", os.path.join(home, "MiSTer_sdcard")])
 
         except Exception as e:
             messagebox.showerror(
@@ -5345,7 +5359,16 @@ class MiSTerApp:
 
             # macOS
             elif sys.platform == "darwin":
-                subprocess.Popen(["open", f"smb://{ip}/sdcard/wallpapers"])
+                username = self.connection.username or "root"
+                password = self.connection.password or "1"
+                home = os.path.expanduser("~")
+                mount_point = os.path.join(home, "MiSTer_sdcard")
+                subprocess.run(["mkdir", "-p", mount_point], capture_output=True)
+                subprocess.run(
+                    ["mount_smbfs", f"//{username}:{password}@{ip}/sdcard", mount_point],
+                    capture_output=True
+                )
+                subprocess.Popen(["open", os.path.join(mount_point, "wallpapers")])
 
         except Exception as e:
             messagebox.showerror("SMB Error", str(e))
@@ -5384,7 +5407,16 @@ class MiSTerApp:
 
             # macOS
             elif sys.platform == "darwin":
-                subprocess.Popen(["open", f"smb://{ip}/sdcard/Scripts"])
+                username = self.connection.username or "root"
+                password = self.connection.password or "1"
+                home = os.path.expanduser("~")
+                mount_point = os.path.join(home, "MiSTer_sdcard")
+                subprocess.run(["mkdir", "-p", mount_point], capture_output=True)
+                subprocess.run(
+                    ["mount_smbfs", f"//{username}:{password}@{ip}/sdcard", mount_point],
+                    capture_output=True
+                )
+                subprocess.Popen(["open", os.path.join(mount_point, "Scripts")])
 
         except Exception as e:
             messagebox.showerror("SMB Error", str(e))
