@@ -5736,6 +5736,8 @@ class MiSTerApp:
         self.bootroms_var = tk.BooleanVar()
         self.gbaborders_var = tk.BooleanVar()
         self.insert_coin_var = tk.BooleanVar()
+        self.anime0t4ku_wallpapers_var = tk.BooleanVar()
+        self.pcn_challenge_wallpapers_var = tk.BooleanVar()
 
         ttk.Checkbutton(
             extra_frame,
@@ -5765,6 +5767,18 @@ class MiSTerApp:
             extra_frame,
             text="Insert-Coin",
             variable=self.insert_coin_var
+        ).pack(anchor="w", padx=10, pady=2)
+
+        ttk.Checkbutton(
+            extra_frame,
+            text="Anime0t4ku Wallpapers",
+            variable=self.anime0t4ku_wallpapers_var
+        ).pack(anchor="w", padx=10, pady=2)
+
+        ttk.Checkbutton(
+            extra_frame,
+            text="PCN Challenge Wallpapers",
+            variable=self.pcn_challenge_wallpapers_var
         ).pack(anchor="w", padx=10, pady=2)
 
         # ===== Wallpapers =====
@@ -6331,7 +6345,26 @@ class MiSTerApp:
             main_lines = remove_section(main_lines, "bios_db")
             main_lines = remove_section(main_lines, "arcade_roms_db")
 
-            # These still stay in downloader.ini
+            main_lines = handle_simple_section(
+                "anime0t4ku_wallpapers",
+                self.anime0t4ku_wallpapers_var.get(),
+                main_lines,
+                [
+                    "[anime0t4ku_wallpapers]",
+                    "db_url = https://raw.githubusercontent.com/Anime0t4ku/MiSTerWallpapers/db/db/0t4kuwallpapers.json.zip"
+                ]
+            )
+
+            main_lines = handle_simple_section(
+                "pcn_challenge_wallpapers",
+                self.pcn_challenge_wallpapers_var.get(),
+                main_lines,
+                [
+                    "[pcn_challenge_wallpapers]",
+                    "db_url = https://raw.githubusercontent.com/Anime0t4ku/MiSTerWallpapers/db/db/pcnchallenge.json.zip"
+                ]
+            )
+
             main_lines = handle_simple_section(
                 "uberyoji_mister_boot_roms_mgl",
                 self.bootroms_var.get(),
