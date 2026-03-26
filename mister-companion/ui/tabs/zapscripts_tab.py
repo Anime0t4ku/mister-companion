@@ -56,6 +56,7 @@ class ZapScriptsTab(QWidget):
 
         self.info_label = QLabel("Connect to a MiSTer device to load Zaparoo scripts.")
         self.info_label.setStyleSheet("color: gray;")
+        self.info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.info_label.setWordWrap(True)
         main_layout.addWidget(self.info_label)
 

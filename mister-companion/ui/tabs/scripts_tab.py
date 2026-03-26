@@ -1,6 +1,6 @@
 import traceback
 
-from PyQt6.QtCore import QThread, pyqtSignal
+from PyQt6.QtCore import QThread, Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
@@ -93,6 +93,7 @@ class ScriptsTab(QWidget):
 
         self.update_status_label = QLabel("update_all: Unknown")
         self.update_status_label.setStyleSheet("color: gray;")
+        self.update_status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         update_layout.addWidget(self.update_status_label)
 
         update_buttons = QHBoxLayout()
@@ -129,6 +130,7 @@ class ScriptsTab(QWidget):
 
         self.zaparoo_status_label = QLabel("Zaparoo: Unknown")
         self.zaparoo_status_label.setStyleSheet("color: gray;")
+        self.zaparoo_status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         zaparoo_layout.addWidget(self.zaparoo_status_label)
 
         zaparoo_buttons = QHBoxLayout()
@@ -161,6 +163,7 @@ class ScriptsTab(QWidget):
 
         self.migrate_status_label = QLabel("migrate_sd: Unknown")
         self.migrate_status_label.setStyleSheet("color: gray;")
+        self.migrate_status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         migrate_layout.addWidget(self.migrate_status_label)
 
         migrate_buttons = QHBoxLayout()
@@ -189,6 +192,7 @@ class ScriptsTab(QWidget):
 
         self.cifs_status_label = QLabel("cifs_mount: Unknown")
         self.cifs_status_label.setStyleSheet("color: gray;")
+        self.cifs_status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         cifs_layout.addWidget(self.cifs_status_label)
 
         cifs_buttons = QHBoxLayout()

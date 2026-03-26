@@ -1,3 +1,8 @@
+import json
+import time
+import webbrowser
+
+import requests
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QWidget,
@@ -12,6 +17,9 @@ from PyQt6.QtWidgets import (
 )
 
 
+NEWSWIDGET_URL = "https://raw.githubusercontent.com/Anime0t4ku/mister-companion/main/newswidget.json"
+
+
 class ConnectionTab(QWidget):
     def __init__(self, main_window):
         super().__init__()
@@ -19,14 +27,25 @@ class ConnectionTab(QWidget):
         self.main_window = main_window
         self.connection = main_window.connection
 
+        self.news_url = ""
+
         self.init_ui()
         self.connect_signals()
         self.apply_disconnected_state()
+        self.sync_status_from_main_window()
+        self.load_news_widget()
 
     def init_ui(self):
         main_layout = QVBoxLayout()
         main_layout.setContentsMargins(12, 12, 12, 12)
         main_layout.setSpacing(14)
+
+        # =========================
+        # Connection Status
+        # =========================
+        self.connection_status_label = QLabel("Status: Disconnected")
+        self.connection_status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        main_layout.addWidget(self.connection_status_label)
 
         # =========================
         # Saved Devices
@@ -110,9 +129,49 @@ class ConnectionTab(QWidget):
         connection_row.addLayout(center_wrapper)
         connection_row.addStretch()
 
+        # =========================
+        # News Widget
+        # =========================
+        self.news_group = QGroupBox("MiSTer Companion News")
+        news_layout = QVBoxLayout()
+        news_layout.setContentsMargins(16, 16, 16, 16)
+        news_layout.setSpacing(10)
+
+        self.news_headline_label = QLabel("")
+        self.news_headline_label.setWordWrap(True)
+        self.news_headline_label.setTextFormat(Qt.TextFormat.PlainText)
+        self.news_headline_label.setStyleSheet("font-size: 15px; font-weight: bold;")
+
+        self.news_message_label = QLabel("")
+        self.news_message_label.setWordWrap(True)
+        self.news_message_label.setTextFormat(Qt.TextFormat.PlainText)
+
+        self.news_button = QPushButton("")
+        self.news_button.setVisible(False)
+        self.news_button.setFixedWidth(140)
+
+        self.news_date_label = QLabel("")
+        self.news_date_label.setAlignment(Qt.AlignmentFlag.AlignRight)
+        self.news_date_label.setStyleSheet("color: gray;")
+
+        button_row = QHBoxLayout()
+        button_row.addWidget(self.news_button)
+        button_row.addStretch()
+
+        news_layout.addWidget(self.news_headline_label)
+        news_layout.addWidget(self.news_message_label)
+        news_layout.addLayout(button_row)
+        news_layout.addWidget(self.news_date_label)
+
+        self.news_group.setLayout(news_layout)
+        self.news_group.hide()
+
         main_layout.addWidget(saved_group)
         main_layout.addLayout(connection_row)
+
         main_layout.addStretch()
+
+        main_layout.addWidget(self.news_group)
 
         self.setLayout(main_layout)
 
@@ -131,6 +190,85 @@ class ConnectionTab(QWidget):
         self.user_input.textEdited.connect(self.on_connection_field_change)
         self.pass_input.textEdited.connect(self.on_connection_field_change)
 
+        self.news_button.clicked.connect(self.open_news_link)
+
+    # =============================
+    # Status Sync
+    # =============================
+
+    def sync_status_from_main_window(self):
+        if hasattr(self.main_window, "connection_status_label"):
+            self.connection_status_label.setText(self.main_window.connection_status_label.text())
+            self.connection_status_label.setStyleSheet(self.main_window.connection_status_label.styleSheet())
+
+    # =============================
+    # News Widget
+    # =============================
+
+    def load_news_widget(self):
+        self.news_group.hide()
+        self.news_url = ""
+
+        try:
+            url = f"{NEWSWIDGET_URL}?t={int(time.time())}"
+            response = requests.get(url, timeout=5)
+            response.raise_for_status()
+
+            data = response.json()
+            items = data.get("items", [])
+
+            if not items:
+                return
+
+            item = items[0]
+            headline = item.get("headline", "").strip()
+            message = item.get("message", "").strip()
+
+            if not headline and not message:
+                return
+
+            news_type = item.get("type", "info").strip().lower()
+            date_text = item.get("date", "").strip()
+            url = item.get("url", "").strip()
+            url_label = item.get("url_label", "").strip() or "Open"
+
+            color_map = {
+                "info": "#4da3ff",
+                "update": "#00aa00",
+                "warning": "#ff8800",
+            }
+            headline_color = color_map.get(news_type, "#4da3ff")
+
+            self.news_headline_label.setText(headline)
+            self.news_headline_label.setStyleSheet(
+                f"font-size: 15px; font-weight: bold; color: {headline_color};"
+            )
+
+            self.news_message_label.setText(message)
+
+            if url:
+                self.news_url = url
+                self.news_button.setText(url_label)
+                self.news_button.setVisible(True)
+            else:
+                self.news_url = ""
+                self.news_button.setVisible(False)
+
+            if date_text:
+                self.news_date_label.setText(f"Posted: {date_text}")
+                self.news_date_label.show()
+            else:
+                self.news_date_label.hide()
+
+            self.news_group.show()
+
+        except Exception:
+            self.news_group.hide()
+
+    def open_news_link(self):
+        if self.news_url:
+            webbrowser.open(self.news_url)
+
     # =============================
     # Connection Logic
     # =============================
@@ -145,6 +283,8 @@ class ConnectionTab(QWidget):
         self.main_window.open_network_scanner()
 
     def apply_connected_state(self):
+        self.sync_status_from_main_window()
+
         self.ip_input.setEnabled(False)
         self.user_input.setEnabled(False)
         self.pass_input.setEnabled(False)
@@ -159,6 +299,8 @@ class ConnectionTab(QWidget):
         self.delete_profile_btn.setEnabled(False)
 
     def apply_disconnected_state(self):
+        self.sync_status_from_main_window()
+
         self.ip_input.setEnabled(True)
         self.user_input.setEnabled(True)
         self.pass_input.setEnabled(True)
@@ -173,6 +315,8 @@ class ConnectionTab(QWidget):
         self.delete_profile_btn.setEnabled(True)
 
     def update_connection_state(self):
+        self.sync_status_from_main_window()
+
         if self.connection.is_connected():
             self.apply_connected_state()
         else:
