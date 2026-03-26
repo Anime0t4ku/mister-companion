@@ -10,10 +10,10 @@ permissions:
 jobs:
 
   # ============================================================
-  # Windows Build
+  # Windows Build - v2 Legacy
   # ============================================================
-  build-windows:
-    name: Build Windows Executable
+  build-windows-v2-legacy:
+    name: Build Windows Executable (v2 Legacy)
     runs-on: windows-latest
 
     steps:
@@ -30,22 +30,28 @@ jobs:
           python -m pip install --upgrade pip
           pip install pyinstaller paramiko requests websocket-client psutil
 
+      - name: List Legacy Files
+        working-directory: mister-companion-legacy-edition
+        run: |
+          pwd
+          dir
+
       - name: Build Executable
-        working-directory: mister-companion
-        run: pyinstaller --clean --onefile --windowed --icon app.ico --add-data "icon.png;." --name MiSTer-Companion mister-companion.py
+        working-directory: mister-companion-legacy-edition
+        run: pyinstaller --clean --onefile --windowed --icon app.ico --add-data "icon.png;." --name MiSTer-Companion-Legacy mister-companion.py
 
       - name: Upload Windows Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MiSTer-Companion-Windows-x86_64
-          path: mister-companion/dist/MiSTer-Companion.exe
+          name: MiSTer-Companion-Legacy-Windows-x86_64
+          path: mister-companion-legacy-edition/dist/MiSTer-Companion-Legacy.exe
 
 
   # ============================================================
-  # Linux Build
+  # Linux Build - v2 Legacy
   # ============================================================
-  build-linux:
-    name: Build Linux Executable
+  build-linux-v2-legacy:
+    name: Build Linux Executable (v2 Legacy)
     runs-on: ubuntu-latest
 
     steps:
@@ -67,18 +73,105 @@ jobs:
           python -m pip install --upgrade pip
           pip install pyinstaller paramiko requests websocket-client psutil
 
+      - name: List Legacy Files
+        working-directory: mister-companion-legacy-edition
+        run: |
+          pwd
+          ls -la
+
       - name: Build Executable
-        working-directory: mister-companion
-        run: pyinstaller --clean --onefile --windowed --add-data "icon.png:." --name MiSTer-Companion mister-companion.py
+        working-directory: mister-companion-legacy-edition
+        run: pyinstaller --clean --onefile --windowed --add-data "icon.png:." --name MiSTer-Companion-Legacy mister-companion.py
 
       - name: Make binary executable
-        run: chmod +x mister-companion/dist/MiSTer-Companion
+        run: chmod +x mister-companion-legacy-edition/dist/MiSTer-Companion-Legacy
 
       - name: Upload Linux Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MiSTer-Companion-Linux-x86_64
-          path: mister-companion/dist/MiSTer-Companion
+          name: MiSTer-Companion-Legacy-Linux-x86_64
+          path: mister-companion-legacy-edition/dist/MiSTer-Companion-Legacy
+
+
+  # ============================================================
+  # Windows Build - v3
+  # ============================================================
+  build-windows-v3:
+    name: Build Windows Executable (v3)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller paramiko requests websocket-client psutil PyQt6
+
+      - name: List v3 Files
+        working-directory: mister-companion
+        run: |
+          pwd
+          dir
+          dir assets
+
+      - name: Build Executable
+        working-directory: mister-companion
+        run: pyinstaller --clean --onefile --windowed --icon app.ico --add-data "assets/icon.png;assets" --name MiSTer-Companion-v3 main.py
+
+      - name: Upload Windows Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MiSTer-Companion-v3-Windows-x86_64
+          path: mister-companion/dist/MiSTer-Companion-v3.exe
+
+
+  # ============================================================
+  # Linux Build - v3
+  # ============================================================
+  build-linux-v3:
+    name: Build Linux Executable (v3)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller paramiko requests websocket-client psutil PyQt6
+
+      - name: List v3 Files
+        working-directory: mister-companion
+        run: |
+          pwd
+          ls -la
+          ls -la assets
+
+      - name: Build Executable
+        working-directory: mister-companion
+        run: pyinstaller --clean --onefile --windowed --add-data "assets/icon.png:assets" --name MiSTer-Companion-v3 main.py
+
+      - name: Make binary executable
+        run: chmod +x mister-companion/dist/MiSTer-Companion-v3
+
+      - name: Upload Linux Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MiSTer-Companion-v3-Linux-x86_64
+          path: mister-companion/dist/MiSTer-Companion-v3
 
 
   # ============================================================
@@ -87,7 +180,11 @@ jobs:
   release:
     name: Create / Update Pre-release
     runs-on: ubuntu-latest
-    needs: [build-windows, build-linux]
+    needs:
+      - build-windows-v2-legacy
+      - build-linux-v2-legacy
+      - build-windows-v3
+      - build-linux-v3
     if: github.ref == 'refs/heads/main'
 
     steps:
@@ -102,15 +199,25 @@ jobs:
           path: dist
           merge-multiple: true
 
-      - name: Zip Windows Build
+      - name: Zip Windows Legacy Build
         run: |
           cd dist
-          zip ../MiSTer-Companion-Windows-x86_64.zip MiSTer-Companion.exe
+          zip ../MiSTer-Companion-Legacy-Windows-x86_64.zip MiSTer-Companion-Legacy.exe
 
-      - name: Package Linux Build (.tar.gz)
+      - name: Package Linux Legacy Build (.tar.gz)
         run: |
           cd dist
-          tar -czvf ../MiSTer-Companion-Linux-x86_64.tar.gz MiSTer-Companion
+          tar -czvf ../MiSTer-Companion-Legacy-Linux-x86_64.tar.gz MiSTer-Companion-Legacy
+
+      - name: Zip Windows v3 Build
+        run: |
+          cd dist
+          zip ../MiSTer-Companion-v3-Windows-x86_64.zip MiSTer-Companion-v3.exe
+
+      - name: Package Linux v3 Build (.tar.gz)
+        run: |
+          cd dist
+          tar -czvf ../MiSTer-Companion-v3-Linux-x86_64.tar.gz MiSTer-Companion-v3
 
       - name: Update Git Tag
         run: |
@@ -125,5 +232,7 @@ jobs:
           removeArtifacts: true
           tag: Pre-release
           artifacts: |
-            MiSTer-Companion-Windows-x86_64.zip
-            MiSTer-Companion-Linux-x86_64.tar.gz
+            MiSTer-Companion-Legacy-Windows-x86_64.zip
+            MiSTer-Companion-Legacy-Linux-x86_64.tar.gz
+            MiSTer-Companion-v3-Windows-x86_64.zip
+            MiSTer-Companion-v3-Linux-x86_64.tar.gz
