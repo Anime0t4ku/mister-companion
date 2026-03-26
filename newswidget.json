@@ -9,6 +9,15 @@
       "message": "This beta includes the new PyQt6 interface and is a work in progress.\n\nIf you encounter any issues or bugs, please report them on GitHub to help improve the app.\n\nIf you prefer a stable experience, you can download the legacy version from the releases page below.",
       "url": "https://github.com/Anime0t4ku/mister-companion/releases",
       "url_label": "View Releases"
+    },
+    {
+      "id": "macos-support",
+      "date": "2026-03-27",
+      "type": "update",
+      "headline": "Help Bring MiSTer Companion to macOS",
+      "message": "macOS support is currently not available.\n\nTo properly support macOS builds and testing, a Mac device is needed.\n\nIf you'd like to help make this possible, consider supporting the Ko-fi goal below.",
+      "url": "https://ko-fi.com/anime0t4ku/goal?g=10",
+      "url_label": "Support on Ko-fi"
     }
   ]
 }
