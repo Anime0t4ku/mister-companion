@@ -1,0 +1,5 @@
+PyQt6
+paramiko
+requests
+websocket-client
+psutil

@@ -1,0 +1,478 @@
+import traceback
+
+from PyQt6.QtCore import QThread, pyqtSignal
+from PyQt6.QtWidgets import (
+    QGroupBox,
+    QHBoxLayout,
+    QMessageBox,
+    QPushButton,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
+
+from core.wallpapers import (
+    build_install_state,
+    fetch_ot4ku_wallpapers,
+    fetch_pcn_wallpapers,
+    fetch_ranny_wallpapers,
+    get_installed_wallpapers,
+    open_wallpaper_folder_on_host,
+    remove_installed_wallpapers,
+    wallpaper_folder_exists,
+    install_wallpaper_items,
+)
+
+
+class WallpaperTaskWorker(QThread):
+    log_line = pyqtSignal(str)
+    success = pyqtSignal(str)
+    error = pyqtSignal(str)
+    finished_task = pyqtSignal()
+
+    def __init__(self, task_fn, success_message=""):
+        super().__init__()
+        self.task_fn = task_fn
+        self.success_message = success_message
+
+    def emit_log(self, text: str):
+        self.log_line.emit(text)
+
+    def run(self):
+        try:
+            self.task_fn(self.emit_log)
+
+            if self.success_message:
+                self.success.emit(self.success_message)
+
+        except Exception as e:
+            detail = traceback.format_exc()
+            self.error.emit(f"{str(e)}\n\n{detail}")
+        finally:
+            self.finished_task.emit()
+
+
+class WallpapersTab(QWidget):
+    def __init__(self, main_window):
+        super().__init__()
+        self.main_window = main_window
+        self.connection = main_window.connection
+
+        self.console_visible = False
+        self.current_worker = None
+
+        self.build_ui()
+        self.apply_disconnected_state()
+
+    def build_ui(self):
+        main_layout = QVBoxLayout()
+        main_layout.setContentsMargins(12, 12, 12, 12)
+        main_layout.setSpacing(14)
+        self.setLayout(main_layout)
+
+        # Ranny
+        ranny_group = QGroupBox("Ranny Snice Wallpapers")
+        ranny_layout = QVBoxLayout()
+        ranny_layout.setContentsMargins(16, 18, 16, 18)
+        ranny_layout.setSpacing(12)
+
+        ranny_buttons = QHBoxLayout()
+        ranny_buttons.setSpacing(10)
+
+        self.install_169_button = QPushButton("Install 16:9 Wallpapers")
+        self.install_169_button.setFixedWidth(190)
+
+        self.install_43_button = QPushButton("Install 4:3 Wallpapers")
+        self.install_43_button.setFixedWidth(190)
+
+        self.remove_ranny_button = QPushButton("Remove Installed Wallpapers")
+        self.remove_ranny_button.setFixedWidth(220)
+
+        ranny_buttons.addStretch()
+        ranny_buttons.addWidget(self.install_169_button)
+        ranny_buttons.addWidget(self.install_43_button)
+        ranny_buttons.addWidget(self.remove_ranny_button)
+        ranny_buttons.addStretch()
+
+        ranny_layout.addLayout(ranny_buttons)
+        ranny_group.setLayout(ranny_layout)
+        main_layout.addWidget(ranny_group)
+
+        # PCN
+        pcn_group = QGroupBox("PCN Challenge Wallpapers")
+        pcn_layout = QVBoxLayout()
+        pcn_layout.setContentsMargins(16, 18, 16, 18)
+        pcn_layout.setSpacing(12)
+
+        pcn_buttons = QHBoxLayout()
+        pcn_buttons.setSpacing(10)
+
+        self.install_pcn_button = QPushButton("Install Wallpapers")
+        self.install_pcn_button.setFixedWidth(190)
+
+        self.remove_pcn_button = QPushButton("Remove Installed Wallpapers")
+        self.remove_pcn_button.setFixedWidth(220)
+
+        pcn_buttons.addStretch()
+        pcn_buttons.addWidget(self.install_pcn_button)
+        pcn_buttons.addWidget(self.remove_pcn_button)
+        pcn_buttons.addStretch()
+
+        pcn_layout.addLayout(pcn_buttons)
+        pcn_group.setLayout(pcn_layout)
+        main_layout.addWidget(pcn_group)
+
+        # 0t4ku
+        ot4ku_group = QGroupBox("0t4ku Wallpapers")
+        ot4ku_layout = QVBoxLayout()
+        ot4ku_layout.setContentsMargins(16, 18, 16, 18)
+        ot4ku_layout.setSpacing(12)
+
+        ot4ku_buttons = QHBoxLayout()
+        ot4ku_buttons.setSpacing(10)
+
+        self.install_ot4ku_button = QPushButton("Install Wallpapers")
+        self.install_ot4ku_button.setFixedWidth(190)
+
+        self.remove_ot4ku_button = QPushButton("Remove Installed Wallpapers")
+        self.remove_ot4ku_button.setFixedWidth(220)
+
+        ot4ku_buttons.addStretch()
+        ot4ku_buttons.addWidget(self.install_ot4ku_button)
+        ot4ku_buttons.addWidget(self.remove_ot4ku_button)
+        ot4ku_buttons.addStretch()
+
+        ot4ku_layout.addLayout(ot4ku_buttons)
+        ot4ku_group.setLayout(ot4ku_layout)
+        main_layout.addWidget(ot4ku_group)
+
+        # Open Wallpaper Folder
+        folder_row = QHBoxLayout()
+        folder_row.addStretch()
+
+        self.open_wallpaper_folder_button = QPushButton("Open Wallpaper Folder")
+        self.open_wallpaper_folder_button.setFixedWidth(180)
+
+        folder_row.addWidget(self.open_wallpaper_folder_button)
+        folder_row.addStretch()
+        main_layout.addLayout(folder_row)
+
+        # SSH Output
+        self.console_group = QGroupBox("SSH Output")
+        console_layout = QVBoxLayout()
+        console_layout.setContentsMargins(10, 10, 10, 10)
+        console_layout.setSpacing(8)
+
+        header_row = QHBoxLayout()
+        header_row.addStretch()
+
+        self.hide_console_button = QPushButton("Hide")
+        self.hide_console_button.setFixedWidth(70)
+        header_row.addWidget(self.hide_console_button)
+
+        console_layout.addLayout(header_row)
+
+        self.console = QTextEdit()
+        self.console.setReadOnly(True)
+        self.console.setMinimumHeight(230)
+        console_layout.addWidget(self.console)
+
+        self.console_group.setLayout(console_layout)
+        self.console_group.hide()
+        main_layout.addWidget(self.console_group)
+
+        main_layout.addStretch()
+
+        self.install_169_button.clicked.connect(self.install_169_wallpapers)
+        self.install_43_button.clicked.connect(self.install_43_wallpapers)
+        self.remove_ranny_button.clicked.connect(self.remove_ranny_wallpapers)
+
+        self.install_pcn_button.clicked.connect(self.install_pcn_wallpapers)
+        self.remove_pcn_button.clicked.connect(self.remove_pcn_wallpapers)
+
+        self.install_ot4ku_button.clicked.connect(self.install_ot4ku_wallpapers)
+        self.remove_ot4ku_button.clicked.connect(self.remove_ot4ku_wallpapers)
+
+        self.open_wallpaper_folder_button.clicked.connect(self.open_wallpaper_folder)
+        self.hide_console_button.clicked.connect(self.toggle_console)
+
+    def update_connection_state(self):
+        if not self.connection.is_connected():
+            self.apply_disconnected_state()
+            return
+
+        self.refresh_status()
+
+    def apply_disconnected_state(self):
+        self.install_169_button.setText("Install 16:9 Wallpapers")
+        self.install_43_button.setText("Install 4:3 Wallpapers")
+        self.install_pcn_button.setText("Install Wallpapers")
+        self.install_ot4ku_button.setText("Install Wallpapers")
+
+        self.install_169_button.setEnabled(False)
+        self.install_43_button.setEnabled(False)
+        self.remove_ranny_button.setEnabled(False)
+
+        self.install_pcn_button.setEnabled(False)
+        self.remove_pcn_button.setEnabled(False)
+
+        self.install_ot4ku_button.setEnabled(False)
+        self.remove_ot4ku_button.setEnabled(False)
+
+        self.open_wallpaper_folder_button.setEnabled(False)
+
+    def refresh_status(self):
+        if not self.connection.is_connected():
+            self.apply_disconnected_state()
+            return
+
+        installed = get_installed_wallpapers(self.connection)
+
+        gh_169, gh_43 = fetch_ranny_wallpapers()
+        installed_169, missing_169 = build_install_state(gh_169, installed)
+        installed_43, missing_43 = build_install_state(gh_43, installed)
+
+        if not installed_169:
+            self.install_169_button.setText("Install 16:9 Wallpapers")
+            self.install_169_button.setEnabled(True)
+        elif missing_169:
+            self.install_169_button.setText("Update 16:9 Wallpapers")
+            self.install_169_button.setEnabled(True)
+        else:
+            self.install_169_button.setText("Install 16:9 Wallpapers")
+            self.install_169_button.setEnabled(False)
+
+        if not installed_43:
+            self.install_43_button.setText("Install 4:3 Wallpapers")
+            self.install_43_button.setEnabled(True)
+        elif missing_43:
+            self.install_43_button.setText("Update 4:3 Wallpapers")
+            self.install_43_button.setEnabled(True)
+        else:
+            self.install_43_button.setText("Install 4:3 Wallpapers")
+            self.install_43_button.setEnabled(False)
+
+        self.remove_ranny_button.setEnabled(installed_169 or installed_43)
+
+        pcn_items = fetch_pcn_wallpapers()
+        pcn_installed, pcn_missing = build_install_state(pcn_items, installed)
+
+        if not pcn_installed:
+            self.install_pcn_button.setText("Install Wallpapers")
+            self.install_pcn_button.setEnabled(True)
+        elif pcn_missing:
+            self.install_pcn_button.setText("Update Wallpapers")
+            self.install_pcn_button.setEnabled(True)
+        else:
+            self.install_pcn_button.setText("Install Wallpapers")
+            self.install_pcn_button.setEnabled(False)
+
+        self.remove_pcn_button.setEnabled(pcn_installed)
+
+        ot4ku_items = fetch_ot4ku_wallpapers()
+        ot4ku_installed, ot4ku_missing = build_install_state(ot4ku_items, installed)
+
+        if not ot4ku_installed:
+            self.install_ot4ku_button.setText("Install Wallpapers")
+            self.install_ot4ku_button.setEnabled(True)
+        elif ot4ku_missing:
+            self.install_ot4ku_button.setText("Update Wallpapers")
+            self.install_ot4ku_button.setEnabled(True)
+        else:
+            self.install_ot4ku_button.setText("Install Wallpapers")
+            self.install_ot4ku_button.setEnabled(False)
+
+        self.remove_ot4ku_button.setEnabled(ot4ku_installed)
+
+        self.open_wallpaper_folder_button.setEnabled(
+            wallpaper_folder_exists(self.connection)
+        )
+
+    def start_worker(self, task_fn, success_message=""):
+        if self.current_worker is not None and self.current_worker.isRunning():
+            return
+
+        self.show_console()
+        self.console.clear()
+
+        self.current_worker = WallpaperTaskWorker(task_fn, success_message)
+        self.current_worker.log_line.connect(self.append_console)
+        self.current_worker.success.connect(self.on_task_success)
+        self.current_worker.error.connect(self.on_task_error)
+        self.current_worker.finished_task.connect(self.on_task_finished)
+        self.current_worker.start()
+
+    def on_task_success(self, message: str):
+        if message:
+            self.append_console(f"\n{message}\n")
+
+    def on_task_error(self, detail: str):
+        QMessageBox.critical(self, "Wallpaper Error", detail)
+
+    def on_task_finished(self):
+        self.current_worker = None
+        self.refresh_status()
+
+    def show_console(self):
+        if self.console_visible:
+            return
+        self.console_group.show()
+        self.console_visible = True
+
+    def toggle_console(self):
+        if self.console_visible:
+            self.console_group.hide()
+            self.console_visible = False
+        else:
+            self.console_group.show()
+            self.console_visible = True
+
+    def append_console(self, text: str):
+        self.console.moveCursor(self.console.textCursor().MoveOperation.End)
+        self.console.insertPlainText(text)
+        self.console.ensureCursorVisible()
+
+    def install_169_wallpapers(self):
+        if not self.connection.is_connected():
+            return
+
+        def task(log):
+            log("Fetching wallpaper list...\n")
+            wallpapers_169, _ = fetch_ranny_wallpapers()
+
+            if not wallpapers_169:
+                log("No wallpapers found.\n")
+                return
+
+            count = install_wallpaper_items(self.connection, wallpapers_169, log)
+            log(f"\nFinished. {count} wallpapers installed.\n")
+
+        self.start_worker(task)
+
+    def install_43_wallpapers(self):
+        if not self.connection.is_connected():
+            return
+
+        def task(log):
+            log("Fetching wallpaper list...\n")
+            _, wallpapers_43 = fetch_ranny_wallpapers()
+
+            if not wallpapers_43:
+                log("No wallpapers found.\n")
+                return
+
+            count = install_wallpaper_items(self.connection, wallpapers_43, log)
+            log(f"\nFinished. {count} wallpapers installed.\n")
+
+        self.start_worker(task)
+
+    def remove_ranny_wallpapers(self):
+        if not self.connection.is_connected():
+            return
+
+        confirm = QMessageBox.question(
+            self,
+            "Remove Wallpapers",
+            "Remove all Ranny Snice wallpapers from the MiSTer?",
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+
+        def task(log):
+            log("Removing Ranny Snice wallpapers...\n")
+            wallpapers_169, wallpapers_43 = fetch_ranny_wallpapers()
+            removed = remove_installed_wallpapers(
+                self.connection,
+                wallpapers_169 + wallpapers_43,
+                log,
+            )
+            log(f"\nFinished. {removed} wallpapers removed.\n")
+
+        self.start_worker(task)
+
+    def install_pcn_wallpapers(self):
+        if not self.connection.is_connected():
+            return
+
+        def task(log):
+            log("Fetching wallpaper list...\n")
+            wallpapers = fetch_pcn_wallpapers()
+
+            if not wallpapers:
+                log("No wallpapers found.\n")
+                return
+
+            count = install_wallpaper_items(self.connection, wallpapers, log)
+            log(f"\nFinished. {count} wallpapers installed.\n")
+
+        self.start_worker(task)
+
+    def remove_pcn_wallpapers(self):
+        if not self.connection.is_connected():
+            return
+
+        confirm = QMessageBox.question(
+            self,
+            "Remove Wallpapers",
+            "Remove all PCN Challenge wallpapers from the MiSTer?",
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+
+        def task(log):
+            log("Removing PCN Challenge wallpapers...\n")
+            wallpapers = fetch_pcn_wallpapers()
+            removed = remove_installed_wallpapers(self.connection, wallpapers, log)
+            log(f"\nFinished. {removed} wallpapers removed.\n")
+
+        self.start_worker(task)
+
+    def install_ot4ku_wallpapers(self):
+        if not self.connection.is_connected():
+            return
+
+        def task(log):
+            log("Fetching wallpaper list...\n")
+            wallpapers = fetch_ot4ku_wallpapers()
+
+            if not wallpapers:
+                log("No wallpapers found.\n")
+                return
+
+            count = install_wallpaper_items(self.connection, wallpapers, log)
+            log(f"\nFinished. {count} wallpapers installed.\n")
+
+        self.start_worker(task)
+
+    def remove_ot4ku_wallpapers(self):
+        if not self.connection.is_connected():
+            return
+
+        confirm = QMessageBox.question(
+            self,
+            "Remove Wallpapers",
+            "Remove all 0t4ku wallpapers from the MiSTer?",
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+
+        def task(log):
+            log("Removing 0t4ku wallpapers...\n")
+            wallpapers = fetch_ot4ku_wallpapers()
+            removed = remove_installed_wallpapers(self.connection, wallpapers, log)
+            log(f"\nFinished. {removed} wallpapers removed.\n")
+
+        self.start_worker(task)
+
+    def open_wallpaper_folder(self):
+        if not self.connection.is_connected():
+            return
+
+        try:
+            open_wallpaper_folder_on_host(
+                self.connection.host,
+                self.connection.username or "root",
+                self.connection.password or "1",
+            )
+        except Exception as e:
+            QMessageBox.critical(self, "SMB Error", str(e))
