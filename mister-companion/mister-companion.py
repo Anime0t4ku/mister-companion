@@ -138,7 +138,7 @@ class MiSTerApp:
 
     def __init__(self, root):
         self.root = root
-        self.root.title("MiSTer Companion v2.8.0 by Anime0t4ku")
+        self.root.title("MiSTer Companion v2.8.0 (Legacy Edition) by Anime0t4ku")
         self.root.geometry("900x900")
 
         # ===== App Icon =====
