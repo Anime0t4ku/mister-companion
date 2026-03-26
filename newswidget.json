@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "items": [
+    {
+      "id": "welcome",
+      "date": "2026-03-26",
+      "type": "info",
+      "headline": "Welcome to MiSTer Companion v3 Beta",
+      "message": "This beta includes the new PyQt6 interface. and is a work in progress, if you want the stable legacy version check out the releases page below",
+      "url": "https://github.com/Anime0t4ku/mister-companion/releases",
+      "url_label": "View Releases"
+    }
+  ]
+}
