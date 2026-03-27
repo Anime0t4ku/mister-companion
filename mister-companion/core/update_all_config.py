@@ -310,7 +310,7 @@ def save_update_all_config(connection, config):
             main_lines,
             [
                 "[arcade_offset_folder]",
-                "db_url = https://raw.githubusercontent.com/MiSTer-devel/Distribution_MiSTer/main/arcade_offset_folder.json.zip",
+                "db_url = https://raw.githubusercontent.com/Toryalai1/Arcade_Offset/db/arcadeoffsetdb.json.zip",
             ],
         )
         main_lines = handle_simple_section(
@@ -319,7 +319,7 @@ def save_update_all_config(connection, config):
             main_lines,
             [
                 "[llapi_folder]",
-                "db_url = https://raw.githubusercontent.com/MiSTer-devel/Distribution_MiSTer/main/llapi_folder.json.zip",
+                "db_url = https://raw.githubusercontent.com/MiSTer-LLAPI/LLAPI_folder_MiSTer/main/llapidb.json.zip",
             ],
         )
         main_lines = handle_simple_section(
@@ -328,7 +328,7 @@ def save_update_all_config(connection, config):
             main_lines,
             [
                 "[theypsilon_unofficial_distribution]",
-                "db_url = https://raw.githubusercontent.com/theypsilon/Distribution_MiSTer/main/db.json.zip",
+                "db_url = https://raw.githubusercontent.com/theypsilon/Distribution_Unofficial_MiSTer/main/unofficialdb.json.zip",
             ],
         )
         main_lines = handle_simple_section(
@@ -346,7 +346,7 @@ def save_update_all_config(connection, config):
             main_lines,
             [
                 "[agg23_db]",
-                "db_url = https://raw.githubusercontent.com/agg23/mister_json/main/db.json.zip",
+                "db_url = https://raw.githubusercontent.com/agg23/mister-repository/db/manifest.json",
             ],
         )
         main_lines = handle_simple_section(
