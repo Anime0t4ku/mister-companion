@@ -1,9 +1,8 @@
-import json
 import time
 import webbrowser
 
 import requests
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import QEvent, QTimer, Qt
 from PyQt6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -18,6 +17,7 @@ from PyQt6.QtWidgets import (
 
 
 NEWSWIDGET_URL = "https://raw.githubusercontent.com/Anime0t4ku/mister-companion/main/newswidget.json"
+NEWS_ROTATION_INTERVAL_MS = 10000
 
 
 class ConnectionTab(QWidget):
@@ -27,7 +27,13 @@ class ConnectionTab(QWidget):
         self.main_window = main_window
         self.connection = main_window.connection
 
+        self.news_items = []
+        self.current_news_index = 0
         self.news_url = ""
+        self.news_hovered = False
+
+        self.news_timer = QTimer(self)
+        self.news_timer.timeout.connect(self.show_next_news)
 
         self.init_ui()
         self.connect_signals()
@@ -133,9 +139,31 @@ class ConnectionTab(QWidget):
         # News Widget
         # =========================
         self.news_group = QGroupBox("MiSTer Companion News")
+        self.news_group.installEventFilter(self)
+
         news_layout = QVBoxLayout()
         news_layout.setContentsMargins(16, 16, 16, 16)
         news_layout.setSpacing(10)
+
+        nav_row = QHBoxLayout()
+        nav_row.setSpacing(8)
+
+        self.news_prev_button = QPushButton("◀")
+        self.news_prev_button.setFixedWidth(36)
+        self.news_prev_button.hide()
+
+        self.news_next_button = QPushButton("▶")
+        self.news_next_button.setFixedWidth(36)
+        self.news_next_button.hide()
+
+        self.news_counter_label = QLabel("")
+        self.news_counter_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        nav_row.addWidget(self.news_prev_button)
+        nav_row.addStretch()
+        nav_row.addWidget(self.news_counter_label)
+        nav_row.addStretch()
+        nav_row.addWidget(self.news_next_button)
 
         self.news_headline_label = QLabel("")
         self.news_headline_label.setWordWrap(True)
@@ -148,7 +176,7 @@ class ConnectionTab(QWidget):
 
         self.news_button = QPushButton("")
         self.news_button.setVisible(False)
-        self.news_button.setFixedWidth(140)
+        self.news_button.setFixedWidth(160)
 
         self.news_date_label = QLabel("")
         self.news_date_label.setAlignment(Qt.AlignmentFlag.AlignRight)
@@ -158,6 +186,7 @@ class ConnectionTab(QWidget):
         button_row.addWidget(self.news_button)
         button_row.addStretch()
 
+        news_layout.addLayout(nav_row)
         news_layout.addWidget(self.news_headline_label)
         news_layout.addWidget(self.news_message_label)
         news_layout.addLayout(button_row)
@@ -168,9 +197,7 @@ class ConnectionTab(QWidget):
 
         main_layout.addWidget(saved_group)
         main_layout.addLayout(connection_row)
-
         main_layout.addStretch()
-
         main_layout.addWidget(self.news_group)
 
         self.setLayout(main_layout)
@@ -191,6 +218,8 @@ class ConnectionTab(QWidget):
         self.pass_input.textEdited.connect(self.on_connection_field_change)
 
         self.news_button.clicked.connect(self.open_news_link)
+        self.news_prev_button.clicked.connect(self.show_previous_news)
+        self.news_next_button.clicked.connect(self.show_next_news)
 
     # =============================
     # Status Sync
@@ -205,9 +234,24 @@ class ConnectionTab(QWidget):
     # News Widget
     # =============================
 
+    def eventFilter(self, watched, event):
+        if watched is self.news_group:
+            if event.type() == QEvent.Type.Enter:
+                self.news_hovered = True
+                self.update_news_nav_visibility()
+                self.stop_news_rotation()
+            elif event.type() == QEvent.Type.Leave:
+                self.news_hovered = False
+                self.update_news_nav_visibility()
+                self.start_news_rotation_if_needed()
+        return super().eventFilter(watched, event)
+
     def load_news_widget(self):
         self.news_group.hide()
+        self.news_items = []
+        self.current_news_index = 0
         self.news_url = ""
+        self.stop_news_rotation()
 
         try:
             url = f"{NEWSWIDGET_URL}?t={int(time.time())}"
@@ -217,53 +261,101 @@ class ConnectionTab(QWidget):
             data = response.json()
             items = data.get("items", [])
 
-            if not items:
+            valid_items = []
+            for item in items:
+                headline = str(item.get("headline", "")).strip()
+                message = str(item.get("message", "")).strip()
+                if headline or message:
+                    valid_items.append(item)
+
+            if not valid_items:
                 return
 
-            item = items[0]
-            headline = item.get("headline", "").strip()
-            message = item.get("message", "").strip()
-
-            if not headline and not message:
-                return
-
-            news_type = item.get("type", "info").strip().lower()
-            date_text = item.get("date", "").strip()
-            url = item.get("url", "").strip()
-            url_label = item.get("url_label", "").strip() or "Open"
-
-            color_map = {
-                "info": "#4da3ff",
-                "update": "#00aa00",
-                "warning": "#ff8800",
-            }
-            headline_color = color_map.get(news_type, "#4da3ff")
-
-            self.news_headline_label.setText(headline)
-            self.news_headline_label.setStyleSheet(
-                f"font-size: 15px; font-weight: bold; color: {headline_color};"
-            )
-
-            self.news_message_label.setText(message)
-
-            if url:
-                self.news_url = url
-                self.news_button.setText(url_label)
-                self.news_button.setVisible(True)
-            else:
-                self.news_url = ""
-                self.news_button.setVisible(False)
-
-            if date_text:
-                self.news_date_label.setText(f"Posted: {date_text}")
-                self.news_date_label.show()
-            else:
-                self.news_date_label.hide()
-
+            self.news_items = valid_items
+            self.current_news_index = 0
+            self.show_news_item(self.current_news_index)
             self.news_group.show()
+            self.start_news_rotation_if_needed()
 
         except Exception:
             self.news_group.hide()
+
+    def show_news_item(self, index):
+        if not self.news_items:
+            self.news_group.hide()
+            return
+
+        index %= len(self.news_items)
+        self.current_news_index = index
+
+        item = self.news_items[index]
+
+        headline = str(item.get("headline", "")).strip()
+        message = str(item.get("message", "")).strip()
+        news_type = str(item.get("type", "info")).strip().lower()
+        date_text = str(item.get("date", "")).strip()
+        url = str(item.get("url", "")).strip()
+        url_label = str(item.get("url_label", "")).strip() or "Open"
+
+        color_map = {
+            "info": "#4da3ff",
+            "update": "#00aa00",
+            "warning": "#ff8800",
+        }
+        headline_color = color_map.get(news_type, "#4da3ff")
+
+        self.news_headline_label.setText(headline)
+        self.news_headline_label.setStyleSheet(
+            f"font-size: 15px; font-weight: bold; color: {headline_color};"
+        )
+
+        self.news_message_label.setText(message)
+
+        if url:
+            self.news_url = url
+            self.news_button.setText(url_label)
+            self.news_button.setVisible(True)
+        else:
+            self.news_url = ""
+            self.news_button.setVisible(False)
+
+        if date_text:
+            self.news_date_label.setText(f"Posted: {date_text}")
+            self.news_date_label.show()
+        else:
+            self.news_date_label.hide()
+
+        if len(self.news_items) > 1:
+            self.news_counter_label.setText(f"{index + 1} / {len(self.news_items)}")
+            self.news_counter_label.show()
+        else:
+            self.news_counter_label.hide()
+
+        self.update_news_nav_visibility()
+
+    def show_next_news(self):
+        if len(self.news_items) <= 1:
+            return
+        self.show_news_item(self.current_news_index + 1)
+
+    def show_previous_news(self):
+        if len(self.news_items) <= 1:
+            return
+        self.show_news_item(self.current_news_index - 1)
+
+    def update_news_nav_visibility(self):
+        show_nav = self.news_hovered and len(self.news_items) > 1
+        self.news_prev_button.setVisible(show_nav)
+        self.news_next_button.setVisible(show_nav)
+
+    def start_news_rotation_if_needed(self):
+        if len(self.news_items) > 1 and not self.news_hovered:
+            if not self.news_timer.isActive():
+                self.news_timer.start(NEWS_ROTATION_INTERVAL_MS)
+
+    def stop_news_rotation(self):
+        if self.news_timer.isActive():
+            self.news_timer.stop()
 
     def open_news_link(self):
         if self.news_url:
