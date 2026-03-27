@@ -2,7 +2,16 @@ from pathlib import Path
 
 from PyQt6.QtCore import QTimer
 from PyQt6.QtGui import QIcon
-from PyQt6.QtWidgets import QMainWindow, QTabWidget, QWidget, QVBoxLayout, QLabel, QMessageBox
+from PyQt6.QtWidgets import (
+    QComboBox,
+    QHBoxLayout,
+    QLabel,
+    QMainWindow,
+    QMessageBox,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
+)
 
 from core.config import load_config, save_config
 from core.connection import MiSTerConnection
@@ -17,6 +26,7 @@ from core.device_profiles import (
     update_device,
 )
 from core.profile_folder_sync import profile_assigned_to_ip, profile_removed, profile_renamed
+from core.theme import apply_theme
 from ui.dialogs.device_dialog import DeviceDialog
 from ui.dialogs.network_scanner_dialog import NetworkScannerDialog
 from ui.dialogs.setup_notice_dialog import SetupNoticeDialog
@@ -34,9 +44,10 @@ ICON_PATH = BASE_DIR / "assets" / "icon.png"
 
 
 class MainWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, app):
         super().__init__()
 
+        self.app = app
         self.connection = MiSTerConnection()
         self.config_data = load_config()
 
@@ -51,7 +62,7 @@ class MainWindow(QMainWindow):
         self.reboot_reconnect_username = ""
         self.reboot_reconnect_password = ""
 
-        self.setWindowTitle("MiSTer Companion v3.0.0-Beta-4 By Anime0t4ku")
+        self.setWindowTitle("MiSTer Companion v3.0.0-Beta-5 By Anime0t4ku")
         self.resize(900, 900)
 
         if ICON_PATH.exists():
@@ -65,9 +76,30 @@ class MainWindow(QMainWindow):
         self.tabs = QTabWidget()
         central_layout.addWidget(self.tabs)
 
+        bottom_bar = QHBoxLayout()
+        bottom_bar.setContentsMargins(0, 0, 0, 0)
+        bottom_bar.setSpacing(8)
+
         self.connection_status_label = QLabel("Status: Disconnected")
-        central_layout.addWidget(self.connection_status_label)
+        bottom_bar.addWidget(self.connection_status_label)
+
+        bottom_bar.addStretch()
+
+        self.theme_label = QLabel("Theme:")
+        bottom_bar.addWidget(self.theme_label)
+
+        self.theme_combo = QComboBox()
+        self.theme_combo.addItems(["Auto", "Light", "Dark"])
+        bottom_bar.addWidget(self.theme_combo)
+
+        central_layout.addLayout(bottom_bar)
+
         self.set_connection_status("Status: Disconnected")
+
+        saved_theme = self.config_data.get("theme_mode", "auto").lower()
+        theme_index_map = {"auto": 0, "light": 1, "dark": 2}
+        self.theme_combo.setCurrentIndex(theme_index_map.get(saved_theme, 0))
+        self.theme_combo.currentIndexChanged.connect(self.on_theme_changed)
 
         self.setCentralWidget(central_widget)
 
@@ -136,6 +168,16 @@ class MainWindow(QMainWindow):
             self.connection_status_label.setStyleSheet("color: #f39c12; font-weight: bold;")
         else:
             self.connection_status_label.setStyleSheet("")
+
+    def refresh_theme(self):
+        mode = self.config_data.get("theme_mode", "auto")
+        apply_theme(self.app, mode)
+
+    def on_theme_changed(self):
+        mode = self.theme_combo.currentText().lower()
+        self.config_data["theme_mode"] = mode
+        save_config(self.config_data)
+        self.refresh_theme()
 
     def update_all_tab_states(self):
         if hasattr(self, "device_tab"):

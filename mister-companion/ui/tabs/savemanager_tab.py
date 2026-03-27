@@ -2,6 +2,7 @@ from PyQt6.QtCore import QThread, pyqtSignal
 from PyQt6.QtWidgets import (
     QCheckBox,
     QDialog,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
     QListWidget,
@@ -134,8 +135,13 @@ class SaveManagerTab(QWidget):
 
     def build_ui(self):
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(12, 24, 12, 12)
-        main_layout.setSpacing(14)
+        main_layout.setContentsMargins(12, 12, 12, 12)
+        main_layout.setSpacing(12)
+
+        main_group = QGroupBox("SaveManager")
+        main_group_layout = QVBoxLayout(main_group)
+        main_group_layout.setContentsMargins(12, 12, 12, 12)
+        main_group_layout.setSpacing(12)
 
         self.info_label = QLabel(
             "SaveManager allows you to backup, restore and sync MiSTer saves and savestates.\n\n"
@@ -150,7 +156,7 @@ class SaveManagerTab(QWidget):
         info_row.addStretch()
         info_row.addWidget(self.info_label)
         info_row.addStretch()
-        main_layout.addLayout(info_row)
+        main_group_layout.addLayout(info_row)
 
         button_row = QHBoxLayout()
         button_row.setSpacing(12)
@@ -168,7 +174,7 @@ class SaveManagerTab(QWidget):
         button_row.addWidget(self.restore_button)
         button_row.addWidget(self.sync_button)
         button_row.addStretch()
-        main_layout.addLayout(button_row)
+        main_group_layout.addLayout(button_row)
 
         self.backup_count_label = QLabel("Current backups for this device: 0")
         self.backup_count_label.setAlignment(pyqt_alignment_center())
@@ -177,7 +183,7 @@ class SaveManagerTab(QWidget):
         backup_count_row.addStretch()
         backup_count_row.addWidget(self.backup_count_label)
         backup_count_row.addStretch()
-        main_layout.addLayout(backup_count_row)
+        main_group_layout.addLayout(backup_count_row)
 
         retention_row = QHBoxLayout()
         retention_row.setSpacing(8)
@@ -193,7 +199,14 @@ class SaveManagerTab(QWidget):
         retention_row.addWidget(self.retention_label)
         retention_row.addWidget(self.retention_spin)
         retention_row.addStretch()
-        main_layout.addLayout(retention_row)
+        main_group_layout.addLayout(retention_row)
+
+        main_layout.addWidget(main_group)
+
+        folder_group = QGroupBox("Folders")
+        folder_group_layout = QVBoxLayout(folder_group)
+        folder_group_layout.setContentsMargins(12, 12, 12, 12)
+        folder_group_layout.setSpacing(12)
 
         folder_row = QHBoxLayout()
         folder_row.setSpacing(12)
@@ -208,34 +221,30 @@ class SaveManagerTab(QWidget):
         folder_row.addWidget(self.open_backup_folder_button)
         folder_row.addWidget(self.open_sync_folder_button)
         folder_row.addStretch()
-        main_layout.addLayout(folder_row)
+        folder_group_layout.addLayout(folder_row)
 
-        self.log_container = QWidget()
-        log_container_layout = QVBoxLayout(self.log_container)
-        log_container_layout.setContentsMargins(0, 8, 0, 0)
-        log_container_layout.setSpacing(8)
+        main_layout.addWidget(folder_group)
+
+        self.log_group = QGroupBox("Log")
+        log_group_layout = QVBoxLayout(self.log_group)
+        log_group_layout.setContentsMargins(12, 12, 12, 12)
+        log_group_layout.setSpacing(8)
 
         log_header_row = QHBoxLayout()
         log_header_row.addStretch()
         self.hide_log_button = QPushButton("Hide")
         self.hide_log_button.setFixedWidth(80)
         log_header_row.addWidget(self.hide_log_button)
-        log_header_row.addStretch()
-        log_container_layout.addLayout(log_header_row)
+        log_group_layout.addLayout(log_header_row)
 
-        log_row = QHBoxLayout()
         self.log_output = QTextEdit()
         self.log_output.setReadOnly(True)
         self.log_output.setMinimumHeight(180)
         self.log_output.setMinimumWidth(750)
+        log_group_layout.addWidget(self.log_output)
 
-        log_row.addStretch()
-        log_row.addWidget(self.log_output)
-        log_row.addStretch()
-        log_container_layout.addLayout(log_row)
-
-        main_layout.addWidget(self.log_container)
-        self.log_container.hide()
+        main_layout.addWidget(self.log_group)
+        self.log_group.hide()
 
         main_layout.addStretch()
 
@@ -280,12 +289,12 @@ class SaveManagerTab(QWidget):
         self.retention_spin.blockSignals(False)
 
     def show_log(self):
-        if not self.log_container.isVisible():
-            self.log_container.show()
+        if not self.log_group.isVisible():
+            self.log_group.show()
 
     def hide_log(self):
         if self.hide_log_button.isEnabled():
-            self.log_container.hide()
+            self.log_group.hide()
 
     def clear_log(self):
         self.log_output.clear()
