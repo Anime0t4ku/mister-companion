@@ -62,7 +62,7 @@ class MainWindow(QMainWindow):
         self.reboot_reconnect_username = ""
         self.reboot_reconnect_password = ""
 
-        self.setWindowTitle("MiSTer Companion v3.0.0-Beta-6 By Anime0t4ku")
+        self.setWindowTitle("MiSTer Companion v3.0.0-Beta-7 By Anime0t4ku")
         self.resize(900, 900)
 
         if ICON_PATH.exists():
