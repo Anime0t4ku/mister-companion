@@ -7,6 +7,7 @@ import re
 import shutil
 import stat
 import subprocess
+import sys
 import tarfile
 import zipfile
 from pathlib import Path
@@ -17,7 +18,14 @@ import requests
 
 APP_NAME = "MiSTer Companion"
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+
+def get_app_base_dir() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent.parent
+
+
+BASE_DIR = get_app_base_dir()
 TOOLS_DIR = BASE_DIR / "tools"
 BALENA_DIR = TOOLS_DIR / "balena-cli"
 MR_FUSION_DIR = TOOLS_DIR / "mr-fusion"
@@ -105,10 +113,11 @@ def _ensure_flash_privileges() -> None:
             )
 
 
-def ensure_tools_dirs() -> None:
+def ensure_tools_dirs(log_callback: LogCallback | None = None) -> None:
     TOOLS_DIR.mkdir(parents=True, exist_ok=True)
     BALENA_DIR.mkdir(parents=True, exist_ok=True)
     MR_FUSION_DIR.mkdir(parents=True, exist_ok=True)
+    _log(log_callback, f"Using tools directory: {TOOLS_DIR}")
 
 
 def _get_session() -> requests.Session:
@@ -308,7 +317,7 @@ def ensure_balena_cli(
     if not is_flash_supported():
         raise RuntimeError("Flash Mr. Fusion is not available on macOS yet.")
 
-    ensure_tools_dirs()
+    ensure_tools_dirs(log_callback)
 
     if not force_download:
         try:
@@ -345,7 +354,7 @@ def ensure_mr_fusion_image(
     if not is_flash_supported():
         raise RuntimeError("Flash Mr. Fusion is not available on macOS yet.")
 
-    ensure_tools_dirs()
+    ensure_tools_dirs(log_callback)
 
     if not force_download:
         try:
