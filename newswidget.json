@@ -2,13 +2,13 @@
   "version": 1,
   "items": [
     {
-      "id": "welcome",
-      "date": "2026-03-26",
+      "id": "new-beta",
+      "date": "2026-03-27",
       "type": "info",
-      "headline": "Welcome to MiSTer Companion v3 Beta",
-      "message": "This beta includes the new PyQt6 interface and is a work in progress.\n\nIf you encounter any issues or bugs, please report them on GitHub to help improve the app.\n\nIf you prefer a stable experience, you can download the legacy version from the releases page below.",
-      "url": "https://github.com/Anime0t4ku/mister-companion/releases",
-      "url_label": "View Releases"
+      "headline": "MiSTer Companion v3.0.0-Beta-5 Available",
+      "message": "v3.0.0-Beta-5 is now available in pre-releases.\n\nThis update introduces a new Theme Selector, allowing you to choose between Auto, Light, and Dark modes.\n\nThe SaveManager layout has also been improved to better match the rest of the application.\n\nYou can download the latest pre-release below.",
+      "url": "https://github.com/Anime0t4ku/mister-companion/releases/tag/Pre-release",
+      "url_label": "Download Pre-release"
     },
     {
       "id": "macos-support",
