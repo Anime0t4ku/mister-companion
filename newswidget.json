@@ -5,8 +5,8 @@
       "id": "new-beta",
       "date": "2026-03-27",
       "type": "info",
-      "headline": "MiSTer Companion v3.0.0-Beta-7 Available",
-      "message": "v3.0.0-Beta-7 is now available in pre-releases.\n\nThe wallpaper downloader has been reworked to use a more reliable JSON database system instead of the GitHub API. This improves stability, avoids rate limits, and ensures wallpaper sources load consistently.\n\nYou can download the latest pre-release below.",
+      "headline": "MiSTer Companion v3.0.0-Beta-8 Available",
+      "message": "v3.0.0-Beta-8 is now available in pre-releases.\n\nFlash Mr. Fusion has been added. You can now download the latest Mr. Fusion image and balena CLI, select your SD card, and flash it directly from within MiSTer Companion.\n\nThis removes the need for external tools and simplifies the initial setup process.\n\nYou can download the latest pre-release below.",
       "url": "https://github.com/Anime0t4ku/mister-companion/releases/tag/Pre-release",
       "url_label": "Download Pre-release"
     },

@@ -32,6 +32,7 @@ from ui.dialogs.network_scanner_dialog import NetworkScannerDialog
 from ui.dialogs.setup_notice_dialog import SetupNoticeDialog
 from ui.tabs.connection_tab import ConnectionTab
 from ui.tabs.device_tab import DeviceTab
+from ui.tabs.flash_tab import FlashTab
 from ui.tabs.mister_settings_tab import MiSTerSettingsTab
 from ui.tabs.savemanager_tab import SaveManagerTab
 from ui.tabs.scripts_tab import ScriptsTab
@@ -62,7 +63,7 @@ class MainWindow(QMainWindow):
         self.reboot_reconnect_username = ""
         self.reboot_reconnect_password = ""
 
-        self.setWindowTitle("MiSTer Companion v3.0.0-Beta-7 By Anime0t4ku")
+        self.setWindowTitle("MiSTer Companion v3.0.0-Beta-8 By Anime0t4ku")
         self.resize(900, 900)
 
         if ICON_PATH.exists():
@@ -123,6 +124,9 @@ class MainWindow(QMainWindow):
 
         self.wallpapers_tab = WallpapersTab(self)
         self.tabs.addTab(self.wallpapers_tab, "Wallpapers")
+
+        self.flash_tab = FlashTab(self)
+        self.tabs.addTab(self.flash_tab, "Flash Mr. Fusion")
 
         self.tabs.currentChanged.connect(self.on_tab_changed)
 
@@ -198,6 +202,9 @@ class MainWindow(QMainWindow):
         if hasattr(self, "wallpapers_tab"):
             self.wallpapers_tab.update_connection_state()
 
+        if hasattr(self, "flash_tab"):
+            self.flash_tab.update_connection_state()
+
     def on_tab_changed(self, index):
         current_widget = self.tabs.widget(index)
 
@@ -229,6 +236,11 @@ class MainWindow(QMainWindow):
         if hasattr(self, "wallpapers_tab"):
             if current_widget is self.wallpapers_tab and self.connection.is_connected():
                 self.wallpapers_tab.refresh_status()
+                return
+
+        if hasattr(self, "flash_tab"):
+            if current_widget is self.flash_tab:
+                self.flash_tab.update_connection_state()
                 return
 
     def check_connection_status(self):

@@ -16,18 +16,12 @@ class SetupNoticeDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
 
+        self.parent_window = parent
+        self.dont_show_again = False
+
         self.setWindowTitle("MiSTer Setup Required")
         self.setModal(True)
         self.setFixedSize(540, 360)
-
-        self.dont_show_again = False
-
-        if sys.platform.startswith("win"):
-            tool_name = "Rufus"
-            tool_url = "https://rufus.ie/en/"
-        else:
-            tool_name = "balenaEtcher"
-            tool_url = "https://etcher.balena.io/"
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)
@@ -37,6 +31,32 @@ class SetupNoticeDialog(QDialog):
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title.setStyleSheet("font-size: 18px; font-weight: bold;")
         layout.addWidget(title)
+
+        if sys.platform == "darwin":
+            self.build_macos_layout(layout)
+        else:
+            self.build_windows_linux_layout(layout)
+
+        self.hide_checkbox = QCheckBox("Don't show this again")
+        checkbox_row = QHBoxLayout()
+        checkbox_row.addStretch()
+        checkbox_row.addWidget(self.hide_checkbox)
+        checkbox_row.addStretch()
+        layout.addLayout(checkbox_row)
+
+        layout.addStretch()
+
+        continue_row = QHBoxLayout()
+        continue_row.addStretch()
+        self.continue_button = QPushButton("Close")
+        self.continue_button.clicked.connect(self.handle_continue)
+        continue_row.addWidget(self.continue_button)
+        continue_row.addStretch()
+        layout.addLayout(continue_row)
+
+    def build_macos_layout(self, layout):
+        tool_name = "balenaEtcher"
+        tool_url = "https://etcher.balena.io/"
 
         message = QLabel(
             "This application assumes you have already flashed\n"
@@ -65,23 +85,36 @@ class SetupNoticeDialog(QDialog):
         button_row.addStretch()
         layout.addLayout(button_row)
 
-        self.hide_checkbox = QCheckBox("Don't show this again")
-        checkbox_row = QHBoxLayout()
-        checkbox_row.addStretch()
-        checkbox_row.addWidget(self.hide_checkbox)
-        checkbox_row.addStretch()
-        layout.addLayout(checkbox_row)
+    def build_windows_linux_layout(self, layout):
+        if sys.platform.startswith("win"):
+            privilege_text = "Run MiSTer Companion as Administrator before flashing."
+        else:
+            privilege_text = "Run MiSTer Companion with sudo or root privileges before flashing."
 
-        layout.addStretch()
+        message = QLabel(
+            "MiSTer Companion can now handle Mr. Fusion setup directly from the\n"
+            "Flash Mr. Fusion tab.\n\n"
+            "From there, you can download the latest Mr. Fusion image and balena CLI,\n"
+            "select your SD card, and flash it directly from inside the app.\n\n"
+            f"{privilege_text}"
+        )
+        message.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        message.setWordWrap(True)
+        layout.addWidget(message)
 
-        continue_row = QHBoxLayout()
-        self.continue_button = QPushButton("Continue")
-        self.continue_button.clicked.connect(self.handle_continue)
+        button_row = QHBoxLayout()
+        self.open_flash_tab_button = QPushButton("Open Flash Mr. Fusion Tab")
+        self.open_flash_tab_button.clicked.connect(self.open_flash_tab)
 
-        continue_row.addStretch()
-        continue_row.addWidget(self.continue_button)
-        continue_row.addStretch()
-        layout.addLayout(continue_row)
+        button_row.addStretch()
+        button_row.addWidget(self.open_flash_tab_button)
+        button_row.addStretch()
+        layout.addLayout(button_row)
+
+    def open_flash_tab(self):
+        if self.parent_window and hasattr(self.parent_window, "tabs") and hasattr(self.parent_window, "flash_tab"):
+            self.parent_window.tabs.setCurrentWidget(self.parent_window.flash_tab)
+        self.handle_continue()
 
     def handle_continue(self):
         self.dont_show_again = self.hide_checkbox.isChecked()
