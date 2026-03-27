@@ -5,8 +5,8 @@
       "id": "new-beta",
       "date": "2026-03-27",
       "type": "info",
-      "headline": "MiSTer Companion v3.0.0-Beta-5 Available",
-      "message": "v3.0.0-Beta-5 is now available in pre-releases.\n\nThis update introduces a new Theme Selector, allowing you to choose between Auto, Light, and Dark modes.\n\nThe SaveManager layout has also been improved to better match the rest of the application.\n\nYou can download the latest pre-release below.",
+      "headline": "MiSTer Companion v3.0.0-Beta-6 Available",
+      "message": "v3.0.0-Beta-5 is now available in pre-releases.\n\nThis update introduces a new Theme Selector, allowing you to choose between Auto, Light, Dark and Purple modes.\n\nThe SaveManager layout has also been improved to better match the rest of the application.\n\nYou can download the latest pre-release below.",
       "url": "https://github.com/Anime0t4ku/mister-companion/releases/tag/Pre-release",
       "url_label": "Download Pre-release"
     },
