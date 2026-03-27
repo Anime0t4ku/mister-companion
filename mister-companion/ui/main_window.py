@@ -62,7 +62,7 @@ class MainWindow(QMainWindow):
         self.reboot_reconnect_username = ""
         self.reboot_reconnect_password = ""
 
-        self.setWindowTitle("MiSTer Companion v3.0.0-Beta-5 By Anime0t4ku")
+        self.setWindowTitle("MiSTer Companion v3.0.0-Beta-6 By Anime0t4ku")
         self.resize(900, 900)
 
         if ICON_PATH.exists():
@@ -89,7 +89,7 @@ class MainWindow(QMainWindow):
         bottom_bar.addWidget(self.theme_label)
 
         self.theme_combo = QComboBox()
-        self.theme_combo.addItems(["Auto", "Light", "Dark"])
+        self.theme_combo.addItems(["Auto", "Light", "Dark", "Purple"])
         bottom_bar.addWidget(self.theme_combo)
 
         central_layout.addLayout(bottom_bar)
@@ -97,7 +97,7 @@ class MainWindow(QMainWindow):
         self.set_connection_status("Status: Disconnected")
 
         saved_theme = self.config_data.get("theme_mode", "auto").lower()
-        theme_index_map = {"auto": 0, "light": 1, "dark": 2}
+        theme_index_map = {"auto": 0, "light": 1, "dark": 2, "purple": 3}
         self.theme_combo.setCurrentIndex(theme_index_map.get(saved_theme, 0))
         self.theme_combo.currentIndexChanged.connect(self.on_theme_changed)
 

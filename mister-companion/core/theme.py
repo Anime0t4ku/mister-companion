@@ -64,6 +64,30 @@ def make_dark_palette() -> QPalette:
     return palette
 
 
+def make_purple_palette() -> QPalette:
+    palette = QPalette()
+
+    palette.setColor(QPalette.ColorRole.Window, QColor(36, 32, 46))
+    palette.setColor(QPalette.ColorRole.WindowText, QColor(232, 228, 245))
+    palette.setColor(QPalette.ColorRole.Base, QColor(25, 22, 34))
+    palette.setColor(QPalette.ColorRole.AlternateBase, QColor(45, 40, 58))
+    palette.setColor(QPalette.ColorRole.ToolTipBase, QColor(56, 50, 72))
+    palette.setColor(QPalette.ColorRole.ToolTipText, QColor(232, 228, 245))
+    palette.setColor(QPalette.ColorRole.Text, QColor(232, 228, 245))
+    palette.setColor(QPalette.ColorRole.Button, QColor(72, 61, 96))
+    palette.setColor(QPalette.ColorRole.ButtonText, QColor(232, 228, 245))
+    palette.setColor(QPalette.ColorRole.BrightText, QColor(255, 120, 120))
+    palette.setColor(QPalette.ColorRole.Link, QColor(190, 140, 255))
+    palette.setColor(QPalette.ColorRole.Highlight, QColor(140, 92, 214))
+    palette.setColor(QPalette.ColorRole.HighlightedText, QColor(255, 255, 255))
+
+    palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Text, QColor(145, 138, 160))
+    palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.ButtonText, QColor(145, 138, 160))
+    palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.WindowText, QColor(145, 138, 160))
+
+    return palette
+
+
 def apply_theme(app: QApplication, mode: str):
     init_theme_system(app)
 
@@ -82,5 +106,7 @@ def apply_theme(app: QApplication, mode: str):
 
     if mode == "light":
         app.setPalette(make_light_palette())
+    elif mode == "purple":
+        app.setPalette(make_purple_palette())
     else:
         app.setPalette(make_dark_palette())
