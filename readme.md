@@ -10,7 +10,7 @@ It provides a simple interface for common maintenance tasks without needing to u
 
 MiSTer Companion is currently available in two versions:
 
-### v3 (Current – Beta)
+### v3 (Current – Release Candidate)
 - Complete rebuild of the application using PyQt6
 - Improved performance, stability, and UI
 - Actively developed and will receive all future updates
