@@ -368,22 +368,8 @@ class FlashTab(QWidget):
 
         for drive in drives:
             device = str(drive.get("device", "")).strip()
-            description = str(drive.get("description", "")).strip()
-            size = drive.get("size")
+            display_text = str(drive.get("display_name", "")).strip() or device or "Unknown drive"
 
-            parts = []
-            if device:
-                parts.append(device)
-            if description:
-                parts.append(description)
-            if size:
-                try:
-                    size_gb = float(size) / (1024 ** 3)
-                    parts.append(f"{size_gb:.1f} GB")
-                except Exception:
-                    pass
-
-            display_text = " - ".join(parts) if parts else "Unknown drive"
             self.drive_combo.addItem(display_text)
             self.drive_map[display_text] = device
 
@@ -411,9 +397,6 @@ class FlashTab(QWidget):
 
         def task(log):
             return list_available_drives(log_callback=log)
-
-        if not silent:
-            self.append_log("Refreshing available drives...")
 
         self.start_worker(
             task,

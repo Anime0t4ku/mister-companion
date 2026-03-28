@@ -63,7 +63,7 @@ class MainWindow(QMainWindow):
         self.reboot_reconnect_username = ""
         self.reboot_reconnect_password = ""
 
-        self.setWindowTitle("MiSTer Companion v3.0.0-Beta-10 By Anime0t4ku")
+        self.setWindowTitle("MiSTer Companion v3.0.0-RC1 By Anime0t4ku")
         self.resize(900, 900)
 
         if ICON_PATH.exists():
@@ -104,6 +104,9 @@ class MainWindow(QMainWindow):
 
         self.setCentralWidget(central_widget)
 
+        self.flash_tab = FlashTab(self)
+        self.tabs.addTab(self.flash_tab, "Flash Mr. Fusion")
+
         self.connection_tab = ConnectionTab(self)
         self.tabs.addTab(self.connection_tab, "Connection")
 
@@ -125,9 +128,7 @@ class MainWindow(QMainWindow):
         self.wallpapers_tab = WallpapersTab(self)
         self.tabs.addTab(self.wallpapers_tab, "Wallpapers")
 
-        self.flash_tab = FlashTab(self)
-        self.tabs.addTab(self.flash_tab, "Flash Mr. Fusion")
-
+        self.tabs.setCurrentWidget(self.connection_tab)
         self.tabs.currentChanged.connect(self.on_tab_changed)
 
         self.load_devices()

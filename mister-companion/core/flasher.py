@@ -15,8 +15,20 @@ from typing import Callable
 
 import requests
 
+try:
+    import winreg
+except ImportError:
+    winreg = None
+
 
 APP_NAME = "MiSTer Companion"
+
+
+ANSI_ESCAPE_RE = re.compile(r"\x1B\[[0-?]*[ -/]*[@-~]")
+
+
+def clean_output(text: str) -> str:
+    return ANSI_ESCAPE_RE.sub("", text)
 
 
 def get_app_base_dir() -> Path:
@@ -88,6 +100,82 @@ def is_root_linux() -> bool:
         return os.geteuid() == 0
     except AttributeError:
         return False
+
+
+def _get_windows_autoplay_value() -> int | None:
+    if platform.system() != "Windows" or winreg is None:
+        return None
+
+    try:
+        key = winreg.CreateKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Policies\Explorer",
+        )
+        try:
+            value, _ = winreg.QueryValueEx(key, "NoDriveTypeAutoRun")
+            return int(value)
+        finally:
+            winreg.CloseKey(key)
+    except Exception:
+        return None
+
+
+def _set_windows_autoplay_value(value: int) -> None:
+    if platform.system() != "Windows" or winreg is None:
+        return
+
+    key = winreg.CreateKey(
+        winreg.HKEY_CURRENT_USER,
+        r"Software\Microsoft\Windows\CurrentVersion\Policies\Explorer",
+    )
+    try:
+        winreg.SetValueEx(key, "NoDriveTypeAutoRun", 0, winreg.REG_DWORD, int(value))
+    finally:
+        winreg.CloseKey(key)
+
+
+def _delete_windows_autoplay_value() -> None:
+    if platform.system() != "Windows" or winreg is None:
+        return
+
+    key = winreg.CreateKey(
+        winreg.HKEY_CURRENT_USER,
+        r"Software\Microsoft\Windows\CurrentVersion\Policies\Explorer",
+    )
+    try:
+        try:
+            winreg.DeleteValue(key, "NoDriveTypeAutoRun")
+        except FileNotFoundError:
+            pass
+        except OSError:
+            pass
+    finally:
+        winreg.CloseKey(key)
+
+
+def _disable_windows_autoplay(log_callback: LogCallback | None = None) -> int | None:
+    if platform.system() != "Windows":
+        return None
+
+    original_value = _get_windows_autoplay_value()
+    _log(log_callback, "Temporarily disabling Windows AutoPlay...")
+    _set_windows_autoplay_value(0xFF)
+    return original_value
+
+
+def _restore_windows_autoplay(
+    original_value: int | None,
+    log_callback: LogCallback | None = None,
+) -> None:
+    if platform.system() != "Windows":
+        return
+
+    if original_value is None:
+        _delete_windows_autoplay_value()
+        return
+
+    _log(log_callback, "Windows settings restored")
+    _set_windows_autoplay_value(original_value)
 
 
 def _ensure_flash_privileges() -> None:
@@ -397,6 +485,83 @@ def _run_subprocess(
     )
 
 
+def _get_windows_drive_letter_map() -> dict[str, list[str]]:
+    if platform.system() != "Windows":
+        return {}
+
+    cmd = [
+        "powershell",
+        "-NoProfile",
+        "-Command",
+        (
+            "Get-Partition | "
+            "Where-Object DriveLetter -ne $null | "
+            "ForEach-Object { "
+            "Write-Output ($_.DiskNumber.ToString() + '|' + $_.DriveLetter) "
+            "}"
+        ),
+    ]
+
+    result = _run_subprocess(cmd)
+    if result.returncode != 0:
+        return {}
+
+    drive_letter_map: dict[str, list[str]] = {}
+
+    for raw_line in (result.stdout or "").splitlines():
+        line = raw_line.strip()
+        if not line or "|" not in line:
+            continue
+
+        disk_number, drive_letter = line.split("|", 1)
+        disk_number = disk_number.strip()
+        drive_letter = drive_letter.strip()
+
+        if not disk_number or not drive_letter:
+            continue
+
+        drive_letter_map.setdefault(disk_number, []).append(f"{drive_letter}:")
+
+    return drive_letter_map
+
+
+def _build_drive_display_name(
+    device: str,
+    description: str = "",
+    size: int | None = None,
+    windows_drive_letter_map: dict[str, list[str]] | None = None,
+) -> str:
+    parts: list[str] = []
+
+    if platform.system() == "Windows":
+        display_prefix = device
+
+        match = re.match(r"^\\\\\.\\PhysicalDrive(\d+)$", device, re.IGNORECASE)
+        if match and windows_drive_letter_map is not None:
+            disk_number = match.group(1)
+            letters = windows_drive_letter_map.get(disk_number, [])
+            if letters:
+                display_prefix = " / ".join(letters)
+
+        if display_prefix:
+            parts.append(display_prefix)
+    else:
+        if device:
+            parts.append(device)
+
+    if description:
+        parts.append(description)
+
+    if size:
+        try:
+            size_gb = float(size) / (1024 ** 3)
+            parts.append(f"{size_gb:.1f} GB")
+        except Exception:
+            pass
+
+    return " - ".join(parts) if parts else "Unknown drive"
+
+
 def _size_text_to_bytes(size_text: str) -> int | None:
     match = re.match(r"^\s*([\d.]+)\s*([KMGTP]?B)\s*$", size_text, re.IGNORECASE)
     if not match:
@@ -481,6 +646,23 @@ def list_available_drives(
         _log(log_callback, line)
 
     drives = _parse_available_drives_output(stdout)
+
+    windows_drive_letter_map: dict[str, list[str]] = {}
+    if platform.system() == "Windows":
+        windows_drive_letter_map = _get_windows_drive_letter_map()
+
+    for drive in drives:
+        device = str(drive.get("device", "")).strip()
+        description = str(drive.get("description", "")).strip()
+        size = drive.get("size")
+
+        drive["display_name"] = _build_drive_display_name(
+            device=device,
+            description=description,
+            size=size,
+            windows_drive_letter_map=windows_drive_letter_map,
+        )
+
     _log(log_callback, f"Parsed {len(drives)} drive(s).")
     return drives
 
@@ -520,6 +702,10 @@ def flash_image(
     _log(log_callback, f"Starting flash: {image_path.name}")
     _log(log_callback, f"Target drive: {drive}")
 
+    original_autoplay_value = None
+    if platform.system() == "Windows":
+        original_autoplay_value = _disable_windows_autoplay(log_callback)
+
     startupinfo = None
     if platform.system() == "Windows":
         startupinfo = subprocess.STARTUPINFO()
@@ -541,10 +727,17 @@ def flash_image(
         assert process.stdout is not None
 
         for raw_line in process.stdout:
-            line = raw_line.strip()
-            if line:
-                output_lines.append(line)
-                _log(log_callback, line)
+            cleaned_line = clean_output(raw_line).strip()
+            if not cleaned_line:
+                continue
+
+            lower_line = cleaned_line.lower()
+
+            if "source and destination checksums do not match" in lower_line:
+                continue
+
+            output_lines.append(cleaned_line)
+            _log(log_callback, cleaned_line)
 
         return_code = process.wait()
         combined_output = "\n".join(output_lines).lower()
@@ -583,3 +776,9 @@ def flash_image(
     finally:
         if process.stdout is not None:
             process.stdout.close()
+
+        if platform.system() == "Windows":
+            try:
+                _restore_windows_autoplay(original_autoplay_value, log_callback)
+            except Exception as e:
+                _log(log_callback, f"Failed to restore Windows settings: {e}")

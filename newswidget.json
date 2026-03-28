@@ -2,11 +2,11 @@
   "version": 1,
   "items": [
     {
-      "id": "new-beta",
+      "id": "new-rc",
       "date": "2026-03-28",
       "type": "update",
-      "headline": "MiSTer Companion v3.0.0-Beta-10 Available",
-      "message": "v3.0.0-Beta-10 is now available in pre-releases.\n\nThe update_all configurator no longer requires update_all to be run once before use. MiSTer Companion now prepares the required configuration files automatically when needed, making setup smoother for first-time use.\n\nSaveManager has also been improved to automatically create the saves and savestates folders on the MiSTer if they are missing, preventing errors or crashes when using Backup, Restore, or Sync.\n\nYou can download the latest pre-release below.",
+      "headline": "MiSTer Companion v3.0.0 RC1 Available",
+      "message": "MiSTer Companion v3.0.0 has now moved from beta into Release Candidate status.\n\nThis update improves the Flash Mr. Fusion experience with fixes for false error messages, improved drive detection on Windows, and prevents Windows Explorer from opening unexpectedly during the flashing process.\n\nThe Flash Mr. Fusion tab has also been moved to the first position as this is usualy the first step.\n\nYou can download the latest release candidate below.",
       "url": "https://github.com/Anime0t4ku/mister-companion/releases/tag/Pre-release",
       "url_label": "Download Pre-release"
     },
