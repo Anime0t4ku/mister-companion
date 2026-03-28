@@ -14,6 +14,25 @@ MIGRATE_SD_URL = "https://raw.githubusercontent.com/Natrox/MiSTer_Utils_Natrox/m
 CIFS_MOUNT_URL = "https://raw.githubusercontent.com/MiSTer-devel/Scripts_MiSTer/master/cifs_mount.sh"
 CIFS_UMOUNT_URL = "https://raw.githubusercontent.com/MiSTer-devel/Scripts_MiSTer/master/cifs_umount.sh"
 
+UPDATE_ALL_JSON_PATH = "/media/fat/Scripts/.config/update_all/update_all.json"
+DOWNLOADER_INI_PATH = "/media/fat/downloader.ini"
+
+DEFAULT_UPDATE_ALL_JSON = """{"migration_version": 6, "theme": "Blue Installer", "mirror": "", "countdown_time": 15, "log_viewer": true, "use_settings_screen_theme_in_log_viewer": true, "autoreboot": true, "download_beta_cores": false, "names_region": "JP", "names_char_code": "CHAR18", "names_sort_code": "Common", "introduced_arcade_names_txt": true, "pocket_firmware_update": false, "pocket_backup": false, "timeline_after_logs": true, "overscan": "medium", "monochrome_ui": false}
+"""
+
+DEFAULT_DOWNLOADER_INI = """[distribution_mister]
+db_url = https://raw.githubusercontent.com/MiSTer-devel/Distribution_MiSTer/main/db.json.zip
+
+[jtcores]
+db_url = https://raw.githubusercontent.com/jotego/jtcores_mister/main/jtbindb.json.zip
+
+[Coin-OpCollection/Distribution-MiSTerFPGA]
+db_url = https://raw.githubusercontent.com/Coin-OpCollection/Distribution-MiSTerFPGA/db/db.json.zip
+
+[update_all_mister]
+db_url = https://raw.githubusercontent.com/theypsilon/Update_All_MiSTer/db/update_all_db.json
+"""
+
 
 @dataclass
 class ScriptsStatus:
@@ -31,17 +50,56 @@ def ensure_remote_scripts_dir(connection):
     connection.run_command("mkdir -p /media/fat/Scripts/.config/update_all")
 
 
+def _remote_file_exists(sftp, path):
+    try:
+        sftp.stat(path)
+        return True
+    except Exception:
+        return False
+
+
+def ensure_update_all_config_bootstrap(connection):
+    if not connection.is_connected():
+        raise RuntimeError("Not connected to MiSTer.")
+
+    ensure_remote_scripts_dir(connection)
+
+    created = {
+        "update_all_json_created": False,
+        "downloader_ini_created": False,
+    }
+
+    sftp = connection.client.open_sftp()
+    try:
+        if not _remote_file_exists(sftp, UPDATE_ALL_JSON_PATH):
+            with sftp.open(UPDATE_ALL_JSON_PATH, "w") as handle:
+                handle.write(DEFAULT_UPDATE_ALL_JSON)
+            created["update_all_json_created"] = True
+
+        if not _remote_file_exists(sftp, DOWNLOADER_INI_PATH):
+            with sftp.open(DOWNLOADER_INI_PATH, "w") as handle:
+                handle.write(DEFAULT_DOWNLOADER_INI)
+            created["downloader_ini_created"] = True
+    finally:
+        sftp.close()
+
+    return created
+
+
 def check_update_all_initialized(connection) -> bool:
     if not connection.is_connected():
         return False
 
+    sftp = None
     try:
         sftp = connection.client.open_sftp()
-        sftp.stat("/media/fat/Scripts/.config/update_all/update_all.json")
-        sftp.close()
+        sftp.stat(UPDATE_ALL_JSON_PATH)
         return True
     except Exception:
         return False
+    finally:
+        if sftp is not None:
+            sftp.close()
 
 
 def get_scripts_status(connection) -> ScriptsStatus:

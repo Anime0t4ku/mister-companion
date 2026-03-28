@@ -17,6 +17,7 @@ from core.config import save_config
 from core.scripts_actions import (
     check_update_all_initialized,
     enable_zaparoo_service,
+    ensure_update_all_config_bootstrap,
     get_scripts_status,
     install_cifs_mount,
     install_migrate_sd,
@@ -478,6 +479,7 @@ class ScriptsTab(QWidget):
 
         if isinstance(result, dict):
             if result.get("action") == "reboot_reconnect":
+                self.connection.mark_disconnected()
                 self.waiting_for_reboot_reconnect = True
                 self.main_window.start_reboot_reconnect_polling()
 
@@ -533,20 +535,15 @@ class ScriptsTab(QWidget):
             )
             return
 
-        initialized = check_update_all_initialized(self.connection)
-        self.update_all_initialized = initialized
-
-        if not initialized:
-            reply = QMessageBox.question(
+        try:
+            ensure_update_all_config_bootstrap(self.connection)
+            self.update_all_initialized = check_update_all_initialized(self.connection)
+        except Exception as e:
+            QMessageBox.critical(
                 self,
-                "update_all not initialized",
-                "update_all needs to run at least once before you can configure it.\n\n"
-                "Run update_all now?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.Yes,
+                "update_all configuration error",
+                f"Could not prepare update_all configuration files.\n\n{e}",
             )
-            if reply == QMessageBox.StandardButton.Yes:
-                self.run_update_all()
             return
 
         dialog = UpdateAllConfigDialog(self.connection, self)
@@ -588,22 +585,29 @@ class ScriptsTab(QWidget):
                 save_config(self.main_window.config_data)
 
         def task(log):
+            import time
+
             log("Running update_all...\n\n")
             run_update_all_stream(self.connection, log)
+            log("\nupdate_all finished.\n")
 
-            transport_active = False
+            time.sleep(7)
+
+            still_connected = False
             try:
-                if self.connection.client and self.connection.client.get_transport():
-                    transport_active = self.connection.client.get_transport().is_active()
+                still_connected = self.connection.is_connected()
+                if still_connected and self.connection.client:
+                    transport = self.connection.client.get_transport()
+                    still_connected = bool(transport and transport.is_active())
             except Exception:
-                transport_active = False
+                still_connected = False
 
-            if transport_active:
-                log("\nupdate_all finished.\n")
+            if still_connected:
+                log("No reboot detected.\n")
                 return {"action": "completed"}
 
             self.connection.mark_disconnected()
-            log("\nMiSTer disconnected at the end of update_all, likely due to reboot.\n")
+            log("MiSTer disconnected after update_all, likely due to reboot.\n")
             log("Starting automatic reconnect...\n")
             return {"action": "reboot_reconnect"}
 

@@ -17,6 +17,7 @@ from PyQt6.QtWidgets import (
 from core.savemanager import (
     SYNC_ROOT,
     create_backup,
+    ensure_remote_save_dirs,
     ensure_savemanager_dirs,
     get_backup_count,
     get_device_backup_root,
@@ -272,6 +273,17 @@ class SaveManagerTab(QWidget):
 
     def update_connection_state(self):
         connected = self.connection.is_connected()
+
+        if connected:
+            try:
+                ensure_remote_save_dirs(self.connection)
+            except Exception as e:
+                QMessageBox.warning(
+                    self,
+                    "SaveManager",
+                    f"Could not prepare the MiSTer save folders.\n\n{e}",
+                )
+                connected = False
 
         self.backup_button.setEnabled(connected)
         self.restore_button.setEnabled(connected)

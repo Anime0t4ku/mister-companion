@@ -23,6 +23,20 @@ def ensure_savemanager_dirs():
     SYNC_ROOT.mkdir(parents=True, exist_ok=True)
 
 
+def ensure_remote_save_dirs(connection, log_callback=None):
+    if not connection.is_connected():
+        return
+
+    if log_callback:
+        log_callback("Checking MiSTer save folders...")
+
+    connection.run_command(f'mkdir -p "{REMOTE_SAVES_DIR}"')
+    connection.run_command(f'mkdir -p "{REMOTE_SAVESTATES_DIR}"')
+
+    if log_callback:
+        log_callback("MiSTer save folders are ready.")
+
+
 def get_device_folder_name(profile_name: str = "", ip_address: str = "") -> str:
     return get_profile_or_ip_folder_name(profile_name=profile_name, ip_address=ip_address)
 
@@ -226,6 +240,7 @@ def rebuild_sync_folder_from_latest_backups(log_callback=None):
 
 def create_backup(connection, config_data, profile_name: str = "", ip_address: str = "", log_callback=None):
     ensure_savemanager_dirs()
+    ensure_remote_save_dirs(connection, log_callback=log_callback)
 
     device_root = get_device_backup_root(profile_name, ip_address)
     if not device_root.name:
@@ -262,6 +277,8 @@ def create_backup(connection, config_data, profile_name: str = "", ip_address: s
 
 
 def restore_backup(connection, backup_name: str, profile_name: str = "", ip_address: str = "", log_callback=None):
+    ensure_remote_save_dirs(connection, log_callback=log_callback)
+
     device_root = get_device_backup_root(profile_name, ip_address)
     backup_path = device_root / backup_name
 
@@ -287,6 +304,7 @@ def restore_backup(connection, backup_name: str, profile_name: str = "", ip_addr
 
 def sync_saves(connection, log_callback=None):
     ensure_savemanager_dirs()
+    ensure_remote_save_dirs(connection, log_callback=log_callback)
 
     sync_saves_path = SYNC_ROOT / "saves"
     sync_savestates_path = SYNC_ROOT / "savestates"

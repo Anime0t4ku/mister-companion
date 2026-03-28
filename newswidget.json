@@ -4,16 +4,16 @@
     {
       "id": "new-beta",
       "date": "2026-03-28",
-      "type": "info",
-      "headline": "MiSTer Companion v3.0.0-Beta-9 Available",
-      "message": "v3.0.0-Beta-9 is now available in pre-releases.\n\nThis update fixes a crash that could occur when update_all triggered a MiSTer reboot.\n\nProfile handling when using Scan Network has also been improved. The correct profile is now loaded when a scanned IP matches a saved device, and cleared when it does not.\n\nA new 'Don't show this again' checkbox has been added to the update_all warning dialog for a smoother workflow.\n\nYou can download the latest pre-release below.",
+      "type": "update",
+      "headline": "MiSTer Companion v3.0.0-Beta-10 Available",
+      "message": "v3.0.0-Beta-10 is now available in pre-releases.\n\nThe update_all configurator no longer requires update_all to be run once before use. MiSTer Companion now prepares the required configuration files automatically when needed, making setup smoother for first-time use.\n\nSaveManager has also been improved to automatically create the saves and savestates folders on the MiSTer if they are missing, preventing errors or crashes when using Backup, Restore, or Sync.\n\nYou can download the latest pre-release below.",
       "url": "https://github.com/Anime0t4ku/mister-companion/releases/tag/Pre-release",
       "url_label": "Download Pre-release"
     },
     {
       "id": "macos-support",
       "date": "2026-03-27",
-      "type": "update",
+      "type": "info",
       "headline": "Help Bring MiSTer Companion to macOS",
       "message": "macOS support is currently not available.\n\nTo properly support macOS builds and testing, a Mac device is needed.\n\nIf you'd like to help make this possible, consider supporting the Ko-fi goal below.",
       "url": "https://ko-fi.com/anime0t4ku/goal?g=10",
