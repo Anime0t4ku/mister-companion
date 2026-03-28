@@ -18,6 +18,12 @@ class MiSTerConnection:
             raise ValueError("IP address is required")
 
         try:
+            if self.client:
+                try:
+                    self.client.close()
+                except Exception:
+                    pass
+
             self.client = paramiko.SSHClient()
             self.client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
@@ -28,8 +34,9 @@ class MiSTerConnection:
                 timeout=5
             )
 
-            self.connected = True
-            return True
+            transport = self.client.get_transport()
+            self.connected = bool(transport and transport.is_active())
+            return self.connected
 
         except Exception:
             self.connected = False
@@ -48,7 +55,19 @@ class MiSTerConnection:
         return True
 
     def is_connected(self):
-        return self.connected and self.client is not None
+        if not self.connected or self.client is None:
+            return False
+
+        try:
+            transport = self.client.get_transport()
+            if transport is None or not transport.is_active():
+                self.mark_disconnected()
+                return False
+        except Exception:
+            self.mark_disconnected()
+            return False
+
+        return True
 
     def mark_disconnected(self):
         try:
@@ -91,6 +110,10 @@ class MiSTerConnection:
             stdin, stdout, stderr = self.client.exec_command(command)
 
             while True:
+                if not self.is_connected():
+                    callback("\nConnection closed.\n")
+                    return
+
                 line = stdout.readline()
                 if not line:
                     break

@@ -2,6 +2,7 @@ import traceback
 
 from PyQt6.QtCore import QThread, Qt, pyqtSignal
 from PyQt6.QtWidgets import (
+    QCheckBox,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -12,6 +13,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from core.config import save_config
 from core.scripts_actions import (
     check_update_all_initialized,
     enable_zaparoo_service,
@@ -75,6 +77,7 @@ class ScriptsTab(QWidget):
         self.current_worker = None
         self.update_all_installed = False
         self.update_all_initialized = False
+        self.waiting_for_reboot_reconnect = False
 
         self.build_ui()
         self.apply_disconnected_state()
@@ -335,7 +338,12 @@ class ScriptsTab(QWidget):
             self.apply_disconnected_state()
             return
 
-        status = get_scripts_status(self.connection)
+        try:
+            status = get_scripts_status(self.connection)
+        except Exception:
+            self.connection.mark_disconnected()
+            self.apply_disconnected_state()
+            return
 
         self.update_all_installed = status.update_all_installed
         self.update_all_initialized = status.update_all_initialized
@@ -470,11 +478,23 @@ class ScriptsTab(QWidget):
 
         if isinstance(result, dict):
             if result.get("action") == "reboot_reconnect":
+                self.waiting_for_reboot_reconnect = True
                 self.main_window.start_reboot_reconnect_polling()
 
     def on_worker_finished(self):
-        self.refresh_status()
         self.current_worker = None
+
+        if self.waiting_for_reboot_reconnect:
+            return
+
+        try:
+            if self.connection.is_connected():
+                self.refresh_status()
+            else:
+                self.apply_disconnected_state()
+        except Exception:
+            self.connection.mark_disconnected()
+            self.apply_disconnected_state()
 
     def install_update_all(self):
         if not self.connection.is_connected():
@@ -537,28 +557,52 @@ class ScriptsTab(QWidget):
         if not self.connection.is_connected():
             return
 
-        proceed = QMessageBox.question(
-            self,
-            "Run update_all",
-            "update_all will run through SSH.\n\n"
-            "The output will NOT appear on the MiSTer TV screen.\n"
-            "It will only be visible inside MiSTer Companion.\n\n"
-            "If you want the output to appear on the TV screen, run update_all from:\n"
-            "• ZapScripts in MiSTer Companion\n"
-            "• The Scripts menu on the MiSTer itself\n\n"
-            "Continue?",
-        )
-        if proceed != QMessageBox.StandardButton.Yes:
-            return
+        if not self.main_window.config_data.get("hide_update_all_warning", False):
+            msg = QMessageBox(self)
+            msg.setIcon(QMessageBox.Icon.Question)
+            msg.setWindowTitle("Run update_all")
+            msg.setText(
+                "update_all will run through SSH.\n\n"
+                "The output will NOT appear on the MiSTer TV screen.\n"
+                "It will only be visible inside MiSTer Companion.\n\n"
+                "If you want the output to appear on the TV screen, run update_all from:\n"
+                "• ZapScripts in MiSTer Companion\n"
+                "• The Scripts menu on the MiSTer itself\n\n"
+                "Continue?"
+            )
+            msg.setStandardButtons(
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+            msg.setDefaultButton(QMessageBox.StandardButton.Yes)
+
+            dont_show_checkbox = QCheckBox("Don't show this again")
+            msg.setCheckBox(dont_show_checkbox)
+
+            msg.exec()
+
+            if msg.result() != QMessageBox.StandardButton.Yes:
+                return
+
+            if dont_show_checkbox.isChecked():
+                self.main_window.config_data["hide_update_all_warning"] = True
+                save_config(self.main_window.config_data)
 
         def task(log):
             log("Running update_all...\n\n")
             run_update_all_stream(self.connection, log)
 
-            if self.connection.is_connected():
+            transport_active = False
+            try:
+                if self.connection.client and self.connection.client.get_transport():
+                    transport_active = self.connection.client.get_transport().is_active()
+            except Exception:
+                transport_active = False
+
+            if transport_active:
                 log("\nupdate_all finished.\n")
                 return {"action": "completed"}
 
+            self.connection.mark_disconnected()
             log("\nMiSTer disconnected at the end of update_all, likely due to reboot.\n")
             log("Starting automatic reconnect...\n")
             return {"action": "reboot_reconnect"}

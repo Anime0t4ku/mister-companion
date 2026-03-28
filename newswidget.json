@@ -3,10 +3,10 @@
   "items": [
     {
       "id": "new-beta",
-      "date": "2026-03-27",
+      "date": "2026-03-28",
       "type": "info",
-      "headline": "MiSTer Companion v3.0.0-Beta-8 Available",
-      "message": "v3.0.0-Beta-8 is now available in pre-releases.\n\nFlash Mr. Fusion has been added. You can now download the latest Mr. Fusion image and balena CLI, select your SD card, and flash it directly from within MiSTer Companion.\n\nThis removes the need for external tools and simplifies the initial setup process.\n\nYou can download the latest pre-release below.",
+      "headline": "MiSTer Companion v3.0.0-Beta-9 Available",
+      "message": "v3.0.0-Beta-9 is now available in pre-releases.\n\nThis update fixes a crash that could occur when update_all triggered a MiSTer reboot.\n\nProfile handling when using Scan Network has also been improved. The correct profile is now loaded when a scanned IP matches a saved device, and cleared when it does not.\n\nA new 'Don't show this again' checkbox has been added to the update_all warning dialog for a smoother workflow.\n\nYou can download the latest pre-release below.",
       "url": "https://github.com/Anime0t4ku/mister-companion/releases/tag/Pre-release",
       "url_label": "Download Pre-release"
     },

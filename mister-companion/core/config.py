@@ -7,6 +7,7 @@ DEFAULT_CONFIG = {
     "devices": [],
     "last_connected": None,
     "theme_mode": "auto",
+    "hide_update_all_warning": False,
 }
 
 
@@ -17,9 +18,16 @@ def load_config():
     try:
         with open(CONFIG_PATH, "r", encoding="utf-8") as f:
             data = json.load(f)
+
             merged = DEFAULT_CONFIG.copy()
             merged.update(data)
+
+            for key, value in DEFAULT_CONFIG.items():
+                if key not in merged:
+                    merged[key] = value
+
             return merged
+
     except Exception:
         return DEFAULT_CONFIG.copy()
 

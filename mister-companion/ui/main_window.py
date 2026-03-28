@@ -63,7 +63,7 @@ class MainWindow(QMainWindow):
         self.reboot_reconnect_username = ""
         self.reboot_reconnect_password = ""
 
-        self.setWindowTitle("MiSTer Companion v3.0.0-Beta-8 By Anime0t4ku")
+        self.setWindowTitle("MiSTer Companion v3.0.0-Beta-9 By Anime0t4ku")
         self.resize(900, 900)
 
         if ICON_PATH.exists():
@@ -349,6 +349,10 @@ class MainWindow(QMainWindow):
 
             if self.reboot_reconnect_attempts >= self.reboot_reconnect_max_attempts:
                 self.reboot_reconnect_timer.stop()
+
+                if hasattr(self, "scripts_tab"):
+                    self.scripts_tab.waiting_for_reboot_reconnect = False
+
                 self.set_connection_status("Status: Disconnected")
                 QMessageBox.warning(
                     self,
@@ -374,6 +378,9 @@ class MainWindow(QMainWindow):
             self.reboot_reconnect_username = ""
             self.reboot_reconnect_password = ""
 
+            if hasattr(self, "scripts_tab"):
+                self.scripts_tab.waiting_for_reboot_reconnect = False
+
             self.set_connection_status(f"Status: Connected to {host}")
             self.connection_tab.apply_connected_state()
             self.update_all_tab_states()
@@ -382,6 +389,10 @@ class MainWindow(QMainWindow):
 
             if self.reboot_reconnect_attempts >= self.reboot_reconnect_max_attempts:
                 self.reboot_reconnect_timer.stop()
+
+                if hasattr(self, "scripts_tab"):
+                    self.scripts_tab.waiting_for_reboot_reconnect = False
+
                 self.set_connection_status("Status: Disconnected")
                 QMessageBox.warning(
                     self,
@@ -435,6 +446,9 @@ class MainWindow(QMainWindow):
         self.reboot_reconnect_host = ""
         self.reboot_reconnect_username = ""
         self.reboot_reconnect_password = ""
+
+        if hasattr(self, "scripts_tab"):
+            self.scripts_tab.waiting_for_reboot_reconnect = False
 
         self.connection_fail_count = 0
         self.set_connection_status("Status: Disconnected")

@@ -202,15 +202,38 @@ class NetworkScannerDialog(QDialog):
         ip = items[0].text()
 
         if self.parent_window is not None:
-            self.parent_window.connection_tab.set_connection_fields(
-                ip,
-                self.parent_window.connection_tab.user_input.text() or "root",
-                self.parent_window.connection_tab.pass_input.text() or "1"
-            )
+            connection_tab = self.parent_window.connection_tab
+            devices = self.parent_window.config_data.get("devices", [])
 
-            self.parent_window.connection_tab.profile_selector.blockSignals(True)
-            self.parent_window.connection_tab.profile_selector.setCurrentIndex(0)
-            self.parent_window.connection_tab.profile_selector.blockSignals(False)
+            matched_index = -1
+            matched_device = None
+
+            for i, device in enumerate(devices):
+                if device.get("ip", "").strip() == ip:
+                    matched_index = i
+                    matched_device = device
+                    break
+
+            if matched_device is not None:
+                connection_tab.set_connection_fields(
+                    matched_device.get("ip", ""),
+                    matched_device.get("username", "root"),
+                    matched_device.get("password", "1")
+                )
+
+                connection_tab.profile_selector.blockSignals(True)
+                connection_tab.profile_selector.setCurrentIndex(matched_index)
+                connection_tab.profile_selector.blockSignals(False)
+            else:
+                connection_tab.set_connection_fields(
+                    ip,
+                    connection_tab.user_input.text() or "root",
+                    connection_tab.pass_input.text() or "1"
+                )
+
+                connection_tab.profile_selector.blockSignals(True)
+                connection_tab.profile_selector.setCurrentIndex(-1)
+                connection_tab.profile_selector.blockSignals(False)
 
         self.accept()
 
