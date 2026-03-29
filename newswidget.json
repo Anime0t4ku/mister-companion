@@ -3,10 +3,10 @@
   "items": [
     {
       "id": "new-rc",
-      "date": "2026-03-28",
+      "date": "2026-03-29",
       "type": "update",
-      "headline": "MiSTer Companion v3.0.0 RC1 Available",
-      "message": "MiSTer Companion v3.0.0 has now moved from beta into Release Candidate status.\n\nThis update improves the Flash Mr. Fusion experience with fixes for false error messages, improved drive detection on Windows, and prevents Windows Explorer from opening unexpectedly during the flashing process.\n\nThe Flash Mr. Fusion tab has also been moved to the first position as this is usualy the first step.\n\nYou can download the latest release candidate below.",
+      "headline": "MiSTer Companion v3.0.0 RC2 Available",
+      "message": "MiSTer Companion v3.0.0 RC2 is now available.\n\nThis update improves network scanning reliability and fixes a crash that could occur for some users after flashing Mr. Fusion on Windows.\n\nNetwork scanning has been made more reliable with adjusted timeouts, and a new Re-Scan button has been added to easily scan again for MiSTer devices.\n\nA fix has also been implemented for a crash that could occur after flashing to an SD card, by adding a short delay before restoring Windows settings in Flash Mr. Fusion.\n\nYou can download the latest release candidate below.",
       "url": "https://github.com/Anime0t4ku/mister-companion/releases/tag/Pre-release",
       "url_label": "Download Pre-release"
     },

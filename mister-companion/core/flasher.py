@@ -9,6 +9,7 @@ import stat
 import subprocess
 import sys
 import tarfile
+import time
 import zipfile
 from pathlib import Path
 from typing import Callable
@@ -775,10 +776,17 @@ def flash_image(
         _log(log_callback, "Flash completed successfully.")
     finally:
         if process.stdout is not None:
-            process.stdout.close()
+            try:
+                process.stdout.close()
+            except Exception as e:
+                _log(log_callback, f"Failed to close process stdout: {e}")
 
         if platform.system() == "Windows":
             try:
+                _log(log_callback, "Waiting briefly before restoring Windows settings...")
+                time.sleep(3.0)
+                _log(log_callback, "Restoring Windows AutoPlay setting...")
                 _restore_windows_autoplay(original_autoplay_value, log_callback)
+                _log(log_callback, "Windows AutoPlay restore complete.")
             except Exception as e:
                 _log(log_callback, f"Failed to restore Windows settings: {e}")

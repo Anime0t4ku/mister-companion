@@ -5,8 +5,12 @@ import paramiko
 
 from PyQt6.QtCore import QThread, pyqtSignal, Qt, QTimer
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QListWidget, QLabel,
-    QPushButton
+    QDialog,
+    QVBoxLayout,
+    QHBoxLayout,
+    QListWidget,
+    QLabel,
+    QPushButton,
 )
 
 
@@ -20,6 +24,10 @@ class NetworkScannerWorker(QThread):
         self._running = True
         self.found_ips = set()
         self._lock = threading.Lock()
+
+        self.port_timeout = 0.45
+        self.ssh_timeout = 0.7
+        self.max_threads = 128
 
     def stop(self):
         self._running = False
@@ -55,7 +63,7 @@ class NetworkScannerWorker(QThread):
     def is_port_open(self, ip, port=22):
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(0.35)
+            sock.settimeout(self.port_timeout)
             result = sock.connect_ex((ip, port))
             sock.close()
             return result == 0
@@ -71,9 +79,9 @@ class NetworkScannerWorker(QThread):
                 ip,
                 username="root",
                 password="1",
-                timeout=0.5,
-                banner_timeout=0.5,
-                auth_timeout=0.5,
+                timeout=self.ssh_timeout,
+                banner_timeout=self.ssh_timeout,
+                auth_timeout=self.ssh_timeout,
                 look_for_keys=False,
                 allow_agent=False
             )
@@ -109,7 +117,7 @@ class NetworkScannerWorker(QThread):
 
             self.status_changed.emit("Scanning network...")
 
-            threads = []
+            active_threads = []
 
             for subnet in subnets:
                 for i in range(1, 255):
@@ -119,12 +127,22 @@ class NetworkScannerWorker(QThread):
                     ip = f"{subnet}.{i}"
                     t = threading.Thread(target=self.check_device, args=(ip,), daemon=True)
                     t.start()
-                    threads.append(t)
+                    active_threads.append(t)
 
-            for t in threads:
+                    if len(active_threads) >= self.max_threads:
+                        for thread in active_threads:
+                            if not self._running:
+                                break
+                            thread.join()
+                        active_threads.clear()
+
                 if not self._running:
                     break
-                t.join()
+
+            for thread in active_threads:
+                if not self._running:
+                    break
+                thread.join()
 
             self.scan_finished.emit(len(self.found_ips))
 
@@ -153,22 +171,35 @@ class NetworkScannerDialog(QDialog):
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.status_label)
 
+        button_row = QHBoxLayout()
+
+        self.rescan_button = QPushButton("Re-Scan")
+        button_row.addWidget(self.rescan_button)
+
         self.use_button = QPushButton("Use Selected IP")
         self.use_button.setEnabled(False)
-        layout.addWidget(self.use_button)
+        button_row.addWidget(self.use_button)
+
+        layout.addLayout(button_row)
 
         self.found_ips = set()
 
         self.list_widget.itemSelectionChanged.connect(self.on_select)
         self.list_widget.itemDoubleClicked.connect(self.use_selected)
         self.use_button.clicked.connect(self.use_selected)
+        self.rescan_button.clicked.connect(self.start_scan)
 
         QTimer.singleShot(200, self.start_scan)
 
     def start_scan(self):
+        if self.worker is not None and self.worker.isRunning():
+            self.worker.stop()
+            self.worker.wait(1000)
+
         self.list_widget.clear()
         self.found_ips.clear()
         self.use_button.setEnabled(False)
+        self.rescan_button.setEnabled(False)
         self.status_label.setText("Starting scan...")
 
         self.worker = NetworkScannerWorker()
@@ -183,6 +214,8 @@ class NetworkScannerDialog(QDialog):
             self.list_widget.addItem(ip)
 
     def finish_scan(self, count):
+        self.rescan_button.setEnabled(True)
+
         if self.status_label.text().startswith("Scan failed:"):
             return
 
@@ -240,5 +273,5 @@ class NetworkScannerDialog(QDialog):
     def closeEvent(self, event):
         if self.worker is not None and self.worker.isRunning():
             self.worker.stop()
-            self.worker.wait(500)
+            self.worker.wait(1000)
         super().closeEvent(event)
