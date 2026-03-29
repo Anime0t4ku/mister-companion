@@ -133,8 +133,8 @@ Pre-built nightly binaries are generated automatically via GitHub Actions.
 
 | Platform | Status | Download |
 |----------|--------|----------|
-| Windows | ![Build Status](https://github.com/Anime0t4ku/mister-companion/actions/workflows/build.yaml/badge.svg) | [Windows x86_64 Pre-Release](https://github.com/Anime0t4ku/mister-companion/releases/download/Pre-release/MiSTer-Companion-v3-Windows-x86_64.zip) |
-| Linux | ![Build Status](https://github.com/Anime0t4ku/mister-companion/actions/workflows/build.yaml/badge.svg) | [Linux x86_64 Pre-Release](https://github.com/Anime0t4ku/mister-companion/releases/download/Pre-release/MiSTer-Companion-v3-Linux-x86_64.tar.gz) |
+| Windows | ![Build Status](https://github.com/Anime0t4ku/mister-companion/actions/workflows/build.yaml/badge.svg) | [Windows x86_64 Pre-Release]([https://github.com/Anime0t4ku/mister-companion/releases/download/Pre-release/MiSTer-Companion-v3-Windows-x86_64.zip](https://github.com/Anime0t4ku/mister-companion/releases/download/Pre-release/MiSTer-Companion-Windows-x86_64.zip)) |
+| Linux | ![Build Status](https://github.com/Anime0t4ku/mister-companion/actions/workflows/build.yaml/badge.svg) | [Linux x86_64 Pre-Release](https://github.com/Anime0t4ku/mister-companion/releases/download/Pre-release/MiSTer-Companion-Linux-x86_64.tar.gz) |
 
 ---
 
