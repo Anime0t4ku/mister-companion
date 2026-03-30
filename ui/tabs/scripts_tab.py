@@ -1165,4 +1165,4 @@ class ScriptsTab(QWidget):
                 password=self.connection.password,
             )
         except Exception as e:
-            QMessageBox.critical(self, "SMB Error", str(e))
+            QMessageBox.critical(self, "Error", str(e))
