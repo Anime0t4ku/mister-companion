@@ -184,6 +184,7 @@ def load_update_all_config(connection):
             "insert_coin": is_enabled("funkycochise/Insert-Coin"),
             "anime0t4ku_wallpapers": is_enabled("anime0t4ku_wallpapers"),
             "pcn_challenge_wallpapers": is_enabled("pcn_challenge_wallpapers"),
+            "anime0t4ku_mister_scripts": is_enabled("anime0t4ku_mister_scripts"),
 
             "ranny_wallpapers": is_enabled("Ranny-Snice/Ranny-Snice-Wallpapers"),
             "ranny_wallpapers_source": "All Wallpapers",
@@ -482,6 +483,15 @@ def save_update_all_config(connection, config):
             [
                 "[pcn_challenge_wallpapers]",
                 "db_url = https://raw.githubusercontent.com/Anime0t4ku/MiSTerWallpapers/db/db/pcnchallenge.json.zip",
+            ],
+        )
+        main_lines = handle_simple_section(
+            "anime0t4ku_mister_scripts",
+            config.get("anime0t4ku_mister_scripts", False),
+            main_lines,
+            [
+                "[anime0t4ku_mister_scripts]",
+                "db_url = https://raw.githubusercontent.com/Anime0t4ku/0t4ku-mister-scripts/db/db/scripts.json.zip",
             ],
         )
 

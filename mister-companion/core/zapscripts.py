@@ -89,6 +89,8 @@ def get_zapscripts_state(connection) -> dict:
             "update_all_installed": False,
             "migrate_sd_installed": False,
             "insertcoin_installed": False,
+            "auto_time_installed": False,
+            "dav_browser_installed": False,
         }
 
     zaparoo_check = connection.run_command(
@@ -118,10 +120,22 @@ def get_zapscripts_state(connection) -> dict:
     )
     insertcoin_installed = "EXISTS" in (insertcoin_check or "")
 
+    auto_time_check = connection.run_command(
+        "test -f /media/fat/Scripts/auto_time.sh && echo EXISTS"
+    )
+    auto_time_installed = "EXISTS" in (auto_time_check or "")
+
+    dav_browser_check = connection.run_command(
+        "test -f /media/fat/Scripts/dav_browser.sh && echo EXISTS"
+    )
+    dav_browser_installed = "EXISTS" in (dav_browser_check or "")
+
     return {
         "zaparoo_installed": zaparoo_installed,
         "zaparoo_service_enabled": zaparoo_service_enabled,
         "update_all_installed": update_all_installed,
         "migrate_sd_installed": migrate_sd_installed,
         "insertcoin_installed": insertcoin_installed,
+        "auto_time_installed": auto_time_installed,
+        "dav_browser_installed": dav_browser_installed,
     }

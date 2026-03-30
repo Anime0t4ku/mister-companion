@@ -125,6 +125,7 @@ class UpdateAllConfigDialog(QDialog):
         self.insert_coin_check = QCheckBox("Insert-Coin")
         self.anime0t4ku_wallpapers_check = QCheckBox("Anime0t4ku Wallpapers")
         self.pcn_challenge_wallpapers_check = QCheckBox("PCN Challenge Wallpapers")
+        self.anime0t4ku_mister_scripts_check = QCheckBox("Anime0t4ku MiSTer Scripts")
         self.ranny_wallpapers_check = QCheckBox("Ranny Snice Wallpapers")
         self.ranny_wallpapers_source_combo = QComboBox()
         self.ranny_wallpapers_source_combo.addItems([
@@ -141,6 +142,7 @@ class UpdateAllConfigDialog(QDialog):
             self.insert_coin_check,
             self.anime0t4ku_wallpapers_check,
             self.pcn_challenge_wallpapers_check,
+            self.anime0t4ku_mister_scripts_check,
             self.ranny_wallpapers_check,
         ]:
             self._add(extra_group, widget)
@@ -239,6 +241,7 @@ class UpdateAllConfigDialog(QDialog):
         self.insert_coin_check.setChecked(data["insert_coin"])
         self.anime0t4ku_wallpapers_check.setChecked(data["anime0t4ku_wallpapers"])
         self.pcn_challenge_wallpapers_check.setChecked(data["pcn_challenge_wallpapers"])
+        self.anime0t4ku_mister_scripts_check.setChecked(data["anime0t4ku_mister_scripts"])
         self.ranny_wallpapers_check.setChecked(data["ranny_wallpapers"])
         self.ranny_wallpapers_source_combo.setCurrentText(data["ranny_wallpapers_source"])
 
@@ -275,6 +278,7 @@ class UpdateAllConfigDialog(QDialog):
             "insert_coin": self.insert_coin_check.isChecked(),
             "anime0t4ku_wallpapers": self.anime0t4ku_wallpapers_check.isChecked(),
             "pcn_challenge_wallpapers": self.pcn_challenge_wallpapers_check.isChecked(),
+            "anime0t4ku_mister_scripts": self.anime0t4ku_mister_scripts_check.isChecked(),
             "ranny_wallpapers": self.ranny_wallpapers_check.isChecked(),
             "ranny_wallpapers_source": self.ranny_wallpapers_source_combo.currentText(),
         }

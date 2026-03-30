@@ -13,9 +13,13 @@ ZAPAROO_RELEASE_API = "https://api.github.com/repos/ZaparooProject/zaparoo-core/
 MIGRATE_SD_URL = "https://raw.githubusercontent.com/Natrox/MiSTer_Utils_Natrox/main/scripts/migrate_sd.sh"
 CIFS_MOUNT_URL = "https://raw.githubusercontent.com/MiSTer-devel/Scripts_MiSTer/master/cifs_mount.sh"
 CIFS_UMOUNT_URL = "https://raw.githubusercontent.com/MiSTer-devel/Scripts_MiSTer/master/cifs_umount.sh"
+AUTO_TIME_URL = "https://raw.githubusercontent.com/Anime0t4ku/0t4ku-mister-scripts/main/Scripts/auto_time.sh"
+DAV_BROWSER_URL = "https://raw.githubusercontent.com/Anime0t4ku/0t4ku-mister-scripts/main/Scripts/dav_browser.sh"
 
 UPDATE_ALL_JSON_PATH = "/media/fat/Scripts/.config/update_all/update_all.json"
 DOWNLOADER_INI_PATH = "/media/fat/downloader.ini"
+DAV_BROWSER_CONFIG_DIR = "/media/fat/Scripts/.config/dav_browser"
+DAV_BROWSER_CONFIG_PATH = "/media/fat/Scripts/.config/dav_browser/dav_browser.ini"
 
 DEFAULT_UPDATE_ALL_JSON = """{"migration_version": 6, "theme": "Blue Installer", "mirror": "", "countdown_time": 15, "log_viewer": true, "use_settings_screen_theme_in_log_viewer": true, "autoreboot": true, "download_beta_cores": false, "names_region": "JP", "names_char_code": "CHAR18", "names_sort_code": "Common", "introduced_arcade_names_txt": true, "pocket_firmware_update": false, "pocket_backup": false, "timeline_after_logs": true, "overscan": "medium", "monochrome_ui": false}
 """
@@ -43,11 +47,15 @@ class ScriptsStatus:
     migrate_sd_installed: bool
     cifs_installed: bool
     cifs_configured: bool
+    auto_time_installed: bool
+    dav_browser_installed: bool
+    dav_browser_configured: bool
 
 
 def ensure_remote_scripts_dir(connection):
     connection.run_command("mkdir -p /media/fat/Scripts")
     connection.run_command("mkdir -p /media/fat/Scripts/.config/update_all")
+    connection.run_command("mkdir -p /media/fat/Scripts/.config/dav_browser")
 
 
 def _remote_file_exists(sftp, path):
@@ -104,7 +112,7 @@ def check_update_all_initialized(connection) -> bool:
 
 def get_scripts_status(connection) -> ScriptsStatus:
     if not connection.is_connected():
-        return ScriptsStatus(False, False, False, False, False, False, False)
+        return ScriptsStatus(False, False, False, False, False, False, False, False, False, False)
 
     update_check = connection.run_command(
         "test -f /media/fat/Scripts/update_all.sh && echo EXISTS"
@@ -134,9 +142,22 @@ def get_scripts_status(connection) -> ScriptsStatus:
     cifs_ini_check = connection.run_command(
         "test -f /media/fat/Scripts/cifs_mount.ini && echo CONFIG"
     )
-
     cifs_installed = "EXISTS" in (cifs_script_check or "")
     cifs_configured = "CONFIG" in (cifs_ini_check or "")
+
+    auto_time_check = connection.run_command(
+        "test -f /media/fat/Scripts/auto_time.sh && echo EXISTS"
+    )
+    auto_time_installed = "EXISTS" in (auto_time_check or "")
+
+    dav_browser_script_check = connection.run_command(
+        "test -f /media/fat/Scripts/dav_browser.sh && echo EXISTS"
+    )
+    dav_browser_ini_check = connection.run_command(
+        f"test -f {DAV_BROWSER_CONFIG_PATH} && echo CONFIG"
+    )
+    dav_browser_installed = "EXISTS" in (dav_browser_script_check or "")
+    dav_browser_configured = "CONFIG" in (dav_browser_ini_check or "")
 
     return ScriptsStatus(
         update_all_installed=update_all_installed,
@@ -146,6 +167,9 @@ def get_scripts_status(connection) -> ScriptsStatus:
         migrate_sd_installed=migrate_sd_installed,
         cifs_installed=cifs_installed,
         cifs_configured=cifs_configured,
+        auto_time_installed=auto_time_installed,
+        dav_browser_installed=dav_browser_installed,
+        dav_browser_configured=dav_browser_configured,
     )
 
 
@@ -380,6 +404,98 @@ def test_cifs_connection(connection, server, share, username, password):
         f'mkdir -p /tmp/cifs_test && {test_cmd} && umount /tmp/cifs_test && echo SUCCESS'
     )
     return bool(result and "SUCCESS" in result)
+
+
+def install_auto_time(connection, log):
+    log("Installing auto_time...\n")
+    script_data = requests.get(AUTO_TIME_URL, timeout=30).content
+
+    ensure_remote_scripts_dir(connection)
+
+    sftp = connection.client.open_sftp()
+    try:
+        with sftp.open("/media/fat/Scripts/auto_time.sh", "wb") as remote_file:
+            remote_file.write(script_data)
+    finally:
+        sftp.close()
+
+    connection.run_command("chmod +x /media/fat/Scripts/auto_time.sh")
+    log("auto_time installed successfully.\n")
+
+
+def uninstall_auto_time(connection):
+    connection.run_command("rm -f /media/fat/Scripts/auto_time.sh")
+
+
+def install_dav_browser(connection, log):
+    log("Installing dav_browser...\n")
+    script_data = requests.get(DAV_BROWSER_URL, timeout=30).content
+
+    ensure_remote_scripts_dir(connection)
+
+    sftp = connection.client.open_sftp()
+    try:
+        with sftp.open("/media/fat/Scripts/dav_browser.sh", "wb") as remote_file:
+            remote_file.write(script_data)
+    finally:
+        sftp.close()
+
+    connection.run_command("chmod +x /media/fat/Scripts/dav_browser.sh")
+    log("dav_browser installed successfully.\n")
+
+
+def uninstall_dav_browser(connection):
+    connection.run_command("rm -f /media/fat/Scripts/dav_browser.sh")
+    connection.run_command(f"rm -rf {DAV_BROWSER_CONFIG_DIR}")
+
+
+def load_dav_browser_config(connection):
+    config = {}
+
+    if not connection.is_connected():
+        return config
+
+    output = connection.run_command(f"cat {DAV_BROWSER_CONFIG_PATH} 2>/dev/null")
+    if not output:
+        return config
+
+    for raw_line in output.splitlines():
+        line = raw_line.strip()
+        if not line or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        config[key.strip()] = value.strip().strip('"')
+
+    return config
+
+
+def save_dav_browser_config(
+    connection,
+    server_url,
+    username,
+    password,
+    remote_path,
+    skip_tls_verify,
+):
+    ini = f"""SERVER_URL={server_url}
+USERNAME={username}
+PASSWORD={password}
+REMOTE_PATH={remote_path}
+SKIP_TLS_VERIFY={"true" if skip_tls_verify else "false"}
+"""
+
+    ensure_remote_scripts_dir(connection)
+
+    sftp = connection.client.open_sftp()
+    try:
+        with sftp.open(DAV_BROWSER_CONFIG_PATH, "w") as remote_file:
+            remote_file.write(ini)
+    finally:
+        sftp.close()
+
+
+def remove_dav_browser_config(connection):
+    connection.run_command(f"rm -f {DAV_BROWSER_CONFIG_PATH}")
 
 
 def open_scripts_folder_on_host(ip, username="root", password="1"):

@@ -66,8 +66,8 @@ class ZapScriptsTab(QWidget):
         scripts_layout.setContentsMargins(16, 18, 16, 18)
         scripts_layout.setSpacing(12)
 
-        script_buttons = QHBoxLayout()
-        script_buttons.setSpacing(10)
+        script_row_1 = QHBoxLayout()
+        script_row_1.setSpacing(10)
 
         self.run_update_all_button = QPushButton("Run update_all")
         self.run_update_all_button.setFixedWidth(170)
@@ -78,13 +78,28 @@ class ZapScriptsTab(QWidget):
         self.run_insertcoin_button = QPushButton("Run update_all_insertcoin")
         self.run_insertcoin_button.setFixedWidth(210)
 
-        script_buttons.addStretch()
-        script_buttons.addWidget(self.run_update_all_button)
-        script_buttons.addWidget(self.run_migrate_sd_button)
-        script_buttons.addWidget(self.run_insertcoin_button)
-        script_buttons.addStretch()
+        script_row_1.addStretch()
+        script_row_1.addWidget(self.run_update_all_button)
+        script_row_1.addWidget(self.run_migrate_sd_button)
+        script_row_1.addWidget(self.run_insertcoin_button)
+        script_row_1.addStretch()
 
-        scripts_layout.addLayout(script_buttons)
+        script_row_2 = QHBoxLayout()
+        script_row_2.setSpacing(10)
+
+        self.run_auto_time_button = QPushButton("Run auto_time")
+        self.run_auto_time_button.setFixedWidth(170)
+
+        self.run_dav_browser_button = QPushButton("Run dav_browser")
+        self.run_dav_browser_button.setFixedWidth(170)
+
+        script_row_2.addStretch()
+        script_row_2.addWidget(self.run_auto_time_button)
+        script_row_2.addWidget(self.run_dav_browser_button)
+        script_row_2.addStretch()
+
+        scripts_layout.addLayout(script_row_1)
+        scripts_layout.addLayout(script_row_2)
         scripts_group.setLayout(scripts_layout)
         main_layout.addWidget(scripts_group)
 
@@ -145,6 +160,12 @@ class ZapScriptsTab(QWidget):
         self.run_insertcoin_button.clicked.connect(
             lambda: self.run_script_action("update_all_insertcoin", "update_all_insertcoin sent.")
         )
+        self.run_auto_time_button.clicked.connect(
+            lambda: self.run_script_action("auto_time", "auto_time sent.")
+        )
+        self.run_dav_browser_button.clicked.connect(
+            lambda: self.run_script_action("dav_browser", "dav_browser sent.")
+        )
 
         self.bluetooth_button.clicked.connect(
             lambda: self.run_input_action("**input.keyboard:{f11}", "Bluetooth menu command sent.")
@@ -197,6 +218,8 @@ class ZapScriptsTab(QWidget):
             self.run_update_all_button,
             self.run_migrate_sd_button,
             self.run_insertcoin_button,
+            self.run_auto_time_button,
+            self.run_dav_browser_button,
             self.bluetooth_button,
             self.osd_button,
             self.cycle_wallpaper_button,
@@ -232,6 +255,8 @@ class ZapScriptsTab(QWidget):
         self.run_update_all_button.setEnabled(state["update_all_installed"])
         self.run_migrate_sd_button.setEnabled(state["migrate_sd_installed"])
         self.run_insertcoin_button.setEnabled(state["insertcoin_installed"])
+        self.run_auto_time_button.setEnabled(state["auto_time_installed"])
+        self.run_dav_browser_button.setEnabled(state["dav_browser_installed"])
 
         self.bluetooth_button.setEnabled(True)
         self.osd_button.setEnabled(True)

@@ -3,11 +3,15 @@ import traceback
 from PyQt6.QtCore import QThread, Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QCheckBox,
+    QFrame,
     QGroupBox,
     QHBoxLayout,
     QLabel,
+    QListWidget,
+    QListWidgetItem,
     QMessageBox,
     QPushButton,
+    QSizePolicy,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -19,21 +23,27 @@ from core.scripts_actions import (
     enable_zaparoo_service,
     ensure_update_all_config_bootstrap,
     get_scripts_status,
+    install_auto_time,
     install_cifs_mount,
+    install_dav_browser,
     install_migrate_sd,
     install_update_all,
     install_zaparoo,
     open_scripts_folder_on_host,
     remove_cifs_config,
+    remove_dav_browser_config,
     run_cifs_mount,
     run_cifs_umount,
     run_update_all_stream,
+    uninstall_auto_time,
     uninstall_cifs_mount,
+    uninstall_dav_browser,
     uninstall_migrate_sd,
     uninstall_update_all,
     uninstall_zaparoo,
 )
 from ui.dialogs.cifs_config_dialog import CifsConfigDialog
+from ui.dialogs.dav_browser_config_dialog import DavBrowserConfigDialog
 from ui.dialogs.update_all_config_dialog import UpdateAllConfigDialog
 
 
@@ -69,6 +79,13 @@ class ScriptTaskWorker(QThread):
 
 
 class ScriptsTab(QWidget):
+    SCRIPT_UPDATE_ALL = "update_all"
+    SCRIPT_ZAPAROO = "zaparoo"
+    SCRIPT_MIGRATE_SD = "migrate_sd"
+    SCRIPT_CIFS = "cifs_mount"
+    SCRIPT_AUTO_TIME = "auto_time"
+    SCRIPT_DAV_BROWSER = "dav_browser"
+
     def __init__(self, main_window):
         super().__init__()
         self.main_window = main_window
@@ -80,169 +97,164 @@ class ScriptsTab(QWidget):
         self.update_all_initialized = False
         self.waiting_for_reboot_reconnect = False
 
+        self.script_display_order = [
+            self.SCRIPT_UPDATE_ALL,
+            self.SCRIPT_ZAPAROO,
+            self.SCRIPT_MIGRATE_SD,
+            self.SCRIPT_CIFS,
+            self.SCRIPT_AUTO_TIME,
+            self.SCRIPT_DAV_BROWSER,
+        ]
+        self.script_titles = {
+            self.SCRIPT_UPDATE_ALL: "update_all",
+            self.SCRIPT_ZAPAROO: "Zaparoo",
+            self.SCRIPT_MIGRATE_SD: "SD Migration",
+            self.SCRIPT_CIFS: "CIFS Network Share",
+            self.SCRIPT_AUTO_TIME: "Auto Time",
+            self.SCRIPT_DAV_BROWSER: "DAV Browser",
+        }
+        self.script_descriptions = {
+            self.SCRIPT_UPDATE_ALL: "Install, configure, and run update_all directly from MiSTer Companion.",
+            self.SCRIPT_ZAPAROO: "Install Zaparoo and enable its boot service.",
+            self.SCRIPT_MIGRATE_SD: "Install or remove the migrate_sd script for SD card migration.",
+            self.SCRIPT_CIFS: "Install, configure, mount, and remove CIFS network share scripts.",
+            self.SCRIPT_AUTO_TIME: "Automatically set timezone and current time for your MiSTer.",
+            self.SCRIPT_DAV_BROWSER: "Browse a WebDAV server, download ROMs directly to your MiSTer, and optionally launch them after download.",
+        }
+        self.script_status_texts = {
+            self.SCRIPT_UPDATE_ALL: "Unknown",
+            self.SCRIPT_ZAPAROO: "Unknown",
+            self.SCRIPT_MIGRATE_SD: "Unknown",
+            self.SCRIPT_CIFS: "Unknown",
+            self.SCRIPT_AUTO_TIME: "Unknown",
+            self.SCRIPT_DAV_BROWSER: "Unknown",
+        }
+        self.selected_script_key = self.SCRIPT_UPDATE_ALL
+
         self.build_ui()
         self.apply_disconnected_state()
 
     def build_ui(self):
         main_layout = QVBoxLayout()
         main_layout.setContentsMargins(12, 12, 12, 12)
-        main_layout.setSpacing(14)
+        main_layout.setSpacing(12)
         self.setLayout(main_layout)
 
-        # ===== update_all =====
-        update_group = QGroupBox("update_all")
-        update_layout = QVBoxLayout()
-        update_layout.setContentsMargins(16, 18, 16, 18)
-        update_layout.setSpacing(12)
+        top_row = QHBoxLayout()
+        top_row.setSpacing(12)
+        main_layout.addLayout(top_row, stretch=1)
 
-        self.update_status_label = QLabel("update_all: Unknown")
-        self.update_status_label.setStyleSheet("color: gray;")
-        self.update_status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        update_layout.addWidget(self.update_status_label)
+        # ===== Left: Script List =====
+        list_group = QGroupBox("Scripts")
+        list_layout = QVBoxLayout()
+        list_layout.setContentsMargins(10, 10, 10, 10)
+        list_layout.setSpacing(8)
 
-        update_buttons = QHBoxLayout()
-        update_buttons.setSpacing(10)
+        self.script_list = QListWidget()
+        self.script_list.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
+        self.script_list.setAlternatingRowColors(False)
+        self.script_list.setVerticalScrollMode(QListWidget.ScrollMode.ScrollPerPixel)
+        self.script_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.script_list.setMinimumWidth(290)
+        self.script_list.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding
+        )
+        self.script_list.setStyleSheet(
+            """
+            QListWidget {
+                border: 1px solid palette(mid);
+                border-radius: 8px;
+                padding: 4px;
+            }
+            QListWidget::item {
+                border-radius: 6px;
+                padding: 8px 10px;
+                margin: 2px 0px;
+            }
+            QListWidget::item:selected {
+                background-color: palette(highlight);
+                color: palette(highlighted-text);
+                border-left: 4px solid #7c4dff;
+            }
+            """
+        )
+        list_layout.addWidget(self.script_list)
 
-        self.install_update_button = QPushButton("Install update_all")
-        self.install_update_button.setFixedWidth(160)
+        list_group.setLayout(list_layout)
+        top_row.addWidget(list_group, 1)
 
-        self.uninstall_update_button = QPushButton("Uninstall update_all")
-        self.uninstall_update_button.setFixedWidth(160)
+        # ===== Right: Details / Actions =====
+        details_group = QGroupBox("Details")
+        details_layout = QVBoxLayout()
+        details_layout.setContentsMargins(14, 14, 14, 14)
+        details_layout.setSpacing(10)
 
-        self.configure_update_button = QPushButton("Configure update_all")
-        self.configure_update_button.setFixedWidth(180)
+        self.script_name_label = QLabel("Select a script")
+        font = self.script_name_label.font()
+        font.setPointSize(font.pointSize() + 2)
+        font.setBold(True)
+        self.script_name_label.setFont(font)
+        details_layout.addWidget(self.script_name_label)
 
-        self.run_update_button = QPushButton("Run update_all")
-        self.run_update_button.setFixedWidth(160)
+        self.script_status_label = QLabel("Status: Unknown")
+        self.script_status_label.setStyleSheet("color: gray;")
+        details_layout.addWidget(self.script_status_label)
 
-        update_buttons.addStretch()
-        update_buttons.addWidget(self.install_update_button)
-        update_buttons.addWidget(self.uninstall_update_button)
-        update_buttons.addWidget(self.configure_update_button)
-        update_buttons.addWidget(self.run_update_button)
-        update_buttons.addStretch()
+        self.script_description_label = QLabel("")
+        self.script_description_label.setWordWrap(True)
+        self.script_description_label.setAlignment(
+            Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft
+        )
+        self.script_description_label.setMinimumHeight(54)
+        details_layout.addWidget(self.script_description_label)
 
-        update_layout.addLayout(update_buttons)
-        update_group.setLayout(update_layout)
-        main_layout.addWidget(update_group)
+        divider = QFrame()
+        divider.setFrameShape(QFrame.Shape.HLine)
+        divider.setFrameShadow(QFrame.Shadow.Sunken)
+        details_layout.addWidget(divider)
 
-        # ===== Zaparoo =====
-        zaparoo_group = QGroupBox("Zaparoo")
-        zaparoo_layout = QVBoxLayout()
-        zaparoo_layout.setContentsMargins(16, 18, 16, 18)
-        zaparoo_layout.setSpacing(12)
+        self.action_buttons_container = QWidget()
+        self.action_buttons_layout = QVBoxLayout()
+        self.action_buttons_layout.setContentsMargins(0, 0, 0, 0)
+        self.action_buttons_layout.setSpacing(10)
+        self.action_buttons_container.setLayout(self.action_buttons_layout)
+        details_layout.addWidget(self.action_buttons_container)
 
-        self.zaparoo_status_label = QLabel("Zaparoo: Unknown")
-        self.zaparoo_status_label.setStyleSheet("color: gray;")
-        self.zaparoo_status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        zaparoo_layout.addWidget(self.zaparoo_status_label)
+        self.update_actions_widget = self._build_update_all_actions()
+        self.zaparoo_actions_widget = self._build_zaparoo_actions()
+        self.migrate_actions_widget = self._build_migrate_sd_actions()
+        self.cifs_actions_widget = self._build_cifs_actions()
+        self.auto_time_actions_widget = self._build_auto_time_actions()
+        self.dav_browser_actions_widget = self._build_dav_browser_actions()
 
-        zaparoo_buttons = QHBoxLayout()
-        zaparoo_buttons.setSpacing(10)
+        self.script_action_widgets = {
+            self.SCRIPT_UPDATE_ALL: self.update_actions_widget,
+            self.SCRIPT_ZAPAROO: self.zaparoo_actions_widget,
+            self.SCRIPT_MIGRATE_SD: self.migrate_actions_widget,
+            self.SCRIPT_CIFS: self.cifs_actions_widget,
+            self.SCRIPT_AUTO_TIME: self.auto_time_actions_widget,
+            self.SCRIPT_DAV_BROWSER: self.dav_browser_actions_widget,
+        }
 
-        self.install_zaparoo_button = QPushButton("Install Zaparoo")
-        self.install_zaparoo_button.setFixedWidth(160)
+        for widget in self.script_action_widgets.values():
+            widget.hide()
+            self.action_buttons_layout.addWidget(widget)
 
-        self.enable_zaparoo_service_button = QPushButton("Enable Zaparoo Service")
-        self.enable_zaparoo_service_button.setFixedWidth(190)
+        self.action_buttons_layout.addStretch()
 
-        self.uninstall_zaparoo_button = QPushButton("Uninstall Zaparoo")
-        self.uninstall_zaparoo_button.setFixedWidth(160)
+        details_group.setLayout(details_layout)
+        top_row.addWidget(details_group, 2)
 
-        zaparoo_buttons.addStretch()
-        zaparoo_buttons.addWidget(self.install_zaparoo_button)
-        zaparoo_buttons.addWidget(self.enable_zaparoo_service_button)
-        zaparoo_buttons.addWidget(self.uninstall_zaparoo_button)
-        zaparoo_buttons.addStretch()
-
-        zaparoo_layout.addLayout(zaparoo_buttons)
-        zaparoo_group.setLayout(zaparoo_layout)
-        main_layout.addWidget(zaparoo_group)
-
-        # ===== SD Migration =====
-        migrate_group = QGroupBox("SD Migration")
-        migrate_layout = QVBoxLayout()
-        migrate_layout.setContentsMargins(16, 18, 16, 18)
-        migrate_layout.setSpacing(12)
-
-        self.migrate_status_label = QLabel("migrate_sd: Unknown")
-        self.migrate_status_label.setStyleSheet("color: gray;")
-        self.migrate_status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        migrate_layout.addWidget(self.migrate_status_label)
-
-        migrate_buttons = QHBoxLayout()
-        migrate_buttons.setSpacing(10)
-
-        self.install_migrate_button = QPushButton("Install migrate_sd")
-        self.install_migrate_button.setFixedWidth(180)
-
-        self.uninstall_migrate_button = QPushButton("Uninstall migrate_sd")
-        self.uninstall_migrate_button.setFixedWidth(180)
-
-        migrate_buttons.addStretch()
-        migrate_buttons.addWidget(self.install_migrate_button)
-        migrate_buttons.addWidget(self.uninstall_migrate_button)
-        migrate_buttons.addStretch()
-
-        migrate_layout.addLayout(migrate_buttons)
-        migrate_group.setLayout(migrate_layout)
-        main_layout.addWidget(migrate_group)
-
-        # ===== CIFS =====
-        cifs_group = QGroupBox("CIFS Network Share")
-        cifs_layout = QVBoxLayout()
-        cifs_layout.setContentsMargins(16, 18, 16, 18)
-        cifs_layout.setSpacing(12)
-
-        self.cifs_status_label = QLabel("cifs_mount: Unknown")
-        self.cifs_status_label.setStyleSheet("color: gray;")
-        self.cifs_status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        cifs_layout.addWidget(self.cifs_status_label)
-
-        cifs_buttons = QHBoxLayout()
-        cifs_buttons.setSpacing(8)
-
-        self.install_cifs_button = QPushButton("Install")
-        self.install_cifs_button.setFixedWidth(110)
-
-        self.configure_cifs_button = QPushButton("Configure")
-        self.configure_cifs_button.setFixedWidth(110)
-
-        self.mount_cifs_button = QPushButton("Mount")
-        self.mount_cifs_button.setFixedWidth(110)
-
-        self.unmount_cifs_button = QPushButton("Unmount")
-        self.unmount_cifs_button.setFixedWidth(110)
-
-        self.remove_cifs_config_button = QPushButton("Remove Config")
-        self.remove_cifs_config_button.setFixedWidth(120)
-
-        self.uninstall_cifs_button = QPushButton("Uninstall")
-        self.uninstall_cifs_button.setFixedWidth(110)
-
-        cifs_buttons.addStretch()
-        cifs_buttons.addWidget(self.install_cifs_button)
-        cifs_buttons.addWidget(self.configure_cifs_button)
-        cifs_buttons.addWidget(self.mount_cifs_button)
-        cifs_buttons.addWidget(self.unmount_cifs_button)
-        cifs_buttons.addWidget(self.remove_cifs_config_button)
-        cifs_buttons.addWidget(self.uninstall_cifs_button)
-        cifs_buttons.addStretch()
-
-        cifs_layout.addLayout(cifs_buttons)
-        cifs_group.setLayout(cifs_layout)
-        main_layout.addWidget(cifs_group)
-
-        # ===== Open Scripts Folder =====
-        scripts_folder_row = QHBoxLayout()
-        scripts_folder_row.addStretch()
+        # ===== Bottom Actions =====
+        bottom_actions_row = QHBoxLayout()
+        bottom_actions_row.addStretch()
 
         self.open_scripts_folder_button = QPushButton("Open Scripts Folder")
         self.open_scripts_folder_button.setFixedWidth(180)
-        scripts_folder_row.addWidget(self.open_scripts_folder_button)
+        bottom_actions_row.addWidget(self.open_scripts_folder_button)
 
-        scripts_folder_row.addStretch()
-        main_layout.addLayout(scripts_folder_row)
+        bottom_actions_row.addStretch()
+        main_layout.addLayout(bottom_actions_row)
 
         # ===== SSH Output =====
         self.console_group = QGroupBox("SSH Output")
@@ -267,7 +279,10 @@ class ScriptsTab(QWidget):
         self.console_group.hide()
         main_layout.addWidget(self.console_group)
 
-        main_layout.addStretch()
+        self._populate_script_list()
+        self._select_initial_script()
+
+        self.script_list.currentItemChanged.connect(self.on_script_selection_changed)
 
         self.install_update_button.clicked.connect(self.install_update_all)
         self.uninstall_update_button.clicked.connect(self.uninstall_update_all)
@@ -288,8 +303,276 @@ class ScriptsTab(QWidget):
         self.remove_cifs_config_button.clicked.connect(self.remove_cifs_config)
         self.uninstall_cifs_button.clicked.connect(self.uninstall_cifs_mount)
 
+        self.install_auto_time_button.clicked.connect(self.install_auto_time)
+        self.uninstall_auto_time_button.clicked.connect(self.uninstall_auto_time)
+
+        self.install_dav_browser_button.clicked.connect(self.install_dav_browser)
+        self.configure_dav_browser_button.clicked.connect(self.configure_dav_browser)
+        self.remove_dav_browser_config_button.clicked.connect(self.remove_dav_browser_config)
+        self.uninstall_dav_browser_button.clicked.connect(self.uninstall_dav_browser)
+
         self.open_scripts_folder_button.clicked.connect(self.open_scripts_folder)
         self.hide_console_button.clicked.connect(self.toggle_console)
+
+    def _build_button_row(self, *buttons):
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        row.addStretch()
+        for button in buttons:
+            row.addWidget(button)
+        row.addStretch()
+        return row
+
+    def _build_update_all_actions(self):
+        widget = QWidget()
+        layout = QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+
+        self.install_update_button = QPushButton("Install")
+        self.install_update_button.setFixedWidth(170)
+
+        self.uninstall_update_button = QPushButton("Uninstall")
+        self.uninstall_update_button.setFixedWidth(170)
+
+        self.configure_update_button = QPushButton("Configure")
+        self.configure_update_button.setFixedWidth(190)
+
+        self.run_update_button = QPushButton("Run")
+        self.run_update_button.setFixedWidth(170)
+
+        layout.addLayout(
+            self._build_button_row(
+                self.install_update_button,
+                self.uninstall_update_button,
+            )
+        )
+        layout.addLayout(
+            self._build_button_row(
+                self.configure_update_button,
+                self.run_update_button,
+            )
+        )
+
+        widget.setLayout(layout)
+        return widget
+
+    def _build_zaparoo_actions(self):
+        widget = QWidget()
+        layout = QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+
+        self.install_zaparoo_button = QPushButton("Install")
+        self.install_zaparoo_button.setFixedWidth(170)
+
+        self.enable_zaparoo_service_button = QPushButton("Enable Service")
+        self.enable_zaparoo_service_button.setFixedWidth(190)
+
+        self.uninstall_zaparoo_button = QPushButton("Uninstall")
+        self.uninstall_zaparoo_button.setFixedWidth(170)
+
+        layout.addLayout(
+            self._build_button_row(
+                self.install_zaparoo_button,
+                self.enable_zaparoo_service_button,
+            )
+        )
+        layout.addLayout(self._build_button_row(self.uninstall_zaparoo_button))
+
+        widget.setLayout(layout)
+        return widget
+
+    def _build_migrate_sd_actions(self):
+        widget = QWidget()
+        layout = QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+
+        self.install_migrate_button = QPushButton("Install")
+        self.install_migrate_button.setFixedWidth(180)
+
+        self.uninstall_migrate_button = QPushButton("Uninstall")
+        self.uninstall_migrate_button.setFixedWidth(180)
+
+        layout.addLayout(
+            self._build_button_row(
+                self.install_migrate_button,
+                self.uninstall_migrate_button,
+            )
+        )
+
+        widget.setLayout(layout)
+        return widget
+
+    def _build_cifs_actions(self):
+        widget = QWidget()
+        layout = QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+
+        self.install_cifs_button = QPushButton("Install")
+        self.install_cifs_button.setFixedWidth(120)
+
+        self.configure_cifs_button = QPushButton("Configure")
+        self.configure_cifs_button.setFixedWidth(120)
+
+        self.mount_cifs_button = QPushButton("Mount")
+        self.mount_cifs_button.setFixedWidth(120)
+
+        self.unmount_cifs_button = QPushButton("Unmount")
+        self.unmount_cifs_button.setFixedWidth(120)
+
+        self.remove_cifs_config_button = QPushButton("Remove Config")
+        self.remove_cifs_config_button.setFixedWidth(130)
+
+        self.uninstall_cifs_button = QPushButton("Uninstall")
+        self.uninstall_cifs_button.setFixedWidth(120)
+
+        layout.addLayout(
+            self._build_button_row(
+                self.install_cifs_button,
+                self.configure_cifs_button,
+                self.mount_cifs_button,
+            )
+        )
+        layout.addLayout(
+            self._build_button_row(
+                self.unmount_cifs_button,
+                self.remove_cifs_config_button,
+                self.uninstall_cifs_button,
+            )
+        )
+
+        widget.setLayout(layout)
+        return widget
+
+    def _build_auto_time_actions(self):
+        widget = QWidget()
+        layout = QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+
+        self.install_auto_time_button = QPushButton("Install")
+        self.install_auto_time_button.setFixedWidth(140)
+
+        self.uninstall_auto_time_button = QPushButton("Uninstall")
+        self.uninstall_auto_time_button.setFixedWidth(140)
+
+        layout.addLayout(
+            self._build_button_row(
+                self.install_auto_time_button,
+                self.uninstall_auto_time_button,
+            )
+        )
+
+        widget.setLayout(layout)
+        return widget
+
+    def _build_dav_browser_actions(self):
+        widget = QWidget()
+        layout = QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+
+        self.install_dav_browser_button = QPushButton("Install")
+        self.install_dav_browser_button.setFixedWidth(140)
+
+        self.configure_dav_browser_button = QPushButton("Configure")
+        self.configure_dav_browser_button.setFixedWidth(140)
+
+        self.remove_dav_browser_config_button = QPushButton("Remove Config")
+        self.remove_dav_browser_config_button.setFixedWidth(140)
+
+        self.uninstall_dav_browser_button = QPushButton("Uninstall")
+        self.uninstall_dav_browser_button.setFixedWidth(140)
+
+        layout.addLayout(
+            self._build_button_row(
+                self.install_dav_browser_button,
+                self.configure_dav_browser_button,
+            )
+        )
+        layout.addLayout(
+            self._build_button_row(
+                self.remove_dav_browser_config_button,
+                self.uninstall_dav_browser_button,
+            )
+        )
+
+        widget.setLayout(layout)
+        return widget
+
+    def _populate_script_list(self):
+        self.script_list.clear()
+        for script_key in self.script_display_order:
+            item = QListWidgetItem()
+            item.setData(Qt.ItemDataRole.UserRole, script_key)
+            self.script_list.addItem(item)
+        self.update_script_list_labels()
+
+    def _select_initial_script(self):
+        if self.script_list.count() > 0:
+            self.script_list.setCurrentRow(0)
+
+    def _get_current_script_key(self):
+        item = self.script_list.currentItem()
+        if item is None:
+            return None
+        return item.data(Qt.ItemDataRole.UserRole)
+
+    def on_script_selection_changed(self, current, previous):
+        if current is None:
+            return
+
+        script_key = current.data(Qt.ItemDataRole.UserRole)
+        self.selected_script_key = script_key
+        self.update_details_panel()
+
+    def update_details_panel(self):
+        script_key = self.selected_script_key
+        if not script_key:
+            self.script_name_label.setText("Select a script")
+            self.script_status_label.setText("Status: Unknown")
+            self.script_status_label.setStyleSheet("color: gray;")
+            self.script_description_label.setText("")
+            for widget in self.script_action_widgets.values():
+                widget.hide()
+            return
+
+        self.script_name_label.setText(self.script_titles.get(script_key, script_key))
+        self.script_description_label.setText(self.script_descriptions.get(script_key, ""))
+
+        status_text = self.script_status_texts.get(script_key, "Unknown")
+        self.script_status_label.setText(f"Status: {status_text}")
+
+        lowered = status_text.lower()
+        if "installed" in lowered and "not" not in lowered and "disabled" not in lowered:
+            if "configured" in lowered:
+                self.script_status_label.setStyleSheet("color: #00aa00;")
+            elif "service disabled" in lowered or "not configured" in lowered:
+                self.script_status_label.setStyleSheet("color: #cc8400;")
+            else:
+                self.script_status_label.setStyleSheet("color: #00aa00;")
+        elif "configured" in lowered:
+            self.script_status_label.setStyleSheet("color: #00aa00;")
+        elif "disabled" in lowered or "not configured" in lowered:
+            self.script_status_label.setStyleSheet("color: #cc8400;")
+        elif "not installed" in lowered:
+            self.script_status_label.setStyleSheet("color: #cc0000;")
+        else:
+            self.script_status_label.setStyleSheet("color: gray;")
+
+        for key, widget in self.script_action_widgets.items():
+            widget.setVisible(key == script_key)
+
+    def update_script_list_labels(self):
+        for index in range(self.script_list.count()):
+            item = self.script_list.item(index)
+            script_key = item.data(Qt.ItemDataRole.UserRole)
+            title = self.script_titles.get(script_key, script_key)
+            status = self.script_status_texts.get(script_key, "Unknown")
+            item.setText(f"{title}    {status}")
 
     def update_connection_state(self):
         if self.connection.is_connected():
@@ -318,21 +601,25 @@ class ScriptsTab(QWidget):
             self.unmount_cifs_button,
             self.remove_cifs_config_button,
             self.uninstall_cifs_button,
+            self.install_auto_time_button,
+            self.uninstall_auto_time_button,
+            self.install_dav_browser_button,
+            self.configure_dav_browser_button,
+            self.remove_dav_browser_config_button,
+            self.uninstall_dav_browser_button,
             self.open_scripts_folder_button,
         ]:
             button.setEnabled(False)
 
-        self.update_status_label.setText("update_all: Unknown")
-        self.update_status_label.setStyleSheet("color: gray;")
+        self.script_status_texts[self.SCRIPT_UPDATE_ALL] = "Unknown"
+        self.script_status_texts[self.SCRIPT_ZAPAROO] = "Unknown"
+        self.script_status_texts[self.SCRIPT_MIGRATE_SD] = "Unknown"
+        self.script_status_texts[self.SCRIPT_CIFS] = "Unknown"
+        self.script_status_texts[self.SCRIPT_AUTO_TIME] = "Unknown"
+        self.script_status_texts[self.SCRIPT_DAV_BROWSER] = "Unknown"
 
-        self.zaparoo_status_label.setText("Zaparoo: Unknown")
-        self.zaparoo_status_label.setStyleSheet("color: gray;")
-
-        self.migrate_status_label.setText("migrate_sd: Unknown")
-        self.migrate_status_label.setStyleSheet("color: gray;")
-
-        self.cifs_status_label.setText("cifs_mount: Unknown")
-        self.cifs_status_label.setStyleSheet("color: gray;")
+        self.update_script_list_labels()
+        self.update_details_panel()
 
     def refresh_status(self):
         if not self.connection.is_connected():
@@ -350,54 +637,46 @@ class ScriptsTab(QWidget):
         self.update_all_initialized = status.update_all_initialized
 
         if status.update_all_installed:
-            self.update_status_label.setText("update_all: Installed ✓")
-            self.update_status_label.setStyleSheet("color: #00aa00;")
+            self.script_status_texts[self.SCRIPT_UPDATE_ALL] = "✓ Installed"
             self.install_update_button.setEnabled(False)
             self.uninstall_update_button.setEnabled(True)
             self.run_update_button.setEnabled(True)
             self.configure_update_button.setEnabled(True)
             self.update_all_initialized = status.update_all_initialized
         else:
-            self.update_status_label.setText("update_all: Not Installed")
-            self.update_status_label.setStyleSheet("color: #cc0000;")
+            self.script_status_texts[self.SCRIPT_UPDATE_ALL] = "✗ Not installed"
             self.install_update_button.setEnabled(True)
             self.uninstall_update_button.setEnabled(False)
             self.run_update_button.setEnabled(False)
             self.configure_update_button.setEnabled(False)
 
         if not status.zaparoo_installed:
-            self.zaparoo_status_label.setText("Zaparoo: Not Installed")
-            self.zaparoo_status_label.setStyleSheet("color: #cc0000;")
+            self.script_status_texts[self.SCRIPT_ZAPAROO] = "✗ Not installed"
             self.install_zaparoo_button.setEnabled(True)
             self.enable_zaparoo_service_button.setEnabled(False)
             self.uninstall_zaparoo_button.setEnabled(False)
         elif status.zaparoo_installed and not status.zaparoo_service_enabled:
-            self.zaparoo_status_label.setText("Zaparoo: Installed (Service Disabled)")
-            self.zaparoo_status_label.setStyleSheet("color: #cc8400;")
+            self.script_status_texts[self.SCRIPT_ZAPAROO] = "⚙ Installed, service disabled"
             self.install_zaparoo_button.setEnabled(False)
             self.enable_zaparoo_service_button.setEnabled(True)
             self.uninstall_zaparoo_button.setEnabled(True)
         else:
-            self.zaparoo_status_label.setText("Zaparoo: Installed ✓")
-            self.zaparoo_status_label.setStyleSheet("color: #00aa00;")
+            self.script_status_texts[self.SCRIPT_ZAPAROO] = "✓ Installed"
             self.install_zaparoo_button.setEnabled(False)
             self.enable_zaparoo_service_button.setEnabled(False)
             self.uninstall_zaparoo_button.setEnabled(True)
 
         if status.migrate_sd_installed:
-            self.migrate_status_label.setText("migrate_sd: Installed ✓")
-            self.migrate_status_label.setStyleSheet("color: #00aa00;")
+            self.script_status_texts[self.SCRIPT_MIGRATE_SD] = "✓ Installed"
             self.install_migrate_button.setEnabled(False)
             self.uninstall_migrate_button.setEnabled(True)
         else:
-            self.migrate_status_label.setText("migrate_sd: Not Installed")
-            self.migrate_status_label.setStyleSheet("color: #cc0000;")
+            self.script_status_texts[self.SCRIPT_MIGRATE_SD] = "✗ Not installed"
             self.install_migrate_button.setEnabled(True)
             self.uninstall_migrate_button.setEnabled(False)
 
         if not status.cifs_installed:
-            self.cifs_status_label.setText("cifs_mount: Not Installed")
-            self.cifs_status_label.setStyleSheet("color: #cc0000;")
+            self.script_status_texts[self.SCRIPT_CIFS] = "✗ Not installed"
             self.install_cifs_button.setEnabled(True)
             self.configure_cifs_button.setEnabled(False)
             self.configure_cifs_button.setText("Configure")
@@ -406,8 +685,7 @@ class ScriptsTab(QWidget):
             self.remove_cifs_config_button.setEnabled(False)
             self.uninstall_cifs_button.setEnabled(False)
         elif status.cifs_installed and not status.cifs_configured:
-            self.cifs_status_label.setText("cifs_mount: Installed (Not Configured)")
-            self.cifs_status_label.setStyleSheet("color: #cc8400;")
+            self.script_status_texts[self.SCRIPT_CIFS] = "⚙ Installed, not configured"
             self.install_cifs_button.setEnabled(False)
             self.configure_cifs_button.setEnabled(True)
             self.configure_cifs_button.setText("Configure")
@@ -416,8 +694,7 @@ class ScriptsTab(QWidget):
             self.remove_cifs_config_button.setEnabled(False)
             self.uninstall_cifs_button.setEnabled(True)
         else:
-            self.cifs_status_label.setText("cifs_mount: Configured ✓")
-            self.cifs_status_label.setStyleSheet("color: #00aa00;")
+            self.script_status_texts[self.SCRIPT_CIFS] = "✓ Configured"
             self.install_cifs_button.setEnabled(False)
             self.configure_cifs_button.setEnabled(True)
             self.configure_cifs_button.setText("Reconfigure")
@@ -426,7 +703,41 @@ class ScriptsTab(QWidget):
             self.remove_cifs_config_button.setEnabled(True)
             self.uninstall_cifs_button.setEnabled(True)
 
+        if status.auto_time_installed:
+            self.script_status_texts[self.SCRIPT_AUTO_TIME] = "✓ Installed"
+            self.install_auto_time_button.setEnabled(False)
+            self.uninstall_auto_time_button.setEnabled(True)
+        else:
+            self.script_status_texts[self.SCRIPT_AUTO_TIME] = "✗ Not installed"
+            self.install_auto_time_button.setEnabled(True)
+            self.uninstall_auto_time_button.setEnabled(False)
+
+        if not status.dav_browser_installed:
+            self.script_status_texts[self.SCRIPT_DAV_BROWSER] = "✗ Not installed"
+            self.install_dav_browser_button.setEnabled(True)
+            self.configure_dav_browser_button.setEnabled(False)
+            self.configure_dav_browser_button.setText("Configure")
+            self.remove_dav_browser_config_button.setEnabled(False)
+            self.uninstall_dav_browser_button.setEnabled(False)
+        elif status.dav_browser_installed and not status.dav_browser_configured:
+            self.script_status_texts[self.SCRIPT_DAV_BROWSER] = "⚙ Installed, not configured"
+            self.install_dav_browser_button.setEnabled(False)
+            self.configure_dav_browser_button.setEnabled(True)
+            self.configure_dav_browser_button.setText("Configure")
+            self.remove_dav_browser_config_button.setEnabled(False)
+            self.uninstall_dav_browser_button.setEnabled(True)
+        else:
+            self.script_status_texts[self.SCRIPT_DAV_BROWSER] = "✓ Configured"
+            self.install_dav_browser_button.setEnabled(False)
+            self.configure_dav_browser_button.setEnabled(True)
+            self.configure_dav_browser_button.setText("Reconfigure")
+            self.remove_dav_browser_config_button.setEnabled(True)
+            self.uninstall_dav_browser_button.setEnabled(True)
+
         self.open_scripts_folder_button.setEnabled(True)
+
+        self.update_script_list_labels()
+        self.update_details_panel()
 
     def show_console(self):
         if not self.console_visible:
@@ -738,7 +1049,11 @@ class ScriptsTab(QWidget):
         if not self.connection.is_connected():
             return
 
-        confirm = QMessageBox.question(self, "Remove Config", "Delete CIFS configuration?")
+        confirm = QMessageBox.question(
+            self,
+            "Remove Config",
+            "Delete CIFS configuration?",
+        )
         if confirm != QMessageBox.StandardButton.Yes:
             return
 
@@ -756,10 +1071,91 @@ class ScriptsTab(QWidget):
         uninstall_cifs_mount(self.connection)
         self.refresh_status()
 
+    def install_auto_time(self):
+        if not self.connection.is_connected():
+            return
+
+        def task(log):
+            install_auto_time(self.connection, log)
+
+        self.start_worker(
+            task,
+            "Script installed successfully.\n\nYou can run it from the MiSTer Scripts menu or from the ZapScripts tab in MiSTer Companion.",
+        )
+
+    def uninstall_auto_time(self):
+        if not self.connection.is_connected():
+            return
+
+        confirm = QMessageBox.question(
+            self,
+            "Uninstall Auto Time",
+            "Are you sure you want to remove Auto Time?",
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+
+        uninstall_auto_time(self.connection)
+        self.refresh_status()
+
+    def install_dav_browser(self):
+        if not self.connection.is_connected():
+            return
+
+        def task(log):
+            install_dav_browser(self.connection, log)
+
+        self.start_worker(
+            task,
+            "Script installed successfully.\n\nYou can run it from the MiSTer Scripts menu or from the ZapScripts tab in MiSTer Companion.",
+        )
+
+    def configure_dav_browser(self):
+        if not self.connection.is_connected():
+            return
+
+        dialog = DavBrowserConfigDialog(self.connection, self)
+        if dialog.exec():
+            self.refresh_status()
+
+    def remove_dav_browser_config(self):
+        if not self.connection.is_connected():
+            return
+
+        confirm = QMessageBox.question(
+            self,
+            "Remove Config",
+            "Delete DAV Browser configuration?",
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+
+        remove_dav_browser_config(self.connection)
+        self.refresh_status()
+
+    def uninstall_dav_browser(self):
+        if not self.connection.is_connected():
+            return
+
+        confirm = QMessageBox.question(
+            self,
+            "Uninstall DAV Browser",
+            "Are you sure you want to remove DAV Browser?",
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+
+        uninstall_dav_browser(self.connection)
+        self.refresh_status()
+
     def open_scripts_folder(self):
         host = self.connection.host
         if not host:
-            QMessageBox.warning(self, "Open Scripts Folder", "No MiSTer IP address is available.")
+            QMessageBox.warning(
+                self,
+                "Open Scripts Folder",
+                "No MiSTer IP address is available.",
+            )
             return
 
         try:
