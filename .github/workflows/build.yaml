@@ -31,7 +31,7 @@ jobs:
           pip install pyinstaller paramiko requests websocket-client psutil PyQt6
 
       - name: List Files
-        working-directory: mister-companion
+        working-directory: .
         run: |
           pwd
           dir
