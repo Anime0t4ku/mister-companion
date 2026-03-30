@@ -38,14 +38,14 @@ jobs:
           dir assets
 
       - name: Build Executable
-        working-directory: mister-companion
+        working-directory: .
         run: pyinstaller --clean --onefile --windowed --icon app.ico --add-data "assets/icon.png;assets" --name MiSTer-Companion main.py
 
       - name: Upload Windows Artifact
         uses: actions/upload-artifact@v4
         with:
           name: MiSTer-Companion-Windows-x86_64
-          path: mister-companion/dist/MiSTer-Companion.exe
+          path: dist/MiSTer-Companion.exe
 
 
   # ============================================================
@@ -70,24 +70,24 @@ jobs:
           pip install pyinstaller paramiko requests websocket-client psutil PyQt6
 
       - name: List Files
-        working-directory: mister-companion
+        working-directory: .
         run: |
           pwd
           ls -la
           ls -la assets
 
       - name: Build Executable
-        working-directory: mister-companion
+        working-directory: .
         run: pyinstaller --clean --onefile --windowed --add-data "assets/icon.png:assets" --name MiSTer-Companion main.py
 
       - name: Make binary executable
-        run: chmod +x mister-companion/dist/MiSTer-Companion
+        run: chmod +x dist/MiSTer-Companion  
 
       - name: Upload Linux Artifact
         uses: actions/upload-artifact@v4
         with:
           name: MiSTer-Companion-Linux-x86_64
-          path: mister-companion/dist/MiSTer-Companion
+          path: dist/MiSTer-Companion
 
 
   # ============================================================
