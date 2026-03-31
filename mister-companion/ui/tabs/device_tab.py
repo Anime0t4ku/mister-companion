@@ -177,7 +177,6 @@ class DeviceTab(QWidget):
         self.reboot_button.setEnabled(True)
         self.enable_smb_button.setEnabled(True)
         self.disable_smb_button.setEnabled(True)
-        self.open_share_button.setEnabled(True)
 
     def apply_disconnected_state(self):
         self.refresh_button.setEnabled(False)
@@ -243,11 +242,13 @@ class DeviceTab(QWidget):
             self.smb_status_label.setStyleSheet("color: #00aa00;")
             self.enable_smb_button.setEnabled(False)
             self.disable_smb_button.setEnabled(True)
+            self.open_share_button.setEnabled(True)
         else:
             self.smb_status_label.setText("Remote Access: Disabled" if sys.platform == "darwin" else "SMB: Disabled")
             self.smb_status_label.setStyleSheet("color: #cc0000;")
             self.enable_smb_button.setEnabled(True)
             self.disable_smb_button.setEnabled(False)
+            self.open_share_button.setEnabled(False)
 
     def enable_smb(self):
         if not self.connection.is_connected():
