@@ -796,6 +796,15 @@ def flash_image(
                 )
 
         _log(log_callback, "Flash completed successfully.")
+
+        if platform.system() == "Darwin":
+            _log(log_callback, "Ejecting drive...")
+            subprocess.run(
+                ["diskutil", "eject", drive],
+                capture_output=True,
+                text=True,
+            )
+            _log(log_callback, "Drive ejected.")
     finally:
         if process.stdout is not None:
             try:
