@@ -93,6 +93,8 @@ class FlashTab(QWidget):
             privilege_text = "Important: Run MiSTer Companion as Administrator to flash SD cards."
         elif system == "Linux":
             privilege_text = "Important: Run MiSTer Companion with sudo or root privileges to flash SD cards."
+        elif system == "Darwin":
+            privilege_text = "balena CLI may prompt for your password to write to the SD card."
         else:
             privilege_text = "Flashing is not supported on this platform."
 
@@ -106,7 +108,7 @@ class FlashTab(QWidget):
         self.macos_label.setWordWrap(True)
         self.macos_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.macos_label.setStyleSheet("color: orange; font-weight: bold;")
-        self.macos_label.setVisible(platform.system() == "Darwin")
+        self.macos_label.setVisible(False)
         group_layout.addWidget(self.macos_label)
 
         status_group = QGroupBox("Status")
@@ -451,7 +453,20 @@ class FlashTab(QWidget):
         if confirm != QMessageBox.StandardButton.Yes:
             return
 
+        if platform.system() == "Darwin":
+            from PyQt6.QtWidgets import QInputDialog, QLineEdit
+            password, ok = QInputDialog.getText(
+                self,
+                "Administrator Password Required",
+                "Enter your password to flash the SD card:",
+                QLineEdit.EchoMode.Password
+            )
+            if not ok or not password:
+                return
+        else:
+            password = None
+
         def task(log):
-            flash_image(image_path, drive, log_callback=log)
+            flash_image(image_path, drive, log_callback=log, password=password)
 
         self.start_worker(task)
