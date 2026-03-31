@@ -475,4 +475,4 @@ class WallpapersTab(QWidget):
                 self.connection.password or "1",
             )
         except Exception as e:
-            QMessageBox.critical(self, "SMB Error", str(e))
+            QMessageBox.critical(self, "Error", str(e))
