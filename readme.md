@@ -6,22 +6,9 @@ It provides a simple interface for common maintenance tasks without needing to u
 
 ---
 
-## Versions
+## Overview
 
-MiSTer Companion is currently available in two versions:
-
-### v3 (Current – Release Candidate)
-- Complete rebuild of the application using PyQt6
-- Improved performance, stability, and UI
-- Actively developed and will receive all future updates
-
-### v2 (Legacy)
-- Previous version of the app (Tkinter-based)
-- Stable and fully functional
-- No longer receives updates
-
-New users should start with **v3**  
-Existing users are encouraged to migrate over time
+MiSTer Companion has been fully rebuilt in **v3.0.0** using PyQt6, bringing a redesigned interface and a more scalable foundation for future development.
 
 ---
 
@@ -43,6 +30,11 @@ Supports:
 - Wallpaper management (multiple sources)
 - Scan network for MiSTer devices
 - Install Insert-Coin via update_all configurator
+- Flash Mr. Fusion directly from within the app
+- In-app Newsfeed for updates and announcements
+- Theme Selector (Auto, Light, Dark, Purple)
+- Additional built-in scripts (Auto Time, DAV Browser)
+- Improved foundation for future macOS support, thanks to contributions from DoggyChicken
 
 Clean, safe, and easy MiSTer management from Windows and Linux.
 
@@ -53,6 +45,12 @@ Clean, safe, and easy MiSTer management from Windows and Linux.
 ## Features
 
 MiSTer Companion uses a tabbed interface to organize functionality.
+
+### Flash Mr. Fusion
+- Download the latest Mr. Fusion release directly from within the app
+- Detect removable drives (Windows and Linux)
+- Flash SD cards without requiring external tools
+- Simplifies initial MiSTer setup
 
 ### Connection
 - Connect to your MiSTer over SSH
@@ -67,9 +65,9 @@ MiSTer Companion uses a tabbed interface to organize functionality.
 - Open the MiSTer network share directly in the system file manager
 - Reboot MiSTer remotely
 
-### MiSTerSettings
+### MiSTer Settings
 - Easy Mode for simplified configuration of common MiSTer.ini settings
-- Advanced Mode editor for the [MiSTer] section of MiSTer.ini
+- Advanced Mode editor for the MiSTer.ini configuration
 - Switch between Easy Mode and Advanced Mode
 - Automatic backups before applying configuration changes
 - Restore MiSTer.ini from backups or defaults
@@ -79,6 +77,7 @@ MiSTer Companion uses a tabbed interface to organize functionality.
 - Install Zaparoo
 - Install migrate_sd (SD card migration utility)
 - Install cifs_mount / cifs_umount
+- Support for additional built-in scripts (Auto Time, DAV Browser)
 - View live SSH output when running scripts
 
 ### ZapScripts
@@ -99,7 +98,7 @@ MiSTer Companion uses a tabbed interface to organize functionality.
 - Local Sync Folder for merging newest save files
 
 ### Wallpapers
-- Install wallpaper packs directly from GitHub
+- Install wallpaper packs using a JSON database system
 - Multiple wallpaper sources supported
 - Automatic update detection
 - Remove installed wallpapers
@@ -120,45 +119,44 @@ Default credentials:
 
     root / 1
 
-MiSTerFusion:
+MiSTerFusion:  
 https://github.com/MiSTer-devel/mr-fusion/releases
 
 ---
 
 ## Download
 
-Pre-built nightly binaries are generated automatically via GitHub Actions.
+Pre-built binaries are available on the releases page:
 
-### v3 (Recommended)
-
-| Platform | Status | Download |
-|----------|--------|----------|
-| Windows | ![Build Status](https://github.com/Anime0t4ku/mister-companion/actions/workflows/build.yaml/badge.svg) | [Windows x86_64 Pre-Release](https://github.com/Anime0t4ku/mister-companion/releases/download/Pre-release/MiSTer-Companion-Windows-x86_64.zip) |
-| Linux | ![Build Status](https://github.com/Anime0t4ku/mister-companion/actions/workflows/build.yaml/badge.svg) | [Linux x86_64 Pre-Release](https://github.com/Anime0t4ku/mister-companion/releases/download/Pre-release/MiSTer-Companion-Linux-x86_64.tar.gz) |
+https://github.com/Anime0t4ku/mister-companion/releases
 
 ---
 
 ## Linux Notes
 
+After extracting, make the application executable:
+
+    chmod +x MiSTer-Companion
+
 Opening the MiSTer network share requires GVFS SMB support.
 
-Ubuntu / Debian / Linux Mint
+Ubuntu / Debian / Linux Mint:
 
     sudo apt install gvfs-backends
 
-Fedora
+Fedora:
 
     sudo dnf install gvfs-smb
 
-Arch Linux
+Arch Linux:
 
     sudo pacman -S gvfs gvfs-smb
 
 ---
 
-## Python Requirements (Running From Source)
+## Running From Source
 
-### v3
+Requirements:
 - Python 3.10+
 - PyQt6
 - paramiko
@@ -174,17 +172,12 @@ Run:
 
     python main.py
 
-### v2 (Legacy)
-- Python 3.10+
-- Tkinter
-- paramiko
-- requests
-- websocket-client
-- psutil
+---
 
-Run:
+## Legacy Version
 
-    python mister-companion.py
+MiSTer Companion v2.x is now considered **Legacy Edition** and will no longer receive updates.  
+The source code will remain available for reference and community use.
 
 ---
 
