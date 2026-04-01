@@ -2,17 +2,17 @@
   "version": 1,
   "items": [
     {
-      "id": "new-rc",
-      "date": "2026-04-01",
+      "id": "v3-stable",
+      "date": "2026-04-02",
       "type": "update",
-      "headline": "MiSTer Companion v3.0.0 RC4 Available",
-      "message": "MiSTer Companion v3.0.0 RC4 is now available.\n\nThis release introduces initial balena CLI support for Flash Mr. Fusion on macOS, implemented by DoggyChicken.\n\nmacOS file access has also been improved by combining SMB with SFTP, providing a more reliable solution where SMB alone could be unstable. This improvement was also contributed by DoggyChicken.\n\nPCN Premium Member Wallpapers have been added to the Wallpapers tab and are now also available through the update_all configuration.\n\nYou can download the latest release candidate below.",
-      "url": "https://github.com/Anime0t4ku/mister-companion/releases/tag/Pre-release",
-      "url_label": "Download Pre-release"
+      "headline": "MiSTer Companion v3.0.0 Released",
+      "message": "MiSTer Companion v3.0.0 is now available.\n\nThis release introduces a full rewrite using PyQt6, bringing a redesigned interface and a more scalable foundation for future development.\n\nNew features include the Flash Mr. Fusion tab, an in-app Newsfeed, and a Theme Selector with Auto, Light, Dark and Purple modes.\n\nThe Scripts tab and update_all configuration have been improved, along with enhancements to network scanning, SaveManager and the wallpaper system.\n\nThis release also lays the groundwork for future macOS support, with contributions from DoggyChicken.\n\nYou can download the latest stable release below.",
+      "url": "https://github.com/Anime0t4ku/mister-companion/releases/tag/v3.0.0",
+      "url_label": "Download v3.0.0"
     },
     {
       "id": "macos-support",
-      "date": "2026-04-01",
+      "date": "2026-04-02",
       "type": "info",
       "headline": "Help Bring MiSTer Companion to macOS",
       "message": "macOS support is now being actively worked on, with recent improvements contributed by DoggyChicken.\n\nTo continue improving and properly maintain macOS support long-term, having access to a Mac for development and testing is still essential. At the moment, I rely on community contributions and am unable to test macOS-specific changes directly.\n\nIf you'd like to help make this possible, consider supporting the Ko-fi goal below.",
