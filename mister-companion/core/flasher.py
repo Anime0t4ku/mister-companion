@@ -64,7 +64,7 @@ def _log(log_callback: LogCallback | None, message: str) -> None:
 
 
 def is_flash_supported() -> bool:
-    return platform.system() in {"Windows", "Linux"}
+    return platform.system() in {"Windows", "Linux", "Darwin"}
 
 
 def get_platform_key() -> str:
@@ -347,7 +347,7 @@ def get_balena_executable() -> Path:
         if exe:
             return exe
 
-    if platform_key == "linux":
+    if platform_key in {"linux", "macos"}:
         exe = _find_first_matching_file(BALENA_DIR, "balena")
         if exe:
             return exe
@@ -367,8 +367,8 @@ def _select_balena_asset(release_data: dict) -> dict:
     platform_key = get_platform_key()
     arch_key = get_arch_key()
 
-    if platform_key not in {"windows", "linux"}:
-        raise RuntimeError("Flash Mr. Fusion is only supported on Windows and Linux.")
+    if platform_key not in {"windows", "linux", "macos"}:
+        raise RuntimeError("Flash Mr. Fusion is only supported on Windows, Linux, and macOS.")
 
     expected_fragment = f"{platform_key}-{arch_key}-standalone.tar.gz"
     assets = release_data.get("assets", [])
@@ -404,14 +404,14 @@ def ensure_balena_cli(
     log_callback: LogCallback | None = None,
 ) -> Path:
     if not is_flash_supported():
-        raise RuntimeError("Flash Mr. Fusion is not available on macOS yet.")
+        raise RuntimeError("Flash Mr. Fusion is not supported on this platform.")
 
     ensure_tools_dirs(log_callback)
 
     if not force_download:
         try:
             exe = get_balena_executable()
-            if platform.system() == "Linux":
+            if platform.system() in ("Linux", "Darwin"):
                 _make_executable(exe)
             _log(log_callback, f"Using existing balena CLI: {exe}")
             return exe
@@ -429,7 +429,7 @@ def ensure_balena_cli(
     _extract_archive(archive_path, BALENA_DIR, log_callback)
 
     exe = get_balena_executable()
-    if platform.system() == "Linux":
+    if platform.system() in ("Linux", "Darwin"):
         _make_executable(exe)
 
     _log(log_callback, f"balena CLI ready: {exe}")
@@ -441,7 +441,7 @@ def ensure_mr_fusion_image(
     log_callback: LogCallback | None = None,
 ) -> Path:
     if not is_flash_supported():
-        raise RuntimeError("Flash Mr. Fusion is not available on macOS yet.")
+        raise RuntimeError("Flash Mr. Fusion is not supported on this platform.")
 
     ensure_tools_dirs(log_callback)
 
@@ -672,9 +672,8 @@ def flash_image(
     image_path: str | Path,
     drive: str,
     log_callback: LogCallback | None = None,
+    password: str | None = None,
 ) -> None:
-    if not is_flash_supported():
-        raise RuntimeError("Flash Mr. Fusion is not available on macOS yet.")
 
     _ensure_flash_privileges()
 
@@ -699,9 +698,20 @@ def flash_image(
         drive,
         "--yes",
     ]
+    if platform.system() == "Darwin":
+        cmd = ["sudo", "-S"] + cmd
+    
 
     _log(log_callback, f"Starting flash: {image_path.name}")
     _log(log_callback, f"Target drive: {drive}")
+
+    if platform.system() == "Darwin":
+        _log(log_callback, "Unmounting disk before flash...")
+        subprocess.run(
+            ["diskutil", "unmountDisk", drive],
+            capture_output=True,
+            text=True,
+        )
 
     original_autoplay_value = None
     if platform.system() == "Windows":
@@ -714,6 +724,7 @@ def flash_image(
 
     process = subprocess.Popen(
         cmd,
+        stdin=subprocess.PIPE if platform.system() == "Darwin" else None,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
@@ -721,6 +732,11 @@ def flash_image(
         startupinfo=startupinfo,
         bufsize=1,
     )
+
+    if platform.system() == "Darwin" and password is not None:
+        process.stdin.write(password + "\n")
+        process.stdin.flush()
+        process.stdin.close()
 
     output_lines: list[str] = []
 
@@ -769,11 +785,26 @@ def flash_image(
                         "Flash failed. balena CLI reported a permission or drive access error.\n\n"
                         "Run MiSTer Companion with sudo or pkexec and try again."
                     )
+                if platform.system() == "Darwin":
+                    raise RuntimeError(
+                        "Flash failed. balena CLI reported a permission or drive access error.\n\n"
+                        "macOS may have blocked access to the drive. Check System Settings → "
+                        "Privacy & Security → Full Disk Access and ensure balena CLI is permitted."
+                    )        
                 raise RuntimeError(
                     "Flash failed. balena CLI reported a permission or drive access error."
                 )
 
         _log(log_callback, "Flash completed successfully.")
+
+        if platform.system() == "Darwin":
+            _log(log_callback, "Ejecting drive...")
+            subprocess.run(
+                ["diskutil", "eject", drive],
+                capture_output=True,
+                text=True,
+            )
+            _log(log_callback, "Drive ejected.")
     finally:
         if process.stdout is not None:
             try:
