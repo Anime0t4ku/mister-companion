@@ -184,6 +184,7 @@ def load_update_all_config(connection):
             "insert_coin": is_enabled("funkycochise/Insert-Coin"),
             "anime0t4ku_wallpapers": is_enabled("anime0t4ku_wallpapers"),
             "pcn_challenge_wallpapers": is_enabled("pcn_challenge_wallpapers"),
+            "pcn_premium_wallpapers": is_enabled("pcn_premium_wallpapers"),
             "anime0t4ku_mister_scripts": is_enabled("anime0t4ku_mister_scripts"),
 
             "ranny_wallpapers": is_enabled("Ranny-Snice/Ranny-Snice-Wallpapers"),
@@ -415,6 +416,15 @@ def save_update_all_config(connection, config):
                 "db_url = https://raw.githubusercontent.com/retrospy/retrospy-MiSTer/db/db.json.zip",
             ],
         )
+        main_lines = handle_simple_section(
+            "anime0t4ku_mister_scripts",
+            config.get("anime0t4ku_mister_scripts", False),
+            main_lines,
+            [
+                "[anime0t4ku_mister_scripts]",
+                "db_url = https://raw.githubusercontent.com/Anime0t4ku/0t4ku-mister-scripts/db/db/scripts.json.zip",
+            ],
+        )
 
         # ===== extras in split files =====
         bios_lines = remove_section_from_lines(bios_lines, "bios_db")
@@ -486,12 +496,12 @@ def save_update_all_config(connection, config):
             ],
         )
         main_lines = handle_simple_section(
-            "anime0t4ku_mister_scripts",
-            config.get("anime0t4ku_mister_scripts", False),
+            "pcn_premium_wallpapers",
+            config.get("pcn_premium_wallpapers", False),
             main_lines,
             [
-                "[anime0t4ku_mister_scripts]",
-                "db_url = https://raw.githubusercontent.com/Anime0t4ku/0t4ku-mister-scripts/db/db/scripts.json.zip",
+                "[pcn_premium_wallpapers]",
+                "db_url = https://raw.githubusercontent.com/Anime0t4ku/MiSTerWallpapers/db/db/pcnpremium.json.zip",
             ],
         )
 

@@ -105,6 +105,7 @@ class UpdateAllConfigDialog(QDialog):
         self.tty2oled_check = QCheckBox("tty2oled Add-on Script")
         self.i2c2oled_check = QCheckBox("i2c2oled Add-on Script")
         self.retrospy_check = QCheckBox("RetroSpy Utility")
+        self.anime0t4ku_mister_scripts_check = QCheckBox("Anime0t4ku MiSTer Scripts")
 
         for widget in [
             self.arcade_org_check,
@@ -113,6 +114,7 @@ class UpdateAllConfigDialog(QDialog):
             self.tty2oled_check,
             self.i2c2oled_check,
             self.retrospy_check,
+            self.anime0t4ku_mister_scripts_check,
         ]:
             self._add(tools_group, widget)
 
@@ -125,7 +127,7 @@ class UpdateAllConfigDialog(QDialog):
         self.insert_coin_check = QCheckBox("Insert-Coin")
         self.anime0t4ku_wallpapers_check = QCheckBox("Anime0t4ku Wallpapers")
         self.pcn_challenge_wallpapers_check = QCheckBox("PCN Challenge Wallpapers")
-        self.anime0t4ku_mister_scripts_check = QCheckBox("Anime0t4ku MiSTer Scripts")
+        self.pcn_premium_wallpapers_check = QCheckBox("PCN Premium Member Wallpapers")
         self.ranny_wallpapers_check = QCheckBox("Ranny Snice Wallpapers")
         self.ranny_wallpapers_source_combo = QComboBox()
         self.ranny_wallpapers_source_combo.addItems([
@@ -142,7 +144,7 @@ class UpdateAllConfigDialog(QDialog):
             self.insert_coin_check,
             self.anime0t4ku_wallpapers_check,
             self.pcn_challenge_wallpapers_check,
-            self.anime0t4ku_mister_scripts_check,
+            self.pcn_premium_wallpapers_check,
             self.ranny_wallpapers_check,
         ]:
             self._add(extra_group, widget)
@@ -233,6 +235,7 @@ class UpdateAllConfigDialog(QDialog):
         self.tty2oled_check.setChecked(data["tty2oled"])
         self.i2c2oled_check.setChecked(data["i2c2oled"])
         self.retrospy_check.setChecked(data["retrospy"])
+        self.anime0t4ku_mister_scripts_check.setChecked(data["anime0t4ku_mister_scripts"])
 
         self.bios_check.setChecked(data["bios"])
         self.arcade_roms_check.setChecked(data["arcade_roms"])
@@ -241,7 +244,7 @@ class UpdateAllConfigDialog(QDialog):
         self.insert_coin_check.setChecked(data["insert_coin"])
         self.anime0t4ku_wallpapers_check.setChecked(data["anime0t4ku_wallpapers"])
         self.pcn_challenge_wallpapers_check.setChecked(data["pcn_challenge_wallpapers"])
-        self.anime0t4ku_mister_scripts_check.setChecked(data["anime0t4ku_mister_scripts"])
+        self.pcn_premium_wallpapers_check.setChecked(data["pcn_premium_wallpapers"])
         self.ranny_wallpapers_check.setChecked(data["ranny_wallpapers"])
         self.ranny_wallpapers_source_combo.setCurrentText(data["ranny_wallpapers_source"])
 
@@ -270,6 +273,7 @@ class UpdateAllConfigDialog(QDialog):
             "tty2oled": self.tty2oled_check.isChecked(),
             "i2c2oled": self.i2c2oled_check.isChecked(),
             "retrospy": self.retrospy_check.isChecked(),
+            "anime0t4ku_mister_scripts": self.anime0t4ku_mister_scripts_check.isChecked(),
 
             "bios": self.bios_check.isChecked(),
             "arcade_roms": self.arcade_roms_check.isChecked(),
@@ -278,7 +282,7 @@ class UpdateAllConfigDialog(QDialog):
             "insert_coin": self.insert_coin_check.isChecked(),
             "anime0t4ku_wallpapers": self.anime0t4ku_wallpapers_check.isChecked(),
             "pcn_challenge_wallpapers": self.pcn_challenge_wallpapers_check.isChecked(),
-            "anime0t4ku_mister_scripts": self.anime0t4ku_mister_scripts_check.isChecked(),
+            "pcn_premium_wallpapers": self.pcn_premium_wallpapers_check.isChecked(),
             "ranny_wallpapers": self.ranny_wallpapers_check.isChecked(),
             "ranny_wallpapers_source": self.ranny_wallpapers_source_combo.currentText(),
         }

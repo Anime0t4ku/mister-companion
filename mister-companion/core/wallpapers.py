@@ -12,10 +12,12 @@ import requests
 
 RANNY_DB_URL = "https://raw.githubusercontent.com/Ranny-Snice/Ranny-Snice-Wallpapers/db/db.json.zip"
 PCN_DB_URL = "https://raw.githubusercontent.com/Anime0t4ku/MiSTerWallpapers/db/db/pcnchallenge.json.zip"
+PCN_PREMIUM_DB_URL = "https://raw.githubusercontent.com/Anime0t4ku/MiSTerWallpapers/db/db/pcnpremium.json.zip"
 OT4KU_DB_URL = "https://raw.githubusercontent.com/Anime0t4ku/MiSTerWallpapers/db/db/0t4kuwallpapers.json.zip"
 
 RANNY_RAW_BASE = "https://raw.githubusercontent.com/Ranny-Snice/Ranny-Snice-Wallpapers/main/"
 PCN_RAW_BASE = "https://raw.githubusercontent.com/Anime0t4ku/MiSTerWallpapers/main/"
+PCN_PREMIUM_RAW_BASE = "https://raw.githubusercontent.com/Anime0t4ku/MiSTerWallpapers/main/"
 OT4KU_RAW_BASE = "https://raw.githubusercontent.com/Anime0t4ku/MiSTerWallpapers/main/"
 
 WALLPAPER_DIR = "/media/fat/wallpapers"
@@ -186,6 +188,10 @@ def fetch_ranny_wallpapers() -> tuple[list[dict], list[dict]]:
 
 def fetch_pcn_wallpapers() -> list[dict]:
     return _fetch_db_items(PCN_DB_URL, raw_base=PCN_RAW_BASE)
+
+
+def fetch_pcn_premium_wallpapers() -> list[dict]:
+    return _fetch_db_items(PCN_PREMIUM_DB_URL, raw_base=PCN_PREMIUM_RAW_BASE)
 
 
 def fetch_ot4ku_wallpapers() -> list[dict]:
