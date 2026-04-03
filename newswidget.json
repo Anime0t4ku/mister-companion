@@ -3,12 +3,12 @@
   "items": [
     {
       "id": "v3-stable",
-      "date": "2026-04-02",
+      "date": "2026-04-03",
       "type": "update",
-      "headline": "MiSTer Companion v3.0.0 Released",
-      "message": "MiSTer Companion v3.0.0 is now available.\n\nThis release introduces a full rewrite using PyQt6, bringing a redesigned interface and a more scalable foundation for future development.\n\nNew features include the Flash Mr. Fusion tab, an in-app Newsfeed, and a Theme Selector with Auto, Light, Dark and Purple modes.\n\nThe Scripts tab and update_all configuration have been improved, along with enhancements to network scanning, SaveManager and the wallpaper system.\n\nThis release also lays the groundwork for future macOS support, with contributions from DoggyChicken.\n\nYou can download the latest stable release below.",
-      "url": "https://github.com/Anime0t4ku/mister-companion/releases/tag/v3.0.0",
-      "url_label": "Download v3.0.0"
+      "headline": "MiSTer Companion v3.1.0 Released",
+      "message": "MiSTer Companion v3.1.0 is now available.\n\nThis update adds a Return to Menu button in the Device tab, making it easier to quickly jump back to the MiSTer menu.\n\nA new Now Playing feature has also been introduced, showing the currently running core directly in the Device tab when a game is active.\n\nThe Scripts tab has been expanded with the addition of ftp_save_sync, making it easier to set up automated save syncing.\n\nThe SaveManager information dialog has also been updated to better explain how manual sync works and when to use it.\n\nYou can download the latest stable release below.",
+      "url": "https://github.com/Anime0t4ku/mister-companion/releases/tag/v3.1.0",
+      "url_label": "Download v3.1.0"
     },
     {
       "id": "macos-support",
