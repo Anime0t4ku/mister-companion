@@ -15,11 +15,18 @@ CIFS_MOUNT_URL = "https://raw.githubusercontent.com/MiSTer-devel/Scripts_MiSTer/
 CIFS_UMOUNT_URL = "https://raw.githubusercontent.com/MiSTer-devel/Scripts_MiSTer/master/cifs_umount.sh"
 AUTO_TIME_URL = "https://raw.githubusercontent.com/Anime0t4ku/0t4ku-mister-scripts/main/Scripts/auto_time.sh"
 DAV_BROWSER_URL = "https://raw.githubusercontent.com/Anime0t4ku/0t4ku-mister-scripts/main/Scripts/dav_browser.sh"
+FTP_SAVE_SYNC_URL = "https://raw.githubusercontent.com/Anime0t4ku/0t4ku-mister-scripts/refs/heads/main/Scripts/ftp_save_sync.sh"
 
 UPDATE_ALL_JSON_PATH = "/media/fat/Scripts/.config/update_all/update_all.json"
 DOWNLOADER_INI_PATH = "/media/fat/downloader.ini"
+
 DAV_BROWSER_CONFIG_DIR = "/media/fat/Scripts/.config/dav_browser"
 DAV_BROWSER_CONFIG_PATH = "/media/fat/Scripts/.config/dav_browser/dav_browser.ini"
+
+FTP_SAVE_SYNC_CONFIG_DIR = "/media/fat/Scripts/.config/ftp_save_sync"
+FTP_SAVE_SYNC_CONFIG_PATH = "/media/fat/Scripts/.config/ftp_save_sync/ftp_save_sync.ini"
+FTP_SAVE_SYNC_STARTUP_PATH = "/media/fat/linux/user-startup.sh"
+FTP_SAVE_SYNC_DAEMON_LINE = "/media/fat/Scripts/.config/ftp_save_sync/ftp_save_sync_daemon.sh >/dev/null 2>&1"
 
 DEFAULT_UPDATE_ALL_JSON = """{"migration_version": 6, "theme": "Blue Installer", "mirror": "", "countdown_time": 15, "log_viewer": true, "use_settings_screen_theme_in_log_viewer": true, "autoreboot": true, "download_beta_cores": false, "names_region": "JP", "names_char_code": "CHAR18", "names_sort_code": "Common", "introduced_arcade_names_txt": true, "pocket_firmware_update": false, "pocket_backup": false, "timeline_after_logs": true, "overscan": "medium", "monochrome_ui": false}
 """
@@ -50,12 +57,16 @@ class ScriptsStatus:
     auto_time_installed: bool
     dav_browser_installed: bool
     dav_browser_configured: bool
+    ftp_save_sync_installed: bool
+    ftp_save_sync_configured: bool
+    ftp_save_sync_service_enabled: bool
 
 
 def ensure_remote_scripts_dir(connection):
     connection.run_command("mkdir -p /media/fat/Scripts")
     connection.run_command("mkdir -p /media/fat/Scripts/.config/update_all")
     connection.run_command("mkdir -p /media/fat/Scripts/.config/dav_browser")
+    connection.run_command(f"mkdir -p {FTP_SAVE_SYNC_CONFIG_DIR}")
 
 
 def _remote_file_exists(sftp, path):
@@ -110,9 +121,21 @@ def check_update_all_initialized(connection) -> bool:
             sftp.close()
 
 
+def is_ftp_save_sync_service_enabled(connection) -> bool:
+    if not connection.is_connected():
+        return False
+
+    check = connection.run_command(
+        f"grep -F '{FTP_SAVE_SYNC_DAEMON_LINE}' {FTP_SAVE_SYNC_STARTUP_PATH} 2>/dev/null"
+    )
+    return bool(check and "ftp_save_sync_daemon.sh" in check)
+
+
 def get_scripts_status(connection) -> ScriptsStatus:
     if not connection.is_connected():
-        return ScriptsStatus(False, False, False, False, False, False, False, False, False, False)
+        return ScriptsStatus(
+            False, False, False, False, False, False, False, False, False, False, False, False, False
+        )
 
     update_check = connection.run_command(
         "test -f /media/fat/Scripts/update_all.sh && echo EXISTS"
@@ -159,6 +182,18 @@ def get_scripts_status(connection) -> ScriptsStatus:
     dav_browser_installed = "EXISTS" in (dav_browser_script_check or "")
     dav_browser_configured = "CONFIG" in (dav_browser_ini_check or "")
 
+    ftp_save_sync_script_check = connection.run_command(
+        "test -f /media/fat/Scripts/ftp_save_sync.sh && echo EXISTS"
+    )
+    ftp_save_sync_ini_check = connection.run_command(
+        f"test -f {FTP_SAVE_SYNC_CONFIG_PATH} && echo CONFIG"
+    )
+    ftp_save_sync_installed = "EXISTS" in (ftp_save_sync_script_check or "")
+    ftp_save_sync_configured = "CONFIG" in (ftp_save_sync_ini_check or "")
+    ftp_save_sync_service_enabled = (
+        is_ftp_save_sync_service_enabled(connection) if ftp_save_sync_installed else False
+    )
+
     return ScriptsStatus(
         update_all_installed=update_all_installed,
         update_all_initialized=check_update_all_initialized(connection) if update_all_installed else False,
@@ -170,6 +205,9 @@ def get_scripts_status(connection) -> ScriptsStatus:
         auto_time_installed=auto_time_installed,
         dav_browser_installed=dav_browser_installed,
         dav_browser_configured=dav_browser_configured,
+        ftp_save_sync_installed=ftp_save_sync_installed,
+        ftp_save_sync_configured=ftp_save_sync_configured,
+        ftp_save_sync_service_enabled=ftp_save_sync_service_enabled,
     )
 
 
@@ -496,6 +534,140 @@ SKIP_TLS_VERIFY={"true" if skip_tls_verify else "false"}
 
 def remove_dav_browser_config(connection):
     connection.run_command(f"rm -f {DAV_BROWSER_CONFIG_PATH}")
+
+
+def install_ftp_save_sync(connection, log):
+    log("Installing ftp_save_sync...\n")
+    script_data = requests.get(FTP_SAVE_SYNC_URL, timeout=30).content
+
+    ensure_remote_scripts_dir(connection)
+
+    sftp = connection.client.open_sftp()
+    try:
+        with sftp.open("/media/fat/Scripts/ftp_save_sync.sh", "wb") as remote_file:
+            remote_file.write(script_data)
+    finally:
+        sftp.close()
+
+    connection.run_command("chmod +x /media/fat/Scripts/ftp_save_sync.sh")
+    connection.run_command(f"mkdir -p {FTP_SAVE_SYNC_CONFIG_DIR}")
+    log("ftp_save_sync installed successfully.\n")
+
+
+def uninstall_ftp_save_sync(connection):
+    disable_ftp_save_sync_service(connection)
+    connection.run_command("rm -f /media/fat/Scripts/ftp_save_sync.sh")
+    connection.run_command(f"rm -rf {FTP_SAVE_SYNC_CONFIG_DIR}")
+
+
+def load_ftp_save_sync_config(connection):
+    config = {}
+
+    if not connection.is_connected():
+        return config
+
+    output = connection.run_command(f"cat {FTP_SAVE_SYNC_CONFIG_PATH} 2>/dev/null")
+    if not output:
+        return config
+
+    for raw_line in output.splitlines():
+        line = raw_line.strip()
+        if not line or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        config[key.strip()] = value.strip().strip('"')
+
+    return config
+
+
+def save_ftp_save_sync_config(
+    connection,
+    protocol,
+    host,
+    port,
+    username,
+    password,
+    remote_base,
+    device_name,
+    sync_savestates,
+):
+    ini = f"""PROTOCOL={protocol}
+HOST={host}
+PORT={port}
+USERNAME={username}
+PASSWORD={password}
+REMOTE_BASE={remote_base}
+DEVICE_NAME={device_name}
+
+SYNC_SAVES=true
+SYNC_SAVESTATES={"true" if sync_savestates else "false"}
+SYNC_INTERVAL=15
+
+SKIP_HOST_KEY_CHECK=true
+SKIP_TLS_VERIFY=false
+PAUSE_WHILE_CORE_RUNNING=true
+
+MIN_AGE_SECONDS=5
+"""
+
+    ensure_remote_scripts_dir(connection)
+
+    sftp = connection.client.open_sftp()
+    try:
+        with sftp.open(FTP_SAVE_SYNC_CONFIG_PATH, "w") as remote_file:
+            remote_file.write(ini)
+    finally:
+        sftp.close()
+
+
+def remove_ftp_save_sync_config(connection):
+    connection.run_command(f"rm -f {FTP_SAVE_SYNC_CONFIG_PATH}")
+
+
+def enable_ftp_save_sync_service(connection):
+    exists = connection.run_command(
+        f"test -f {FTP_SAVE_SYNC_STARTUP_PATH} && echo EXISTS"
+    )
+
+    if "EXISTS" not in (exists or ""):
+        script = f"""#!/bin/sh
+
+# ftp_save_sync START
+(
+    sleep 15
+    {FTP_SAVE_SYNC_DAEMON_LINE}
+) &
+# ftp_save_sync END
+"""
+        sftp = connection.client.open_sftp()
+        try:
+            with sftp.open(FTP_SAVE_SYNC_STARTUP_PATH, "w") as handle:
+                handle.write(script)
+        finally:
+            sftp.close()
+        return
+
+    if is_ftp_save_sync_service_enabled(connection):
+        return
+
+    connection.run_command(f'echo "" >> {FTP_SAVE_SYNC_STARTUP_PATH}')
+    connection.run_command(f'echo "# ftp_save_sync START" >> {FTP_SAVE_SYNC_STARTUP_PATH}')
+    connection.run_command(f'echo "(" >> {FTP_SAVE_SYNC_STARTUP_PATH}')
+    connection.run_command(f'echo "    sleep 15" >> {FTP_SAVE_SYNC_STARTUP_PATH}')
+    connection.run_command(
+        f'echo "    {FTP_SAVE_SYNC_DAEMON_LINE}" >> {FTP_SAVE_SYNC_STARTUP_PATH}'
+    )
+    connection.run_command(f'echo ") &" >> {FTP_SAVE_SYNC_STARTUP_PATH}')
+    connection.run_command(f'echo "# ftp_save_sync END" >> {FTP_SAVE_SYNC_STARTUP_PATH}')
+
+
+def disable_ftp_save_sync_service(connection):
+    if not connection.is_connected():
+        return
+
+    connection.run_command(
+        f"sed -i '/# ftp_save_sync START/,/# ftp_save_sync END/d' {FTP_SAVE_SYNC_STARTUP_PATH} 2>/dev/null"
+    )
 
 
 def open_scripts_folder_on_host(ip, username="root", password="1"):

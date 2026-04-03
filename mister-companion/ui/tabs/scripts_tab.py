@@ -20,30 +20,36 @@ from PyQt6.QtWidgets import (
 from core.config import save_config
 from core.scripts_actions import (
     check_update_all_initialized,
+    disable_ftp_save_sync_service,
+    enable_ftp_save_sync_service,
     enable_zaparoo_service,
     ensure_update_all_config_bootstrap,
     get_scripts_status,
     install_auto_time,
     install_cifs_mount,
     install_dav_browser,
+    install_ftp_save_sync,
     install_migrate_sd,
     install_update_all,
     install_zaparoo,
     open_scripts_folder_on_host,
     remove_cifs_config,
     remove_dav_browser_config,
+    remove_ftp_save_sync_config,
     run_cifs_mount,
     run_cifs_umount,
     run_update_all_stream,
     uninstall_auto_time,
     uninstall_cifs_mount,
     uninstall_dav_browser,
+    uninstall_ftp_save_sync,
     uninstall_migrate_sd,
     uninstall_update_all,
     uninstall_zaparoo,
 )
 from ui.dialogs.cifs_config_dialog import CifsConfigDialog
 from ui.dialogs.dav_browser_config_dialog import DavBrowserConfigDialog
+from ui.dialogs.ftp_save_sync_config_dialog import FtpSaveSyncConfigDialog
 from ui.dialogs.update_all_config_dialog import UpdateAllConfigDialog
 
 
@@ -85,6 +91,7 @@ class ScriptsTab(QWidget):
     SCRIPT_CIFS = "cifs_mount"
     SCRIPT_AUTO_TIME = "auto_time"
     SCRIPT_DAV_BROWSER = "dav_browser"
+    SCRIPT_FTP_SAVE_SYNC = "ftp_save_sync"
 
     def __init__(self, main_window):
         super().__init__()
@@ -104,6 +111,7 @@ class ScriptsTab(QWidget):
             self.SCRIPT_CIFS,
             self.SCRIPT_AUTO_TIME,
             self.SCRIPT_DAV_BROWSER,
+            self.SCRIPT_FTP_SAVE_SYNC,
         ]
         self.script_titles = {
             self.SCRIPT_UPDATE_ALL: "update_all",
@@ -112,6 +120,7 @@ class ScriptsTab(QWidget):
             self.SCRIPT_CIFS: "CIFS Network Share",
             self.SCRIPT_AUTO_TIME: "Auto Time",
             self.SCRIPT_DAV_BROWSER: "DAV Browser",
+            self.SCRIPT_FTP_SAVE_SYNC: "ftp_save_sync",
         }
         self.script_descriptions = {
             self.SCRIPT_UPDATE_ALL: "Install, configure, and run update_all directly from MiSTer Companion.",
@@ -120,6 +129,7 @@ class ScriptsTab(QWidget):
             self.SCRIPT_CIFS: "Install, configure, mount, and remove CIFS network share scripts.",
             self.SCRIPT_AUTO_TIME: "Automatically set timezone and current time for your MiSTer.",
             self.SCRIPT_DAV_BROWSER: "Browse a WebDAV server, download ROMs directly to your MiSTer, and optionally launch them after download.",
+            self.SCRIPT_FTP_SAVE_SYNC: "Sync MiSTer saves to a remote FTP or SFTP server, with optional savestate syncing and automatic boot-time service startup.",
         }
         self.script_status_texts = {
             self.SCRIPT_UPDATE_ALL: "Unknown",
@@ -128,6 +138,7 @@ class ScriptsTab(QWidget):
             self.SCRIPT_CIFS: "Unknown",
             self.SCRIPT_AUTO_TIME: "Unknown",
             self.SCRIPT_DAV_BROWSER: "Unknown",
+            self.SCRIPT_FTP_SAVE_SYNC: "Unknown",
         }
         self.selected_script_key = self.SCRIPT_UPDATE_ALL
 
@@ -144,7 +155,6 @@ class ScriptsTab(QWidget):
         top_row.setSpacing(12)
         main_layout.addLayout(top_row, stretch=1)
 
-        # ===== Left: Script List =====
         list_group = QGroupBox("Scripts")
         list_layout = QVBoxLayout()
         list_layout.setContentsMargins(10, 10, 10, 10)
@@ -183,7 +193,6 @@ class ScriptsTab(QWidget):
         list_group.setLayout(list_layout)
         top_row.addWidget(list_group, 1)
 
-        # ===== Right: Details / Actions =====
         details_group = QGroupBox("Details")
         details_layout = QVBoxLayout()
         details_layout.setContentsMargins(14, 14, 14, 14)
@@ -226,6 +235,7 @@ class ScriptsTab(QWidget):
         self.cifs_actions_widget = self._build_cifs_actions()
         self.auto_time_actions_widget = self._build_auto_time_actions()
         self.dav_browser_actions_widget = self._build_dav_browser_actions()
+        self.ftp_save_sync_actions_widget = self._build_ftp_save_sync_actions()
 
         self.script_action_widgets = {
             self.SCRIPT_UPDATE_ALL: self.update_actions_widget,
@@ -234,6 +244,7 @@ class ScriptsTab(QWidget):
             self.SCRIPT_CIFS: self.cifs_actions_widget,
             self.SCRIPT_AUTO_TIME: self.auto_time_actions_widget,
             self.SCRIPT_DAV_BROWSER: self.dav_browser_actions_widget,
+            self.SCRIPT_FTP_SAVE_SYNC: self.ftp_save_sync_actions_widget,
         }
 
         for widget in self.script_action_widgets.values():
@@ -245,7 +256,6 @@ class ScriptsTab(QWidget):
         details_group.setLayout(details_layout)
         top_row.addWidget(details_group, 2)
 
-        # ===== Bottom Actions =====
         bottom_actions_row = QHBoxLayout()
         bottom_actions_row.addStretch()
 
@@ -256,7 +266,6 @@ class ScriptsTab(QWidget):
         bottom_actions_row.addStretch()
         main_layout.addLayout(bottom_actions_row)
 
-        # ===== SSH Output =====
         self.console_group = QGroupBox("SSH Output")
         console_layout = QVBoxLayout()
         console_layout.setContentsMargins(10, 10, 10, 10)
@@ -310,6 +319,13 @@ class ScriptsTab(QWidget):
         self.configure_dav_browser_button.clicked.connect(self.configure_dav_browser)
         self.remove_dav_browser_config_button.clicked.connect(self.remove_dav_browser_config)
         self.uninstall_dav_browser_button.clicked.connect(self.uninstall_dav_browser)
+
+        self.install_ftp_save_sync_button.clicked.connect(self.install_ftp_save_sync)
+        self.configure_ftp_save_sync_button.clicked.connect(self.configure_ftp_save_sync)
+        self.enable_ftp_save_sync_service_button.clicked.connect(self.enable_ftp_save_sync_service)
+        self.disable_ftp_save_sync_service_button.clicked.connect(self.disable_ftp_save_sync_service)
+        self.remove_ftp_save_sync_config_button.clicked.connect(self.remove_ftp_save_sync_config)
+        self.uninstall_ftp_save_sync_button.clicked.connect(self.uninstall_ftp_save_sync)
 
         self.open_scripts_folder_button.clicked.connect(self.open_scripts_folder)
         self.hide_console_button.clicked.connect(self.toggle_console)
@@ -503,6 +519,48 @@ class ScriptsTab(QWidget):
         widget.setLayout(layout)
         return widget
 
+    def _build_ftp_save_sync_actions(self):
+        widget = QWidget()
+        layout = QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+
+        self.install_ftp_save_sync_button = QPushButton("Install")
+        self.install_ftp_save_sync_button.setFixedWidth(140)
+
+        self.configure_ftp_save_sync_button = QPushButton("Configure")
+        self.configure_ftp_save_sync_button.setFixedWidth(140)
+
+        self.enable_ftp_save_sync_service_button = QPushButton("Enable Service")
+        self.enable_ftp_save_sync_service_button.setFixedWidth(140)
+
+        self.disable_ftp_save_sync_service_button = QPushButton("Disable Service")
+        self.disable_ftp_save_sync_service_button.setFixedWidth(140)
+
+        self.remove_ftp_save_sync_config_button = QPushButton("Remove Config")
+        self.remove_ftp_save_sync_config_button.setFixedWidth(140)
+
+        self.uninstall_ftp_save_sync_button = QPushButton("Uninstall")
+        self.uninstall_ftp_save_sync_button.setFixedWidth(140)
+
+        layout.addLayout(
+            self._build_button_row(
+                self.install_ftp_save_sync_button,
+                self.configure_ftp_save_sync_button,
+                self.enable_ftp_save_sync_service_button,
+            )
+        )
+        layout.addLayout(
+            self._build_button_row(
+                self.disable_ftp_save_sync_service_button,
+                self.remove_ftp_save_sync_config_button,
+                self.uninstall_ftp_save_sync_button,
+            )
+        )
+
+        widget.setLayout(layout)
+        return widget
+
     def _populate_script_list(self):
         self.script_list.clear()
         for script_key in self.script_display_order:
@@ -607,6 +665,12 @@ class ScriptsTab(QWidget):
             self.configure_dav_browser_button,
             self.remove_dav_browser_config_button,
             self.uninstall_dav_browser_button,
+            self.install_ftp_save_sync_button,
+            self.configure_ftp_save_sync_button,
+            self.enable_ftp_save_sync_service_button,
+            self.disable_ftp_save_sync_service_button,
+            self.remove_ftp_save_sync_config_button,
+            self.uninstall_ftp_save_sync_button,
             self.open_scripts_folder_button,
         ]:
             button.setEnabled(False)
@@ -617,6 +681,7 @@ class ScriptsTab(QWidget):
         self.script_status_texts[self.SCRIPT_CIFS] = "Unknown"
         self.script_status_texts[self.SCRIPT_AUTO_TIME] = "Unknown"
         self.script_status_texts[self.SCRIPT_DAV_BROWSER] = "Unknown"
+        self.script_status_texts[self.SCRIPT_FTP_SAVE_SYNC] = "Unknown"
 
         self.update_script_list_labels()
         self.update_details_panel()
@@ -733,6 +798,43 @@ class ScriptsTab(QWidget):
             self.configure_dav_browser_button.setText("Reconfigure")
             self.remove_dav_browser_config_button.setEnabled(True)
             self.uninstall_dav_browser_button.setEnabled(True)
+
+        if not status.ftp_save_sync_installed:
+            self.script_status_texts[self.SCRIPT_FTP_SAVE_SYNC] = "✗ Not installed"
+            self.install_ftp_save_sync_button.setEnabled(True)
+            self.configure_ftp_save_sync_button.setEnabled(False)
+            self.configure_ftp_save_sync_button.setText("Configure")
+            self.enable_ftp_save_sync_service_button.setEnabled(False)
+            self.disable_ftp_save_sync_service_button.setEnabled(False)
+            self.remove_ftp_save_sync_config_button.setEnabled(False)
+            self.uninstall_ftp_save_sync_button.setEnabled(False)
+        elif status.ftp_save_sync_installed and not status.ftp_save_sync_configured:
+            self.script_status_texts[self.SCRIPT_FTP_SAVE_SYNC] = "⚙ Installed, not configured"
+            self.install_ftp_save_sync_button.setEnabled(False)
+            self.configure_ftp_save_sync_button.setEnabled(True)
+            self.configure_ftp_save_sync_button.setText("Configure")
+            self.enable_ftp_save_sync_service_button.setEnabled(False)
+            self.disable_ftp_save_sync_service_button.setEnabled(False)
+            self.remove_ftp_save_sync_config_button.setEnabled(False)
+            self.uninstall_ftp_save_sync_button.setEnabled(True)
+        elif status.ftp_save_sync_installed and status.ftp_save_sync_configured and not status.ftp_save_sync_service_enabled:
+            self.script_status_texts[self.SCRIPT_FTP_SAVE_SYNC] = "⚙ Configured, service disabled"
+            self.install_ftp_save_sync_button.setEnabled(False)
+            self.configure_ftp_save_sync_button.setEnabled(True)
+            self.configure_ftp_save_sync_button.setText("Reconfigure")
+            self.enable_ftp_save_sync_service_button.setEnabled(True)
+            self.disable_ftp_save_sync_service_button.setEnabled(False)
+            self.remove_ftp_save_sync_config_button.setEnabled(True)
+            self.uninstall_ftp_save_sync_button.setEnabled(True)
+        else:
+            self.script_status_texts[self.SCRIPT_FTP_SAVE_SYNC] = "✓ Configured, service enabled"
+            self.install_ftp_save_sync_button.setEnabled(False)
+            self.configure_ftp_save_sync_button.setEnabled(True)
+            self.configure_ftp_save_sync_button.setText("Reconfigure")
+            self.enable_ftp_save_sync_service_button.setEnabled(False)
+            self.disable_ftp_save_sync_service_button.setEnabled(True)
+            self.remove_ftp_save_sync_config_button.setEnabled(True)
+            self.uninstall_ftp_save_sync_button.setEnabled(True)
 
         self.open_scripts_folder_button.setEnabled(True)
 
@@ -1146,6 +1248,99 @@ class ScriptsTab(QWidget):
             return
 
         uninstall_dav_browser(self.connection)
+        self.refresh_status()
+
+    def install_ftp_save_sync(self):
+        if not self.connection.is_connected():
+            return
+
+        def task(log):
+            install_ftp_save_sync(self.connection, log)
+
+        self.start_worker(task, "ftp_save_sync installed successfully.")
+
+    def configure_ftp_save_sync(self):
+        if not self.connection.is_connected():
+            return
+
+        dialog = FtpSaveSyncConfigDialog(self.connection, self.main_window, self)
+        if dialog.exec():
+            self.refresh_status()
+
+    def enable_ftp_save_sync_service(self):
+        if not self.connection.is_connected():
+            return
+
+        confirm = QMessageBox.question(
+            self,
+            "Enable ftp_save_sync Service",
+            "This will enable ftp_save_sync to start automatically on boot.\n\nContinue?",
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+
+        try:
+            enable_ftp_save_sync_service(self.connection)
+            QMessageBox.information(
+                self,
+                "ftp_save_sync Enabled",
+                "ftp_save_sync service enabled.\n\nPlease reboot your MiSTer.",
+            )
+            self.refresh_status()
+        except Exception as e:
+            QMessageBox.critical(self, "Error", str(e))
+
+    def disable_ftp_save_sync_service(self):
+        if not self.connection.is_connected():
+            return
+
+        confirm = QMessageBox.question(
+            self,
+            "Disable ftp_save_sync Service",
+            "This will remove the ftp_save_sync startup entry from user-startup.sh.\n\nContinue?",
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+
+        try:
+            disable_ftp_save_sync_service(self.connection)
+            QMessageBox.information(
+                self,
+                "ftp_save_sync Disabled",
+                "ftp_save_sync service disabled.",
+            )
+            self.refresh_status()
+        except Exception as e:
+            QMessageBox.critical(self, "Error", str(e))
+
+    def remove_ftp_save_sync_config(self):
+        if not self.connection.is_connected():
+            return
+
+        confirm = QMessageBox.question(
+            self,
+            "Remove Config",
+            "Delete ftp_save_sync configuration?",
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+
+        remove_ftp_save_sync_config(self.connection)
+        self.refresh_status()
+
+    def uninstall_ftp_save_sync(self):
+        if not self.connection.is_connected():
+            return
+
+        confirm = QMessageBox.question(
+            self,
+            "Uninstall ftp_save_sync",
+            "This will uninstall ftp_save_sync, remove its config folder, and disable its startup service.\n\nContinue?",
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+
+        uninstall_ftp_save_sync(self.connection)
         self.refresh_status()
 
     def open_scripts_folder(self):

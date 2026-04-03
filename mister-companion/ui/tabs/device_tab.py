@@ -1,7 +1,6 @@
 import sys
-import platform
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox,
     QLabel, QPushButton, QMessageBox, QProgressBar
@@ -10,9 +9,11 @@ from PyQt6.QtWidgets import (
 from core.device_actions import (
     disable_smb_remote,
     enable_smb_remote,
+    get_now_playing,
     get_sd_storage_info,
     get_usb_storage_info,
     is_smb_enabled,
+    return_to_menu_remote,
 )
 from core.share_opener import open_mister_share
 
@@ -22,6 +23,10 @@ class DeviceTab(QWidget):
         super().__init__()
         self.main_window = main_window
         self.connection = main_window.connection
+
+        self.refresh_timer = QTimer(self)
+        self.refresh_timer.setInterval(2000)
+        self.refresh_timer.timeout.connect(self.refresh_info)
 
         self.build_ui()
         self.apply_disconnected_state()
@@ -139,10 +144,16 @@ class DeviceTab(QWidget):
         power_layout.setContentsMargins(16, 18, 16, 18)
 
         reboot_row = QHBoxLayout()
+        reboot_row.setSpacing(16)
+
+        self.return_to_menu_button = QPushButton("Return to Menu")
+        self.return_to_menu_button.setFixedWidth(160)
+
         self.reboot_button = QPushButton("Reboot MiSTer")
         self.reboot_button.setFixedWidth(160)
 
         reboot_row.addStretch()
+        reboot_row.addWidget(self.return_to_menu_button)
         reboot_row.addWidget(self.reboot_button)
         reboot_row.addStretch()
 
@@ -150,11 +161,30 @@ class DeviceTab(QWidget):
         power_group.setLayout(power_layout)
 
         # =========================
+        # Now Playing Group
+        # =========================
+        self.now_playing_group = QGroupBox("Now Playing")
+        now_playing_layout = QVBoxLayout()
+        now_playing_layout.setContentsMargins(16, 18, 16, 18)
+        now_playing_layout.setSpacing(8)
+
+        self.now_playing_summary_label = QLabel("")
+        self.now_playing_summary_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.now_playing_summary_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.now_playing_summary_label.setStyleSheet("font-weight: bold;")
+
+        now_playing_layout.addWidget(self.now_playing_summary_label)
+
+        self.now_playing_group.setLayout(now_playing_layout)
+        self.now_playing_group.setVisible(False)
+
+        # =========================
         # Final Layout
         # =========================
         main_layout.addWidget(storage_group)
         main_layout.addWidget(sharing_group)
         main_layout.addWidget(power_group)
+        main_layout.addWidget(self.now_playing_group)
         main_layout.addStretch()
 
         self.setLayout(main_layout)
@@ -163,23 +193,39 @@ class DeviceTab(QWidget):
         self.enable_smb_button.clicked.connect(self.enable_smb)
         self.disable_smb_button.clicked.connect(self.disable_smb)
         self.open_share_button.clicked.connect(self.open_share)
+        self.return_to_menu_button.clicked.connect(self.return_to_menu)
         self.reboot_button.clicked.connect(self.reboot_device)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if self.connection.is_connected():
+            self.refresh_info()
+            self.refresh_timer.start()
+
+    def hideEvent(self, event):
+        super().hideEvent(event)
+        self.refresh_timer.stop()
 
     def update_connection_state(self):
         if self.connection.is_connected():
             self.apply_connected_state()
             self.refresh_info()
+            if self.isVisible():
+                self.refresh_timer.start()
         else:
             self.apply_disconnected_state()
+            self.refresh_timer.stop()
 
     def apply_connected_state(self):
         self.refresh_button.setEnabled(True)
+        self.return_to_menu_button.setEnabled(True)
         self.reboot_button.setEnabled(True)
         self.enable_smb_button.setEnabled(True)
         self.disable_smb_button.setEnabled(True)
 
     def apply_disconnected_state(self):
         self.refresh_button.setEnabled(False)
+        self.return_to_menu_button.setEnabled(False)
         self.enable_smb_button.setEnabled(False)
         self.disable_smb_button.setEnabled(False)
         self.open_share_button.setEnabled(False)
@@ -195,14 +241,19 @@ class DeviceTab(QWidget):
         self.smb_status_label.setText("Remote Access: Unknown" if sys.platform == "darwin" else "SMB: Unknown")
         self.smb_status_label.setStyleSheet("")
 
+        self.now_playing_summary_label.setText("")
+        self.now_playing_group.setVisible(False)
+
     def refresh_info(self):
         if not self.connection.is_connected():
             self.apply_disconnected_state()
+            self.refresh_timer.stop()
             return
 
         self.apply_connected_state()
         self.refresh_storage()
         self.refresh_smb_status()
+        self.refresh_now_playing()
 
     def refresh_storage(self):
         sd_info = get_sd_storage_info(self.connection)
@@ -249,6 +300,17 @@ class DeviceTab(QWidget):
             self.enable_smb_button.setEnabled(True)
             self.disable_smb_button.setEnabled(False)
             self.open_share_button.setEnabled(False)
+
+    def refresh_now_playing(self):
+        now_playing = get_now_playing(self.connection)
+
+        if not now_playing.get("playing"):
+            self.now_playing_summary_label.setText("")
+            self.now_playing_group.setVisible(False)
+            return
+
+        self.now_playing_summary_label.setText(now_playing.get("summary", ""))
+        self.now_playing_group.setVisible(True)
 
     def enable_smb(self):
         if not self.connection.is_connected():
@@ -306,6 +368,17 @@ class DeviceTab(QWidget):
                 f"Unable to open share:\n\n{str(e)}"
             )
 
+    def return_to_menu(self):
+        if not self.connection.is_connected():
+            QMessageBox.warning(self, "Not Connected", "Connect to a MiSTer first.")
+            return
+
+        try:
+            return_to_menu_remote(self.connection)
+        except Exception as e:
+            QMessageBox.critical(self, "Return to Menu Failed", str(e))
+            return
+
     def reboot_device(self, skip_confirm=False):
         if not self.connection.is_connected():
             QMessageBox.warning(self, "Not Connected", "Connect to a MiSTer first.")
@@ -322,6 +395,7 @@ class DeviceTab(QWidget):
                 return
 
         self.apply_disconnected_state()
+        self.refresh_timer.stop()
 
         try:
             self.main_window.set_connection_status("Status: Rebooting...")

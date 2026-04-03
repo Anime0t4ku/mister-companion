@@ -96,8 +96,10 @@ class SyncConfirmDialog(QDialog):
         layout = QVBoxLayout(self)
 
         info = QLabel(
-            "Sync merges local SaveManager sync data with the current MiSTer saves.\n\n"
-            "Newest files are kept, then the merged result is uploaded back to the MiSTer."
+            "Sync merges local SaveManager data with the current MiSTer saves, using your PC as the middleman.\n\n"
+            "Newest files are kept, then the merged result is uploaded back to the MiSTer.\n\n"
+            "This is a manual sync process.\n"
+            "For automatic syncing, install ftp_save_sync from the Scripts tab (requires FTP access with write permissions)."
         )
         info.setWordWrap(True)
         layout.addWidget(info)
