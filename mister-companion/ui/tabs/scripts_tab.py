@@ -115,11 +115,11 @@ class ScriptsTab(QWidget):
         ]
         self.script_titles = {
             self.SCRIPT_UPDATE_ALL: "update_all",
-            self.SCRIPT_ZAPAROO: "Zaparoo",
-            self.SCRIPT_MIGRATE_SD: "SD Migration",
-            self.SCRIPT_CIFS: "CIFS Network Share",
-            self.SCRIPT_AUTO_TIME: "Auto Time",
-            self.SCRIPT_DAV_BROWSER: "DAV Browser",
+            self.SCRIPT_ZAPAROO: "zaparoo",
+            self.SCRIPT_MIGRATE_SD: "migrate_sd",
+            self.SCRIPT_CIFS: "cifs_mount",
+            self.SCRIPT_AUTO_TIME: "auto_time",
+            self.SCRIPT_DAV_BROWSER: "dav_browser",
             self.SCRIPT_FTP_SAVE_SYNC: "ftp_save_sync",
         }
         self.script_descriptions = {
