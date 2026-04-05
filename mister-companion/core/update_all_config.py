@@ -182,8 +182,6 @@ def load_update_all_config(connection):
             "bootroms": is_enabled("uberyoji_mister_boot_roms_mgl"),
             "gbaborders": is_enabled("Dinierto/MiSTer-GBA-Borders"),
             "insert_coin": is_enabled("funkycochise/Insert-Coin"),
-            "unstable_nightlies": is_enabled("unstable_nightlies_folder"),
-            "wip_cores": is_enabled("ajgowans/wip"),
             "anime0t4ku_wallpapers": is_enabled("anime0t4ku_wallpapers"),
             "pcn_challenge_wallpapers": is_enabled("pcn_challenge_wallpapers"),
             "pcn_premium_wallpapers": is_enabled("pcn_premium_wallpapers"),
@@ -477,24 +475,6 @@ def save_update_all_config(connection, config):
             [
                 "[funkycochise/Insert-Coin]",
                 "db_url = https://raw.githubusercontent.com/funkycochise/Insert-Coin/db/db.json.zip",
-            ],
-        )
-        main_lines = handle_simple_section(
-            "unstable_nightlies_folder",
-            config.get("unstable_nightlies", False),
-            main_lines,
-            [
-                "[unstable_nightlies_folder]",
-                "db_url = https://raw.githubusercontent.com/MiSTer-unstable-nightlies/Unstable_Folder_MiSTer/main/db_unstable_nightlies_folder.json",
-            ],
-        )
-        main_lines = handle_simple_section(
-            "ajgowans/wip",
-            config.get("wip_cores", False),
-            main_lines,
-            [
-                "[ajgowans/wip]",
-                "db_url = https://raw.githubusercontent.com/ajgowans/wip/db/db.json.zip",
             ],
         )
         main_lines = handle_simple_section(
