@@ -124,7 +124,6 @@ class UpdateAllConfigDialog(QDialog):
         self.arcade_roms_check = QCheckBox("Arcade ROMs Database")
         self.bootroms_check = QCheckBox("Uberyoji Boot ROMs")
         self.gba_borders_check = QCheckBox("Dinierto GBA Borders")
-        self.insert_coin_check = QCheckBox("Insert-Coin")
         self.anime0t4ku_wallpapers_check = QCheckBox("Anime0t4ku Wallpapers")
         self.pcn_challenge_wallpapers_check = QCheckBox("PCN Challenge Wallpapers")
         self.pcn_premium_wallpapers_check = QCheckBox("PCN Premium Member Wallpapers")
@@ -141,7 +140,6 @@ class UpdateAllConfigDialog(QDialog):
             self.arcade_roms_check,
             self.bootroms_check,
             self.gba_borders_check,
-            self.insert_coin_check,
             self.anime0t4ku_wallpapers_check,
             self.pcn_challenge_wallpapers_check,
             self.pcn_premium_wallpapers_check,
@@ -156,6 +154,15 @@ class UpdateAllConfigDialog(QDialog):
         wallpaper_row.addStretch()
         extra_group.layout().addLayout(wallpaper_row)
         self.ranny_wallpapers_check.toggled.connect(self.update_wallpaper_state)
+
+        # ===== Community Sources =====
+        community_group = self._group("Community Sources")
+        self.insert_coin_check = QCheckBox("Insert-Coin")
+
+        for widget in [
+            self.insert_coin_check,
+        ]:
+            self._add(community_group, widget)
 
         # ===== Buttons =====
         line = QFrame()

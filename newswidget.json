@@ -3,12 +3,12 @@
   "items": [
     {
       "id": "v3-stable",
-      "date": "2026-04-03",
+      "date": "2026-04-07",
       "type": "update",
-      "headline": "MiSTer Companion v3.1.1 Released",
-      "message": "MiSTer Companion v3.1.1 is now available.\n\nThis release includes everything added in v3.1.0, including the new Return to Menu button and Now Playing feature in the Device tab, the addition of ftp_save_sync in the Scripts tab, and the updated SaveManager sync explanation.\n\nNote: A small follow-up fix has now also been included for ftp_save_sync, resolving a bug where the daemon and rclone were not fully installed during setup.\n\nYou can download the latest stable release below.",
-      "url": "https://github.com/Anime0t4ku/mister-companion/releases/tag/v3.1.1",
-      "url_label": "Download v3.1.1"
+      "headline": "MiSTer Companion v3.1.2 Released",
+      "message": "MiSTer Companion v3.1.2 is now available.\n\nThis update includes a fix for the Arcade Organizer setting, which now correctly creates and removes its required configuration file on the MiSTer. The setting state is also now properly detected based on the actual file.\n\nInsert-Coin has also been moved to a new Community Sources category to better reflect its unofficial status.\n\nYou can download the latest stable release below.",
+      "url": "https://github.com/Anime0t4ku/mister-companion/releases/tag/v3.1.2",
+      "url_label": "Download v3.1.2"
     },
     {
       "id": "macos-support",

@@ -2,6 +2,7 @@ import json
 
 
 JSON_PATH = "/media/fat/Scripts/.config/update_all/update_all.json"
+ARCADE_ORGANIZER_INI_PATH = "/media/fat/Scripts/update_arcade-organizer.ini"
 
 
 def split_downloader_paths():
@@ -26,6 +27,21 @@ def read_remote_text(sftp, path, default=""):
 def write_remote_text(sftp, path, text):
     with sftp.open(path, "w") as f:
         f.write(text)
+
+
+def remote_path_exists(sftp, path):
+    try:
+        sftp.stat(path)
+        return True
+    except Exception:
+        return False
+
+
+def remove_remote_file(sftp, path):
+    try:
+        sftp.remove(path)
+    except Exception:
+        pass
 
 
 def read_downloader_files(sftp):
@@ -154,6 +170,9 @@ def load_update_all_config(connection):
         def is_enabled(section):
             return section_enabled_in_text(ini_data, section)
 
+        arcade_org_ini = read_remote_text(sftp, ARCADE_ORGANIZER_INI_PATH, "")
+        arcade_org_ini_enabled = "ARCADE_ORGANIZER=true" in arcade_org_ini
+
         data = {
             "main_cores": is_enabled("distribution_mister"),
             "main_source": "MiSTer-devel (Recommended)",
@@ -169,7 +188,7 @@ def load_update_all_config(connection):
             "altcores": is_enabled("ajgowans/alt-cores"),
             "dualram": is_enabled("TheJesusFish/Dual-Ram-Console-Cores"),
 
-            "arcade_org": json_data.get("introduced_arcade_names_txt", False),
+            "arcade_org": arcade_org_ini_enabled or json_data.get("introduced_arcade_names_txt", False),
 
             "mrext": is_enabled("mrext/all"),
             "sam": is_enabled("MiSTer_SAM_files"),
@@ -266,6 +285,16 @@ def save_update_all_config(connection, config):
 
         json_data["download_beta_cores"] = bool(config.get("jt_beta", False))
         json_data["introduced_arcade_names_txt"] = bool(config.get("arcade_org", False))
+
+        # ===== arcade organizer ini =====
+        if config.get("arcade_org", False):
+            write_remote_text(
+                sftp,
+                ARCADE_ORGANIZER_INI_PATH,
+                "ARCADE_ORGANIZER=true\nSKIPALTS=false\n"
+            )
+        else:
+            remove_remote_file(sftp, ARCADE_ORGANIZER_INI_PATH)
 
         # ===== main cores =====
         main_lines = remove_section_from_lines(main_lines, "distribution_mister")
