@@ -63,7 +63,9 @@ class MainWindow(QMainWindow):
         self.reboot_reconnect_username = ""
         self.reboot_reconnect_password = ""
 
-        self.setWindowTitle("MiSTer Companion v3.1.2 By Anime0t4ku")
+        self._closing = False
+
+        self.setWindowTitle("MiSTer Companion v3.2.0 By Anime0t4ku")
         self.resize(900, 900)
 
         if ICON_PATH.exists():
@@ -105,7 +107,7 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central_widget)
 
         self.flash_tab = FlashTab(self)
-        self.tabs.addTab(self.flash_tab, "Flash Mr. Fusion")
+        self.tabs.addTab(self.flash_tab, "Flash SD")
 
         self.connection_tab = ConnectionTab(self)
         self.tabs.addTab(self.connection_tab, "Connection")
@@ -145,7 +147,54 @@ class MainWindow(QMainWindow):
 
         QTimer.singleShot(300, self.show_setup_notice)
 
+    def _stop_worker(self, worker, wait_ms: int = 3000):
+        if worker is None:
+            return
+
+        try:
+            if worker.isRunning():
+                worker.wait(wait_ms)
+        except Exception:
+            pass
+
+    def closeEvent(self, event):
+        self._closing = True
+
+        try:
+            if hasattr(self, "connection_monitor_timer"):
+                self.connection_monitor_timer.stop()
+        except Exception:
+            pass
+
+        try:
+            if hasattr(self, "reboot_reconnect_timer"):
+                self.reboot_reconnect_timer.stop()
+        except Exception:
+            pass
+
+        self._stop_worker(self.connection_check_worker)
+        self._stop_worker(self.reboot_reconnect_worker)
+
+        self.connection_check_worker = None
+        self.reboot_reconnect_worker = None
+
+        try:
+            if self.connection.is_connected():
+                self.connection.disconnect()
+            else:
+                self.connection.mark_disconnected()
+        except Exception:
+            try:
+                self.connection.mark_disconnected()
+            except Exception:
+                pass
+
+        super().closeEvent(event)
+
     def show_setup_notice(self):
+        if self._closing:
+            return
+
         if self.config_data.get("hide_setup_notice"):
             return
 
@@ -179,6 +228,9 @@ class MainWindow(QMainWindow):
         apply_theme(self.app, mode)
 
     def on_theme_changed(self):
+        if self._closing:
+            return
+
         mode = self.theme_combo.currentText().lower()
         self.config_data["theme_mode"] = mode
         save_config(self.config_data)
@@ -207,6 +259,9 @@ class MainWindow(QMainWindow):
             self.flash_tab.update_connection_state()
 
     def on_tab_changed(self, index):
+        if self._closing:
+            return
+
         current_widget = self.tabs.widget(index)
 
         if hasattr(self, "mister_settings_tab"):
@@ -245,6 +300,9 @@ class MainWindow(QMainWindow):
                 return
 
     def check_connection_status(self):
+        if self._closing:
+            return
+
         if not self.connection.is_connected():
             return
 
@@ -267,6 +325,9 @@ class MainWindow(QMainWindow):
         self.connection_check_worker = None
 
     def on_connection_check_result(self, ok: bool):
+        if self._closing:
+            return
+
         if self.reboot_reconnect_timer.isActive():
             self.connection_fail_count = 0
             return
@@ -283,6 +344,9 @@ class MainWindow(QMainWindow):
         self.handle_connection_lost()
 
     def handle_connection_lost(self):
+        if self._closing:
+            return
+
         self.connection_fail_count = 0
 
         try:
@@ -301,6 +365,9 @@ class MainWindow(QMainWindow):
         )
 
     def start_reboot_reconnect_polling(self):
+        if self._closing:
+            return
+
         host = self.connection.host
         username = self.connection.username
         password = self.connection.password
@@ -325,6 +392,9 @@ class MainWindow(QMainWindow):
         self.reboot_reconnect_timer.start(5000)
 
     def try_reconnect_after_reboot(self):
+        if self._closing:
+            return
+
         if self.reboot_reconnect_worker is not None and self.reboot_reconnect_worker.isRunning():
             return
 
@@ -345,6 +415,9 @@ class MainWindow(QMainWindow):
         self.reboot_reconnect_worker = None
 
     def on_reboot_port_check_result(self, ok: bool):
+        if self._closing:
+            return
+
         if not ok:
             self.reboot_reconnect_attempts += 1
 
@@ -402,6 +475,9 @@ class MainWindow(QMainWindow):
                 )
 
     def connect_to_mister(self):
+        if self._closing:
+            return
+
         host = self.connection_tab.ip_input.text().strip()
         username = self.connection_tab.user_input.text().strip() or "root"
         password = self.connection_tab.pass_input.text() or "1"
@@ -457,6 +533,9 @@ class MainWindow(QMainWindow):
         self.update_all_tab_states()
 
     def open_network_scanner(self):
+        if self._closing:
+            return
+
         dialog = NetworkScannerDialog(self)
         dialog.exec()
 
@@ -497,6 +576,9 @@ class MainWindow(QMainWindow):
         )
 
     def save_device(self):
+        if self._closing:
+            return
+
         dialog = DeviceDialog(
             self,
             title="Save Device",
@@ -542,6 +624,9 @@ class MainWindow(QMainWindow):
         )
 
     def edit_device(self):
+        if self._closing:
+            return
+
         index = self.connection_tab.profile_selector.currentIndex()
         current_device = get_device_by_index(self.config_data, index)
 
@@ -600,6 +685,9 @@ class MainWindow(QMainWindow):
         )
 
     def delete_device(self):
+        if self._closing:
+            return
+
         index = self.connection_tab.profile_selector.currentIndex()
 
         ok, result, _ = delete_device(self.config_data, index)

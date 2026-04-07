@@ -17,8 +17,11 @@ from PyQt6.QtWidgets import (
 from core.flasher import (
     ensure_balena_cli,
     ensure_mr_fusion_image,
+    ensure_superstation_image,
     flash_image,
     get_mr_fusion_image,
+    get_superstation_image,
+    get_superstation_image_status,
     has_balena_cli,
     has_mr_fusion_image,
     is_flash_supported,
@@ -60,6 +63,9 @@ class FlashWorker(QThread):
 
 
 class FlashTab(QWidget):
+    MODE_MR_FUSION = "mr_fusion"
+    MODE_SUPERSTATION = "superstation"
+
     def __init__(self, main_window):
         super().__init__()
         self.main_window = main_window
@@ -76,14 +82,29 @@ class FlashTab(QWidget):
         main_layout.setContentsMargins(12, 12, 12, 12)
         main_layout.setSpacing(12)
 
-        self.main_group = QGroupBox("Flash Mr. Fusion")
+        self.main_group = QGroupBox("Flash SD")
         group_layout = QVBoxLayout(self.main_group)
         group_layout.setContentsMargins(12, 12, 12, 12)
         group_layout.setSpacing(12)
 
-        self.info_label = QLabel(
-            "Follow the steps below to prepare and flash an Mr. Fusion SD card for MiSTer."
-        )
+        mode_group = QGroupBox("Installer")
+        mode_layout = QHBoxLayout(mode_group)
+        mode_layout.setContentsMargins(12, 12, 12, 12)
+        mode_layout.setSpacing(12)
+        mode_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        mode_label = QLabel("Select installer:")
+        self.mode_combo = QComboBox()
+        self.mode_combo.addItem("Mr. Fusion", self.MODE_MR_FUSION)
+        self.mode_combo.addItem("SuperStationOne SD Card Installer", self.MODE_SUPERSTATION)
+        self.mode_combo.setMinimumWidth(300)
+
+        mode_layout.addWidget(mode_label)
+        mode_layout.addWidget(self.mode_combo)
+
+        group_layout.addWidget(mode_group)
+
+        self.info_label = QLabel()
         self.info_label.setWordWrap(True)
         self.info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         group_layout.addWidget(self.info_label)
@@ -104,7 +125,7 @@ class FlashTab(QWidget):
         self.privileges_label.setStyleSheet("color: #f39c12; font-weight: bold;")
         group_layout.addWidget(self.privileges_label)
 
-        self.macos_label = QLabel("Flash Mr. Fusion is not available on macOS yet.")
+        self.macos_label = QLabel("Flash SD is not available on macOS yet.")
         self.macos_label.setWordWrap(True)
         self.macos_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.macos_label.setStyleSheet("color: orange; font-weight: bold;")
@@ -120,16 +141,16 @@ class FlashTab(QWidget):
         status_row.setSpacing(24)
         status_row.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        self.mr_fusion_status_title = QLabel("Mr. Fusion image:")
-        self.mr_fusion_status_label = QLabel("Not downloaded")
-        self.mr_fusion_status_label.setWordWrap(True)
+        self.image_status_title = QLabel("Installer image:")
+        self.image_status_label = QLabel("Not downloaded")
+        self.image_status_label.setWordWrap(True)
 
         self.balena_status_title = QLabel("balena CLI:")
         self.balena_status_label = QLabel("Not downloaded")
         self.balena_status_label.setWordWrap(True)
 
-        status_row.addWidget(self.mr_fusion_status_title)
-        status_row.addWidget(self.mr_fusion_status_label)
+        status_row.addWidget(self.image_status_title)
+        status_row.addWidget(self.image_status_label)
         status_row.addSpacing(24)
         status_row.addWidget(self.balena_status_title)
         status_row.addWidget(self.balena_status_label)
@@ -143,10 +164,10 @@ class FlashTab(QWidget):
         downloads_layout.setSpacing(12)
         downloads_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        self.download_mr_fusion_button = QPushButton("Download Mr. Fusion")
+        self.download_image_button = QPushButton("Download Image")
         self.download_balena_button = QPushButton("Download balena CLI")
 
-        downloads_layout.addWidget(self.download_mr_fusion_button)
+        downloads_layout.addWidget(self.download_image_button)
         downloads_layout.addWidget(self.download_balena_button)
 
         group_layout.addWidget(downloads_group)
@@ -214,7 +235,8 @@ class FlashTab(QWidget):
         main_layout.addLayout(log_button_row)
         main_layout.addStretch()
 
-        self.download_mr_fusion_button.clicked.connect(self.download_mr_fusion)
+        self.mode_combo.currentIndexChanged.connect(self.on_mode_changed)
+        self.download_image_button.clicked.connect(self.download_selected_image)
         self.download_balena_button.clicked.connect(self.download_balena)
         self.refresh_drives_button.clicked.connect(self.refresh_drives)
         self.flash_button.clicked.connect(self.start_flash)
@@ -222,11 +244,22 @@ class FlashTab(QWidget):
         self.drive_combo.currentIndexChanged.connect(self.update_connection_state)
 
         if not is_flash_supported():
-            self.download_mr_fusion_button.setEnabled(False)
+            self.download_image_button.setEnabled(False)
             self.download_balena_button.setEnabled(False)
             self.refresh_drives_button.setEnabled(False)
             self.flash_button.setEnabled(False)
             self.drive_combo.setEnabled(False)
+
+        self.update_mode_ui()
+
+    def current_mode(self):
+        return self.mode_combo.currentData()
+
+    def is_mr_fusion_mode(self):
+        return self.current_mode() == self.MODE_MR_FUSION
+
+    def is_superstation_mode(self):
+        return self.current_mode() == self.MODE_SUPERSTATION
 
     def _set_ready_status(self, label, text="Ready"):
         label.setText(text)
@@ -236,21 +269,91 @@ class FlashTab(QWidget):
         label.setText("Not downloaded")
         label.setStyleSheet("color: #e74c3c; font-weight: bold;")
 
-    def refresh_status(self):
-        if has_mr_fusion_image():
-            try:
-                image_path = get_mr_fusion_image()
-                self._set_ready_status(
-                    self.mr_fusion_status_label,
-                    f"Ready ({image_path.name})",
-                )
-            except Exception:
-                self._set_ready_status(self.mr_fusion_status_label)
-            self.download_mr_fusion_button.setEnabled(False)
+    def _set_warning_status(self, label, text):
+        label.setText(text)
+        label.setStyleSheet("color: #f39c12; font-weight: bold;")
+
+    def update_mode_ui(self):
+        if self.is_mr_fusion_mode():
+            self.info_label.setText(
+                "Follow the steps below to prepare and flash an Mr. Fusion SD card for MiSTer."
+            )
+            self.image_status_title.setText("Mr. Fusion image:")
+            self.download_image_button.setText("Download Mr. Fusion")
         else:
-            self._set_not_downloaded_status(self.mr_fusion_status_label)
-            if is_flash_supported() and self.current_worker is None:
-                self.download_mr_fusion_button.setEnabled(True)
+            self.info_label.setText(
+                "Follow the steps below to prepare and flash a SuperStationOne SD Card Installer image."
+            )
+            self.image_status_title.setText("SuperStation image:")
+            self.download_image_button.setText("Download SuperStation Installer")
+
+    def refresh_status(self):
+        self.update_mode_ui()
+
+        if self.is_mr_fusion_mode():
+            if has_mr_fusion_image():
+                try:
+                    image_path = get_mr_fusion_image()
+                    self._set_ready_status(
+                        self.image_status_label,
+                        f"Ready ({image_path.name})",
+                    )
+                except Exception:
+                    self._set_ready_status(self.image_status_label)
+
+                self.download_image_button.setText("Download Mr. Fusion")
+                self.download_image_button.setEnabled(False)
+            else:
+                self._set_not_downloaded_status(self.image_status_label)
+                self.download_image_button.setText("Download Mr. Fusion")
+                if is_flash_supported() and self.current_worker is None:
+                    self.download_image_button.setEnabled(True)
+
+        else:
+            try:
+                status = get_superstation_image_status()
+            except Exception:
+                status = {
+                    "installed": False,
+                    "up_to_date": None,
+                    "local_name": None,
+                    "latest_name": None,
+                    "update_available": False,
+                }
+
+            installed = bool(status.get("installed"))
+            up_to_date = status.get("up_to_date")
+            local_name = status.get("local_name")
+            latest_name = status.get("latest_name")
+            update_available = bool(status.get("update_available"))
+
+            if not installed:
+                self._set_not_downloaded_status(self.image_status_label)
+                self.download_image_button.setText("Download SuperStation Installer")
+                if is_flash_supported() and self.current_worker is None:
+                    self.download_image_button.setEnabled(True)
+            else:
+                if update_available:
+                    label_text = "Update available"
+                    if local_name and latest_name:
+                        label_text = f"Update available ({local_name} -> {latest_name})"
+                    elif latest_name:
+                        label_text = f"Update available ({latest_name})"
+
+                    self._set_warning_status(self.image_status_label, label_text)
+                    self.download_image_button.setText("Update")
+                    if is_flash_supported() and self.current_worker is None:
+                        self.download_image_button.setEnabled(True)
+                else:
+                    ready_text = f"Ready ({local_name})" if local_name else "Ready"
+
+                    if up_to_date is False:
+                        self._set_warning_status(self.image_status_label, ready_text)
+                    else:
+                        self._set_ready_status(self.image_status_label, ready_text)
+
+                    self.download_image_button.setText("Download SuperStation Installer")
+                    self.download_image_button.setEnabled(False)
 
         if has_balena_cli():
             self._set_ready_status(self.balena_status_label)
@@ -260,9 +363,28 @@ class FlashTab(QWidget):
             if is_flash_supported() and self.current_worker is None:
                 self.download_balena_button.setEnabled(True)
 
+    def selected_image_ready(self):
+        if self.is_mr_fusion_mode():
+            return has_mr_fusion_image()
+
+        try:
+            return get_superstation_image() is not None
+        except Exception:
+            return False
+
+    def get_selected_image_path(self):
+        if self.is_mr_fusion_mode():
+            return get_mr_fusion_image()
+        return get_superstation_image()
+
+    def get_selected_image_name(self):
+        if self.is_mr_fusion_mode():
+            return "Mr. Fusion"
+        return "SuperStation image"
+
     def update_connection_state(self):
         if not is_flash_supported():
-            self.download_mr_fusion_button.setEnabled(False)
+            self.download_image_button.setEnabled(False)
             self.download_balena_button.setEnabled(False)
             self.refresh_drives_button.setEnabled(False)
             self.flash_button.setEnabled(False)
@@ -276,13 +398,18 @@ class FlashTab(QWidget):
 
         self.refresh_drives_button.setEnabled(True)
         self.drive_combo.setEnabled(True)
+        self.mode_combo.setEnabled(True)
 
         can_flash = (
             bool(self.get_selected_drive())
-            and has_mr_fusion_image()
+            and self.selected_image_ready()
             and has_balena_cli()
         )
         self.flash_button.setEnabled(can_flash)
+
+    def on_mode_changed(self):
+        self.refresh_status()
+        self.update_connection_state()
 
     def show_log(self):
         self.log_group.show()
@@ -306,23 +433,22 @@ class FlashTab(QWidget):
         if not is_flash_supported():
             return
 
-        self.download_mr_fusion_button.setEnabled(
-            False if busy else not has_mr_fusion_image()
-        )
-        self.download_balena_button.setEnabled(
-            False if busy else not has_balena_cli()
-        )
+        self.mode_combo.setEnabled(not busy)
         self.refresh_drives_button.setEnabled(not busy)
-        self.flash_button.setEnabled(
-            False
-            if busy
-            else (
-                bool(self.get_selected_drive())
-                and has_mr_fusion_image()
-                and has_balena_cli()
-            )
-        )
         self.drive_combo.setEnabled(not busy)
+
+        if busy:
+            self.download_image_button.setEnabled(False)
+            self.download_balena_button.setEnabled(False)
+            self.flash_button.setEnabled(False)
+            return
+
+        self.refresh_status()
+        self.flash_button.setEnabled(
+            bool(self.get_selected_drive())
+            and self.selected_image_ready()
+            and has_balena_cli()
+        )
 
     def on_task_success(self, message):
         if message:
@@ -334,8 +460,7 @@ class FlashTab(QWidget):
 
     def on_task_finished(self):
         self.current_worker = None
-        self.refresh_status()
-        self.update_connection_state()
+        self.set_busy(False)
 
     def start_worker(self, task_fn, success_message="", emit_drives=False):
         if self.current_worker is not None:
@@ -381,11 +506,29 @@ class FlashTab(QWidget):
         text = self.drive_combo.currentText().strip()
         return self.drive_map.get(text, "")
 
+    def download_selected_image(self):
+        if self.is_mr_fusion_mode():
+            self.download_mr_fusion()
+        else:
+            self.download_superstation()
+
     def download_mr_fusion(self):
         def task(log):
             ensure_mr_fusion_image(force_download=True, log_callback=log)
 
         self.start_worker(task, success_message="Mr. Fusion download complete.")
+
+    def download_superstation(self):
+        def task(log):
+            ensure_superstation_image(force_download=True, log_callback=log)
+
+        button_text = self.download_image_button.text().strip().lower()
+        success_message = (
+            "SuperStation image update complete."
+            if button_text == "update"
+            else "SuperStation image download complete."
+        )
+        self.start_worker(task, success_message=success_message)
 
     def download_balena(self):
         def task(log):
@@ -410,11 +553,11 @@ class FlashTab(QWidget):
         if not is_flash_supported():
             return
 
-        if not has_mr_fusion_image():
+        if not self.selected_image_ready():
             QMessageBox.warning(
                 self,
-                "Mr. Fusion image missing",
-                "Download the latest Mr. Fusion image first.",
+                f"{self.get_selected_image_name()} missing",
+                f"Download the latest {self.get_selected_image_name()} first.",
             )
             return
 
@@ -427,12 +570,12 @@ class FlashTab(QWidget):
             return
 
         try:
-            image_path = get_mr_fusion_image()
+            image_path = self.get_selected_image_path()
         except Exception:
             QMessageBox.warning(
                 self,
-                "Mr. Fusion image missing",
-                "Download the latest Mr. Fusion image first.",
+                f"{self.get_selected_image_name()} missing",
+                f"Download the latest {self.get_selected_image_name()} first.",
             )
             return
 

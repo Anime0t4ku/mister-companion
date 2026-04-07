@@ -54,14 +54,16 @@ class SetupNoticeDialog(QDialog):
         continue_row.addStretch()
         layout.addLayout(continue_row)
 
+    # -------------------------
+    # macOS
+    # -------------------------
     def build_macos_layout(self, layout):
         tool_name = "balenaEtcher"
         tool_url = "https://etcher.balena.io/"
 
         message = QLabel(
-            "This application assumes you have already flashed\n"
-            "MiSTerFusion to your SD card.\n\n"
-            "If you have not done so yet, download MiSTerFusion\n"
+            "This application assumes you have already prepared a MiSTer SD card.\n\n"
+            "If you have not done so yet, download an installer image (Mr. Fusion or SuperStationOne)\n"
             f"and flash it using {tool_name} before continuing."
         )
         message.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -69,22 +71,31 @@ class SetupNoticeDialog(QDialog):
         layout.addWidget(message)
 
         button_row = QHBoxLayout()
-        self.misterfusion_button = QPushButton("Download MiSTerFusion")
+
+        self.mr_fusion_button = QPushButton("Mr. Fusion")
+        self.superstation_button = QPushButton("SuperStationOne")
         self.flash_tool_button = QPushButton(f"Download {tool_name}")
 
-        self.misterfusion_button.clicked.connect(
+        self.mr_fusion_button.clicked.connect(
             lambda: webbrowser.open("https://github.com/MiSTer-devel/mr-fusion/releases")
+        )
+        self.superstation_button.clicked.connect(
+            lambda: webbrowser.open("https://github.com/Retro-Remake/SuperStation-SD-Card-Installer/releases")
         )
         self.flash_tool_button.clicked.connect(
             lambda: webbrowser.open(tool_url)
         )
 
         button_row.addStretch()
-        button_row.addWidget(self.misterfusion_button)
+        button_row.addWidget(self.mr_fusion_button)
+        button_row.addWidget(self.superstation_button)
         button_row.addWidget(self.flash_tool_button)
         button_row.addStretch()
         layout.addLayout(button_row)
 
+    # -------------------------
+    # Windows / Linux
+    # -------------------------
     def build_windows_linux_layout(self, layout):
         if sys.platform.startswith("win"):
             privilege_text = "Run MiSTer Companion as Administrator before flashing."
@@ -92,10 +103,11 @@ class SetupNoticeDialog(QDialog):
             privilege_text = "Run MiSTer Companion with sudo or root privileges before flashing."
 
         message = QLabel(
-            "MiSTer Companion can now handle Mr. Fusion setup directly from the\n"
-            "Flash Mr. Fusion tab.\n\n"
-            "From there, you can download the latest Mr. Fusion image and balena CLI,\n"
-            "select your SD card, and flash it directly from inside the app.\n\n"
+            "MiSTer Companion can prepare and flash your SD card directly from the\n"
+            "Flash SD tab.\n\n"
+            "You can choose between Mr. Fusion and SuperStationOne,\n"
+            "download the latest installer image and balena CLI,\n"
+            "then flash your SD card directly from inside the app.\n\n"
             f"{privilege_text}"
         )
         message.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -103,7 +115,7 @@ class SetupNoticeDialog(QDialog):
         layout.addWidget(message)
 
         button_row = QHBoxLayout()
-        self.open_flash_tab_button = QPushButton("Open Flash Mr. Fusion Tab")
+        self.open_flash_tab_button = QPushButton("Open Flash SD Tab")
         self.open_flash_tab_button.clicked.connect(self.open_flash_tab)
 
         button_row.addStretch()

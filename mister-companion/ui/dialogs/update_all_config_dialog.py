@@ -126,7 +126,6 @@ class UpdateAllConfigDialog(QDialog):
         self.gba_borders_check = QCheckBox("Dinierto GBA Borders")
         self.anime0t4ku_wallpapers_check = QCheckBox("Anime0t4ku Wallpapers")
         self.pcn_challenge_wallpapers_check = QCheckBox("PCN Challenge Wallpapers")
-        self.pcn_premium_wallpapers_check = QCheckBox("PCN Premium Member Wallpapers")
         self.ranny_wallpapers_check = QCheckBox("Ranny Snice Wallpapers")
         self.ranny_wallpapers_source_combo = QComboBox()
         self.ranny_wallpapers_source_combo.addItems([
@@ -142,7 +141,6 @@ class UpdateAllConfigDialog(QDialog):
             self.gba_borders_check,
             self.anime0t4ku_wallpapers_check,
             self.pcn_challenge_wallpapers_check,
-            self.pcn_premium_wallpapers_check,
             self.ranny_wallpapers_check,
         ]:
             self._add(extra_group, widget)
@@ -158,9 +156,11 @@ class UpdateAllConfigDialog(QDialog):
         # ===== Community Sources =====
         community_group = self._group("Community Sources")
         self.insert_coin_check = QCheckBox("Insert-Coin")
+        self.pcn_premium_wallpapers_check = QCheckBox("PCN Premium Member Wallpapers")
 
         for widget in [
             self.insert_coin_check,
+            self.pcn_premium_wallpapers_check,
         ]:
             self._add(community_group, widget)
 

@@ -30,12 +30,14 @@ from core.scripts_actions import (
     install_dav_browser,
     install_ftp_save_sync,
     install_migrate_sd,
+    install_static_wallpaper,
     install_update_all,
     install_zaparoo,
     open_scripts_folder_on_host,
     remove_cifs_config,
     remove_dav_browser_config,
     remove_ftp_save_sync_config,
+    remove_static_wallpaper,
     run_cifs_mount,
     run_cifs_umount,
     run_update_all_stream,
@@ -44,12 +46,14 @@ from core.scripts_actions import (
     uninstall_dav_browser,
     uninstall_ftp_save_sync,
     uninstall_migrate_sd,
+    uninstall_static_wallpaper,
     uninstall_update_all,
     uninstall_zaparoo,
 )
 from ui.dialogs.cifs_config_dialog import CifsConfigDialog
 from ui.dialogs.dav_browser_config_dialog import DavBrowserConfigDialog
 from ui.dialogs.ftp_save_sync_config_dialog import FtpSaveSyncConfigDialog
+from ui.dialogs.static_wallpaper_dialog import StaticWallpaperDialog
 from ui.dialogs.update_all_config_dialog import UpdateAllConfigDialog
 
 
@@ -92,6 +96,7 @@ class ScriptsTab(QWidget):
     SCRIPT_AUTO_TIME = "auto_time"
     SCRIPT_DAV_BROWSER = "dav_browser"
     SCRIPT_FTP_SAVE_SYNC = "ftp_save_sync"
+    SCRIPT_STATIC_WALLPAPER = "static_wallpaper"
 
     def __init__(self, main_window):
         super().__init__()
@@ -112,6 +117,7 @@ class ScriptsTab(QWidget):
             self.SCRIPT_AUTO_TIME,
             self.SCRIPT_DAV_BROWSER,
             self.SCRIPT_FTP_SAVE_SYNC,
+            self.SCRIPT_STATIC_WALLPAPER,
         ]
         self.script_titles = {
             self.SCRIPT_UPDATE_ALL: "update_all",
@@ -121,6 +127,7 @@ class ScriptsTab(QWidget):
             self.SCRIPT_AUTO_TIME: "auto_time",
             self.SCRIPT_DAV_BROWSER: "dav_browser",
             self.SCRIPT_FTP_SAVE_SYNC: "ftp_save_sync",
+            self.SCRIPT_STATIC_WALLPAPER: "static_wallpaper",
         }
         self.script_descriptions = {
             self.SCRIPT_UPDATE_ALL: "Install, configure, and run update_all directly from MiSTer Companion.",
@@ -130,6 +137,7 @@ class ScriptsTab(QWidget):
             self.SCRIPT_AUTO_TIME: "Automatically set timezone and current time for your MiSTer.",
             self.SCRIPT_DAV_BROWSER: "Browse a WebDAV server, download ROMs directly to your MiSTer, and optionally launch them after download.",
             self.SCRIPT_FTP_SAVE_SYNC: "Sync MiSTer saves to a remote FTP or SFTP server, with optional savestate syncing and automatic boot-time service startup.",
+            self.SCRIPT_STATIC_WALLPAPER: "Install static_wallpaper, choose a wallpaper from /media/fat/wallpapers with preview, apply it directly from MiSTer Companion, or remove the active static wallpaper.",
         }
         self.script_status_texts = {
             self.SCRIPT_UPDATE_ALL: "Unknown",
@@ -139,6 +147,7 @@ class ScriptsTab(QWidget):
             self.SCRIPT_AUTO_TIME: "Unknown",
             self.SCRIPT_DAV_BROWSER: "Unknown",
             self.SCRIPT_FTP_SAVE_SYNC: "Unknown",
+            self.SCRIPT_STATIC_WALLPAPER: "Unknown",
         }
         self.selected_script_key = self.SCRIPT_UPDATE_ALL
 
@@ -236,6 +245,7 @@ class ScriptsTab(QWidget):
         self.auto_time_actions_widget = self._build_auto_time_actions()
         self.dav_browser_actions_widget = self._build_dav_browser_actions()
         self.ftp_save_sync_actions_widget = self._build_ftp_save_sync_actions()
+        self.static_wallpaper_actions_widget = self._build_static_wallpaper_actions()
 
         self.script_action_widgets = {
             self.SCRIPT_UPDATE_ALL: self.update_actions_widget,
@@ -245,6 +255,7 @@ class ScriptsTab(QWidget):
             self.SCRIPT_AUTO_TIME: self.auto_time_actions_widget,
             self.SCRIPT_DAV_BROWSER: self.dav_browser_actions_widget,
             self.SCRIPT_FTP_SAVE_SYNC: self.ftp_save_sync_actions_widget,
+            self.SCRIPT_STATIC_WALLPAPER: self.static_wallpaper_actions_widget,
         }
 
         for widget in self.script_action_widgets.values():
@@ -326,6 +337,11 @@ class ScriptsTab(QWidget):
         self.disable_ftp_save_sync_service_button.clicked.connect(self.disable_ftp_save_sync_service)
         self.remove_ftp_save_sync_config_button.clicked.connect(self.remove_ftp_save_sync_config)
         self.uninstall_ftp_save_sync_button.clicked.connect(self.uninstall_ftp_save_sync)
+
+        self.install_static_wallpaper_button.clicked.connect(self.install_static_wallpaper)
+        self.set_static_wallpaper_button.clicked.connect(self.set_static_wallpaper)
+        self.remove_static_wallpaper_button.clicked.connect(self.remove_active_static_wallpaper)
+        self.uninstall_static_wallpaper_button.clicked.connect(self.uninstall_static_wallpaper)
 
         self.open_scripts_folder_button.clicked.connect(self.open_scripts_folder)
         self.hide_console_button.clicked.connect(self.toggle_console)
@@ -561,6 +577,40 @@ class ScriptsTab(QWidget):
         widget.setLayout(layout)
         return widget
 
+    def _build_static_wallpaper_actions(self):
+        widget = QWidget()
+        layout = QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+
+        self.install_static_wallpaper_button = QPushButton("Install")
+        self.install_static_wallpaper_button.setFixedWidth(150)
+
+        self.set_static_wallpaper_button = QPushButton("Set Static Wallpaper")
+        self.set_static_wallpaper_button.setFixedWidth(170)
+
+        self.remove_static_wallpaper_button = QPushButton("Remove Static Wallpaper")
+        self.remove_static_wallpaper_button.setFixedWidth(190)
+
+        self.uninstall_static_wallpaper_button = QPushButton("Uninstall")
+        self.uninstall_static_wallpaper_button.setFixedWidth(150)
+
+        layout.addLayout(
+            self._build_button_row(
+                self.install_static_wallpaper_button,
+                self.set_static_wallpaper_button,
+            )
+        )
+        layout.addLayout(
+            self._build_button_row(
+                self.remove_static_wallpaper_button,
+                self.uninstall_static_wallpaper_button,
+            )
+        )
+
+        widget.setLayout(layout)
+        return widget
+
     def _populate_script_list(self):
         self.script_list.clear()
         for script_key in self.script_display_order:
@@ -580,6 +630,7 @@ class ScriptsTab(QWidget):
         return item.data(Qt.ItemDataRole.UserRole)
 
     def on_script_selection_changed(self, current, previous):
+        del previous
         if current is None:
             return
 
@@ -612,6 +663,8 @@ class ScriptsTab(QWidget):
                 self.script_status_label.setStyleSheet("color: #cc8400;")
             else:
                 self.script_status_label.setStyleSheet("color: #00aa00;")
+        elif "active" in lowered:
+            self.script_status_label.setStyleSheet("color: #00aa00;")
         elif "configured" in lowered:
             self.script_status_label.setStyleSheet("color: #00aa00;")
         elif "disabled" in lowered or "not configured" in lowered:
@@ -671,6 +724,10 @@ class ScriptsTab(QWidget):
             self.disable_ftp_save_sync_service_button,
             self.remove_ftp_save_sync_config_button,
             self.uninstall_ftp_save_sync_button,
+            self.install_static_wallpaper_button,
+            self.set_static_wallpaper_button,
+            self.remove_static_wallpaper_button,
+            self.uninstall_static_wallpaper_button,
             self.open_scripts_folder_button,
         ]:
             button.setEnabled(False)
@@ -682,6 +739,7 @@ class ScriptsTab(QWidget):
         self.script_status_texts[self.SCRIPT_AUTO_TIME] = "Unknown"
         self.script_status_texts[self.SCRIPT_DAV_BROWSER] = "Unknown"
         self.script_status_texts[self.SCRIPT_FTP_SAVE_SYNC] = "Unknown"
+        self.script_status_texts[self.SCRIPT_STATIC_WALLPAPER] = "Unknown"
 
         self.update_script_list_labels()
         self.update_details_panel()
@@ -835,6 +893,31 @@ class ScriptsTab(QWidget):
             self.disable_ftp_save_sync_service_button.setEnabled(True)
             self.remove_ftp_save_sync_config_button.setEnabled(True)
             self.uninstall_ftp_save_sync_button.setEnabled(True)
+
+        if not status.static_wallpaper_installed:
+            self.script_status_texts[self.SCRIPT_STATIC_WALLPAPER] = "✗ Not installed"
+            self.install_static_wallpaper_button.setEnabled(True)
+            self.set_static_wallpaper_button.setEnabled(False)
+            self.remove_static_wallpaper_button.setEnabled(False)
+            self.uninstall_static_wallpaper_button.setEnabled(False)
+        elif status.static_wallpaper_active:
+            self.script_status_texts[self.SCRIPT_STATIC_WALLPAPER] = "✓ Installed, wallpaper active"
+            self.install_static_wallpaper_button.setEnabled(False)
+            self.set_static_wallpaper_button.setEnabled(True)
+            self.remove_static_wallpaper_button.setEnabled(True)
+            self.uninstall_static_wallpaper_button.setEnabled(True)
+        elif status.static_wallpaper_saved:
+            self.script_status_texts[self.SCRIPT_STATIC_WALLPAPER] = "⚙ Installed, selection saved"
+            self.install_static_wallpaper_button.setEnabled(False)
+            self.set_static_wallpaper_button.setEnabled(True)
+            self.remove_static_wallpaper_button.setEnabled(False)
+            self.uninstall_static_wallpaper_button.setEnabled(True)
+        else:
+            self.script_status_texts[self.SCRIPT_STATIC_WALLPAPER] = "✓ Installed"
+            self.install_static_wallpaper_button.setEnabled(False)
+            self.set_static_wallpaper_button.setEnabled(True)
+            self.remove_static_wallpaper_button.setEnabled(False)
+            self.uninstall_static_wallpaper_button.setEnabled(True)
 
         self.open_scripts_folder_button.setEnabled(True)
 
@@ -1342,6 +1425,69 @@ class ScriptsTab(QWidget):
 
         uninstall_ftp_save_sync(self.connection)
         self.refresh_status()
+
+    def install_static_wallpaper(self):
+        if not self.connection.is_connected():
+            return
+
+        def task(log):
+            install_static_wallpaper(self.connection, log)
+
+        self.start_worker(task, "static_wallpaper installed successfully.")
+
+    def set_static_wallpaper(self):
+        if not self.connection.is_connected():
+            return
+
+        dialog = StaticWallpaperDialog(self.connection, self)
+        if dialog.exec():
+            self.refresh_status()
+
+    def remove_active_static_wallpaper(self):
+        if not self.connection.is_connected():
+            return
+
+        confirm = QMessageBox.question(
+            self,
+            "Remove Static Wallpaper",
+            "This will remove the active static wallpaper (menu.jpg/menu.png) and reload the MiSTer menu.\n\nContinue?",
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+
+        try:
+            remove_static_wallpaper(self.connection, reload_menu=True)
+            QMessageBox.information(
+                self,
+                "Static Wallpaper Removed",
+                "The active static wallpaper has been removed.\n\nThe MiSTer menu has been reloaded.",
+            )
+            self.refresh_status()
+        except Exception as e:
+            QMessageBox.critical(self, "Error", str(e))
+
+    def uninstall_static_wallpaper(self):
+        if not self.connection.is_connected():
+            return
+
+        confirm = QMessageBox.question(
+            self,
+            "Uninstall static_wallpaper",
+            "This will uninstall static_wallpaper, remove its config folder, remove menu.jpg/menu.png, and disable the current static wallpaper.\n\nContinue?",
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+
+        try:
+            uninstall_static_wallpaper(self.connection)
+            QMessageBox.information(
+                self,
+                "static_wallpaper Removed",
+                "static_wallpaper has been removed.",
+            )
+            self.refresh_status()
+        except Exception as e:
+            QMessageBox.critical(self, "Error", str(e))
 
     def open_scripts_folder(self):
         host = self.connection.host

@@ -5,10 +5,10 @@
       "id": "v3-stable",
       "date": "2026-04-07",
       "type": "update",
-      "headline": "MiSTer Companion v3.1.2 Released",
-      "message": "MiSTer Companion v3.1.2 is now available.\n\nThis update includes a fix for the Arcade Organizer setting, which now correctly creates and removes its required configuration file on the MiSTer. The setting state is also now properly detected based on the actual file.\n\nInsert-Coin has also been moved to a new Community Sources category to better reflect its unofficial status.\n\nYou can download the latest stable release below.",
-      "url": "https://github.com/Anime0t4ku/mister-companion/releases/tag/v3.1.2",
-      "url_label": "Download v3.1.2"
+      "headline": "MiSTer Companion v3.2.0 Released",
+      "message": "MiSTer Companion v3.2.0 is now available.\n\nThe Flash Mr. Fusion tab has been renamed to Flash SD and now includes support for the SuperStation One SD installer.\n\nA new Static Wallpaper script has been added and is now fully integrated into the Scripts tab, making it easier to manage wallpapers directly from the app.\n\nThis update also includes stability improvements and bug fixes to better prevent crashes.\n\nYou can download the latest stable release below.",
+      "url": "https://github.com/Anime0t4ku/mister-companion/releases/tag/v3.2.0",
+      "url_label": "Download v3.2.0"
     },
     {
       "id": "macos-support",

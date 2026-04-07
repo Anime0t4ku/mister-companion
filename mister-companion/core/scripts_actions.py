@@ -1,4 +1,5 @@
 import os
+import shlex
 import subprocess
 import sys
 import zipfile
@@ -17,6 +18,7 @@ AUTO_TIME_URL = "https://raw.githubusercontent.com/Anime0t4ku/0t4ku-mister-scrip
 DAV_BROWSER_URL = "https://raw.githubusercontent.com/Anime0t4ku/0t4ku-mister-scripts/main/Scripts/dav_browser.sh"
 FTP_SAVE_SYNC_URL = "https://raw.githubusercontent.com/Anime0t4ku/0t4ku-mister-scripts/refs/heads/main/Scripts/ftp_save_sync.sh"
 FTP_SAVE_SYNC_RCLONE_URL = "https://downloads.rclone.org/rclone-current-linux-arm.zip"
+STATIC_WALLPAPER_URL = "https://raw.githubusercontent.com/Anime0t4ku/0t4ku-mister-scripts/main/Scripts/static_wallpaper.sh"
 
 UPDATE_ALL_JSON_PATH = "/media/fat/Scripts/.config/update_all/update_all.json"
 DOWNLOADER_INI_PATH = "/media/fat/downloader.ini"
@@ -32,6 +34,14 @@ FTP_SAVE_SYNC_DAEMON_LINE = "/media/fat/Scripts/.config/ftp_save_sync/ftp_save_s
 FTP_SAVE_SYNC_RCLONE_PATH = "/media/fat/Scripts/.config/ftp_save_sync/rclone"
 FTP_SAVE_SYNC_LOG_PATH = "/media/fat/Scripts/.config/ftp_save_sync/ftp_save_sync.log"
 FTP_SAVE_SYNC_STATE_PATH = "/media/fat/Scripts/.config/ftp_save_sync/ftp_save_sync_state.db"
+
+STATIC_WALLPAPER_SCRIPT_PATH = "/media/fat/Scripts/static_wallpaper.sh"
+STATIC_WALLPAPER_CONFIG_DIR = "/media/fat/Scripts/.config/static_wallpaper"
+STATIC_WALLPAPER_CONFIG_PATH = "/media/fat/Scripts/.config/static_wallpaper/selected_wallpaper.txt"
+STATIC_WALLPAPER_DIR = "/media/fat/wallpapers"
+STATIC_WALLPAPER_TARGET_JPG = "/media/fat/menu.jpg"
+STATIC_WALLPAPER_TARGET_PNG = "/media/fat/menu.png"
+MISTER_MENU_RELOAD_CMD = 'echo "load_core /media/fat/menu.rbf" > /dev/MiSTer_cmd'
 
 DEFAULT_UPDATE_ALL_JSON = """{"migration_version": 6, "theme": "Blue Installer", "mirror": "", "countdown_time": 15, "log_viewer": true, "use_settings_screen_theme_in_log_viewer": true, "autoreboot": true, "download_beta_cores": false, "names_region": "JP", "names_char_code": "CHAR18", "names_sort_code": "Common", "introduced_arcade_names_txt": true, "pocket_firmware_update": false, "pocket_backup": false, "timeline_after_logs": true, "overscan": "medium", "monochrome_ui": false}
 """
@@ -520,6 +530,9 @@ class ScriptsStatus:
     ftp_save_sync_installed: bool
     ftp_save_sync_configured: bool
     ftp_save_sync_service_enabled: bool
+    static_wallpaper_installed: bool
+    static_wallpaper_active: bool
+    static_wallpaper_saved: bool
 
 
 def ensure_remote_scripts_dir(connection):
@@ -527,6 +540,7 @@ def ensure_remote_scripts_dir(connection):
     connection.run_command("mkdir -p /media/fat/Scripts/.config/update_all")
     connection.run_command("mkdir -p /media/fat/Scripts/.config/dav_browser")
     connection.run_command(f"mkdir -p {FTP_SAVE_SYNC_CONFIG_DIR}")
+    connection.run_command(f"mkdir -p {STATIC_WALLPAPER_CONFIG_DIR}")
 
 
 def _remote_file_exists(sftp, path):
@@ -551,6 +565,24 @@ def _write_remote_text(connection, path, text):
     try:
         with sftp.open(path, "w") as remote_file:
             remote_file.write(text)
+    finally:
+        sftp.close()
+
+
+def _read_remote_bytes(connection, path):
+    sftp = connection.client.open_sftp()
+    try:
+        with sftp.open(path, "rb") as remote_file:
+            return remote_file.read()
+    finally:
+        sftp.close()
+
+
+def _read_remote_text(connection, path):
+    sftp = connection.client.open_sftp()
+    try:
+        with sftp.open(path, "r") as remote_file:
+            return remote_file.read()
     finally:
         sftp.close()
 
@@ -666,10 +698,87 @@ def is_ftp_save_sync_service_enabled(connection) -> bool:
     return bool(check and "ftp_save_sync_daemon.sh" in check)
 
 
+def reload_mister_menu(connection):
+    if not connection.is_connected():
+        raise RuntimeError("Not connected to MiSTer.")
+    connection.run_command(MISTER_MENU_RELOAD_CMD)
+
+
+def is_static_wallpaper_active(connection) -> bool:
+    if not connection.is_connected():
+        return False
+
+    jpg_check = connection.run_command(
+        f"test -f {STATIC_WALLPAPER_TARGET_JPG} && echo EXISTS"
+    )
+    png_check = connection.run_command(
+        f"test -f {STATIC_WALLPAPER_TARGET_PNG} && echo EXISTS"
+    )
+    return ("EXISTS" in (jpg_check or "")) or ("EXISTS" in (png_check or ""))
+
+
+def has_static_wallpaper_saved_selection(connection) -> bool:
+    if not connection.is_connected():
+        return False
+
+    check = connection.run_command(
+        f"test -f {STATIC_WALLPAPER_CONFIG_PATH} && echo EXISTS"
+    )
+    return "EXISTS" in (check or "")
+
+
+def get_static_wallpaper_saved_selection(connection) -> str:
+    if not connection.is_connected():
+        return ""
+
+    output = connection.run_command(f"cat {STATIC_WALLPAPER_CONFIG_PATH} 2>/dev/null")
+    return (output or "").strip()
+
+
+def get_static_wallpaper_state(connection) -> dict:
+    if not connection.is_connected():
+        return {
+            "installed": False,
+            "active": False,
+            "active_target": "",
+            "saved": False,
+            "saved_path": "",
+            "saved_name": "",
+        }
+
+    installed_check = connection.run_command(
+        f"test -f {STATIC_WALLPAPER_SCRIPT_PATH} && echo EXISTS"
+    )
+    jpg_check = connection.run_command(
+        f"test -f {STATIC_WALLPAPER_TARGET_JPG} && echo EXISTS"
+    )
+    png_check = connection.run_command(
+        f"test -f {STATIC_WALLPAPER_TARGET_PNG} && echo EXISTS"
+    )
+    saved_path = get_static_wallpaper_saved_selection(connection)
+
+    active_target = ""
+    if "EXISTS" in (jpg_check or ""):
+        active_target = "menu.jpg"
+    elif "EXISTS" in (png_check or ""):
+        active_target = "menu.png"
+
+    return {
+        "installed": "EXISTS" in (installed_check or ""),
+        "active": bool(active_target),
+        "active_target": active_target,
+        "saved": bool(saved_path),
+        "saved_path": saved_path,
+        "saved_name": os.path.basename(saved_path) if saved_path else "",
+    }
+
+
 def get_scripts_status(connection) -> ScriptsStatus:
     if not connection.is_connected():
         return ScriptsStatus(
-            False, False, False, False, False, False, False, False, False, False, False, False, False
+            False, False, False, False, False, False, False,
+            False, False, False, False, False, False,
+            False, False, False
         )
 
     update_check = connection.run_command(
@@ -729,6 +838,13 @@ def get_scripts_status(connection) -> ScriptsStatus:
         is_ftp_save_sync_service_enabled(connection) if ftp_save_sync_installed else False
     )
 
+    static_wallpaper_script_check = connection.run_command(
+        f"test -f {STATIC_WALLPAPER_SCRIPT_PATH} && echo EXISTS"
+    )
+    static_wallpaper_installed = "EXISTS" in (static_wallpaper_script_check or "")
+    static_wallpaper_active = is_static_wallpaper_active(connection)
+    static_wallpaper_saved = has_static_wallpaper_saved_selection(connection)
+
     return ScriptsStatus(
         update_all_installed=update_all_installed,
         update_all_initialized=check_update_all_initialized(connection) if update_all_installed else False,
@@ -743,6 +859,9 @@ def get_scripts_status(connection) -> ScriptsStatus:
         ftp_save_sync_installed=ftp_save_sync_installed,
         ftp_save_sync_configured=ftp_save_sync_configured,
         ftp_save_sync_service_enabled=ftp_save_sync_service_enabled,
+        static_wallpaper_installed=static_wallpaper_installed,
+        static_wallpaper_active=static_wallpaper_active,
+        static_wallpaper_saved=static_wallpaper_saved,
     )
 
 
@@ -1199,6 +1318,116 @@ def disable_ftp_save_sync_service(connection):
     connection.run_command(
         f"sed -i '/# ftp_save_sync START/,/# ftp_save_sync END/d' {FTP_SAVE_SYNC_STARTUP_PATH} 2>/dev/null"
     )
+
+
+def install_static_wallpaper(connection, log):
+    if not connection.is_connected():
+        raise RuntimeError("Not connected to MiSTer.")
+
+    log("Installing static_wallpaper...\n")
+    script_data = requests.get(STATIC_WALLPAPER_URL, timeout=30).content
+
+    ensure_remote_scripts_dir(connection)
+    _write_remote_bytes(connection, STATIC_WALLPAPER_SCRIPT_PATH, script_data)
+
+    connection.run_command(f"chmod +x {STATIC_WALLPAPER_SCRIPT_PATH}")
+    connection.run_command(f"mkdir -p {STATIC_WALLPAPER_CONFIG_DIR}")
+    log("static_wallpaper installed successfully.\n")
+
+
+def uninstall_static_wallpaper(connection):
+    if not connection.is_connected():
+        raise RuntimeError("Not connected to MiSTer.")
+
+    connection.run_command(f"rm -f {STATIC_WALLPAPER_SCRIPT_PATH}")
+    connection.run_command(f"rm -rf {STATIC_WALLPAPER_CONFIG_DIR}")
+    connection.run_command(f"rm -f {STATIC_WALLPAPER_TARGET_JPG}")
+    connection.run_command(f"rm -f {STATIC_WALLPAPER_TARGET_PNG}")
+
+
+def remove_static_wallpaper(connection, reload_menu=True):
+    if not connection.is_connected():
+        raise RuntimeError("Not connected to MiSTer.")
+
+    connection.run_command(f"rm -f {STATIC_WALLPAPER_TARGET_JPG}")
+    connection.run_command(f"rm -f {STATIC_WALLPAPER_TARGET_PNG}")
+    connection.run_command("sync")
+
+    if reload_menu:
+        reload_mister_menu(connection)
+
+
+def list_static_wallpapers(connection):
+    if not connection.is_connected():
+        raise RuntimeError("Not connected to MiSTer.")
+
+    cmd = (
+        f'find {STATIC_WALLPAPER_DIR} -maxdepth 1 -type f '
+        r'\( -iname "*.png" -o -iname "*.jpg" -o -iname "*.jpeg" \) | sort'
+    )
+    output = connection.run_command(cmd)
+    lines = [line.strip() for line in (output or "").splitlines() if line.strip()]
+
+    wallpapers = []
+    for path in lines:
+        wallpapers.append(
+            {
+                "name": os.path.basename(path),
+                "path": path,
+            }
+        )
+
+    return wallpapers
+
+
+def get_static_wallpaper_preview_bytes(connection, remote_path):
+    if not connection.is_connected():
+        raise RuntimeError("Not connected to MiSTer.")
+
+    if not remote_path:
+        raise RuntimeError("No wallpaper path provided.")
+
+    quoted_path = shlex.quote(remote_path)
+    check = connection.run_command(f"test -f {quoted_path} && echo EXISTS")
+    if "EXISTS" not in (check or ""):
+        raise RuntimeError("Wallpaper file not found on MiSTer.")
+
+    return _read_remote_bytes(connection, remote_path)
+
+
+def apply_static_wallpaper(connection, wallpaper_path, reload_menu=True):
+    if not connection.is_connected():
+        raise RuntimeError("Not connected to MiSTer.")
+
+    if not wallpaper_path:
+        raise RuntimeError("No wallpaper selected.")
+
+    ext = os.path.splitext(wallpaper_path)[1].lower()
+    quoted_src = shlex.quote(wallpaper_path)
+    quoted_cfg = shlex.quote(STATIC_WALLPAPER_CONFIG_PATH)
+
+    ensure_remote_scripts_dir(connection)
+
+    exists_check = connection.run_command(f"test -f {quoted_src} && echo EXISTS")
+    if "EXISTS" not in (exists_check or ""):
+        raise RuntimeError("Selected wallpaper no longer exists on MiSTer.")
+
+    if ext in {".jpg", ".jpeg"}:
+        connection.run_command(f"rm -f {STATIC_WALLPAPER_TARGET_PNG}")
+        connection.run_command(f"cp {quoted_src} {STATIC_WALLPAPER_TARGET_JPG}")
+        connection.run_command(f"rm -f {STATIC_WALLPAPER_TARGET_PNG}")
+    elif ext == ".png":
+        connection.run_command(f"rm -f {STATIC_WALLPAPER_TARGET_JPG}")
+        connection.run_command(f"cp {quoted_src} {STATIC_WALLPAPER_TARGET_PNG}")
+        connection.run_command(f"rm -f {STATIC_WALLPAPER_TARGET_JPG}")
+    else:
+        raise RuntimeError("Unsupported wallpaper format. Use PNG, JPG, or JPEG.")
+
+    connection.run_command(f"printf %s {quoted_src} > {quoted_cfg}")
+    connection.run_command("sync")
+
+    if reload_menu:
+        reload_mister_menu(connection)
 
 
 def open_scripts_folder_on_host(ip, username="root", password="1"):
