@@ -32,6 +32,7 @@ from ui.dialogs.network_scanner_dialog import NetworkScannerDialog
 from ui.dialogs.setup_notice_dialog import SetupNoticeDialog
 from ui.tabs.connection_tab import ConnectionTab
 from ui.tabs.device_tab import DeviceTab
+from ui.tabs.extras_tab import ExtrasTab
 from ui.tabs.flash_tab import FlashTab
 from ui.tabs.mister_settings_tab import MiSTerSettingsTab
 from ui.tabs.savemanager_tab import SaveManagerTab
@@ -65,7 +66,7 @@ class MainWindow(QMainWindow):
 
         self._closing = False
 
-        self.setWindowTitle("MiSTer Companion v3.3.0 By Anime0t4ku")
+        self.setWindowTitle("MiSTer Companion v3.4.0 Pre-Release-1 By Anime0t4ku")
         self.resize(900, 900)
 
         if ICON_PATH.exists():
@@ -129,6 +130,9 @@ class MainWindow(QMainWindow):
 
         self.wallpapers_tab = WallpapersTab(self)
         self.tabs.addTab(self.wallpapers_tab, "Wallpapers")
+
+        self.extras_tab = ExtrasTab(self)
+        self.tabs.addTab(self.extras_tab, "Extras")
 
         self.tabs.setCurrentWidget(self.connection_tab)
         self.tabs.currentChanged.connect(self.on_tab_changed)
@@ -246,6 +250,9 @@ class MainWindow(QMainWindow):
         if hasattr(self, "scripts_tab"):
             self.scripts_tab.update_connection_state()
 
+        if hasattr(self, "extras_tab"):
+            self.extras_tab.update_connection_state()
+
         if hasattr(self, "zapscripts_tab"):
             self.zapscripts_tab.update_connection_state()
 
@@ -278,6 +285,11 @@ class MainWindow(QMainWindow):
         if hasattr(self, "scripts_tab"):
             if current_widget is self.scripts_tab and self.connection.is_connected():
                 self.scripts_tab.refresh_status()
+                return
+
+        if hasattr(self, "extras_tab"):
+            if current_widget is self.extras_tab and self.connection.is_connected():
+                self.extras_tab.refresh_status()
                 return
 
         if hasattr(self, "zapscripts_tab"):
@@ -517,6 +529,7 @@ class MainWindow(QMainWindow):
         self.set_connection_status(f"Status: Connected to {host}")
         self.connection_tab.apply_connected_state()
         self.update_all_tab_states()
+        self.refresh_current_tab()
 
     def disconnect_from_mister(self):
         try:
