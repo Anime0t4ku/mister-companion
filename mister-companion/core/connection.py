@@ -31,7 +31,9 @@ class MiSTerConnection:
                 hostname=host,
                 username=username,
                 password=password,
-                timeout=5
+                timeout=5,
+                allow_agent=False,
+                look_for_keys=False,
             )
 
             transport = self.client.get_transport()

@@ -229,7 +229,29 @@ class WallpapersTab(QWidget):
             self.apply_disconnected_state()
             return
 
-        self.refresh_status()
+        if self.current_worker is not None and self.current_worker.isRunning():
+            return
+
+        self.install_169_button.setText("Install 16:9 Wallpapers")
+        self.install_43_button.setText("Install 4:3 Wallpapers")
+        self.install_pcn_button.setText("Install Wallpapers")
+        self.install_pcn_premium_button.setText("Install Wallpapers")
+        self.install_ot4ku_button.setText("Install Wallpapers")
+
+        self.install_169_button.setEnabled(False)
+        self.install_43_button.setEnabled(False)
+        self.remove_ranny_button.setEnabled(False)
+
+        self.install_pcn_button.setEnabled(False)
+        self.remove_pcn_button.setEnabled(False)
+
+        self.install_pcn_premium_button.setEnabled(False)
+        self.remove_pcn_premium_button.setEnabled(False)
+
+        self.install_ot4ku_button.setEnabled(False)
+        self.remove_ot4ku_button.setEnabled(False)
+
+        self.open_wallpaper_folder_button.setEnabled(True)
 
     def apply_disconnected_state(self):
         self.install_169_button.setText("Install 16:9 Wallpapers")

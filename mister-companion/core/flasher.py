@@ -312,6 +312,12 @@ def _extract_archive(
 
     _log(log_callback, f"Finished extracting {archive_path.name}")
 
+    try:
+        archive_path.unlink()
+        _log(log_callback, f"Removed archive: {archive_path.name}")
+    except FileNotFoundError:
+        pass
+
 
 def _make_executable(path: Path) -> None:
     if not path.exists():
@@ -387,6 +393,24 @@ def get_superstation_image() -> Path:
         return image
 
     raise RuntimeError("SuperStation image not found. Download it first.")
+
+
+def remove_balena_cli(log_callback: LogCallback | None = None) -> None:
+    ensure_tools_dirs(log_callback)
+    _clear_directory_contents(BALENA_DIR)
+    _log(log_callback, "Removed balena CLI files.")
+
+
+def remove_mr_fusion_image(log_callback: LogCallback | None = None) -> None:
+    ensure_tools_dirs(log_callback)
+    _clear_directory_contents(MR_FUSION_DIR)
+    _log(log_callback, "Removed Mr. Fusion files.")
+
+
+def remove_superstation_image(log_callback: LogCallback | None = None) -> None:
+    ensure_tools_dirs(log_callback)
+    _clear_directory_contents(SUPERSTATION_DIR)
+    _log(log_callback, "Removed SuperStation files.")
 
 
 def _select_balena_asset(release_data: dict) -> dict:

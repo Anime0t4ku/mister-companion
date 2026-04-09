@@ -3,12 +3,12 @@
   "items": [
     {
       "id": "v3-stable",
-      "date": "2026-04-07",
+      "date": "2026-04-09",
       "type": "update",
-      "headline": "MiSTer Companion v3.2.0 Released",
-      "message": "MiSTer Companion v3.2.0 is now available.\n\nThe Flash Mr. Fusion tab has been renamed to Flash SD and now includes support for the SuperStation One SD installer.\n\nA new Static Wallpaper script has been added and is now fully integrated into the Scripts tab, making it easier to manage wallpapers directly from the app.\n\nThis update also includes stability improvements and bug fixes to better prevent crashes.\n\nYou can download the latest stable release below.",
-      "url": "https://github.com/Anime0t4ku/mister-companion/releases/tag/v3.2.0",
-      "url_label": "Download v3.2.0"
+      "headline": "MiSTer Companion v3.3.0 Released",
+      "message": "MiSTer Companion v3.3.0 is now available.\n\nThis update improves performance with faster connection times and a more responsive tab-based workflow.\n\nThe Flash SD tab has been enhanced with cleanup options and automatic removal of installer archives.\n\nStability has been improved across the app, along with fixes for unexpected crashes and SSH connection issues.\n\nYou can download the latest stable release below.",
+      "url": "https://github.com/Anime0t4ku/mister-companion/releases/tag/v3.3.0",
+      "url_label": "Download v3.3.0"
     },
     {
       "id": "macos-support",

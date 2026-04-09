@@ -209,9 +209,10 @@ class DeviceTab(QWidget):
     def update_connection_state(self):
         if self.connection.is_connected():
             self.apply_connected_state()
-            self.refresh_info()
             if self.isVisible():
                 self.refresh_timer.start()
+            else:
+                self.refresh_timer.stop()
         else:
             self.apply_disconnected_state()
             self.refresh_timer.stop()

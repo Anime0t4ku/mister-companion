@@ -688,12 +688,17 @@ class ScriptsTab(QWidget):
     def update_connection_state(self):
         if self.connection.is_connected():
             self.apply_connected_state()
-            self.refresh_status()
         else:
             self.apply_disconnected_state()
 
     def apply_connected_state(self):
-        self.refresh_status()
+        if self.current_worker is not None and self.current_worker.isRunning():
+            return
+
+        self.open_scripts_folder_button.setEnabled(True)
+
+        # Leave detailed per-script button states untouched here.
+        # They are populated by refresh_status() when the tab is opened.
 
     def apply_disconnected_state(self):
         for button in [

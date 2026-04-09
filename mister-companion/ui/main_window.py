@@ -65,7 +65,7 @@ class MainWindow(QMainWindow):
 
         self._closing = False
 
-        self.setWindowTitle("MiSTer Companion v3.2.0 By Anime0t4ku")
+        self.setWindowTitle("MiSTer Companion v3.3.0 By Anime0t4ku")
         self.resize(900, 900)
 
         if ICON_PATH.exists():
@@ -258,11 +258,11 @@ class MainWindow(QMainWindow):
         if hasattr(self, "flash_tab"):
             self.flash_tab.update_connection_state()
 
-    def on_tab_changed(self, index):
+    def refresh_current_tab(self):
         if self._closing:
             return
 
-        current_widget = self.tabs.widget(index)
+        current_widget = self.tabs.currentWidget()
 
         if hasattr(self, "mister_settings_tab"):
             if current_widget is self.mister_settings_tab and self.connection.is_connected():
@@ -288,6 +288,7 @@ class MainWindow(QMainWindow):
         if hasattr(self, "savemanager_tab"):
             if current_widget is self.savemanager_tab:
                 self.savemanager_tab.update_connection_state()
+                return
 
         if hasattr(self, "wallpapers_tab"):
             if current_widget is self.wallpapers_tab and self.connection.is_connected():
@@ -298,6 +299,11 @@ class MainWindow(QMainWindow):
             if current_widget is self.flash_tab:
                 self.flash_tab.update_connection_state()
                 return
+
+    def on_tab_changed(self, index):
+        if self._closing:
+            return
+        self.refresh_current_tab()
 
     def check_connection_status(self):
         if self._closing:

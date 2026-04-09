@@ -37,8 +37,7 @@ class ConnectionTab(QWidget):
 
         self.init_ui()
         self.connect_signals()
-        self.apply_disconnected_state()
-        self.sync_status_from_main_window()
+        self.update_connection_state()
         self.load_news_widget()
 
     def init_ui(self):

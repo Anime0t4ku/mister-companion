@@ -203,9 +203,17 @@ class ZapScriptsTab(QWidget):
 
     def update_connection_state(self):
         if self.connection.is_connected():
-            self.refresh_status()
+            self.apply_connected_state()
         else:
             self.apply_disconnected_state()
+
+    def apply_connected_state(self):
+        if self.current_worker is not None and self.current_worker.isRunning():
+            return
+
+        self.info_label.setText("Open this tab to load Zaparoo scripts.")
+        self.info_label.setStyleSheet("color: gray;")
+        self.set_buttons_enabled(False)
 
     def apply_disconnected_state(self):
         self.info_label.setText("Connect to a MiSTer device to load Zaparoo scripts.")

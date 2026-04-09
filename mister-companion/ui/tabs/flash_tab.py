@@ -24,8 +24,12 @@ from core.flasher import (
     get_superstation_image_status,
     has_balena_cli,
     has_mr_fusion_image,
+    has_superstation_image,
     is_flash_supported,
     list_available_drives,
+    remove_balena_cli,
+    remove_mr_fusion_image,
+    remove_superstation_image,
 )
 
 
@@ -125,13 +129,6 @@ class FlashTab(QWidget):
         self.privileges_label.setStyleSheet("color: #f39c12; font-weight: bold;")
         group_layout.addWidget(self.privileges_label)
 
-        self.macos_label = QLabel("Flash SD is not available on macOS yet.")
-        self.macos_label.setWordWrap(True)
-        self.macos_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.macos_label.setStyleSheet("color: orange; font-weight: bold;")
-        self.macos_label.setVisible(False)
-        group_layout.addWidget(self.macos_label)
-
         status_group = QGroupBox("Status")
         status_layout = QVBoxLayout(status_group)
         status_layout.setContentsMargins(12, 12, 12, 12)
@@ -165,10 +162,15 @@ class FlashTab(QWidget):
         downloads_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self.download_image_button = QPushButton("Download Image")
+        self.remove_image_button = QPushButton("Remove Image")
         self.download_balena_button = QPushButton("Download balena CLI")
+        self.remove_balena_button = QPushButton("Remove balena CLI")
 
         downloads_layout.addWidget(self.download_image_button)
+        downloads_layout.addWidget(self.remove_image_button)
+        downloads_layout.addSpacing(16)
         downloads_layout.addWidget(self.download_balena_button)
+        downloads_layout.addWidget(self.remove_balena_button)
 
         group_layout.addWidget(downloads_group)
 
@@ -237,7 +239,9 @@ class FlashTab(QWidget):
 
         self.mode_combo.currentIndexChanged.connect(self.on_mode_changed)
         self.download_image_button.clicked.connect(self.download_selected_image)
+        self.remove_image_button.clicked.connect(self.remove_selected_image)
         self.download_balena_button.clicked.connect(self.download_balena)
+        self.remove_balena_button.clicked.connect(self.remove_balena)
         self.refresh_drives_button.clicked.connect(self.refresh_drives)
         self.flash_button.clicked.connect(self.start_flash)
         self.toggle_log_button.clicked.connect(self.toggle_log)
@@ -245,7 +249,9 @@ class FlashTab(QWidget):
 
         if not is_flash_supported():
             self.download_image_button.setEnabled(False)
+            self.remove_image_button.setEnabled(False)
             self.download_balena_button.setEnabled(False)
+            self.remove_balena_button.setEnabled(False)
             self.refresh_drives_button.setEnabled(False)
             self.flash_button.setEnabled(False)
             self.drive_combo.setEnabled(False)
@@ -280,12 +286,14 @@ class FlashTab(QWidget):
             )
             self.image_status_title.setText("Mr. Fusion image:")
             self.download_image_button.setText("Download Mr. Fusion")
+            self.remove_image_button.setText("Remove Mr. Fusion")
         else:
             self.info_label.setText(
                 "Follow the steps below to prepare and flash a SuperStationOne SD Card Installer image."
             )
             self.image_status_title.setText("SuperStation image:")
             self.download_image_button.setText("Download SuperStation Installer")
+            self.remove_image_button.setText("Remove SuperStation Installer")
 
     def refresh_status(self):
         self.update_mode_ui()
@@ -303,11 +311,15 @@ class FlashTab(QWidget):
 
                 self.download_image_button.setText("Download Mr. Fusion")
                 self.download_image_button.setEnabled(False)
+                self.remove_image_button.setEnabled(
+                    is_flash_supported() and self.current_worker is None and has_mr_fusion_image()
+                )
             else:
                 self._set_not_downloaded_status(self.image_status_label)
                 self.download_image_button.setText("Download Mr. Fusion")
                 if is_flash_supported() and self.current_worker is None:
                     self.download_image_button.setEnabled(True)
+                self.remove_image_button.setEnabled(False)
 
         else:
             try:
@@ -332,6 +344,7 @@ class FlashTab(QWidget):
                 self.download_image_button.setText("Download SuperStation Installer")
                 if is_flash_supported() and self.current_worker is None:
                     self.download_image_button.setEnabled(True)
+                self.remove_image_button.setEnabled(False)
             else:
                 if update_available:
                     label_text = "Update available"
@@ -344,6 +357,9 @@ class FlashTab(QWidget):
                     self.download_image_button.setText("Update")
                     if is_flash_supported() and self.current_worker is None:
                         self.download_image_button.setEnabled(True)
+                    self.remove_image_button.setEnabled(
+                        is_flash_supported() and self.current_worker is None
+                    )
                 else:
                     ready_text = f"Ready ({local_name})" if local_name else "Ready"
 
@@ -354,14 +370,21 @@ class FlashTab(QWidget):
 
                     self.download_image_button.setText("Download SuperStation Installer")
                     self.download_image_button.setEnabled(False)
+                    self.remove_image_button.setEnabled(
+                        is_flash_supported() and self.current_worker is None and has_superstation_image()
+                    )
 
         if has_balena_cli():
             self._set_ready_status(self.balena_status_label)
             self.download_balena_button.setEnabled(False)
+            self.remove_balena_button.setEnabled(
+                is_flash_supported() and self.current_worker is None
+            )
         else:
             self._set_not_downloaded_status(self.balena_status_label)
             if is_flash_supported() and self.current_worker is None:
                 self.download_balena_button.setEnabled(True)
+            self.remove_balena_button.setEnabled(False)
 
     def selected_image_ready(self):
         if self.is_mr_fusion_mode():
@@ -385,7 +408,9 @@ class FlashTab(QWidget):
     def update_connection_state(self):
         if not is_flash_supported():
             self.download_image_button.setEnabled(False)
+            self.remove_image_button.setEnabled(False)
             self.download_balena_button.setEnabled(False)
+            self.remove_balena_button.setEnabled(False)
             self.refresh_drives_button.setEnabled(False)
             self.flash_button.setEnabled(False)
             self.drive_combo.setEnabled(False)
@@ -439,7 +464,9 @@ class FlashTab(QWidget):
 
         if busy:
             self.download_image_button.setEnabled(False)
+            self.remove_image_button.setEnabled(False)
             self.download_balena_button.setEnabled(False)
+            self.remove_balena_button.setEnabled(False)
             self.flash_button.setEnabled(False)
             return
 
@@ -535,6 +562,51 @@ class FlashTab(QWidget):
             ensure_balena_cli(force_download=True, log_callback=log)
 
         self.start_worker(task, success_message="balena CLI download complete.")
+
+    def remove_selected_image(self):
+        if self.is_mr_fusion_mode():
+            title = "Remove Mr. Fusion"
+            text = (
+                "This will remove the downloaded Mr. Fusion image files from the tools folder.\n\n"
+                "Do you want to continue?"
+            )
+        else:
+            title = "Remove SuperStation image"
+            text = (
+                "This will remove the downloaded SuperStation image files from the tools folder.\n\n"
+                "Do you want to continue?"
+            )
+
+        confirm = QMessageBox.question(self, title, text)
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+
+        def task(log):
+            if self.is_mr_fusion_mode():
+                remove_mr_fusion_image(log_callback=log)
+            else:
+                remove_superstation_image(log_callback=log)
+
+        success_message = (
+            "Mr. Fusion files removed."
+            if self.is_mr_fusion_mode()
+            else "SuperStation files removed."
+        )
+        self.start_worker(task, success_message=success_message)
+
+    def remove_balena(self):
+        confirm = QMessageBox.question(
+            self,
+            "Remove balena CLI",
+            "This will remove the downloaded balena CLI files from the tools folder.\n\nDo you want to continue?",
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+
+        def task(log):
+            remove_balena_cli(log_callback=log)
+
+        self.start_worker(task, success_message="balena CLI files removed.")
 
     def refresh_drives(self, silent=False):
         if not is_flash_supported():

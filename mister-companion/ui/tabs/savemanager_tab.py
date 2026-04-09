@@ -276,7 +276,7 @@ class SaveManagerTab(QWidget):
     def update_connection_state(self):
         connected = self.connection.is_connected()
 
-        if connected:
+        if connected and self.isVisible():
             try:
                 ensure_remote_save_dirs(self.connection)
             except Exception as e:

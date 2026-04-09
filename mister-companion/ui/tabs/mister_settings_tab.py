@@ -283,8 +283,6 @@ class MiSTerSettingsTab(QWidget):
     def update_connection_state(self):
         if self.connection.is_connected():
             self.apply_connected_state()
-            self.load_mister_ini_into_ui(silent=True)
-            self.load_mister_ini_advanced()
         else:
             self.apply_disconnected_state()
 
