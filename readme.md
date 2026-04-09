@@ -6,38 +6,6 @@ It provides a simple interface for common maintenance tasks without needing to u
 
 ---
 
-## Overview
-
-MiSTer Companion has been fully rebuilt in **v3.0.0** using PyQt6, bringing a redesigned interface and a more scalable foundation for future development.
-
----
-
-Supports:
-
-- Device management (save multiple MiSTer systems)
-- Storage usage monitoring (SD and USB)
-- Edit MiSTer.ini in Easy Mode (Presets) and Advanced Mode (Manual)
-- update_all installation, configuration and execution
-- Zaparoo installation and setup
-- ZapScripts launcher via Zaparoo Core API
-- SD migration tool (migrate_sd) installer
-- cifs_mount installer and config
-- SMB enable / disable
-- Open MiSTer share directly in the system file manager
-- Remote reboot
-- SSH console output for script execution
-- Save Manager to backup and sync saves between multiple MiSTer devices
-- Wallpaper management (multiple sources)
-- Scan network for MiSTer devices
-- Install Insert-Coin via update_all configurator
-- Flash Mr. Fusion directly from within the app
-- In-app Newsfeed for updates and announcements
-- Theme Selector (Auto, Light, Dark, Purple)
-- Additional built-in scripts (Auto Time, DAV Browser)
-- Improved foundation for future macOS support, thanks to contributions from DoggyChicken
-
-Clean, safe, and easy MiSTer management from Windows and Linux.
-
 ![Screenshot](assets/screenshot.png)
 
 ---
@@ -46,8 +14,9 @@ Clean, safe, and easy MiSTer management from Windows and Linux.
 
 MiSTer Companion uses a tabbed interface to organize functionality.
 
-### Flash Mr. Fusion
+### Flash SD
 - Download the latest Mr. Fusion release directly from within the app
+- Download the latest SuperStationONE SD Installer release directly from within the app
 - Detect removable drives (Windows and Linux)
 - Flash SD cards without requiring external tools
 - Simplifies initial MiSTer setup
@@ -74,10 +43,13 @@ MiSTer Companion uses a tabbed interface to organize functionality.
 
 ### Scripts
 - Install, configure and run update_all
-- Install Zaparoo
+- Install zaparoo
 - Install migrate_sd (SD card migration utility)
 - Install cifs_mount / cifs_umount
-- Support for additional built-in scripts (Auto Time, DAV Browser)
+- Install auto_time
+- Install and configure dav_browser
+- Install and configure ftp_save_sync
+- Install and Set static_wallpaper
 - View live SSH output when running scripts
 
 ### ZapScripts
@@ -107,28 +79,15 @@ MiSTer Companion uses a tabbed interface to organize functionality.
 
 ---
 
-## Requirements
+### Pre-Releases
 
-Before using MiSTer Companion, make sure:
+| Name | Platform | Status | File |
+|------|----------|--------|------|
+| MiSTer Companion | Windows | [![Build Status][Build]][Actions] | [Download Windows](https://github.com/Anime0t4ku/mister-companion/releases/download/Pre-release/MiSTer-Companion-Windows-x86_64.zip) |
+| MiSTer Companion | Linux | [![Build Status][Build]][Actions] | [Download Linux](https://github.com/Anime0t4ku/mister-companion/releases/download/Pre-release/MiSTer-Companion-Linux-x86_64.tar.gz) |
 
-- Your MiSTer SD card is flashed with MiSTerFusion
-- Your MiSTer is connected to your local network
-- Your MiSTer has an active internet connection
-
-Default credentials:
-
-    root / 1
-
-MiSTerFusion:  
-https://github.com/MiSTer-devel/mr-fusion/releases
-
----
-
-## Download
-
-Pre-built binaries are available on the releases page:
-
-https://github.com/Anime0t4ku/mister-companion/releases
+[Actions]: https://github.com/Anime0t4ku/mister-companion/actions/workflows/build.yml  
+[Build]: https://github.com/Anime0t4ku/mister-companion/actions/workflows/build.yml/badge.svg  
 
 ---
 
@@ -137,20 +96,6 @@ https://github.com/Anime0t4ku/mister-companion/releases
 After extracting, make the application executable:
 
     chmod +x MiSTer-Companion
-
-Opening the MiSTer network share requires GVFS SMB support.
-
-Ubuntu / Debian / Linux Mint:
-
-    sudo apt install gvfs-backends
-
-Fedora:
-
-    sudo dnf install gvfs-smb
-
-Arch Linux:
-
-    sudo pacman -S gvfs gvfs-smb
 
 ---
 
