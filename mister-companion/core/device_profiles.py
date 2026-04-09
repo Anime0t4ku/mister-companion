@@ -4,12 +4,10 @@ from core.config import save_config
 
 
 def get_profile_sync_roots():
-    roots = ["MiSTerSettings"]
-
-    save_root = Path("SaveManager")
-    roots.append(str(save_root / "backups"))
-    roots.append(str(save_root / "sync"))
-
+    from core.app_dirs import USER_DATA_DIR
+    roots = [str(USER_DATA_DIR / "MiSTerSettings")]
+    roots.append(str(USER_DATA_DIR / "SaveManager" / "backups"))
+    roots.append(str(USER_DATA_DIR / "SaveManager" / "sync"))
     return roots
 
 

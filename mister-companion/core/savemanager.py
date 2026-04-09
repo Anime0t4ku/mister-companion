@@ -10,7 +10,8 @@ from core.config import save_config
 from core.profile_folder_sync import get_profile_or_ip_folder_name
 
 
-SAVE_ROOT = Path("SaveManager")
+from core.app_dirs import USER_DATA_DIR
+SAVE_ROOT = USER_DATA_DIR / "SaveManager"
 BACKUP_ROOT = SAVE_ROOT / "backups"
 SYNC_ROOT = SAVE_ROOT / "sync"
 

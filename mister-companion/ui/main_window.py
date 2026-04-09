@@ -41,7 +41,11 @@ from ui.tabs.wallpapers_tab import WallpapersTab
 from ui.tabs.zapscripts_tab import ZapScriptsTab
 
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+import sys as _sys
+if getattr(_sys, "frozen", False):
+    BASE_DIR = Path(_sys._MEIPASS)
+else:
+    BASE_DIR = Path(__file__).resolve().parent.parent
 ICON_PATH = BASE_DIR / "assets" / "icon.png"
 
 

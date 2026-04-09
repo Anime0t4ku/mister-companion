@@ -1,7 +1,8 @@
 import json
 from pathlib import Path
 
-CONFIG_PATH = Path("config.json")
+from core.app_dirs import USER_DATA_DIR
+CONFIG_PATH = USER_DATA_DIR / "config.json"
 
 DEFAULT_CONFIG = {
     "devices": [],
