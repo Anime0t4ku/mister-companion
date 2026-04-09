@@ -83,8 +83,8 @@ MiSTer Companion uses a tabbed interface to organize functionality.
 
 | Name | Platform | Status | File |
 |------|----------|--------|------|
-| MiSTer Companion | Windows | [![Build Status](https://github.com/Anime0t4ku/mister-companion/actions/workflows/build.yml/badge.svg)](https://github.com/Anime0t4ku/mister-companion/actions/workflows/build.yaml) | [Download Windows](https://github.com/Anime0t4ku/mister-companion/releases/download/Pre-release/MiSTer-Companion-Windows-x86_64.zip) |
-| MiSTer Companion | Linux | [![Build Status](https://github.com/Anime0t4ku/mister-companion/actions/workflows/build.yml/badge.svg)](https://github.com/Anime0t4ku/mister-companion/actions/workflows/build.yaml) | [Download Linux](https://github.com/Anime0t4ku/mister-companion/releases/download/Pre-release/MiSTer-Companion-Linux-x86_64.tar.gz) |
+| MiSTer Companion | Windows | [![Build Status](https://github.com/Anime0t4ku/mister-companion/actions/workflows/build.yaml/badge.svg)](https://github.com/Anime0t4ku/mister-companion/actions/workflows/build.yaml) | [Download Windows](https://github.com/Anime0t4ku/mister-companion/releases/download/Pre-release/MiSTer-Companion-Windows-x86_64.zip) |
+| MiSTer Companion | Linux | [![Build Status](https://github.com/Anime0t4ku/mister-companion/actions/workflows/build.yaml/badge.svg)](https://github.com/Anime0t4ku/mister-companion/actions/workflows/build.yaml) | [Download Linux](https://github.com/Anime0t4ku/mister-companion/releases/download/Pre-release/MiSTer-Companion-Linux-x86_64.tar.gz) |
 
 ---
 
