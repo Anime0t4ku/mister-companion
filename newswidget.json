@@ -5,10 +5,10 @@
       "id": "v3-stable",
       "date": "2026-04-10",
       "type": "update",
-      "headline": "MiSTer Companion v3.4.0 Released",
-      "message": "MiSTer Companion v3.4.0 is now available.\n\nThis update introduces the new Extras tab, adding support for optional tools and add-ons. The 3SX (Street Fighter III - 3rd Strike PORT) installer is now included for easy setup directly from the app.\n\nZapScripts has been fully overhauled and can now launch both scripts and games via Zaparoo, with improved reliability and clearer feedback.\n\nStability and internal structure have also been improved to support these new features.\n\nYou can download the latest stable release below.",
-      "url": "https://github.com/Anime0t4ku/mister-companion/releases/tag/v3.4.0",
-      "url_label": "Download v3.4.0"
+      "headline": "MiSTer Companion v3.4.1 Released",
+      "message": "MiSTer Companion v3.4.1 is now available.\n\nThis update removes the 3SX installer due to the project no longer providing release downloads, which caused installation issues.\n\nThe Extras tab has also been hidden for now, as its functionality depended on the 3SX integration.\n\nYou can download the latest stable release below.",
+      "url": "https://github.com/Anime0t4ku/mister-companion/releases/tag/v3.4.1",
+      "url_label": "Download v3.4.1"
     },
     {
       "id": "macos-support",
