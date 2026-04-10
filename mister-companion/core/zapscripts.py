@@ -286,6 +286,13 @@ def list_scripts(connection) -> list[dict]:
 def launch_media(connection, item: dict, timeout: int = 5):
     """
     Launch a cached media item or script item.
+
+    For scripts:
+    - launch via **mister.script:<name>.sh
+
+    For games:
+    - prefer launching by path
+    - ignore zapScript if a path exists
     """
     item_type = (item or {}).get("type", "").strip().lower()
 
@@ -297,13 +304,13 @@ def launch_media(connection, item: dict, timeout: int = 5):
         )
         return run_script(connection, script_name, timeout=timeout)
 
-    zap_script = item.get("zapScript") or item.get("zap_script")
-    if zap_script:
-        return run_zaparoo_command(connection, zap_script, timeout=timeout)
-
     path = item.get("path")
     if path:
         return run_zaparoo_command(connection, f"**launch:{path}", timeout=timeout)
+
+    zap_script = item.get("zapScript") or item.get("zap_script")
+    if zap_script:
+        return run_zaparoo_command(connection, zap_script, timeout=timeout)
 
     raise ZaparooApiError("Selected item does not contain launchable data.")
 
