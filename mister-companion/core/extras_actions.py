@@ -8,17 +8,24 @@ import zipfile
 import requests
 
 
-GITHUB_RELEASES_API = "https://api.github.com/repos/kimchiman52/3sx-mister/releases/latest"
+GITHUB_RELEASES_API = "https://api.github.com/repos/kimchiman52/3s-mister-arm/releases/latest"
 
-REMOTE_RBF_PATH = "/media/fat/_Other/3SX.rbf"
-REMOTE_GAME_DIR = "/media/fat/games/3sx"
-REMOTE_RESOURCES_DIR = "/media/fat/games/3sx/resources"
-REMOTE_LAUNCHER_PATH = "/media/fat/MiSTer_3SX"
-REMOTE_VERSION_FILE = "/media/fat/games/3sx/.mister_companion_version"
+REMOTE_RBF_PATH = "/media/fat/_Other/3S-ARM.rbf"
+REMOTE_GAME_DIR = "/media/fat/games/3s-arm"
+REMOTE_RESOURCES_DIR = "/media/fat/games/3s-arm/resources"
+REMOTE_LAUNCHER_PATH = "/media/fat/MiSTer_3S-ARM"
+REMOTE_VERSION_FILE = "/media/fat/games/3s-arm/.mister_companion_version"
 REMOTE_INI_PATH = "/media/fat/MiSTer.ini"
-REMOTE_AFS_PATH = "/media/fat/games/3sx/resources/SF33RD.AFS"
+REMOTE_AFS_PATH = "/media/fat/games/3s-arm/resources/SF33RD.AFS"
 
-INI_BLOCK = "[3SX]\nmain=MiSTer_3SX\nvideo_mode=8\n"
+OLD_REMOTE_RBF_PATH = "/media/fat/_Other/3SX.rbf"
+OLD_REMOTE_GAME_DIR = "/media/fat/games/3sx"
+OLD_REMOTE_RESOURCES_DIR = "/media/fat/games/3sx/resources"
+OLD_REMOTE_LAUNCHER_PATH = "/media/fat/MiSTer_3SX"
+OLD_REMOTE_VERSION_FILE = "/media/fat/games/3sx/.mister_companion_version"
+OLD_REMOTE_AFS_PATH = "/media/fat/games/3sx/resources/SF33RD.AFS"
+
+INI_BLOCK = "[3S-ARM]\nmain=MiSTer_3S-ARM\nvideo_mode=8\n"
 
 
 def _quote(value: str) -> str:
@@ -87,6 +94,14 @@ def _is_3sx_installed(connection) -> bool:
     )
 
 
+def _is_old_3sx_installed(connection) -> bool:
+    return (
+        _path_exists(connection, OLD_REMOTE_RBF_PATH)
+        and _path_exists(connection, OLD_REMOTE_GAME_DIR)
+        and _path_exists(connection, OLD_REMOTE_LAUNCHER_PATH)
+    )
+
+
 def _fetch_latest_release():
     response = requests.get(
         GITHUB_RELEASES_API,
@@ -107,10 +122,10 @@ def _fetch_latest_release():
             break
 
     if not tag_name:
-        raise RuntimeError("Unable to determine latest 3SX-MiSTer version from GitHub.")
+        raise RuntimeError("Unable to determine latest 3s-mister-arm version from GitHub.")
 
     if not zip_url:
-        raise RuntimeError("Unable to find a ZIP asset in the latest 3SX-MiSTer release.")
+        raise RuntimeError("Unable to find a ZIP asset in the latest 3s-mister-arm release.")
 
     return {
         "version": tag_name,
@@ -120,7 +135,10 @@ def _fetch_latest_release():
 
 
 def _read_installed_version(connection) -> str:
-    return _read_remote_text(connection, REMOTE_VERSION_FILE).strip()
+    version = _read_remote_text(connection, REMOTE_VERSION_FILE).strip()
+    if version:
+        return version
+    return _read_remote_text(connection, OLD_REMOTE_VERSION_FILE).strip()
 
 
 def _write_installed_version(connection, version: str):
@@ -139,8 +157,15 @@ def _ensure_ini_block(connection) -> bool:
     current = _read_remote_text(connection, REMOTE_INI_PATH)
     normalized = current.replace("\r\n", "\n")
 
-    if "[3SX]" in normalized and "main=MiSTer_3SX" in normalized:
+    if "[3S-ARM]" in normalized and "main=MiSTer_3S-ARM" in normalized:
         return False
+
+    old_pattern = re.compile(
+        r"(?:\n{0,2})\[3SX\]\nmain=MiSTer_3SX\nvideo_mode=8\n?",
+        re.MULTILINE,
+    )
+    normalized = re.sub(old_pattern, "\n", normalized)
+    normalized = re.sub(r"\n{3,}", "\n\n", normalized).rstrip("\n")
 
     updated = _normalize_ini_text_for_append(normalized) + INI_BLOCK
     _write_remote_text(connection, REMOTE_INI_PATH, updated)
@@ -155,7 +180,7 @@ def _remove_ini_block(connection) -> bool:
     normalized = current.replace("\r\n", "\n")
 
     pattern = re.compile(
-        r"(?:\n{0,2})\[3SX\]\nmain=MiSTer_3SX\nvideo_mode=8\n?",
+        r"(?:\n{0,2})\[(?:3SX|3S-ARM)\]\nmain=(?:MiSTer_3SX|MiSTer_3S-ARM)\nvideo_mode=8\n?",
         re.MULTILINE,
     )
     updated = re.sub(pattern, "\n", normalized)
@@ -168,6 +193,51 @@ def _remove_ini_block(connection) -> bool:
         return False
 
     _write_remote_text(connection, REMOTE_INI_PATH, updated)
+    return True
+
+
+def _migrate_old_install(connection, log):
+    old_present = _is_old_3sx_installed(connection)
+    if not old_present:
+        return False
+
+    log("Detected legacy 3SX install, migrating to 3S-ARM layout...\n")
+
+    _ensure_remote_dir(connection, "/media/fat/_Other")
+    _ensure_remote_dir(connection, "/media/fat/games")
+
+    if _path_exists(connection, OLD_REMOTE_LAUNCHER_PATH) and not _path_exists(connection, REMOTE_LAUNCHER_PATH):
+        log(f"Renaming launcher: {OLD_REMOTE_LAUNCHER_PATH} -> {REMOTE_LAUNCHER_PATH}\n")
+        connection.run_command(
+            f"mv {_quote(OLD_REMOTE_LAUNCHER_PATH)} {_quote(REMOTE_LAUNCHER_PATH)}"
+        )
+
+    if _path_exists(connection, OLD_REMOTE_RBF_PATH) and not _path_exists(connection, REMOTE_RBF_PATH):
+        log(f"Renaming RBF: {OLD_REMOTE_RBF_PATH} -> {REMOTE_RBF_PATH}\n")
+        connection.run_command(
+            f"mv {_quote(OLD_REMOTE_RBF_PATH)} {_quote(REMOTE_RBF_PATH)}"
+        )
+
+    if _path_exists(connection, OLD_REMOTE_GAME_DIR) and not _path_exists(connection, REMOTE_GAME_DIR):
+        log(f"Renaming game data: {OLD_REMOTE_GAME_DIR} -> {REMOTE_GAME_DIR}\n")
+        connection.run_command(
+            f"mv {_quote(OLD_REMOTE_GAME_DIR)} {_quote(REMOTE_GAME_DIR)}"
+        )
+
+    if _path_exists(connection, OLD_REMOTE_VERSION_FILE) and not _path_exists(connection, REMOTE_VERSION_FILE):
+        _ensure_remote_dir(connection, posixpath.dirname(REMOTE_VERSION_FILE))
+        log(f"Moving version marker: {OLD_REMOTE_VERSION_FILE} -> {REMOTE_VERSION_FILE}\n")
+        connection.run_command(
+            f"mv {_quote(OLD_REMOTE_VERSION_FILE)} {_quote(REMOTE_VERSION_FILE)}"
+        )
+
+    ini_changed = _ensure_ini_block(connection)
+    if ini_changed:
+        log("Updated MiSTer.ini to [3S-ARM]\n")
+
+    if _path_exists(connection, REMOTE_LAUNCHER_PATH):
+        connection.run_command(f"chmod +x {_quote(REMOTE_LAUNCHER_PATH)}")
+
     return True
 
 
@@ -197,21 +267,32 @@ def get_3sx_status(connection):
         latest_error = str(exc)
 
     installed = _is_3sx_installed(connection)
-    installed_version = _read_installed_version(connection) if installed else ""
-    afs_present = _path_exists(connection, REMOTE_AFS_PATH) if installed else False
+    legacy_installed = _is_old_3sx_installed(connection)
+    installed_version = _read_installed_version(connection) if (installed or legacy_installed) else ""
+    afs_present = False
+    if installed:
+        afs_present = _path_exists(connection, REMOTE_AFS_PATH)
+    elif legacy_installed:
+        afs_present = _path_exists(connection, OLD_REMOTE_AFS_PATH)
 
     update_available = False
-    if installed and latest_version and installed_version:
+    if (installed or legacy_installed) and latest_version and installed_version:
         update_available = installed_version != latest_version
-    elif installed and latest_version and not installed_version:
+    elif (installed or legacy_installed) and latest_version and not installed_version:
         update_available = True
 
-    if not installed:
+    if not installed and not legacy_installed:
         status_text = "✗ Not installed"
         install_label = "Install"
         install_enabled = True
         upload_enabled = False
         uninstall_enabled = False
+    elif legacy_installed and not installed:
+        status_text = "✓ Legacy 3SX install detected"
+        install_label = "Migrate / Install"
+        install_enabled = True
+        upload_enabled = not afs_present
+        uninstall_enabled = True
     elif update_available:
         status_text = f"▲ Update available ({installed_version or 'unknown'} → {latest_version})"
         install_label = "Update"
@@ -227,7 +308,7 @@ def get_3sx_status(connection):
         uninstall_enabled = True
 
     return {
-        "installed": installed,
+        "installed": installed or legacy_installed,
         "installed_version": installed_version,
         "latest_version": latest_version,
         "latest_error": latest_error,
@@ -245,6 +326,8 @@ def install_or_update_3sx(connection, log):
     if not connection.is_connected():
         raise RuntimeError("Not connected to MiSTer.")
 
+    _migrate_old_install(connection, log)
+
     latest = _fetch_latest_release()
     version = latest["version"]
     zip_url = latest["zip_url"]
@@ -261,7 +344,7 @@ def install_or_update_3sx(connection, log):
     with zipfile.ZipFile(io.BytesIO(archive_data)) as zf:
         members = [m for m in zf.infolist() if not m.is_dir()]
         if not members:
-            raise RuntimeError("The 3SX-MiSTer ZIP archive is empty.")
+            raise RuntimeError("The 3s-mister-arm ZIP archive is empty.")
 
         log("Inspecting archive contents...\n")
 
@@ -286,7 +369,7 @@ def install_or_update_3sx(connection, log):
                 basename = posixpath.basename(name)
                 data = zf.read(member)
 
-                if basename == "MiSTer_3SX":
+                if basename == "MiSTer_3S-ARM":
                     log(f"Uploading launcher: {REMOTE_LAUNCHER_PATH}\n")
                     with sftp.open(REMOTE_LAUNCHER_PATH, "wb") as remote_file:
                         remote_file.write(data)
@@ -320,7 +403,7 @@ def install_or_update_3sx(connection, log):
                         remote_file.write(data)
                     continue
 
-                if basename == "3SX.rbf":
+                if basename == "3S-ARM.rbf":
                     _ensure_remote_dir(connection, "/media/fat/_Other")
                     log(f"Uploading RBF: {REMOTE_RBF_PATH}\n")
                     with sftp.open(REMOTE_RBF_PATH, "wb") as remote_file:
@@ -336,9 +419,9 @@ def install_or_update_3sx(connection, log):
 
     ini_added = _ensure_ini_block(connection)
     if ini_added:
-        log("Added [3SX] block to MiSTer.ini\n")
+        log("Added [3S-ARM] block to MiSTer.ini\n")
     else:
-        log("[3SX] block already present in MiSTer.ini\n")
+        log("[3S-ARM] block already present in MiSTer.ini\n")
 
     _write_installed_version(connection, version)
     log(f"Stored installed version marker: {version}\n")
@@ -359,13 +442,20 @@ def upload_3sx_afs(connection, local_path: str, log):
     if local_name.lower() != "sf33rd.afs":
         log(f"Warning: selected file name is {local_name}, expected SF33RD.AFS\n")
 
-    if not _is_3sx_installed(connection):
-        raise RuntimeError("3SX-MiSTer is not installed.")
+    if not (_is_3sx_installed(connection) or _is_old_3sx_installed(connection)):
+        raise RuntimeError("3s-mister-arm is not installed.")
 
-    _ensure_remote_dir(connection, REMOTE_RESOURCES_DIR)
+    if _is_3sx_installed(connection):
+        target_resources_dir = REMOTE_RESOURCES_DIR
+        target_afs_path = REMOTE_AFS_PATH
+    else:
+        target_resources_dir = OLD_REMOTE_RESOURCES_DIR
+        target_afs_path = OLD_REMOTE_AFS_PATH
+
+    _ensure_remote_dir(connection, target_resources_dir)
 
     file_size = os.path.getsize(local_path)
-    log(f"Uploading asset to {REMOTE_AFS_PATH}\n")
+    log(f"Uploading asset to {target_afs_path}\n")
     log(f"File size: {file_size} bytes\n")
 
     last_percent = {"value": -1}
@@ -380,7 +470,7 @@ def upload_3sx_afs(connection, local_path: str, log):
 
     sftp = connection.client.open_sftp()
     try:
-        sftp.put(local_path, REMOTE_AFS_PATH, callback=progress_callback)
+        sftp.put(local_path, target_afs_path, callback=progress_callback)
     finally:
         sftp.close()
 
@@ -405,10 +495,23 @@ def uninstall_3sx(connection, log):
     log(f"Removing {REMOTE_GAME_DIR}\n")
     connection.run_command(f"rm -rf {_quote(REMOTE_GAME_DIR)}")
 
+    log(f"Removing legacy {OLD_REMOTE_RBF_PATH}\n")
+    connection.run_command(f"rm -f {_quote(OLD_REMOTE_RBF_PATH)}")
+
+    log(f"Removing legacy {OLD_REMOTE_LAUNCHER_PATH}\n")
+    connection.run_command(f"rm -f {_quote(OLD_REMOTE_LAUNCHER_PATH)}")
+
+    if _path_exists(connection, OLD_REMOTE_VERSION_FILE):
+        log(f"Removing legacy version marker: {OLD_REMOTE_VERSION_FILE}\n")
+        connection.run_command(f"rm -f {_quote(OLD_REMOTE_VERSION_FILE)}")
+
+    log(f"Removing legacy {OLD_REMOTE_GAME_DIR}\n")
+    connection.run_command(f"rm -rf {_quote(OLD_REMOTE_GAME_DIR)}")
+
     removed_ini = _remove_ini_block(connection)
     if removed_ini:
-        log("Removed [3SX] block from MiSTer.ini\n")
+        log("Removed 3S-ARM / 3SX block from MiSTer.ini\n")
     else:
-        log("No [3SX] block found in MiSTer.ini\n")
+        log("No 3S-ARM / 3SX block found in MiSTer.ini\n")
 
     return {"uninstalled": True}

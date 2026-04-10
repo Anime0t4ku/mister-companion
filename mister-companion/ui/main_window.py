@@ -67,7 +67,7 @@ class MainWindow(QMainWindow):
 
         self._closing = False
 
-        self.setWindowTitle("MiSTer Companion v3.4.1 By Anime0t4ku")
+        self.setWindowTitle("MiSTer Companion v3.4.2-PreRelease-1 By Anime0t4ku")
         self.resize(900, 900)
 
         if ICON_PATH.exists():
@@ -132,9 +132,9 @@ class MainWindow(QMainWindow):
         self.wallpapers_tab = WallpapersTab(self)
         self.tabs.addTab(self.wallpapers_tab, "Wallpapers")
 
-        # self.extras_tab = ExtrasTab(self)
-        # self.tabs.addTab(self.extras_tab, "Extras")
-        #
+        self.extras_tab = ExtrasTab(self)
+        self.tabs.addTab(self.extras_tab, "Extras")
+
         self.tabs.setCurrentWidget(self.connection_tab)
         self.tabs.currentChanged.connect(self.on_tab_changed)
 

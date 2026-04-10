@@ -72,13 +72,13 @@ class ExtrasTab(QWidget):
         ]
 
         self.extra_titles = {
-            self.EXTRA_3SX: "3SX-MiSTer",
+            self.EXTRA_3SX: "3S-ARM",
         }
 
         self.extra_descriptions = {
             self.EXTRA_3SX: (
-                "Install, update, upload SF33RD.AFS, and uninstall 3SX-MiSTer "
-                "directly from MiSTer Companion."
+                "Install, update, migrate legacy 3SX installs, upload SF33RD.AFS, "
+                "and uninstall 3s-mister-arm directly from MiSTer Companion."
             ),
         }
 
@@ -307,12 +307,12 @@ class ExtrasTab(QWidget):
         lowered = status_text.lower()
         if "update available" in lowered:
             self.extra_status_label.setStyleSheet("color: #cc8400;")
+        elif "legacy" in lowered or "missing" in lowered:
+            self.extra_status_label.setStyleSheet("color: #cc8400;")
         elif "installed" in lowered and "not" not in lowered:
             self.extra_status_label.setStyleSheet("color: #00aa00;")
         elif "not installed" in lowered:
             self.extra_status_label.setStyleSheet("color: #cc0000;")
-        elif "missing" in lowered:
-            self.extra_status_label.setStyleSheet("color: #cc8400;")
         else:
             self.extra_status_label.setStyleSheet("color: gray;")
 
@@ -460,9 +460,12 @@ class ExtrasTab(QWidget):
             return
 
         button_text = self.install_update_3sx_button.text().strip()
-        success_message = "3SX-MiSTer installed."
+        success_message = "3S-ARM installed."
+
         if button_text == "Update":
-            success_message = "3SX-MiSTer updated."
+            success_message = "3S-ARM updated."
+        elif button_text == "Migrate / Install":
+            success_message = "Legacy 3SX install migrated to 3S-ARM."
 
         def task(log):
             return backend_install_or_update_3sx(self.connection, log)
@@ -494,8 +497,8 @@ class ExtrasTab(QWidget):
 
         reply = QMessageBox.question(
             self,
-            "Uninstall 3SX-MiSTer",
-            "Remove 3SX-MiSTer, its files, SF33RD.AFS, and the MiSTer.ini entry?",
+            "Uninstall 3S-ARM",
+            "Remove 3S-ARM, legacy 3SX files if present, SF33RD.AFS, and the MiSTer.ini entry?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
@@ -505,4 +508,4 @@ class ExtrasTab(QWidget):
         def task(log):
             return backend_uninstall_3sx(self.connection, log)
 
-        self._run_worker(task, "3SX-MiSTer uninstalled.")
+        self._run_worker(task, "3S-ARM uninstalled.")

@@ -26,6 +26,8 @@ SCALING_MAP = {
 
 SCALING_REVERSE_MAP = {value: key for key, value in SCALING_MAP.items()}
 
+DEFAULT_FONT_LINE = ";font=font/myfont.pf"
+
 
 def parse_mister_ini(text):
     settings = {}
@@ -34,7 +36,7 @@ def parse_mister_ini(text):
     for raw_line in text.splitlines():
         line = raw_line.strip()
 
-        if not line or line.startswith(";"):
+        if not line:
             continue
 
         if line.startswith("[") and line.endswith("]"):
@@ -42,6 +44,16 @@ def parse_mister_ini(text):
             continue
 
         if current_section != "MiSTer":
+            continue
+
+        if line.startswith(";"):
+            comment_body = line[1:].strip()
+            if "=" in comment_body:
+                key, value = comment_body.split("=", 1)
+                key = key.strip()
+                value = value.strip()
+                if key == "font":
+                    settings["font_commented"] = value
             continue
 
         if ";" in line:
@@ -104,6 +116,12 @@ def easy_mode_values_from_ini_settings(settings):
     logo = settings.get("logo", "1").strip()
     values["logo"] = "Disabled" if logo == "0" else "Enabled"
 
+    font_value = settings.get("font", "").strip()
+    if font_value.startswith("font/"):
+        values["font"] = font_value.split("/", 1)[1].strip()
+    else:
+        values["font"] = "Default"
+
     return values
 
 
@@ -154,6 +172,12 @@ def build_easy_mode_settings(easy_values):
     logo = easy_values.get("logo", "").strip()
     settings["logo"] = "1" if logo == "Enabled" else "0"
 
+    font = easy_values.get("font", "").strip()
+    if font and font != "Default":
+        settings["font"] = f"font/{font}"
+    else:
+        settings["font_commented"] = "font/myfont.pf"
+
     return settings
 
 
@@ -174,7 +198,10 @@ def update_mister_ini_text(ini_text, updated_settings):
             if in_mister_section and section_name != "MiSTer":
                 for key, value in updated_settings.items():
                     if key not in replaced_keys:
-                        new_lines.append(f"{key}={value}")
+                        if key == "font_commented":
+                            new_lines.append(DEFAULT_FONT_LINE)
+                        else:
+                            new_lines.append(f"{key}={value}")
 
             in_mister_section = section_name == "MiSTer"
             if in_mister_section:
@@ -188,7 +215,20 @@ def update_mister_ini_text(ini_text, updated_settings):
 
             if "=" in clean:
                 key = clean.split("=", 1)[0].strip()
-                if key in updated_settings:
+
+                if key == "font":
+                    if "font" in updated_settings:
+                        new_lines.append(f"font={updated_settings['font']}")
+                        replaced_keys.add("font")
+                        replaced_keys.add("font_commented")
+                        continue
+                    if "font_commented" in updated_settings:
+                        new_lines.append(DEFAULT_FONT_LINE)
+                        replaced_keys.add("font")
+                        replaced_keys.add("font_commented")
+                        continue
+
+                if key in updated_settings and key not in ("font_commented",):
                     new_lines.append(f"{key}={updated_settings[key]}")
                     replaced_keys.add(key)
                     continue
@@ -200,10 +240,16 @@ def update_mister_ini_text(ini_text, updated_settings):
             new_lines.append("")
         new_lines.append("[MiSTer]")
         for key, value in updated_settings.items():
-            new_lines.append(f"{key}={value}")
+            if key == "font_commented":
+                new_lines.append(DEFAULT_FONT_LINE)
+            else:
+                new_lines.append(f"{key}={value}")
     elif in_mister_section:
         for key, value in updated_settings.items():
             if key not in replaced_keys:
-                new_lines.append(f"{key}={value}")
+                if key == "font_commented":
+                    new_lines.append(DEFAULT_FONT_LINE)
+                else:
+                    new_lines.append(f"{key}={value}")
 
     return "\n".join(new_lines) + "\n"

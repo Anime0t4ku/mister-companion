@@ -1,4 +1,6 @@
-from PyQt6.QtCore import Qt
+import re
+
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QGroupBox,
     QLabel, QPushButton, QMessageBox, QComboBox, QTextEdit,
@@ -27,11 +29,17 @@ from ui.dialogs.restore_backup_dialog import RestoreBackupDialog
 
 
 class MiSTerSettingsTab(QWidget):
+    DEFAULT_FONT_LINE = ";font=font/myfont.pf"
+
     def __init__(self, main_window):
         super().__init__()
         self.main_window = main_window
         self.connection = main_window.connection
         self.config_data = main_window.config_data
+
+        self.cached_font_list = None
+        self.pending_font_selection = "Default"
+        self.font_scan_scheduled = False
 
         ensure_settings_root_exists()
 
@@ -154,6 +162,9 @@ class MiSTerSettingsTab(QWidget):
             "Disabled"
         ])
 
+        self.easy_font_combo = QComboBox()
+        self.easy_font_combo.addItem("Default")
+
         easy_layout.addWidget(QLabel("HDMI Mode"), 0, 0)
         easy_layout.addWidget(self.easy_hdmi_mode_combo, 0, 1)
         easy_layout.addWidget(QLabel("Resolution"), 1, 0)
@@ -170,6 +181,8 @@ class MiSTerSettingsTab(QWidget):
         easy_layout.addWidget(self.easy_analogue_combo, 6, 1)
         easy_layout.addWidget(QLabel("MiSTer Logo"), 7, 0)
         easy_layout.addWidget(self.easy_logo_combo, 7, 1)
+        easy_layout.addWidget(QLabel("Font"), 8, 0)
+        easy_layout.addWidget(self.easy_font_combo, 8, 1)
 
         self.easy_group.setLayout(easy_layout)
         main_layout.addWidget(self.easy_group)
@@ -244,6 +257,7 @@ class MiSTerSettingsTab(QWidget):
         self.easy_hdmi_limited_combo.setCurrentText("Full Range")
         self.easy_analogue_combo.setCurrentText("RGB (Consumer TV)")
         self.easy_logo_combo.setCurrentText("Enabled")
+        self.easy_font_combo.setCurrentText("Default")
 
         self.update_easy_mode_state()
         self.update_settings_mode()
@@ -278,6 +292,9 @@ class MiSTerSettingsTab(QWidget):
         self.info_label.setStyleSheet("")
         self.retention_label.setStyleSheet("")
         self.set_notice("")
+        self.cached_font_list = None
+        self.pending_font_selection = "Default"
+        self.font_scan_scheduled = False
         self.set_mister_settings_enabled(False)
 
     def update_connection_state(self):
@@ -298,11 +315,19 @@ class MiSTerSettingsTab(QWidget):
         self.easy_hdmi_limited_combo.setEnabled(easy_enabled)
         self.easy_analogue_combo.setEnabled(easy_enabled)
         self.easy_logo_combo.setEnabled(easy_enabled)
+        self.easy_font_combo.setEnabled(easy_enabled)
 
         self.advanced_text.setReadOnly(not advanced_enabled)
 
         if enabled:
             self.update_easy_mode_state()
+
+    def refresh_tab_contents(self):
+        if not self.connection.is_connected():
+            return
+
+        self.load_mister_ini_into_ui(silent=True)
+        self.load_mister_ini_advanced()
 
     def update_settings_mode(self):
         connected = self.connection.is_connected()
@@ -325,6 +350,10 @@ class MiSTerSettingsTab(QWidget):
 
                 updated_settings = self.build_easy_mode_settings()
                 new_ini_text = update_mister_ini_text(new_ini_text, updated_settings)
+                new_ini_text = self.apply_font_setting_to_ini_text(
+                    new_ini_text,
+                    self.easy_font_combo.currentText().strip()
+                )
                 self.advanced_text.setPlainText(new_ini_text)
 
             self.advanced_text.setMinimumHeight(420)
@@ -373,6 +402,140 @@ class MiSTerSettingsTab(QWidget):
     def open_mister_settings_folder(self):
         open_mister_settings_folder(self.get_mister_settings_device_path())
 
+    def scan_remote_fonts(self):
+        if not self.connection.is_connected():
+            return []
+
+        result = self.connection.run_command(
+            r'if [ -d /media/fat/font ]; then for f in /media/fat/font/*.pf /media/fat/font/*.PF; do [ -e "$f" ] || continue; basename "$f"; done; fi'
+        ) or ""
+
+        fonts = []
+        for line in result.splitlines():
+            name = line.strip()
+            if not name:
+                continue
+            if not name.lower().endswith(".pf"):
+                continue
+            if name not in fonts:
+                fonts.append(name)
+
+        fonts.sort(key=str.lower)
+        return fonts
+
+    def set_font_combo_loading(self):
+        self.easy_font_combo.blockSignals(True)
+        self.easy_font_combo.clear()
+        self.easy_font_combo.addItem("Default")
+        self.easy_font_combo.addItem("Scanning fonts...")
+        self.easy_font_combo.setCurrentText("Scanning fonts...")
+        self.easy_font_combo.setEnabled(False)
+        self.easy_font_combo.blockSignals(False)
+
+    def populate_font_combo(self, selected_font="Default"):
+        current = (selected_font or "Default").strip()
+
+        if self.cached_font_list is not None:
+            self._populate_font_combo_from_list(self.cached_font_list, current)
+            return
+
+        self.pending_font_selection = current
+        self.set_font_combo_loading()
+        self.set_notice("Scanning fonts from MiSTer...")
+
+        if not self.font_scan_scheduled:
+            self.font_scan_scheduled = True
+            QTimer.singleShot(0, self._finish_font_scan_after_render)
+
+    def _populate_font_combo_from_list(self, fonts, selected_font="Default"):
+        current = (selected_font or "Default").strip()
+
+        self.easy_font_combo.blockSignals(True)
+        self.easy_font_combo.clear()
+        self.easy_font_combo.addItem("Default")
+
+        for font_name in fonts:
+            self.easy_font_combo.addItem(font_name)
+
+        if current != "Default" and self.easy_font_combo.findText(current) == -1:
+            self.easy_font_combo.addItem(current)
+
+        self.easy_font_combo.setCurrentText(current if current else "Default")
+        self.easy_font_combo.setEnabled(
+            self.connection.is_connected() and self.easy_mode_radio.isChecked()
+        )
+        self.easy_font_combo.blockSignals(False)
+
+    def _finish_font_scan_after_render(self):
+        self.font_scan_scheduled = False
+
+        if not self.connection.is_connected():
+            self.set_notice("")
+            return
+
+        fonts = self.scan_remote_fonts()
+        self.cached_font_list = fonts
+        self._populate_font_combo_from_list(fonts, self.pending_font_selection)
+        self.set_notice("")
+
+    def extract_font_selection_from_ini_text(self, ini_text):
+        if not ini_text:
+            return "Default"
+
+        match = re.search(
+            r"(?mi)^(?!\s*;)\s*font\s*=\s*font/([^\r\n/]+\.pf)\s*$",
+            ini_text
+        )
+        if match:
+            return match.group(1).strip()
+
+        return "Default"
+
+    def apply_font_setting_to_ini_text(self, ini_text, selected_font):
+        text = (ini_text or "").replace("\r\n", "\n")
+        font_line = self.DEFAULT_FONT_LINE
+
+        selected_font = (selected_font or "").strip()
+        if selected_font and selected_font != "Default":
+            font_line = f"font=font/{selected_font}"
+
+        lines = text.splitlines()
+        if not lines:
+            lines = ["[MiSTer]"]
+
+        mister_start = None
+        mister_end = len(lines)
+
+        for i, line in enumerate(lines):
+            if line.strip().lower() == "[mister]":
+                mister_start = i
+                break
+
+        if mister_start is None:
+            lines.append("[MiSTer]")
+            lines.append(font_line)
+            return "\n".join(lines).rstrip("\n") + "\n"
+
+        for i in range(mister_start + 1, len(lines)):
+            stripped = lines[i].strip()
+            if stripped.startswith("[") and stripped.endswith("]"):
+                mister_end = i
+                break
+
+        font_replaced = False
+
+        for i in range(mister_start + 1, mister_end):
+            if re.match(r"^\s*;?\s*font\s*=", lines[i], flags=re.IGNORECASE):
+                lines[i] = font_line
+                font_replaced = True
+                break
+
+        if not font_replaced:
+            insert_index = mister_end
+            lines.insert(insert_index, font_line)
+
+        return "\n".join(lines).rstrip("\n") + "\n"
+
     def collect_easy_mode_values(self):
         return {
             "hdmi_mode": self.easy_hdmi_mode_combo.currentText().strip(),
@@ -383,6 +546,7 @@ class MiSTerSettingsTab(QWidget):
             "hdmi_limited": self.easy_hdmi_limited_combo.currentText().strip(),
             "analogue": self.easy_analogue_combo.currentText().strip(),
             "logo": self.easy_logo_combo.currentText().strip(),
+            "font": self.easy_font_combo.currentText().strip(),
         }
 
     def apply_easy_mode_values(self, values):
@@ -394,12 +558,17 @@ class MiSTerSettingsTab(QWidget):
         self.easy_hdmi_limited_combo.setCurrentText(values.get("hdmi_limited", "Full Range"))
         self.easy_analogue_combo.setCurrentText(values.get("analogue", "RGB (Consumer TV)"))
         self.easy_logo_combo.setCurrentText(values.get("logo", "Enabled"))
+
+        font_value = values.get("font", "Default")
+        self.populate_font_combo(font_value)
+
         self.update_easy_mode_state()
 
     def apply_advanced_to_easy(self):
         text = self.advanced_text.toPlainText()
         settings = parse_mister_ini(text)
         values = easy_mode_values_from_ini_settings(settings)
+        values["font"] = self.extract_font_selection_from_ini_text(text)
         self.apply_easy_mode_values(values)
 
     def load_mister_ini_into_ui(self, silent=True):
@@ -420,6 +589,7 @@ class MiSTerSettingsTab(QWidget):
 
         settings = parse_mister_ini(ini_text)
         values = easy_mode_values_from_ini_settings(settings)
+        values["font"] = self.extract_font_selection_from_ini_text(ini_text)
         self.apply_easy_mode_values(values)
         return True
 
@@ -526,6 +696,10 @@ class MiSTerSettingsTab(QWidget):
             if self.easy_mode_radio.isChecked():
                 updated_settings = self.build_easy_mode_settings()
                 new_ini_text = update_mister_ini_text(ini_text, updated_settings)
+                new_ini_text = self.apply_font_setting_to_ini_text(
+                    new_ini_text,
+                    self.easy_font_combo.currentText().strip()
+                )
             else:
                 advanced_text = self.advanced_text.toPlainText().strip()
                 if not advanced_text:
@@ -534,9 +708,11 @@ class MiSTerSettingsTab(QWidget):
                 new_ini_text = advanced_text + "\n"
 
             sftp = self.connection.client.open_sftp()
-            with sftp.open("/media/fat/MiSTer.ini", "w") as f:
-                f.write(new_ini_text)
-            sftp.close()
+            try:
+                with sftp.open("/media/fat/MiSTer.ini", "w") as f:
+                    f.write(new_ini_text)
+            finally:
+                sftp.close()
 
             self.load_mister_ini_into_ui(silent=True)
             self.load_mister_ini_advanced()
@@ -572,7 +748,7 @@ class MiSTerSettingsTab(QWidget):
             return
 
         example_exists = self.connection.run_command(
-            'test -f /media/fat/MiSTer_example.ini && echo EXISTS'
+            "test -f /media/fat/MiSTer_example.ini && echo EXISTS"
         )
 
         if "EXISTS" not in (example_exists or ""):
