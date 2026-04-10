@@ -5,10 +5,10 @@
       "id": "v3-stable",
       "date": "2026-04-10",
       "type": "update",
-      "headline": "MiSTer Companion v3.4.1 Released",
-      "message": "MiSTer Companion v3.4.1 is now available.\n\nThis update removes the 3SX installer due to the project no longer providing release downloads, which caused installation issues.\n\nThe Extras tab has also been hidden for now, as its functionality depended on the 3SX integration.\n\nYou can download the latest stable release below.",
-      "url": "https://github.com/Anime0t4ku/mister-companion/releases/tag/v3.4.1",
-      "url_label": "Download v3.4.1"
+      "headline": "MiSTer Companion v3.4.2 Released",
+      "message": "MiSTer Companion v3.4.2 is now available.\n\nThe Extras tab has been re-enabled and now includes support for 3s-arm, replacing the previous 3SX integration. A migration option has been added to help users switch from existing 3SX installations.\n\nThis update also introduces an OSD font selector in MiSTer Settings (Easy Mode), allowing you to choose .pf fonts directly from within the app.\n\nYou can download the latest stable release below.",
+      "url": "https://github.com/Anime0t4ku/mister-companion/releases/tag/v3.4.2",
+      "url_label": "Download v3.4.2"
     },
     {
       "id": "macos-support",
