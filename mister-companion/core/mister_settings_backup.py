@@ -6,7 +6,8 @@ import time
 from core.profile_folder_sync import sanitize_folder_name, ip_to_folder_name
 
 
-MISTER_SETTINGS_ROOT = "MiSTerSettings"
+from core.app_dirs import USER_DATA_DIR
+MISTER_SETTINGS_ROOT = str(USER_DATA_DIR / "MiSTerSettings")
 
 
 def ensure_settings_root_exists():

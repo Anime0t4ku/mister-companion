@@ -27,7 +27,6 @@ from core.device_profiles import (
 )
 from core.profile_folder_sync import profile_assigned_to_ip, profile_removed, profile_renamed
 from core.theme import apply_theme
-from core.zaplauncher_db import rename_db
 from ui.dialogs.device_dialog import DeviceDialog
 from ui.dialogs.network_scanner_dialog import NetworkScannerDialog
 from ui.dialogs.setup_notice_dialog import SetupNoticeDialog
@@ -42,7 +41,11 @@ from ui.tabs.wallpapers_tab import WallpapersTab
 from ui.tabs.zapscripts_tab import ZapScriptsTab
 
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+import sys as _sys
+if getattr(_sys, "frozen", False):
+    BASE_DIR = Path(_sys._MEIPASS)
+else:
+    BASE_DIR = Path(__file__).resolve().parent.parent
 ICON_PATH = BASE_DIR / "assets" / "icon.png"
 
 
@@ -67,7 +70,7 @@ class MainWindow(QMainWindow):
 
         self._closing = False
 
-        self.setWindowTitle("MiSTer Companion v3.4.2-PreRelease-1 By Anime0t4ku")
+        self.setWindowTitle("MiSTer Companion v3.4.0 Pre-Release-1 By Anime0t4ku")
         self.resize(900, 900)
 
         if ICON_PATH.exists():
@@ -634,8 +637,6 @@ class MainWindow(QMainWindow):
             device["name"]
         )
 
-        rename_db(device["ip"], device["name"])
-
         devices = get_devices(self.config_data)
         self.load_devices()
         self.connection_tab.set_profiles(devices, selected_name=device["name"])
@@ -690,15 +691,12 @@ class MainWindow(QMainWindow):
                 old_name,
                 updated_device["name"]
             )
-            rename_db(old_name, updated_device["name"])
-
         elif old_ip != updated_device["ip"]:
             profile_assigned_to_ip(
                 self.get_profile_sync_roots(),
                 updated_device["ip"],
                 updated_device["name"]
             )
-            rename_db(old_ip, updated_device["name"])
 
         devices = get_devices(self.config_data)
         self.load_devices()
@@ -735,8 +733,6 @@ class MainWindow(QMainWindow):
             device_name,
             device_ip
         )
-
-        rename_db(device_name, device_ip)
 
         devices = get_devices(self.config_data)
         self.connection_tab.set_profiles(devices)

@@ -1,14 +1,14 @@
 import json
 from pathlib import Path
 
-CONFIG_PATH = Path("config.json")
+from core.app_dirs import USER_DATA_DIR
+CONFIG_PATH = USER_DATA_DIR / "config.json"
 
 DEFAULT_CONFIG = {
     "devices": [],
     "last_connected": None,
     "theme_mode": "auto",
     "hide_update_all_warning": False,
-    "hide_zapscripts_scan_notice": False,
 }
 
 
