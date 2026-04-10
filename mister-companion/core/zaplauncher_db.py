@@ -1,10 +1,10 @@
 import json
 from pathlib import Path
 
+from core.app_dirs import USER_DATA_DIR
 
-ZAPLAUNCHER_DIR = Path("zaplauncher")
+ZAPLAUNCHER_DIR = USER_DATA_DIR / "zaplauncher"
 ZAPLAUNCHER_DIR.mkdir(exist_ok=True)
-
 
 def _sanitize(name: str) -> str:
     return name.replace(".", "_").replace(" ", "_")
