@@ -8,6 +8,7 @@ DEFAULT_CONFIG = {
     "last_connected": None,
     "theme_mode": "auto",
     "hide_update_all_warning": False,
+    "hide_zapscripts_scan_notice": False,
 }
 
 

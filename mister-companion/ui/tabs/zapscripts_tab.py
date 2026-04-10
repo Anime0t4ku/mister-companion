@@ -1,314 +1,584 @@
-import traceback
+from datetime import datetime
 
-from PyQt6.QtCore import QThread, QTimer, Qt, pyqtSignal
+from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtWidgets import (
-    QGroupBox,
-    QHBoxLayout,
-    QLabel,
-    QPushButton,
-    QVBoxLayout,
+    QDialog,
     QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QPushButton,
+    QListWidget,
+    QLineEdit,
+    QLabel,
+    QProgressBar,
+    QSplitter,
+    QListWidgetItem,
+    QMessageBox,
 )
 
+from core.config import load_config, save_config
 from core.zapscripts import (
-    get_zapscripts_state,
-    run_script,
+    fetch_all_media,
+    list_scripts,
+    launch_media,
     send_input_command,
+    get_media_database_status,
+    get_zapscripts_state,
 )
+from core.zaplauncher_db import get_db_path, load_db, save_db, get_last_scan_time
+from ui.dialogs.zapscripts_controls_dialog import ZapScriptsControlsDialog
+from ui.dialogs.zapscripts_scan_notice_dialog import ZapScriptsScanNoticeDialog
 
 
-class ZaparooCommandWorker(QThread):
-    success = pyqtSignal(object)
+class ScanWorker(QThread):
+    progress = pyqtSignal(int)
+    finished = pyqtSignal(list)
     error = pyqtSignal(str)
-    finished_task = pyqtSignal()
+    aborted = pyqtSignal()
 
-    def __init__(self, task_fn):
+    def __init__(self, connection):
         super().__init__()
-        self.task_fn = task_fn
+        self.connection = connection
+        self._abort_requested = False
+
+    def request_abort(self):
+        self._abort_requested = True
 
     def run(self):
         try:
-            result = self.task_fn()
-            self.success.emit(result)
+            def progress_cb(*args):
+                if self._abort_requested:
+                    raise RuntimeError("__SCAN_ABORTED__")
+
+                if len(args) >= 2:
+                    self.progress.emit(int(args[1]))
+                elif args:
+                    self.progress.emit(int(args[0]))
+
+            data = fetch_all_media(self.connection, progress_cb)
+
+            if self._abort_requested:
+                self.aborted.emit()
+                return
+
+            self.finished.emit(data)
         except Exception as e:
-            detail = traceback.format_exc()
-            self.error.emit(f"{str(e)}\n\n{detail}")
-        finally:
-            self.finished_task.emit()
+            if str(e) == "__SCAN_ABORTED__":
+                self.aborted.emit()
+            else:
+                self.error.emit(str(e))
 
 
 class ZapScriptsTab(QWidget):
     def __init__(self, main_window):
         super().__init__()
         self.main_window = main_window
-        self.connection = main_window.connection
 
-        self.current_worker = None
+        self.db_path = None
+        self.entries = []
+        self.filtered_entries = []
+        self.worker = None
+        self.expected_total = 0
 
-        self.build_ui()
-        self.apply_disconnected_state()
+        self._build_ui()
+        self._load_db()
 
-    def build_ui(self):
-        main_layout = QVBoxLayout()
-        main_layout.setContentsMargins(12, 12, 12, 12)
-        main_layout.setSpacing(14)
-        self.setLayout(main_layout)
+    @property
+    def connection(self):
+        return self.main_window.connection
 
-        self.info_label = QLabel("Connect to a MiSTer device to load Zaparoo scripts.")
-        self.info_label.setStyleSheet("color: gray;")
-        self.info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.info_label.setWordWrap(True)
-        main_layout.addWidget(self.info_label)
+    def _build_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 10, 12, 10)
+        layout.setSpacing(8)
 
-        # ===== Launch Scripts =====
-        scripts_group = QGroupBox("Launch Scripts")
-        scripts_layout = QVBoxLayout()
-        scripts_layout.setContentsMargins(16, 18, 16, 18)
-        scripts_layout.setSpacing(12)
+        top = QHBoxLayout()
+        top.setSpacing(8)
 
-        script_row_1 = QHBoxLayout()
-        script_row_1.setSpacing(10)
+        self.scan_btn = QPushButton("Scan")
+        self.scan_btn.clicked.connect(self._handle_scan_button)
+        self.scan_btn.setFixedWidth(80)
 
-        self.run_update_all_button = QPushButton("Run update_all")
-        self.run_update_all_button.setFixedWidth(170)
+        self.progress = QProgressBar()
+        self.progress.setRange(0, 100)
+        self.progress.setValue(0)
+        self.progress.setTextVisible(True)
 
-        self.run_migrate_sd_button = QPushButton("Run migrate_sd")
-        self.run_migrate_sd_button.setFixedWidth(170)
+        self.status = QLabel("No library found")
+        self.status.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
 
-        self.run_insertcoin_button = QPushButton("Run update_all_insertcoin")
-        self.run_insertcoin_button.setFixedWidth(210)
+        top.addWidget(self.scan_btn)
+        top.addWidget(self.progress, 1)
+        top.addWidget(self.status)
 
-        script_row_1.addStretch()
-        script_row_1.addWidget(self.run_update_all_button)
-        script_row_1.addWidget(self.run_migrate_sd_button)
-        script_row_1.addWidget(self.run_insertcoin_button)
-        script_row_1.addStretch()
+        layout.addLayout(top)
 
-        script_row_2 = QHBoxLayout()
-        script_row_2.setSpacing(10)
+        splitter = QSplitter(Qt.Orientation.Horizontal)
 
-        self.run_auto_time_button = QPushButton("Run auto_time")
-        self.run_auto_time_button.setFixedWidth(170)
+        self.systems = QListWidget()
+        self.systems.addItems(["All", "Scripts"])
+        self.systems.currentTextChanged.connect(self._filter)
+        self.systems.setMinimumWidth(180)
+        self.systems.setMaximumWidth(240)
+        splitter.addWidget(self.systems)
 
-        self.run_dav_browser_button = QPushButton("Run dav_browser")
-        self.run_dav_browser_button.setFixedWidth(170)
+        right = QWidget()
+        right_layout = QVBoxLayout(right)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(8)
 
-        script_row_2.addStretch()
-        script_row_2.addWidget(self.run_auto_time_button)
-        script_row_2.addWidget(self.run_dav_browser_button)
-        script_row_2.addStretch()
+        self.search = QLineEdit()
+        self.search.setPlaceholderText("Search...")
+        self.search.textChanged.connect(self._filter)
 
-        scripts_layout.addLayout(script_row_1)
-        scripts_layout.addLayout(script_row_2)
-        scripts_group.setLayout(scripts_layout)
-        main_layout.addWidget(scripts_group)
+        self.list = QListWidget()
+        self.list.itemDoubleClicked.connect(lambda _: self._launch())
 
-        # ===== Launch Misc. =====
-        misc_group = QGroupBox("Launch Misc.")
-        misc_layout = QVBoxLayout()
-        misc_layout.setContentsMargins(16, 18, 16, 18)
-        misc_layout.setSpacing(10)
+        buttons = QHBoxLayout()
+        buttons.setSpacing(8)
 
-        misc_row_1 = QHBoxLayout()
-        misc_row_1.setSpacing(10)
+        self.launch_btn = QPushButton("Launch Selected")
+        self.launch_btn.clicked.connect(self._launch)
 
-        self.bluetooth_button = QPushButton("Open Bluetooth Menu")
-        self.bluetooth_button.setFixedWidth(180)
+        self.controls_btn = QPushButton("Controls")
+        self.controls_btn.clicked.connect(self._open_controls)
 
-        self.osd_button = QPushButton("Open OSD Menu")
-        self.osd_button.setFixedWidth(180)
+        buttons.addWidget(self.launch_btn)
+        buttons.addWidget(self.controls_btn)
 
-        misc_row_1.addStretch()
-        misc_row_1.addWidget(self.bluetooth_button)
-        misc_row_1.addWidget(self.osd_button)
-        misc_row_1.addStretch()
+        right_layout.addWidget(self.search)
+        right_layout.addWidget(self.list, 1)
+        right_layout.addLayout(buttons)
 
-        misc_row_2 = QHBoxLayout()
-        misc_row_2.setSpacing(10)
+        splitter.addWidget(right)
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 1)
+        splitter.setSizes([220, 700])
 
-        self.cycle_wallpaper_button = QPushButton("Cycle Wallpaper")
-        self.cycle_wallpaper_button.setFixedWidth(180)
+        layout.addWidget(splitter, 1)
 
-        self.return_home_button = QPushButton("Return to MiSTer Home")
-        self.return_home_button.setFixedWidth(180)
-
-        misc_row_2.addStretch()
-        misc_row_2.addWidget(self.cycle_wallpaper_button)
-        misc_row_2.addWidget(self.return_home_button)
-        misc_row_2.addStretch()
-
-        misc_layout.addLayout(misc_row_1)
-        misc_layout.addLayout(misc_row_2)
-        misc_group.setLayout(misc_layout)
-        main_layout.addWidget(misc_group)
-
-        self.status_label = QLabel("")
-        self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.status_label.setStyleSheet("font-weight: bold;")
-        self.status_label.setVisible(False)
-        self.status_label.setWordWrap(True)
-        main_layout.addWidget(self.status_label)
-
-        main_layout.addStretch()
-
-        self.run_update_all_button.clicked.connect(
-            lambda: self.run_script_action("update_all", "update_all sent.")
-        )
-        self.run_migrate_sd_button.clicked.connect(
-            lambda: self.run_script_action("migrate_sd", "migrate_sd sent.")
-        )
-        self.run_insertcoin_button.clicked.connect(
-            lambda: self.run_script_action("update_all_insertcoin", "update_all_insertcoin sent.")
-        )
-        self.run_auto_time_button.clicked.connect(
-            lambda: self.run_script_action("auto_time", "auto_time sent.")
-        )
-        self.run_dav_browser_button.clicked.connect(
-            lambda: self.run_script_action("dav_browser", "dav_browser sent.")
-        )
-
-        self.bluetooth_button.clicked.connect(
-            lambda: self.run_input_action("**input.keyboard:{f11}", "Bluetooth menu command sent.")
-        )
-        self.osd_button.clicked.connect(
-            lambda: self.run_input_action("**input.keyboard:{f12}", "OSD menu command sent.")
-        )
-        self.cycle_wallpaper_button.clicked.connect(
-            lambda: self.run_input_action("**input.keyboard:{f1}", "Wallpaper cycle command sent.")
-        )
-        self.return_home_button.clicked.connect(
-            lambda: self.run_input_action("**stop", "Return-to-home command sent.")
-        )
-
-    def show_status(self, message, color="green"):
-        if color == "green":
-            self.status_label.setStyleSheet("color: #2ecc71; font-weight: bold;")
-        elif color == "red":
-            self.status_label.setStyleSheet("color: #e74c3c; font-weight: bold;")
+    def _handle_scan_button(self):
+        if self.worker is not None:
+            self.abort_scan()
         else:
-            self.status_label.setStyleSheet("color: #f39c12; font-weight: bold;")
+            self.start_scan()
 
-        self.status_label.setText(message)
-        self.status_label.setVisible(True)
+    def _should_show_scan_notice(self) -> bool:
+        config = load_config()
+        return not config.get("hide_zapscripts_scan_notice", False)
 
-        QTimer.singleShot(5000, self.clear_status)
+    def _set_scan_notice_hidden(self, hidden: bool):
+        config = load_config()
+        config["hide_zapscripts_scan_notice"] = hidden
+        save_config(config)
 
-    def clear_status(self):
-        self.status_label.clear()
-        self.status_label.setVisible(False)
+    def _show_scan_notice_dialog(self) -> bool:
+        if not self._should_show_scan_notice():
+            return True
 
-    def set_buttons_enabled(self, enabled):
-        for button in self.all_buttons():
-            button.setEnabled(enabled)
+        dlg = ZapScriptsScanNoticeDialog(self)
+        result = dlg.exec()
 
-    def update_connection_state(self):
-        if self.connection.is_connected():
-            self.apply_connected_state()
-        else:
-            self.apply_disconnected_state()
+        if dlg.should_skip_next_time():
+            self._set_scan_notice_hidden(True)
 
-    def apply_connected_state(self):
-        if self.current_worker is not None and self.current_worker.isRunning():
+        return result == QDialog.DialogCode.Accepted
+
+    def _get_profile_name_for_current_host(self):
+        host = getattr(self.connection, "host", "") or ""
+        if not host:
+            return None
+
+        devices = self.main_window.config_data.get("devices", [])
+        for device in devices:
+            if device.get("ip", "") == host:
+                name = (device.get("name") or "").strip()
+                return name or None
+
+        return None
+
+    def _get_db_path(self):
+        host = getattr(self.connection, "host", "") or ""
+        profile_name = self._get_profile_name_for_current_host()
+        return get_db_path(profile_name, host) if host else None
+
+    def _update_idle_status(self):
+        if not self.connection.is_connected():
+            self.progress.setRange(0, 100)
+            self.progress.setValue(0)
+            self.status.setText("No library found")
             return
 
-        self.info_label.setText("Open this tab to load Zaparoo scripts.")
-        self.info_label.setStyleSheet("color: gray;")
-        self.set_buttons_enabled(False)
+        try:
+            state = get_zapscripts_state(self.connection)
+        except Exception:
+            state = None
 
-    def apply_disconnected_state(self):
-        self.info_label.setText("Connect to a MiSTer device to load Zaparoo scripts.")
-        self.info_label.setStyleSheet("color: gray;")
-        self.clear_status()
-        self.set_buttons_enabled(False)
+        if state:
+            if not state.get("zaparoo_installed", False):
+                self.progress.setRange(0, 100)
+                self.progress.setValue(0)
+                self.status.setText("Zaparoo is not installed")
+                return
 
-    def all_buttons(self):
-        return [
-            self.run_update_all_button,
-            self.run_migrate_sd_button,
-            self.run_insertcoin_button,
-            self.run_auto_time_button,
-            self.run_dav_browser_button,
-            self.bluetooth_button,
-            self.osd_button,
-            self.cycle_wallpaper_button,
-            self.return_home_button,
-        ]
+            if not state.get("zaparoo_service_enabled", False):
+                self.progress.setRange(0, 100)
+                self.progress.setValue(0)
+                self.status.setText("Zaparoo service is not enabled")
+                return
+
+        ts = get_last_scan_time(self.db_path) if self.db_path else None
+        self.progress.setRange(0, 100)
+        if ts:
+            dt = datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M")
+            self.progress.setValue(100)
+            self.status.setText(f"Last scan: {dt}")
+        else:
+            self.progress.setValue(0)
+            self.status.setText("No scan has been run yet")
+
+    def _load_db(self):
+        self.db_path = self._get_db_path()
+
+        if not self.db_path:
+            self.entries = []
+            self.filtered_entries = []
+            self._rebuild_systems([])
+            self._refresh_list()
+            self._update_idle_status()
+            return
+
+        data = load_db(self.db_path)
+        self.entries = data.get("entries", [])
+        self.filtered_entries = []
+
+        systems = sorted(
+            {
+                item.get("system", "Unknown")
+                for item in self.entries
+                if item.get("type") == "game"
+            },
+            key=str.casefold,
+        )
+        self._rebuild_systems(systems)
+        self._filter()
+        self._update_idle_status()
+
+    def _rebuild_systems(self, systems):
+        current = self.systems.currentItem().text() if self.systems.currentItem() else "All"
+
+        self.systems.blockSignals(True)
+        self.systems.clear()
+        self.systems.addItems(["All", "Scripts"] + list(systems))
+
+        matches = self.systems.findItems(current, Qt.MatchFlag.MatchExactly)
+        if matches:
+            self.systems.setCurrentItem(matches[0])
+        elif self.systems.count() > 0:
+            self.systems.setCurrentRow(0)
+
+        self.systems.blockSignals(False)
+
+    def start_scan(self):
+        if not self.connection.is_connected():
+            QMessageBox.warning(self, "Not connected", "Please connect to your MiSTer first.")
+            return
+
+        try:
+            state = get_zapscripts_state(self.connection)
+        except Exception as e:
+            QMessageBox.critical(self, "Zaparoo check failed", str(e))
+            return
+
+        if not state.get("zaparoo_installed", False):
+            self._update_idle_status()
+            return
+
+        if not state.get("zaparoo_service_enabled", False):
+            self._update_idle_status()
+            return
+
+        if not self._show_scan_notice_dialog():
+            return
+
+        self.db_path = self._get_db_path()
+        if not self.db_path:
+            QMessageBox.warning(self, "No MiSTer IP", "No MiSTer IP is available.")
+            return
+
+        try:
+            media_status = get_media_database_status(self.connection)
+        except Exception as e:
+            QMessageBox.critical(self, "Media status failed", str(e))
+            return
+
+        if not media_status.get("exists"):
+            QMessageBox.warning(
+                self,
+                "No media database",
+                "Zaparoo media database was not found on this MiSTer.",
+            )
+            self.status.setText("No media database found")
+            self.progress.setRange(0, 100)
+            self.progress.setValue(0)
+            return
+
+        if media_status.get("indexing"):
+            step_label = media_status.get("current_step_display") or "Indexing"
+            QMessageBox.information(
+                self,
+                "Media indexing in progress",
+                f"Zaparoo is still indexing media.\n\nCurrent step: {step_label}",
+            )
+            self.status.setText(f"Indexing: {step_label}")
+            self.progress.setRange(0, 100)
+            self.progress.setValue(0)
+            return
+
+        if media_status.get("optimizing"):
+            step_label = media_status.get("current_step_display") or "Optimizing"
+            QMessageBox.information(
+                self,
+                "Media optimization in progress",
+                f"Zaparoo is still optimizing the media database.\n\nCurrent step: {step_label}",
+            )
+            self.status.setText(f"Optimizing: {step_label}")
+            self.progress.setRange(0, 100)
+            self.progress.setValue(0)
+            return
+
+        self.expected_total = int(media_status.get("total_media") or 0)
+
+        self.scan_btn.setText("Abort")
+        self.scan_btn.setEnabled(True)
+        self.launch_btn.setEnabled(False)
+        self.controls_btn.setEnabled(False)
+
+        if self.expected_total > 0:
+            self.progress.setRange(0, self.expected_total)
+            self.progress.setValue(0)
+        else:
+            self.progress.setRange(0, 0)
+
+        self.status.setText("Items scanned: 0")
+
+        self.worker = ScanWorker(self.connection)
+        self.worker.progress.connect(self._on_progress)
+        self.worker.finished.connect(self._on_finished)
+        self.worker.error.connect(self._on_error)
+        self.worker.aborted.connect(self._on_aborted)
+        self.worker.start()
+
+    def abort_scan(self):
+        if self.worker is None:
+            return
+
+        self.scan_btn.setEnabled(False)
+        self.status.setText("Aborting scan...")
+        self.worker.request_abort()
+
+    def _on_progress(self, scanned_count):
+        if self.expected_total > 0:
+            self.progress.setRange(0, self.expected_total)
+            self.progress.setValue(min(scanned_count, self.expected_total))
+        self.status.setText(f"Items scanned: {scanned_count}")
+
+    def _on_finished(self, data):
+        self.progress.setRange(0, 100)
+        self.progress.setValue(100)
+
+        entries = []
+        systems = set()
+
+        for item in data:
+            filename = item.get("filename") or item.get("name") or ""
+            system_name = item.get("system_name") or "Unknown"
+            system_id = item.get("system_id") or system_name
+
+            entries.append(
+                {
+                    "name": filename,
+                    "filename": filename,
+                    "system": system_name,
+                    "system_id": system_id,
+                    "type": "game",
+                    "path": item.get("path"),
+                    "zapScript": item.get("zapScript"),
+                }
+            )
+
+            if system_name:
+                systems.add(system_name)
+
+        save_db(self.db_path, {"entries": entries})
+        self.entries = entries
+
+        self._rebuild_systems(sorted(systems, key=str.casefold))
+        self._filter()
+
+        self.scan_btn.setText("Scan")
+        self.scan_btn.setEnabled(True)
+        self.launch_btn.setEnabled(self.connection.is_connected())
+        self.controls_btn.setEnabled(self.connection.is_connected())
+        self.worker = None
+        self.expected_total = 0
+        self._update_idle_status()
+
+    def _on_aborted(self):
+        self.progress.setRange(0, 100)
+        self.progress.setValue(0)
+        self.status.setText("Scan aborted")
+        self.scan_btn.setText("Scan")
+        self.scan_btn.setEnabled(True)
+        self.launch_btn.setEnabled(self.connection.is_connected())
+        self.controls_btn.setEnabled(self.connection.is_connected())
+        self.worker = None
+        self.expected_total = 0
+
+    def _on_error(self, message):
+        self.progress.setRange(0, 100)
+        self.progress.setValue(0)
+        self.status.setText(f"Scan failed: {message}")
+        self.scan_btn.setText("Scan")
+        self.scan_btn.setEnabled(True)
+        self.launch_btn.setEnabled(self.connection.is_connected())
+        self.controls_btn.setEnabled(self.connection.is_connected())
+        self.worker = None
+        self.expected_total = 0
+        QMessageBox.critical(self, "Scan failed", message)
+
+    def _get_combined_entries(self):
+        scripts = list_scripts(self.connection) if self.connection.is_connected() else []
+        return self.entries + scripts
+
+    def _format_display_name(self, item, selected_system):
+        name = item.get("name", "")
+
+        if selected_system != "All":
+            return name
+
+        if item.get("type") == "script":
+            return f"(SCRIPT) {name}"
+
+        system_name = item.get("system", "Unknown")
+        return f"({system_name}) {name}"
+
+    def _refresh_list(self):
+        self.list.clear()
+
+        current_item = self.systems.currentItem()
+        selected_system = current_item.text() if current_item else "All"
+
+        for item in self.filtered_entries:
+            display_name = self._format_display_name(item, selected_system)
+            list_item = QListWidgetItem(display_name)
+            list_item.setData(Qt.ItemDataRole.UserRole, item)
+            self.list.addItem(list_item)
+
+    def _filter(self):
+        query = self.search.text().strip().lower()
+        current_item = self.systems.currentItem()
+        system = current_item.text() if current_item else "All"
+
+        combined = self._get_combined_entries()
+        filtered = []
+
+        for item in combined:
+            name = item.get("name", "")
+
+            if query and query not in name.lower():
+                continue
+
+            if system == "Scripts":
+                if item.get("type") != "script":
+                    continue
+            elif system != "All":
+                if item.get("system") != system:
+                    continue
+
+            filtered.append(item)
+
+        filtered.sort(key=lambda x: (x.get("name") or "").casefold())
+
+        self.filtered_entries = filtered
+        self._refresh_list()
+
+    def _launch(self):
+        if not self.connection.is_connected():
+            QMessageBox.warning(self, "Not connected", "Please connect to your MiSTer first.")
+            return
+
+        current_item = self.list.currentItem()
+        if not current_item:
+            return
+
+        entry = current_item.data(Qt.ItemDataRole.UserRole)
+        if not entry:
+            return
+
+        try:
+            launch_media(self.connection, entry)
+        except Exception as e:
+            QMessageBox.critical(self, "Launch failed", str(e))
+
+    def _open_controls(self):
+        if not self.connection.is_connected():
+            QMessageBox.warning(self, "Not connected", "Please connect to your MiSTer first.")
+            return
+
+        dlg = ZapScriptsControlsDialog(
+            self,
+            callbacks={
+                "bluetooth": lambda: self._run_control("**input.keyboard:{f11}"),
+                "osd": lambda: self._run_control("**input.keyboard:{f12}"),
+                "wallpaper": lambda: self._run_control("**input.keyboard:{f1}"),
+                "home": lambda: self._run_control("**stop"),
+            },
+        )
+        dlg.exec()
+
+    def _run_control(self, command: str):
+        try:
+            send_input_command(self.connection, command)
+        except Exception as e:
+            QMessageBox.critical(self, "Control failed", str(e))
 
     def refresh_status(self):
-        if not self.connection.is_connected():
-            self.apply_disconnected_state()
-            return
+        self.update_connection_state()
 
-        state = get_zapscripts_state(self.connection)
+    def update_connection_state(self):
+        connected = self.connection.is_connected()
 
-        if not state["zaparoo_installed"]:
-            self.info_label.setText(
-                "ZapScripts require Zaparoo to be installed.\n\nPlease install Zaparoo from the Scripts tab."
+        self.scan_btn.setEnabled(True if self.worker is not None else connected)
+        self.launch_btn.setEnabled(connected and self.worker is None)
+        self.controls_btn.setEnabled(connected and self.worker is None)
+
+        self.search.setEnabled(True)
+        self.systems.setEnabled(True)
+        self.list.setEnabled(True)
+
+        if connected and self.worker is None:
+            self._load_db()
+        elif not connected:
+            self.db_path = self._get_db_path()
+
+            if self.db_path:
+                data = load_db(self.db_path)
+                self.entries = data.get("entries", [])
+            else:
+                self.entries = []
+
+            systems = sorted(
+                {
+                    item.get("system", "Unknown")
+                    for item in self.entries
+                    if item.get("type") == "game"
+                },
+                key=str.casefold,
             )
-            self.info_label.setStyleSheet("color: #cc0000;")
-            self.set_buttons_enabled(False)
-            return
+            self._rebuild_systems(systems)
+            self._filter()
 
-        if not state["zaparoo_service_enabled"]:
-            self.info_label.setText(
-                "Zaparoo is installed but the boot service is not enabled.\n\nClick 'Enable Zaparoo Service' in the Scripts tab."
-            )
-            self.info_label.setStyleSheet("color: #cc8400;")
-            self.set_buttons_enabled(False)
-            return
-
-        self.info_label.setText("Zaparoo is installed and ready.")
-        self.info_label.setStyleSheet("color: #00aa00;")
-
-        self.run_update_all_button.setEnabled(state["update_all_installed"])
-        self.run_migrate_sd_button.setEnabled(state["migrate_sd_installed"])
-        self.run_insertcoin_button.setEnabled(state["insertcoin_installed"])
-        self.run_auto_time_button.setEnabled(state["auto_time_installed"])
-        self.run_dav_browser_button.setEnabled(state["dav_browser_installed"])
-
-        self.bluetooth_button.setEnabled(True)
-        self.osd_button.setEnabled(True)
-        self.cycle_wallpaper_button.setEnabled(True)
-        self.return_home_button.setEnabled(True)
-
-    def start_worker(self, task_fn, success_message):
-        if self.current_worker is not None and self.current_worker.isRunning():
-            self.show_status("Another ZapScripts task is still running.", "orange")
-            return
-
-        self.clear_status()
-        self.current_worker = ZaparooCommandWorker(task_fn)
-        self.current_worker.success.connect(
-            lambda _result: self.show_status(success_message, "green")
-        )
-        self.current_worker.error.connect(self.on_worker_error)
-        self.current_worker.finished_task.connect(self.on_worker_finished)
-        self.current_worker.start()
-
-    def on_worker_error(self, message):
-        short_message = message.split("\n\n", 1)[0]
-        self.show_status(short_message, "red")
-
-    def on_worker_finished(self):
-        self.current_worker = None
-        self.refresh_status()
-
-    def run_script_action(self, script_name, success_message):
-        if not self.connection.is_connected():
-            self.show_status("Connect to a MiSTer first.", "red")
-            return
-
-        def task():
-            return run_script(self.connection, script_name)
-
-        self.start_worker(task, success_message)
-
-    def run_input_action(self, command, success_message):
-        if not self.connection.is_connected():
-            self.show_status("Connect to a MiSTer first.", "red")
-            return
-
-        def task():
-            return send_input_command(self.connection, command)
-
-        self.start_worker(task, success_message)
+            self.progress.setRange(0, 100)
+            self.progress.setValue(0)
+            self.status.setText("No library found")
