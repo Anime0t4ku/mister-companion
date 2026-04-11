@@ -9,7 +9,7 @@ class MiSTerConnection:
         self.password = ""
         self.client = None
 
-    def connect(self, host, username, password):
+    def connect(self, host, username, password, use_ssh_agent=False, look_for_ssh_keys=False):
         self.host = host
         self.username = username
         self.password = password
@@ -32,8 +32,8 @@ class MiSTerConnection:
                 username=username,
                 password=password,
                 timeout=5,
-                allow_agent=False,
-                look_for_keys=False,
+                allow_agent=use_ssh_agent,
+                look_for_keys=look_for_ssh_keys,
             )
 
             transport = self.client.get_transport()

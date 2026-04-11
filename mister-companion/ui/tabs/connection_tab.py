@@ -13,7 +13,10 @@ from PyQt6.QtWidgets import (
     QComboBox,
     QGroupBox,
     QSizePolicy,
+    QCheckBox,
 )
+
+from core.config import save_config
 
 
 NEWSWIDGET_URL = "https://raw.githubusercontent.com/Anime0t4ku/mister-companion/main/newswidget.json"
@@ -135,6 +138,38 @@ class ConnectionTab(QWidget):
         connection_row.addStretch()
 
         # =========================
+        # Advanced SSH Options
+        # =========================
+        self.use_ssh_agent_checkbox = QCheckBox("Use OS SSH Agent")
+        self.use_ssh_agent_checkbox.setChecked(
+            self.main_window.config_data.get("use_ssh_agent", False)
+        )
+        self.use_ssh_agent_checkbox.setToolTip(
+            "Uses your operating system SSH agent for authentication."
+        )
+
+        self.look_for_ssh_keys_checkbox = QCheckBox("Use local SSH key files")
+        self.look_for_ssh_keys_checkbox.setChecked(
+            self.main_window.config_data.get("look_for_ssh_keys", False)
+        )
+        self.look_for_ssh_keys_checkbox.setToolTip(
+            "Searches your local ~/.ssh folder for private keys."
+        )
+
+        self.advanced_ssh_warning_label = QLabel(
+            "Advanced options, only enable these if you know what you are doing."
+        )
+        self.advanced_ssh_warning_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.advanced_ssh_warning_label.setStyleSheet("color: #f39c12;")
+
+        ssh_options_row = QHBoxLayout()
+        ssh_options_row.setSpacing(12)
+        ssh_options_row.addStretch()
+        ssh_options_row.addWidget(self.use_ssh_agent_checkbox)
+        ssh_options_row.addWidget(self.look_for_ssh_keys_checkbox)
+        ssh_options_row.addStretch()
+
+        # =========================
         # News Widget
         # =========================
         self.news_group = QGroupBox("MiSTer Companion News")
@@ -196,6 +231,8 @@ class ConnectionTab(QWidget):
 
         main_layout.addWidget(saved_group)
         main_layout.addLayout(connection_row)
+        main_layout.addWidget(self.advanced_ssh_warning_label)
+        main_layout.addLayout(ssh_options_row)
         main_layout.addStretch()
         main_layout.addWidget(self.news_group)
 
@@ -215,6 +252,9 @@ class ConnectionTab(QWidget):
         self.ip_input.textEdited.connect(self.on_connection_field_change)
         self.user_input.textEdited.connect(self.on_connection_field_change)
         self.pass_input.textEdited.connect(self.on_connection_field_change)
+
+        self.use_ssh_agent_checkbox.toggled.connect(self.handle_ssh_option_changed)
+        self.look_for_ssh_keys_checkbox.toggled.connect(self.handle_ssh_option_changed)
 
         self.news_button.clicked.connect(self.open_news_link)
         self.news_prev_button.clicked.connect(self.show_previous_news)
@@ -389,6 +429,9 @@ class ConnectionTab(QWidget):
         self.edit_profile_btn.setEnabled(False)
         self.delete_profile_btn.setEnabled(False)
 
+        self.use_ssh_agent_checkbox.setEnabled(False)
+        self.look_for_ssh_keys_checkbox.setEnabled(False)
+
     def apply_disconnected_state(self):
         self.sync_status_from_main_window()
 
@@ -404,6 +447,9 @@ class ConnectionTab(QWidget):
         self.save_profile_btn.setEnabled(True)
         self.edit_profile_btn.setEnabled(True)
         self.delete_profile_btn.setEnabled(True)
+
+        self.use_ssh_agent_checkbox.setEnabled(True)
+        self.look_for_ssh_keys_checkbox.setEnabled(True)
 
     def update_connection_state(self):
         self.sync_status_from_main_window()
@@ -440,6 +486,11 @@ class ConnectionTab(QWidget):
             self.profile_selector.blockSignals(True)
             self.profile_selector.setCurrentIndex(-1)
             self.profile_selector.blockSignals(False)
+
+    def handle_ssh_option_changed(self, _checked=False):
+        self.main_window.config_data["use_ssh_agent"] = self.use_ssh_agent_checkbox.isChecked()
+        self.main_window.config_data["look_for_ssh_keys"] = self.look_for_ssh_keys_checkbox.isChecked()
+        save_config(self.main_window.config_data)
 
     # =============================
     # Helpers

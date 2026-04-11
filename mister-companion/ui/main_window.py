@@ -64,10 +64,12 @@ class MainWindow(QMainWindow):
         self.reboot_reconnect_host = ""
         self.reboot_reconnect_username = ""
         self.reboot_reconnect_password = ""
+        self.reboot_reconnect_use_ssh_agent = False
+        self.reboot_reconnect_look_for_ssh_keys = False
 
         self._closing = False
 
-        self.setWindowTitle("MiSTer Companion v3.4.2 By Anime0t4ku")
+        self.setWindowTitle("MiSTer Companion v3.4.3 By Anime0t4ku")
         self.resize(900, 900)
 
         if ICON_PATH.exists():
@@ -400,6 +402,8 @@ class MainWindow(QMainWindow):
         self.reboot_reconnect_host = host
         self.reboot_reconnect_username = username
         self.reboot_reconnect_password = password
+        self.reboot_reconnect_use_ssh_agent = self.config_data.get("use_ssh_agent", False)
+        self.reboot_reconnect_look_for_ssh_keys = self.config_data.get("look_for_ssh_keys", False)
 
         self.connection_fail_count = 0
         self.connection.mark_disconnected()
@@ -457,9 +461,17 @@ class MainWindow(QMainWindow):
         host = self.reboot_reconnect_host
         username = self.reboot_reconnect_username
         password = self.reboot_reconnect_password
+        use_ssh_agent = self.reboot_reconnect_use_ssh_agent
+        look_for_ssh_keys = self.reboot_reconnect_look_for_ssh_keys
 
         try:
-            success = self.connection.connect(host, username, password)
+            success = self.connection.connect(
+                host,
+                username,
+                password,
+                use_ssh_agent=use_ssh_agent,
+                look_for_ssh_keys=look_for_ssh_keys,
+            )
         except Exception:
             success = False
 
@@ -470,6 +482,8 @@ class MainWindow(QMainWindow):
             self.reboot_reconnect_host = ""
             self.reboot_reconnect_username = ""
             self.reboot_reconnect_password = ""
+            self.reboot_reconnect_use_ssh_agent = False
+            self.reboot_reconnect_look_for_ssh_keys = False
 
             if hasattr(self, "scripts_tab"):
                 self.scripts_tab.waiting_for_reboot_reconnect = False
@@ -500,6 +514,8 @@ class MainWindow(QMainWindow):
         host = self.connection_tab.ip_input.text().strip()
         username = self.connection_tab.user_input.text().strip() or "root"
         password = self.connection_tab.pass_input.text() or "1"
+        use_ssh_agent = self.config_data.get("use_ssh_agent", False)
+        look_for_ssh_keys = self.config_data.get("look_for_ssh_keys", False)
 
         if not host:
             QMessageBox.warning(self, "Error", "IP Address is required.")
@@ -508,7 +524,13 @@ class MainWindow(QMainWindow):
         self.set_connection_status("Status: Connecting...")
 
         try:
-            success = self.connection.connect(host, username, password)
+            success = self.connection.connect(
+                host,
+                username,
+                password,
+                use_ssh_agent=use_ssh_agent,
+                look_for_ssh_keys=look_for_ssh_keys,
+            )
         except Exception as e:
             success = False
             error_message = str(e)
@@ -543,6 +565,8 @@ class MainWindow(QMainWindow):
         self.reboot_reconnect_host = ""
         self.reboot_reconnect_username = ""
         self.reboot_reconnect_password = ""
+        self.reboot_reconnect_use_ssh_agent = False
+        self.reboot_reconnect_look_for_ssh_keys = False
 
         if hasattr(self, "scripts_tab"):
             self.scripts_tab.waiting_for_reboot_reconnect = False
