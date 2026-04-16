@@ -37,7 +37,6 @@ from core.scripts_actions import (
     remove_cifs_config,
     remove_dav_browser_config,
     remove_ftp_save_sync_config,
-    remove_static_wallpaper,
     run_cifs_mount,
     run_cifs_umount,
     run_update_all_stream,
@@ -53,7 +52,6 @@ from core.scripts_actions import (
 from ui.dialogs.cifs_config_dialog import CifsConfigDialog
 from ui.dialogs.dav_browser_config_dialog import DavBrowserConfigDialog
 from ui.dialogs.ftp_save_sync_config_dialog import FtpSaveSyncConfigDialog
-from ui.dialogs.static_wallpaper_dialog import StaticWallpaperDialog
 from ui.dialogs.update_all_config_dialog import UpdateAllConfigDialog
 
 
@@ -137,7 +135,7 @@ class ScriptsTab(QWidget):
             self.SCRIPT_AUTO_TIME: "Automatically set timezone and current time for your MiSTer.",
             self.SCRIPT_DAV_BROWSER: "Browse a WebDAV server, download ROMs directly to your MiSTer, and optionally launch them after download.",
             self.SCRIPT_FTP_SAVE_SYNC: "Sync MiSTer saves to a remote FTP or SFTP server, with optional savestate syncing and automatic boot-time service startup.",
-            self.SCRIPT_STATIC_WALLPAPER: "Install static_wallpaper, choose a wallpaper from /media/fat/wallpapers with preview, apply it directly from MiSTer Companion, or remove the active static wallpaper.",
+            self.SCRIPT_STATIC_WALLPAPER: "Install or remove static_wallpaper support. Setting or removing the active static wallpaper is now handled from the Wallpapers tab.",
         }
         self.script_status_texts = {
             self.SCRIPT_UPDATE_ALL: "Unknown",
@@ -339,8 +337,6 @@ class ScriptsTab(QWidget):
         self.uninstall_ftp_save_sync_button.clicked.connect(self.uninstall_ftp_save_sync)
 
         self.install_static_wallpaper_button.clicked.connect(self.install_static_wallpaper)
-        self.set_static_wallpaper_button.clicked.connect(self.set_static_wallpaper)
-        self.remove_static_wallpaper_button.clicked.connect(self.remove_active_static_wallpaper)
         self.uninstall_static_wallpaper_button.clicked.connect(self.uninstall_static_wallpaper)
 
         self.open_scripts_folder_button.clicked.connect(self.open_scripts_folder)
@@ -586,24 +582,12 @@ class ScriptsTab(QWidget):
         self.install_static_wallpaper_button = QPushButton("Install")
         self.install_static_wallpaper_button.setFixedWidth(150)
 
-        self.set_static_wallpaper_button = QPushButton("Set Static Wallpaper")
-        self.set_static_wallpaper_button.setFixedWidth(170)
-
-        self.remove_static_wallpaper_button = QPushButton("Remove Static Wallpaper")
-        self.remove_static_wallpaper_button.setFixedWidth(190)
-
         self.uninstall_static_wallpaper_button = QPushButton("Uninstall")
         self.uninstall_static_wallpaper_button.setFixedWidth(150)
 
         layout.addLayout(
             self._build_button_row(
                 self.install_static_wallpaper_button,
-                self.set_static_wallpaper_button,
-            )
-        )
-        layout.addLayout(
-            self._build_button_row(
-                self.remove_static_wallpaper_button,
                 self.uninstall_static_wallpaper_button,
             )
         )
@@ -730,8 +714,6 @@ class ScriptsTab(QWidget):
             self.remove_ftp_save_sync_config_button,
             self.uninstall_ftp_save_sync_button,
             self.install_static_wallpaper_button,
-            self.set_static_wallpaper_button,
-            self.remove_static_wallpaper_button,
             self.uninstall_static_wallpaper_button,
             self.open_scripts_folder_button,
         ]:
@@ -902,26 +884,18 @@ class ScriptsTab(QWidget):
         if not status.static_wallpaper_installed:
             self.script_status_texts[self.SCRIPT_STATIC_WALLPAPER] = "✗ Not installed"
             self.install_static_wallpaper_button.setEnabled(True)
-            self.set_static_wallpaper_button.setEnabled(False)
-            self.remove_static_wallpaper_button.setEnabled(False)
             self.uninstall_static_wallpaper_button.setEnabled(False)
         elif status.static_wallpaper_active:
             self.script_status_texts[self.SCRIPT_STATIC_WALLPAPER] = "✓ Installed, wallpaper active"
             self.install_static_wallpaper_button.setEnabled(False)
-            self.set_static_wallpaper_button.setEnabled(True)
-            self.remove_static_wallpaper_button.setEnabled(True)
             self.uninstall_static_wallpaper_button.setEnabled(True)
         elif status.static_wallpaper_saved:
             self.script_status_texts[self.SCRIPT_STATIC_WALLPAPER] = "⚙ Installed, selection saved"
             self.install_static_wallpaper_button.setEnabled(False)
-            self.set_static_wallpaper_button.setEnabled(True)
-            self.remove_static_wallpaper_button.setEnabled(False)
             self.uninstall_static_wallpaper_button.setEnabled(True)
         else:
             self.script_status_texts[self.SCRIPT_STATIC_WALLPAPER] = "✓ Installed"
             self.install_static_wallpaper_button.setEnabled(False)
-            self.set_static_wallpaper_button.setEnabled(True)
-            self.remove_static_wallpaper_button.setEnabled(False)
             self.uninstall_static_wallpaper_button.setEnabled(True)
 
         self.open_scripts_folder_button.setEnabled(True)
@@ -1439,37 +1413,6 @@ class ScriptsTab(QWidget):
             install_static_wallpaper(self.connection, log)
 
         self.start_worker(task, "static_wallpaper installed successfully.")
-
-    def set_static_wallpaper(self):
-        if not self.connection.is_connected():
-            return
-
-        dialog = StaticWallpaperDialog(self.connection, self)
-        if dialog.exec():
-            self.refresh_status()
-
-    def remove_active_static_wallpaper(self):
-        if not self.connection.is_connected():
-            return
-
-        confirm = QMessageBox.question(
-            self,
-            "Remove Static Wallpaper",
-            "This will remove the active static wallpaper (menu.jpg/menu.png) and reload the MiSTer menu.\n\nContinue?",
-        )
-        if confirm != QMessageBox.StandardButton.Yes:
-            return
-
-        try:
-            remove_static_wallpaper(self.connection, reload_menu=True)
-            QMessageBox.information(
-                self,
-                "Static Wallpaper Removed",
-                "The active static wallpaper has been removed.\n\nThe MiSTer menu has been reloaded.",
-            )
-            self.refresh_status()
-        except Exception as e:
-            QMessageBox.critical(self, "Error", str(e))
 
     def uninstall_static_wallpaper(self):
         if not self.connection.is_connected():

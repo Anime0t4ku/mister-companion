@@ -3,12 +3,12 @@
   "items": [
     {
       "id": "v3-stable",
-      "date": "2026-04-10",
+      "date": "2026-04-16",
       "type": "update",
-      "headline": "MiSTer Companion v3.4.2 Released",
-      "message": "MiSTer Companion v3.4.2 is now available.\n\nThe Extras tab has been re-enabled and now includes support for 3s-arm, replacing the previous 3SX integration. A migration option has been added to help users switch from existing 3SX installations.\n\nThis update also introduces an OSD font selector in MiSTer Settings (Easy Mode), allowing you to choose .pf fonts directly from within the app.\n\nYou can download the latest stable release below.",
-      "url": "https://github.com/Anime0t4ku/mister-companion/releases/tag/v3.4.2",
-      "url_label": "Download v3.4.2"
+      "headline": "MiSTer Companion v3.4.4 Released",
+      "message": "MiSTer Companion v3.4.4 is now available.\n\nThis update moves the Set Static Wallpaper and Remove Static Wallpaper actions from the Scripts tab to the Wallpapers tab. These actions now work even when static_wallpaper is not installed, while the script itself is only needed if you want to control this feature directly from the MiSTer.\n\nAdvanced users can now also enable the use of their OS SSH agent from within MiSTer Companion.\n\nYou can download the latest stable release below.",
+      "url": "https://github.com/Anime0t4ku/mister-companion/releases/tag/v3.4.4",
+      "url_label": "Download v3.4.4"
     },
     {
       "id": "macos-support",

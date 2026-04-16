@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from core.scripts_actions import get_scripts_status, remove_static_wallpaper
 from core.wallpapers import (
     build_install_state,
     fetch_ot4ku_wallpapers,
@@ -23,6 +24,7 @@ from core.wallpapers import (
     wallpaper_folder_exists,
     install_wallpaper_items,
 )
+from ui.dialogs.static_wallpaper_dialog import StaticWallpaperDialog
 
 
 class WallpaperTaskWorker(QThread):
@@ -71,6 +73,36 @@ class WallpapersTab(QWidget):
         main_layout.setSpacing(14)
         self.setLayout(main_layout)
 
+        # Static Wallpapers
+        static_group = QGroupBox("Static Wallpapers")
+        static_layout = QVBoxLayout()
+        static_layout.setContentsMargins(16, 18, 16, 18)
+        static_layout.setSpacing(12)
+
+        static_buttons = QHBoxLayout()
+        static_buttons.setSpacing(10)
+
+        self.set_static_wallpaper_button = QPushButton("Set Static Wallpaper")
+        self.set_static_wallpaper_button.setFixedWidth(190)
+
+        self.remove_static_wallpaper_button = QPushButton("Remove Static Wallpaper")
+        self.remove_static_wallpaper_button.setFixedWidth(190)
+
+        static_buttons.addStretch()
+        static_buttons.addWidget(self.set_static_wallpaper_button)
+        static_buttons.addWidget(self.remove_static_wallpaper_button)
+        static_buttons.addStretch()
+
+        static_layout.addLayout(static_buttons)
+        static_group.setLayout(static_layout)
+        main_layout.addWidget(static_group)
+
+        # Wallpaper Sources
+        sources_group = QGroupBox("Wallpaper Sources")
+        sources_layout = QVBoxLayout()
+        sources_layout.setContentsMargins(16, 18, 16, 18)
+        sources_layout.setSpacing(14)
+
         # Ranny
         ranny_group = QGroupBox("Ranny Snice Wallpapers")
         ranny_layout = QVBoxLayout()
@@ -97,7 +129,7 @@ class WallpapersTab(QWidget):
 
         ranny_layout.addLayout(ranny_buttons)
         ranny_group.setLayout(ranny_layout)
-        main_layout.addWidget(ranny_group)
+        sources_layout.addWidget(ranny_group)
 
         # PCN
         pcn_group = QGroupBox("PCN Challenge Wallpapers")
@@ -121,7 +153,7 @@ class WallpapersTab(QWidget):
 
         pcn_layout.addLayout(pcn_buttons)
         pcn_group.setLayout(pcn_layout)
-        main_layout.addWidget(pcn_group)
+        sources_layout.addWidget(pcn_group)
 
         # PCN Premium
         pcn_premium_group = QGroupBox("PCN Premium Member Wallpapers")
@@ -145,7 +177,7 @@ class WallpapersTab(QWidget):
 
         pcn_premium_layout.addLayout(pcn_premium_buttons)
         pcn_premium_group.setLayout(pcn_premium_layout)
-        main_layout.addWidget(pcn_premium_group)
+        sources_layout.addWidget(pcn_premium_group)
 
         # 0t4ku
         ot4ku_group = QGroupBox("Anime0t4ku Wallpapers")
@@ -169,7 +201,10 @@ class WallpapersTab(QWidget):
 
         ot4ku_layout.addLayout(ot4ku_buttons)
         ot4ku_group.setLayout(ot4ku_layout)
-        main_layout.addWidget(ot4ku_group)
+        sources_layout.addWidget(ot4ku_group)
+
+        sources_group.setLayout(sources_layout)
+        main_layout.addWidget(sources_group)
 
         # Open Wallpaper Folder
         folder_row = QHBoxLayout()
@@ -208,6 +243,9 @@ class WallpapersTab(QWidget):
 
         main_layout.addStretch()
 
+        self.set_static_wallpaper_button.clicked.connect(self.set_static_wallpaper)
+        self.remove_static_wallpaper_button.clicked.connect(self.remove_static_wallpaper_action)
+
         self.install_169_button.clicked.connect(self.install_169_wallpapers)
         self.install_43_button.clicked.connect(self.install_43_wallpapers)
         self.remove_ranny_button.clicked.connect(self.remove_ranny_wallpapers)
@@ -232,6 +270,9 @@ class WallpapersTab(QWidget):
         if self.current_worker is not None and self.current_worker.isRunning():
             return
 
+        self.set_static_wallpaper_button.setEnabled(True)
+        self.remove_static_wallpaper_button.setEnabled(False)
+
         self.install_169_button.setText("Install 16:9 Wallpapers")
         self.install_43_button.setText("Install 4:3 Wallpapers")
         self.install_pcn_button.setText("Install Wallpapers")
@@ -254,6 +295,9 @@ class WallpapersTab(QWidget):
         self.open_wallpaper_folder_button.setEnabled(True)
 
     def apply_disconnected_state(self):
+        self.set_static_wallpaper_button.setEnabled(False)
+        self.remove_static_wallpaper_button.setEnabled(False)
+
         self.install_169_button.setText("Install 16:9 Wallpapers")
         self.install_43_button.setText("Install 4:3 Wallpapers")
         self.install_pcn_button.setText("Install Wallpapers")
@@ -279,6 +323,17 @@ class WallpapersTab(QWidget):
         if not self.connection.is_connected():
             self.apply_disconnected_state()
             return
+
+        self.set_static_wallpaper_button.setEnabled(True)
+        self.remove_static_wallpaper_button.setEnabled(False)
+
+        try:
+            script_status = get_scripts_status(self.connection)
+            self.remove_static_wallpaper_button.setEnabled(
+                bool(script_status.static_wallpaper_active)
+            )
+        except Exception:
+            self.remove_static_wallpaper_button.setEnabled(False)
 
         installed = get_installed_wallpapers(self.connection)
 
@@ -403,6 +458,32 @@ class WallpapersTab(QWidget):
         self.console.moveCursor(self.console.textCursor().MoveOperation.End)
         self.console.insertPlainText(text)
         self.console.ensureCursorVisible()
+
+    def set_static_wallpaper(self):
+        if not self.connection.is_connected():
+            return
+
+        dialog = StaticWallpaperDialog(self.connection, self)
+        if dialog.exec():
+            self.refresh_status()
+
+    def remove_static_wallpaper_action(self):
+        if not self.connection.is_connected():
+            return
+
+        confirm = QMessageBox.question(
+            self,
+            "Remove Static Wallpaper",
+            "Remove the current static wallpaper from the MiSTer?",
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+
+        try:
+            remove_static_wallpaper(self.connection, reload_menu=True)
+            self.refresh_status()
+        except Exception as e:
+            QMessageBox.critical(self, "Error", str(e))
 
     def install_169_wallpapers(self):
         if not self.connection.is_connected():
