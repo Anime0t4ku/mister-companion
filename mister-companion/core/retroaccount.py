@@ -16,13 +16,12 @@ def _extract_code(payload):
         value = payload.get(key)
         if value:
             return str(value)
-    raise RuntimeError("Retro Account response did not include a login code.")
+    raise RuntimeError("RetroAccount response did not include a login code.")
 
 
 def _api_post(path, payload):
     url = f"{RETROACCOUNT_BASE_URL}{path}"
-    response = requests.post(url, json=payload, timeout=20)
-    return response
+    return requests.post(url, json=payload, timeout=20)
 
 
 def _ensure_remote_dir(connection):
@@ -64,9 +63,7 @@ def _remote_exists(connection, path):
         try:
             sftp.stat(path)
             return True
-        except FileNotFoundError:
-            return False
-        except OSError:
+        except (FileNotFoundError, OSError):
             return False
     finally:
         sftp.close()
@@ -78,19 +75,19 @@ def get_retroaccount_status(connection):
 
     if not user_exists or not device_id_exists:
         return {
-            "linked": False,
+            "logged_in": False,
             "device_id": "",
         }
 
     device_id = _read_remote_text(connection, RETROACCOUNT_DEVICE_ID_PATH).strip()
 
     return {
-        "linked": True,
+        "logged_in": True,
         "device_id": device_id,
     }
 
 
-def start_retroaccount_device_link(connection):
+def start_retroaccount_login(connection):
     if not connection.is_connected():
         raise RuntimeError("Not connected")
 
@@ -101,20 +98,20 @@ def start_retroaccount_device_link(connection):
 
     if response.status_code != 200:
         raise RuntimeError(
-            f"Retro Account code request failed with status {response.status_code}."
+            f"RetroAccount code request failed with status {response.status_code}."
         )
 
     payload = response.json()
     code = _extract_code(payload)
-    link = f"{RETROACCOUNT_BASE_URL}/code?c={code}&from={RETROACCOUNT_CLIENT_ID}"
+    url = f"{RETROACCOUNT_BASE_URL}/code?c={code}&from={RETROACCOUNT_CLIENT_ID}"
 
     return {
         "code": code,
-        "link": link,
+        "url": url,
     }
 
 
-def poll_retroaccount_device_link(connection, device_code):
+def poll_retroaccount_login(connection, device_code):
     if not connection.is_connected():
         raise RuntimeError("Not connected")
 
@@ -133,17 +130,17 @@ def poll_retroaccount_device_link(connection, device_code):
 
     if response.status_code != 200:
         raise RuntimeError(
-            f"Retro Account token request failed with status {response.status_code}."
+            f"RetroAccount token request failed with status {response.status_code}."
         )
 
     payload = response.json()
     credentials = payload.get("credentials")
     if not isinstance(credentials, dict):
-        raise RuntimeError("Retro Account response did not include a credentials object.")
+        raise RuntimeError("RetroAccount response did not include a credentials object.")
 
     device_id = credentials.get("device_id")
     if not device_id:
-        raise RuntimeError("Retro Account credentials did not include device_id.")
+        raise RuntimeError("RetroAccount credentials did not include device_id.")
 
     credentials_json = json.dumps(credentials, indent=2, ensure_ascii=False)
 
@@ -151,6 +148,6 @@ def poll_retroaccount_device_link(connection, device_code):
     _write_remote_text(connection, RETROACCOUNT_DEVICE_ID_PATH, str(device_id).strip())
 
     return {
-        "status": "linked",
+        "status": "logged_in",
         "device_id": str(device_id).strip(),
     }

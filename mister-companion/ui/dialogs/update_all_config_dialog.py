@@ -1,5 +1,5 @@
-from PyQt6.QtCore import QTimer, Qt
-from PyQt6.QtGui import QGuiApplication
+from PyQt6.QtCore import QTimer, Qt, QUrl
+from PyQt6.QtGui import QGuiApplication, QDesktopServices
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -16,8 +16,8 @@ from PyQt6.QtWidgets import (
 
 from core.retroaccount import (
     get_retroaccount_status,
-    poll_retroaccount_device_link,
-    start_retroaccount_device_link,
+    poll_retroaccount_login,
+    start_retroaccount_login,
 )
 from core.update_all_config import load_update_all_config, save_update_all_config
 
@@ -28,9 +28,16 @@ class UpdateAllConfigDialog(QDialog):
         self.connection = connection
 
         self.retro_pending_code = ""
+        self.retro_pending_link = ""
+        self.retro_seconds_remaining = 0
+
         self.retro_poll_timer = QTimer(self)
         self.retro_poll_timer.setInterval(5000)
         self.retro_poll_timer.timeout.connect(self.on_retro_poll_timeout)
+
+        self.retro_countdown_timer = QTimer(self)
+        self.retro_countdown_timer.setInterval(1000)
+        self.retro_countdown_timer.timeout.connect(self.on_retro_countdown_timeout)
 
         self.setWindowTitle("Update_All Configuration")
         self.resize(900, 850)
@@ -189,74 +196,87 @@ class UpdateAllConfigDialog(QDialog):
         ]:
             self._add(community_group, widget)
 
-        # ===== Retro Account =====
-        retro_group = self._group("Retro Account", self.right_column_layout)
+        # ===== RetroAccount =====
+        retro_group = self._group("RetroAccount", self.right_column_layout)
 
-        self.retro_status_label = QLabel("Status: Not linked")
+        self.retro_status_label = QLabel("Status: Not logged in")
         self.retro_status_label.setStyleSheet("font-weight: bold;")
         retro_group.layout().addWidget(self.retro_status_label)
 
+        self.retro_normal_widget = QWidget()
+        retro_normal_layout = QVBoxLayout(self.retro_normal_widget)
+        retro_normal_layout.setContentsMargins(0, 0, 0, 0)
+        retro_normal_layout.setSpacing(6)
+
         self.retro_description_label = QLabel(
-            "Link this MiSTer device to your Retro Account to enable premium "
-            "update_all features."
+            "Log in to this MiSTer device with your RetroAccount to enable "
+            "premium update_all features."
         )
         self.retro_description_label.setWordWrap(True)
-        retro_group.layout().addWidget(self.retro_description_label)
+        retro_normal_layout.addWidget(self.retro_description_label)
 
-        self.retro_link_button = QPushButton("Link Device")
-        retro_group.layout().addWidget(self.retro_link_button)
-
-        self.retro_code_title_label = QLabel("Code:")
-        self.retro_code_title_label.setStyleSheet("font-weight: bold;")
-        retro_group.layout().addWidget(self.retro_code_title_label)
-
-        self.retro_code_value_label = QLabel("—")
-        self.retro_code_value_label.setWordWrap(True)
-        self.retro_code_value_label.setTextInteractionFlags(
-            Qt.TextInteractionFlag.TextSelectableByMouse
-        )
-        retro_group.layout().addWidget(self.retro_code_value_label)
-
-        self.retro_link_title_label = QLabel("Retro Account Link:")
-        self.retro_link_title_label.setStyleSheet("font-weight: bold;")
-        retro_group.layout().addWidget(self.retro_link_title_label)
-
-        self.retro_link_value_label = QLabel("—")
-        self.retro_link_value_label.setWordWrap(True)
-        self.retro_link_value_label.setTextInteractionFlags(
-            Qt.TextInteractionFlag.TextSelectableByMouse
-        )
-        retro_group.layout().addWidget(self.retro_link_value_label)
-
-        self.retro_waiting_label = QLabel(
-            "When linking is in progress, MiSTer Companion will wait for "
-            "confirmation and then link this MiSTer automatically."
-        )
-        self.retro_waiting_label.setWordWrap(True)
-        retro_group.layout().addWidget(self.retro_waiting_label)
-
-        retro_button_row = QHBoxLayout()
-        self.retro_copy_link_button = QPushButton("Copy Link")
-        self.retro_refresh_button = QPushButton("Refresh Status")
-        retro_button_row.addWidget(self.retro_copy_link_button)
-        retro_button_row.addWidget(self.retro_refresh_button)
-        retro_group.layout().addLayout(retro_button_row)
-
-        retro_line = QFrame()
-        retro_line.setFrameShape(QFrame.Shape.HLine)
-        retro_group.layout().addWidget(retro_line)
+        self.retro_login_button = QPushButton("Login")
+        retro_normal_layout.addWidget(self.retro_login_button)
 
         self.retro_device_id_title_label = QLabel("Device ID:")
         self.retro_device_id_title_label.setStyleSheet("font-weight: bold;")
-        retro_group.layout().addWidget(self.retro_device_id_title_label)
+        retro_normal_layout.addWidget(self.retro_device_id_title_label)
 
         self.retro_device_id_value_label = QLabel("—")
         self.retro_device_id_value_label.setWordWrap(True)
         self.retro_device_id_value_label.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse
         )
-        retro_group.layout().addWidget(self.retro_device_id_value_label)
+        retro_normal_layout.addWidget(self.retro_device_id_value_label)
 
+        retro_group.layout().addWidget(self.retro_normal_widget)
+
+        self.retro_login_widget = QWidget()
+        retro_login_layout = QVBoxLayout(self.retro_login_widget)
+        retro_login_layout.setContentsMargins(0, 0, 0, 0)
+        retro_login_layout.setSpacing(6)
+
+        self.retro_countdown_label = QLabel("Time remaining: 05:00")
+        self.retro_countdown_label.setStyleSheet("font-weight: bold;")
+        retro_login_layout.addWidget(self.retro_countdown_label)
+
+        self.retro_code_title_label = QLabel("Code:")
+        self.retro_code_title_label.setStyleSheet("font-weight: bold;")
+        retro_login_layout.addWidget(self.retro_code_title_label)
+
+        self.retro_code_value_label = QLabel("—")
+        self.retro_code_value_label.setWordWrap(True)
+        self.retro_code_value_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        retro_login_layout.addWidget(self.retro_code_value_label)
+
+        self.retro_url_title_label = QLabel("Login URL:")
+        self.retro_url_title_label.setStyleSheet("font-weight: bold;")
+        retro_login_layout.addWidget(self.retro_url_title_label)
+
+        self.retro_url_value_label = QLabel("—")
+        self.retro_url_value_label.setWordWrap(True)
+        self.retro_url_value_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        retro_login_layout.addWidget(self.retro_url_value_label)
+
+        self.retro_login_info_label = QLabel(
+            "Your browser should open automatically. Finish the login flow on "
+            "RetroAccount. No further action is needed here unless the browser did not open."
+        )
+        self.retro_login_info_label.setWordWrap(True)
+        retro_login_layout.addWidget(self.retro_login_info_label)
+
+        retro_button_row = QHBoxLayout()
+        self.retro_copy_url_button = QPushButton("Copy URL")
+        self.retro_cancel_button = QPushButton("Cancel")
+        retro_button_row.addWidget(self.retro_copy_url_button)
+        retro_button_row.addWidget(self.retro_cancel_button)
+        retro_login_layout.addLayout(retro_button_row)
+
+        retro_group.layout().addWidget(self.retro_login_widget)
         retro_group.layout().addStretch()
 
         self._set_retro_ui_state("idle")
@@ -282,9 +302,9 @@ class UpdateAllConfigDialog(QDialog):
         self.save_button.clicked.connect(self.on_save)
         self.close_button.clicked.connect(self.reject)
 
-        self.retro_link_button.clicked.connect(self.on_retro_link_device)
-        self.retro_copy_link_button.clicked.connect(self.on_retro_copy_link)
-        self.retro_refresh_button.clicked.connect(self.on_retro_refresh_status)
+        self.retro_login_button.clicked.connect(self.on_retro_login)
+        self.retro_copy_url_button.clicked.connect(self.on_retro_copy_url)
+        self.retro_cancel_button.clicked.connect(self.on_retro_cancel)
 
     def _group(self, title, target_layout=None):
         box = QFrame()
@@ -315,57 +335,101 @@ class UpdateAllConfigDialog(QDialog):
         else:
             group.layout().addWidget(widget)
 
+    def _format_retro_time(self):
+        minutes = self.retro_seconds_remaining // 60
+        seconds = self.retro_seconds_remaining % 60
+        return f"{minutes:02d}:{seconds:02d}"
+
     def _set_retro_ui_state(self, state):
         if state == "idle":
-            self.retro_status_label.setText("Status: Not linked")
-            self.retro_code_value_label.setText("—")
-            self.retro_link_value_label.setText("—")
+            self.retro_status_label.setText("Status: Not logged in")
+            self.retro_normal_widget.show()
+            self.retro_login_widget.hide()
+            self.retro_device_id_title_label.hide()
+            self.retro_device_id_value_label.hide()
             self.retro_device_id_value_label.setText("—")
-
-            self.retro_link_button.setEnabled(True)
-            self.retro_copy_link_button.setEnabled(False)
-            self.retro_refresh_button.setEnabled(False)
+            self.retro_login_button.setEnabled(True)
 
         elif state == "pending":
-            self.retro_status_label.setText("Status: Waiting for confirmation")
-            self.retro_device_id_value_label.setText("—")
+            self.retro_status_label.setText("Status: Waiting for login")
+            self.retro_normal_widget.hide()
+            self.retro_login_widget.show()
+            self.retro_countdown_label.setText(f"Time remaining: {self._format_retro_time()}")
 
-            self.retro_link_button.setEnabled(False)
-            self.retro_copy_link_button.setEnabled(True)
-            self.retro_refresh_button.setEnabled(False)
-
-        elif state == "linked":
-            self.retro_status_label.setText("Status: Linked")
+        elif state == "logged_in":
+            self.retro_status_label.setText("Status: Logged in")
+            self.retro_normal_widget.show()
+            self.retro_login_widget.hide()
+            self.retro_device_id_title_label.show()
+            self.retro_device_id_value_label.show()
+            self.retro_login_button.setEnabled(False)
             self.retro_code_value_label.setText("—")
-            self.retro_link_value_label.setText("—")
+            self.retro_url_value_label.setText("—")
 
-            self.retro_link_button.setEnabled(False)
-            self.retro_copy_link_button.setEnabled(False)
-            self.retro_refresh_button.setEnabled(True)
-
-    def on_retro_link_device(self):
+    def on_retro_login(self):
         try:
-            result = start_retroaccount_device_link(self.connection)
+            result = start_retroaccount_login(self.connection)
             self.retro_pending_code = result["code"]
+            self.retro_pending_link = result["url"]
+            self.retro_seconds_remaining = 5 * 60
 
-            self._set_retro_ui_state("pending")
             self.retro_code_value_label.setText(result["code"])
-            self.retro_link_value_label.setText(result["link"])
+            self.retro_url_value_label.setText(result["url"])
+            self._set_retro_ui_state("pending")
+
+            QDesktopServices.openUrl(QUrl(result["url"]))
 
             if not self.retro_poll_timer.isActive():
                 self.retro_poll_timer.start()
 
+            if not self.retro_countdown_timer.isActive():
+                self.retro_countdown_timer.start()
+
         except Exception as e:
-            QMessageBox.critical(self, "Retro Account", f"Failed to start device link:\n{e}")
+            QMessageBox.critical(self, "RetroAccount", f"Failed to start login:\n{e}")
 
-    def on_retro_copy_link(self):
-        link = self.retro_link_value_label.text().strip()
-        if not link or link == "—":
+    def on_retro_copy_url(self):
+        url = self.retro_url_value_label.text().strip()
+        if not url or url == "—":
             return
-        QGuiApplication.clipboard().setText(link)
+        QGuiApplication.clipboard().setText(url)
 
-    def on_retro_refresh_status(self):
+    def on_retro_cancel(self):
+        self.retro_poll_timer.stop()
+        self.retro_countdown_timer.stop()
+        self.retro_pending_code = ""
+        self.retro_pending_link = ""
+        self.retro_seconds_remaining = 0
+        self.retro_code_value_label.setText("—")
+        self.retro_url_value_label.setText("—")
         self.load_retro_status()
+
+    def on_retro_countdown_timeout(self):
+        if self.retro_seconds_remaining <= 0:
+            self.retro_countdown_timer.stop()
+            self.retro_poll_timer.stop()
+            self.retro_pending_code = ""
+            QMessageBox.information(
+                self,
+                "RetroAccount",
+                "Login timed out. Please try again.",
+            )
+            self.load_retro_status()
+            return
+
+        self.retro_seconds_remaining -= 1
+        self.retro_countdown_label.setText(f"Time remaining: {self._format_retro_time()}")
+
+        if self.retro_seconds_remaining <= 0:
+            self.retro_countdown_timer.stop()
+            self.retro_poll_timer.stop()
+            self.retro_pending_code = ""
+            QMessageBox.information(
+                self,
+                "RetroAccount",
+                "Login timed out. Please try again.",
+            )
+            self.load_retro_status()
 
     def on_retro_poll_timeout(self):
         if not self.retro_pending_code:
@@ -373,25 +437,29 @@ class UpdateAllConfigDialog(QDialog):
             return
 
         try:
-            result = poll_retroaccount_device_link(self.connection, self.retro_pending_code)
+            result = poll_retroaccount_login(self.connection, self.retro_pending_code)
 
             if result["status"] == "pending":
                 return
 
-            if result["status"] == "linked":
+            if result["status"] == "logged_in":
                 self.retro_poll_timer.stop()
+                self.retro_countdown_timer.stop()
                 self.retro_pending_code = ""
-                self._set_retro_ui_state("linked")
+                self.retro_pending_link = ""
+                self.retro_seconds_remaining = 0
+                self._set_retro_ui_state("logged_in")
                 self.retro_device_id_value_label.setText(result["device_id"])
                 QMessageBox.information(
                     self,
-                    "Retro Account",
-                    "This MiSTer has been linked successfully.",
+                    "RetroAccount",
+                    "This MiSTer is now logged in successfully.",
                 )
 
         except Exception as e:
             self.retro_poll_timer.stop()
-            QMessageBox.critical(self, "Retro Account", f"Linking failed:\n{e}")
+            self.retro_countdown_timer.stop()
+            QMessageBox.critical(self, "RetroAccount", f"Login failed:\n{e}")
             self.load_retro_status()
 
     def load_retro_status(self):
@@ -401,11 +469,15 @@ class UpdateAllConfigDialog(QDialog):
             self._set_retro_ui_state("idle")
             return
 
-        if status["linked"]:
-            self.retro_pending_code = ""
-            self.retro_poll_timer.stop()
-            self._set_retro_ui_state("linked")
-            self.retro_device_id_value_label.setText(status["device_id"])
+        self.retro_poll_timer.stop()
+        self.retro_countdown_timer.stop()
+        self.retro_pending_code = ""
+        self.retro_pending_link = ""
+        self.retro_seconds_remaining = 0
+
+        if status["logged_in"]:
+            self._set_retro_ui_state("logged_in")
+            self.retro_device_id_value_label.setText(status["device_id"] or "—")
         else:
             self._set_retro_ui_state("idle")
 
@@ -504,4 +576,5 @@ class UpdateAllConfigDialog(QDialog):
 
     def closeEvent(self, event):
         self.retro_poll_timer.stop()
+        self.retro_countdown_timer.stop()
         super().closeEvent(event)
