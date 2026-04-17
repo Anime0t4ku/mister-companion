@@ -1,4 +1,5 @@
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import QTimer, Qt
+from PyQt6.QtGui import QGuiApplication
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -13,6 +14,11 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from core.retroaccount import (
+    get_retroaccount_status,
+    poll_retroaccount_device_link,
+    start_retroaccount_device_link,
+)
 from core.update_all_config import load_update_all_config, save_update_all_config
 
 
@@ -21,12 +27,18 @@ class UpdateAllConfigDialog(QDialog):
         super().__init__(parent)
         self.connection = connection
 
+        self.retro_pending_code = ""
+        self.retro_poll_timer = QTimer(self)
+        self.retro_poll_timer.setInterval(5000)
+        self.retro_poll_timer.timeout.connect(self.on_retro_poll_timeout)
+
         self.setWindowTitle("Update_All Configuration")
-        self.resize(500, 850)
-        self.setMinimumSize(460, 500)
+        self.resize(900, 850)
+        self.setMinimumSize(760, 500)
 
         self.build_ui()
         self.load_current_config()
+        self.load_retro_status()
 
     def build_ui(self):
         outer = QVBoxLayout(self)
@@ -48,8 +60,21 @@ class UpdateAllConfigDialog(QDialog):
         self.content_layout.setSpacing(10)
         scroll.setWidget(content)
 
+        columns_layout = QHBoxLayout()
+        columns_layout.setSpacing(12)
+        self.content_layout.addLayout(columns_layout)
+
+        self.left_column_layout = QVBoxLayout()
+        self.left_column_layout.setSpacing(10)
+
+        self.right_column_layout = QVBoxLayout()
+        self.right_column_layout.setSpacing(10)
+
+        columns_layout.addLayout(self.left_column_layout, 3)
+        columns_layout.addLayout(self.right_column_layout, 2)
+
         # ===== Main Cores =====
-        main_group = self._group("Main Cores")
+        main_group = self._group("Main Cores", self.left_column_layout)
         self.main_cores_check = QCheckBox("Enable Main Cores")
         self.main_source_combo = QComboBox()
         self.main_source_combo.addItems([
@@ -67,7 +92,7 @@ class UpdateAllConfigDialog(QDialog):
         main_group.layout().addLayout(row)
 
         # ===== JTCores =====
-        jt_group = self._group("JTCores")
+        jt_group = self._group("JTCores", self.left_column_layout)
         self.jtcores_check = QCheckBox("Enable JTCores")
         self.jt_beta_check = QCheckBox("Enable Beta Cores")
         self._add(jt_group, self.jtcores_check)
@@ -75,7 +100,7 @@ class UpdateAllConfigDialog(QDialog):
         self.jtcores_check.toggled.connect(self.update_jt_beta_state)
 
         # ===== Other Cores =====
-        other_group = self._group("Other Cores")
+        other_group = self._group("Other Cores", self.left_column_layout)
         self.coinop_check = QCheckBox("Coin-Op Collection")
         self.arcade_offset_check = QCheckBox("Arcade Offset Folder")
         self.llapi_check = QCheckBox("LLAPI Forks Folder")
@@ -98,7 +123,7 @@ class UpdateAllConfigDialog(QDialog):
             self._add(other_group, widget)
 
         # ===== Tools & Scripts =====
-        tools_group = self._group("Tools & Scripts")
+        tools_group = self._group("Tools & Scripts", self.left_column_layout)
         self.arcade_org_check = QCheckBox("Arcade Organizer")
         self.mrext_check = QCheckBox("MiSTer Extensions (Wizzo Scripts)")
         self.sam_check = QCheckBox("MiSTer Super Attract Mode")
@@ -119,7 +144,7 @@ class UpdateAllConfigDialog(QDialog):
             self._add(tools_group, widget)
 
         # ===== Extra Content =====
-        extra_group = self._group("Extra Content")
+        extra_group = self._group("Extra Content", self.left_column_layout)
         self.bios_check = QCheckBox("BIOS Database")
         self.arcade_roms_check = QCheckBox("Arcade ROMs Database")
         self.bootroms_check = QCheckBox("Uberyoji Boot ROMs")
@@ -154,7 +179,7 @@ class UpdateAllConfigDialog(QDialog):
         self.ranny_wallpapers_check.toggled.connect(self.update_wallpaper_state)
 
         # ===== Community Sources =====
-        community_group = self._group("Community Sources")
+        community_group = self._group("Community Sources", self.left_column_layout)
         self.insert_coin_check = QCheckBox("Insert-Coin")
         self.pcn_premium_wallpapers_check = QCheckBox("PCN Premium Member Wallpapers")
 
@@ -164,7 +189,80 @@ class UpdateAllConfigDialog(QDialog):
         ]:
             self._add(community_group, widget)
 
-        # ===== Buttons =====
+        # ===== Retro Account =====
+        retro_group = self._group("Retro Account", self.right_column_layout)
+
+        self.retro_status_label = QLabel("Status: Not linked")
+        self.retro_status_label.setStyleSheet("font-weight: bold;")
+        retro_group.layout().addWidget(self.retro_status_label)
+
+        self.retro_description_label = QLabel(
+            "Link this MiSTer device to your Retro Account to enable premium "
+            "update_all features."
+        )
+        self.retro_description_label.setWordWrap(True)
+        retro_group.layout().addWidget(self.retro_description_label)
+
+        self.retro_link_button = QPushButton("Link Device")
+        retro_group.layout().addWidget(self.retro_link_button)
+
+        self.retro_code_title_label = QLabel("Code:")
+        self.retro_code_title_label.setStyleSheet("font-weight: bold;")
+        retro_group.layout().addWidget(self.retro_code_title_label)
+
+        self.retro_code_value_label = QLabel("—")
+        self.retro_code_value_label.setWordWrap(True)
+        self.retro_code_value_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        retro_group.layout().addWidget(self.retro_code_value_label)
+
+        self.retro_link_title_label = QLabel("Retro Account Link:")
+        self.retro_link_title_label.setStyleSheet("font-weight: bold;")
+        retro_group.layout().addWidget(self.retro_link_title_label)
+
+        self.retro_link_value_label = QLabel("—")
+        self.retro_link_value_label.setWordWrap(True)
+        self.retro_link_value_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        retro_group.layout().addWidget(self.retro_link_value_label)
+
+        self.retro_waiting_label = QLabel(
+            "When linking is in progress, MiSTer Companion will wait for "
+            "confirmation and then link this MiSTer automatically."
+        )
+        self.retro_waiting_label.setWordWrap(True)
+        retro_group.layout().addWidget(self.retro_waiting_label)
+
+        retro_button_row = QHBoxLayout()
+        self.retro_copy_link_button = QPushButton("Copy Link")
+        self.retro_refresh_button = QPushButton("Refresh Status")
+        retro_button_row.addWidget(self.retro_copy_link_button)
+        retro_button_row.addWidget(self.retro_refresh_button)
+        retro_group.layout().addLayout(retro_button_row)
+
+        retro_line = QFrame()
+        retro_line.setFrameShape(QFrame.Shape.HLine)
+        retro_group.layout().addWidget(retro_line)
+
+        self.retro_device_id_title_label = QLabel("Device ID:")
+        self.retro_device_id_title_label.setStyleSheet("font-weight: bold;")
+        retro_group.layout().addWidget(self.retro_device_id_title_label)
+
+        self.retro_device_id_value_label = QLabel("—")
+        self.retro_device_id_value_label.setWordWrap(True)
+        self.retro_device_id_value_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        retro_group.layout().addWidget(self.retro_device_id_value_label)
+
+        retro_group.layout().addStretch()
+
+        self._set_retro_ui_state("idle")
+
+        self.content_layout.addStretch()
+
         line = QFrame()
         line.setFrameShape(QFrame.Shape.HLine)
         outer.addWidget(line)
@@ -184,7 +282,11 @@ class UpdateAllConfigDialog(QDialog):
         self.save_button.clicked.connect(self.on_save)
         self.close_button.clicked.connect(self.reject)
 
-    def _group(self, title):
+        self.retro_link_button.clicked.connect(self.on_retro_link_device)
+        self.retro_copy_link_button.clicked.connect(self.on_retro_copy_link)
+        self.retro_refresh_button.clicked.connect(self.on_retro_refresh_status)
+
+    def _group(self, title, target_layout=None):
         box = QFrame()
         box.setFrameShape(QFrame.Shape.StyledPanel)
         box.setStyleSheet("QFrame { border: 1px solid palette(mid); border-radius: 6px; }")
@@ -196,7 +298,11 @@ class UpdateAllConfigDialog(QDialog):
         label.setStyleSheet("font-weight: bold;")
         layout.addWidget(label)
 
-        self.content_layout.addWidget(box)
+        if target_layout is None:
+            self.content_layout.addWidget(box)
+        else:
+            target_layout.addWidget(box)
+
         return box
 
     def _add(self, group, widget, indent=False):
@@ -208,6 +314,100 @@ class UpdateAllConfigDialog(QDialog):
             group.layout().addLayout(row)
         else:
             group.layout().addWidget(widget)
+
+    def _set_retro_ui_state(self, state):
+        if state == "idle":
+            self.retro_status_label.setText("Status: Not linked")
+            self.retro_code_value_label.setText("—")
+            self.retro_link_value_label.setText("—")
+            self.retro_device_id_value_label.setText("—")
+
+            self.retro_link_button.setEnabled(True)
+            self.retro_copy_link_button.setEnabled(False)
+            self.retro_refresh_button.setEnabled(False)
+
+        elif state == "pending":
+            self.retro_status_label.setText("Status: Waiting for confirmation")
+            self.retro_device_id_value_label.setText("—")
+
+            self.retro_link_button.setEnabled(False)
+            self.retro_copy_link_button.setEnabled(True)
+            self.retro_refresh_button.setEnabled(False)
+
+        elif state == "linked":
+            self.retro_status_label.setText("Status: Linked")
+            self.retro_code_value_label.setText("—")
+            self.retro_link_value_label.setText("—")
+
+            self.retro_link_button.setEnabled(False)
+            self.retro_copy_link_button.setEnabled(False)
+            self.retro_refresh_button.setEnabled(True)
+
+    def on_retro_link_device(self):
+        try:
+            result = start_retroaccount_device_link(self.connection)
+            self.retro_pending_code = result["code"]
+
+            self._set_retro_ui_state("pending")
+            self.retro_code_value_label.setText(result["code"])
+            self.retro_link_value_label.setText(result["link"])
+
+            if not self.retro_poll_timer.isActive():
+                self.retro_poll_timer.start()
+
+        except Exception as e:
+            QMessageBox.critical(self, "Retro Account", f"Failed to start device link:\n{e}")
+
+    def on_retro_copy_link(self):
+        link = self.retro_link_value_label.text().strip()
+        if not link or link == "—":
+            return
+        QGuiApplication.clipboard().setText(link)
+
+    def on_retro_refresh_status(self):
+        self.load_retro_status()
+
+    def on_retro_poll_timeout(self):
+        if not self.retro_pending_code:
+            self.retro_poll_timer.stop()
+            return
+
+        try:
+            result = poll_retroaccount_device_link(self.connection, self.retro_pending_code)
+
+            if result["status"] == "pending":
+                return
+
+            if result["status"] == "linked":
+                self.retro_poll_timer.stop()
+                self.retro_pending_code = ""
+                self._set_retro_ui_state("linked")
+                self.retro_device_id_value_label.setText(result["device_id"])
+                QMessageBox.information(
+                    self,
+                    "Retro Account",
+                    "This MiSTer has been linked successfully.",
+                )
+
+        except Exception as e:
+            self.retro_poll_timer.stop()
+            QMessageBox.critical(self, "Retro Account", f"Linking failed:\n{e}")
+            self.load_retro_status()
+
+    def load_retro_status(self):
+        try:
+            status = get_retroaccount_status(self.connection)
+        except Exception:
+            self._set_retro_ui_state("idle")
+            return
+
+        if status["linked"]:
+            self.retro_pending_code = ""
+            self.retro_poll_timer.stop()
+            self._set_retro_ui_state("linked")
+            self.retro_device_id_value_label.setText(status["device_id"])
+        else:
+            self._set_retro_ui_state("idle")
 
     def update_jt_beta_state(self):
         self.jt_beta_check.setEnabled(self.jtcores_check.isChecked())
@@ -301,3 +501,7 @@ class UpdateAllConfigDialog(QDialog):
             self.accept()
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to save config:\n{e}")
+
+    def closeEvent(self, event):
+        self.retro_poll_timer.stop()
+        super().closeEvent(event)
