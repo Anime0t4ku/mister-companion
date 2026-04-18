@@ -91,9 +91,18 @@ def start_retroaccount_login(connection):
     if not connection.is_connected():
         raise RuntimeError("Not connected")
 
+    request_payload = {
+        "client_id": RETROACCOUNT_CLIENT_ID,
+    }
+
+    if _remote_exists(connection, RETROACCOUNT_DEVICE_ID_PATH):
+        existing_device_id = _read_remote_text(connection, RETROACCOUNT_DEVICE_ID_PATH).strip()
+        if existing_device_id:
+            request_payload["device_id"] = existing_device_id
+
     response = _api_post(
         "/api/auth/device/code",
-        {"client_id": RETROACCOUNT_CLIENT_ID},
+        request_payload,
     )
 
     if response.status_code != 200:
