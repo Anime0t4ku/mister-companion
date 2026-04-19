@@ -106,6 +106,11 @@ def start_retroaccount_login(connection):
     )
 
     if response.status_code != 200:
+        response_text = response.text.strip()
+        if response_text:
+            raise RuntimeError(
+                f"RetroAccount code request failed with status {response.status_code}.\n{response_text}"
+            )
         raise RuntimeError(
             f"RetroAccount code request failed with status {response.status_code}."
         )
@@ -138,6 +143,11 @@ def poll_retroaccount_login(connection, device_code):
         }
 
     if response.status_code != 200:
+        response_text = response.text.strip()
+        if response_text:
+            raise RuntimeError(
+                f"RetroAccount token request failed with status {response.status_code}.\n{response_text}"
+            )
         raise RuntimeError(
             f"RetroAccount token request failed with status {response.status_code}."
         )
