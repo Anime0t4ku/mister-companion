@@ -11,12 +11,18 @@ RETROACCOUNT_USER_JSON_PATH = f"{RETROACCOUNT_CONFIG_DIR}/user.json"
 RETROACCOUNT_DEVICE_ID_PATH = f"{RETROACCOUNT_CONFIG_DIR}/device.id"
 
 
-def _extract_code(payload):
-    for key in ("code", "device_code", "user_code"):
-        value = payload.get(key)
-        if value:
-            return str(value)
-    raise RuntimeError("RetroAccount response did not include a login code.")
+def _extract_user_code(payload):
+    value = payload.get("user_code")
+    if value:
+        return str(value)
+    raise RuntimeError("RetroAccount response did not include user_code.")
+
+
+def _extract_device_code(payload):
+    value = payload.get("device_code")
+    if value:
+        return str(value)
+    raise RuntimeError("RetroAccount response did not include device_code.")
 
 
 def _api_post(path, payload):
@@ -116,11 +122,13 @@ def start_retroaccount_login(connection):
         )
 
     payload = response.json()
-    code = _extract_code(payload)
-    url = f"{RETROACCOUNT_BASE_URL}/code?c={code}&from={RETROACCOUNT_CLIENT_ID}"
+    user_code = _extract_user_code(payload)
+    device_code = _extract_device_code(payload)
+    url = f"{RETROACCOUNT_BASE_URL}/code?c={user_code}&from={RETROACCOUNT_CLIENT_ID}"
 
     return {
-        "code": code,
+        "user_code": user_code,
+        "device_code": device_code,
         "url": url,
     }
 

@@ -343,6 +343,10 @@ class UpdateAllConfigDialog(QDialog):
     def _set_retro_ui_state(self, state):
         if state == "idle":
             self.retro_status_label.setText("Status: Not logged in")
+            self.retro_description_label.setText(
+                "Log in to this MiSTer device with your RetroAccount to enable "
+                "premium update_all features."
+            )
             self.retro_normal_widget.show()
             self.retro_login_widget.hide()
             self.retro_device_id_title_label.hide()
@@ -358,6 +362,9 @@ class UpdateAllConfigDialog(QDialog):
 
         elif state == "logged_in":
             self.retro_status_label.setText("Status: Logged in")
+            self.retro_description_label.setText(
+                "update_all premium features are enabled on this MiSTer device."
+            )
             self.retro_normal_widget.show()
             self.retro_login_widget.hide()
             self.retro_device_id_title_label.show()
@@ -369,11 +376,11 @@ class UpdateAllConfigDialog(QDialog):
     def on_retro_login(self):
         try:
             result = start_retroaccount_login(self.connection)
-            self.retro_pending_code = result["code"]
+            self.retro_pending_code = result["device_code"]
             self.retro_pending_link = result["url"]
             self.retro_seconds_remaining = 5 * 60
 
-            self.retro_code_value_label.setText(result["code"])
+            self.retro_code_value_label.setText(result["user_code"])
             self.retro_url_value_label.setText(result["url"])
             self._set_retro_ui_state("pending")
 
