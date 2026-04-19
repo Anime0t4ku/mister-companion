@@ -3,12 +3,12 @@
   "items": [
     {
       "id": "v3-stable",
-      "date": "2026-04-16",
+      "date": "2026-04-19",
       "type": "update",
-      "headline": "MiSTer Companion v3.4.4 Released",
-      "message": "MiSTer Companion v3.4.4 is now available.\n\nThis update moves the Set Static Wallpaper and Remove Static Wallpaper actions from the Scripts tab to the Wallpapers tab. These actions now work even when static_wallpaper is not installed, while the script itself is only needed if you want to control this feature directly from the MiSTer.\n\nAdvanced users can now also enable the use of their OS SSH agent from within MiSTer Companion.\n\nYou can download the latest stable release below.",
-      "url": "https://github.com/Anime0t4ku/mister-companion/releases/tag/v3.4.4",
-      "url_label": "Download v3.4.4"
+      "headline": "MiSTer Companion v3.5.0 Released",
+      "message": "MiSTer Companion v3.5.0 is now available.\n\nThis update adds official RetroAccount support to the Update All configurator for premium update_all features. Special thanks to theypsilon for the support and guidance.\n\nMiSTer Pico-8 has also been added to the Extras tab, allowing you to install or uninstall it directly from MiSTer Companion.\n\nYou can download the latest stable release below.",
+      "url": "https://github.com/Anime0t4ku/mister-companion/releases/tag/v3.5.0",
+      "url_label": "Download v3.5.0"
     },
     {
       "id": "macos-support",
