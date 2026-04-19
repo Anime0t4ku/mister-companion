@@ -9,6 +9,7 @@ import requests
 
 
 GITHUB_RELEASES_API = "https://api.github.com/repos/kimchiman52/3s-mister-arm/releases/latest"
+PICO8_GITHUB_RELEASES_API = "https://api.github.com/repos/MiSTerOrganize/MiSTer_PICO-8/releases/latest"
 
 REMOTE_RBF_PATH = "/media/fat/_Other/3S-ARM.rbf"
 REMOTE_GAME_DIR = "/media/fat/games/3s-arm"
@@ -26,6 +27,20 @@ OLD_REMOTE_VERSION_FILE = "/media/fat/games/3sx/.mister_companion_version"
 OLD_REMOTE_AFS_PATH = "/media/fat/games/3sx/resources/SF33RD.AFS"
 
 INI_BLOCK = "[3S-ARM]\nmain=MiSTer_3S-ARM\nvideo_mode=8\n"
+
+PICO8_REMOTE_CONSOLE_DIR = "/media/fat/_Console"
+PICO8_REMOTE_GAME_DIR = "/media/fat/games/PICO-8"
+PICO8_REMOTE_DOCS_DIR = "/media/fat/docs/PICO-8"
+PICO8_REMOTE_SCRIPTS_DIR = "/media/fat/Scripts"
+PICO8_REMOTE_INPUTS_DIR = "/media/fat/config/inputs"
+PICO8_REMOTE_VERSION_FILE = "/media/fat/games/PICO-8/.mister_companion_version"
+PICO8_REMOTE_BINARY_PATH = "/media/fat/games/PICO-8/PICO-8"
+PICO8_REMOTE_BOOTROM_PATH = "/media/fat/games/PICO-8/boot.rom"
+PICO8_REMOTE_DAEMON_PATH = "/media/fat/games/PICO-8/pico8_daemon.sh"
+PICO8_REMOTE_README_PATH = "/media/fat/docs/PICO-8/README.md"
+PICO8_REMOTE_INSTALL_SCRIPT_PATH = "/media/fat/Scripts/Install_PICO-8.sh"
+PICO8_REMOTE_USER_STARTUP_PATH = "/media/fat/linux/user-startup.sh"
+PICO8_DAEMON_STARTUP_LINE = "/media/fat/games/PICO-8/pico8_daemon.sh &"
 
 
 def _quote(value: str) -> str:
@@ -86,6 +101,16 @@ def _path_exists(connection, path: str) -> bool:
     return "EXISTS" in (result or "")
 
 
+def _glob_exists(connection, pattern: str) -> bool:
+    command = (
+        f"for f in {pattern}; do "
+        f'[ -e "$f" ] && echo EXISTS && exit 0; '
+        f"done; echo MISSING"
+    )
+    result = connection.run_command(command)
+    return "EXISTS" in (result or "")
+
+
 def _is_3sx_installed(connection) -> bool:
     return (
         _path_exists(connection, REMOTE_RBF_PATH)
@@ -99,6 +124,15 @@ def _is_old_3sx_installed(connection) -> bool:
         _path_exists(connection, OLD_REMOTE_RBF_PATH)
         and _path_exists(connection, OLD_REMOTE_GAME_DIR)
         and _path_exists(connection, OLD_REMOTE_LAUNCHER_PATH)
+    )
+
+
+def _is_pico8_installed(connection) -> bool:
+    return (
+        _glob_exists(connection, "/media/fat/_Console/PICO-8_*.rbf")
+        and _path_exists(connection, PICO8_REMOTE_BINARY_PATH)
+        and _path_exists(connection, PICO8_REMOTE_BOOTROM_PATH)
+        and _path_exists(connection, PICO8_REMOTE_DAEMON_PATH)
     )
 
 
@@ -134,6 +168,40 @@ def _fetch_latest_release():
     }
 
 
+def _fetch_latest_pico8_release():
+    response = requests.get(
+        PICO8_GITHUB_RELEASES_API,
+        headers={"Accept": "application/vnd.github+json"},
+        timeout=20,
+    )
+    response.raise_for_status()
+
+    payload = response.json()
+    tag_name = (payload.get("tag_name") or "").strip()
+
+    zip_url = None
+    for asset in payload.get("assets", []):
+        url = asset.get("browser_download_url", "")
+        name = asset.get("name", "")
+        lower_name = name.lower()
+        lower_url = url.lower()
+        if lower_name.endswith(".zip") or lower_url.endswith(".zip"):
+            zip_url = url
+            break
+
+    if not tag_name:
+        raise RuntimeError("Unable to determine latest MiSTer Pico-8 version from GitHub.")
+
+    if not zip_url:
+        raise RuntimeError("Unable to find a ZIP asset in the latest MiSTer Pico-8 release.")
+
+    return {
+        "version": tag_name,
+        "zip_url": zip_url,
+        "release_name": payload.get("name", tag_name),
+    }
+
+
 def _read_installed_version(connection) -> str:
     version = _read_remote_text(connection, REMOTE_VERSION_FILE).strip()
     if version:
@@ -141,9 +209,18 @@ def _read_installed_version(connection) -> str:
     return _read_remote_text(connection, OLD_REMOTE_VERSION_FILE).strip()
 
 
+def _read_installed_pico8_version(connection) -> str:
+    return _read_remote_text(connection, PICO8_REMOTE_VERSION_FILE).strip()
+
+
 def _write_installed_version(connection, version: str):
     _ensure_remote_dir(connection, posixpath.dirname(REMOTE_VERSION_FILE))
     _write_remote_text(connection, REMOTE_VERSION_FILE, version.strip() + "\n")
+
+
+def _write_installed_pico8_version(connection, version: str):
+    _ensure_remote_dir(connection, posixpath.dirname(PICO8_REMOTE_VERSION_FILE))
+    _write_remote_text(connection, PICO8_REMOTE_VERSION_FILE, version.strip() + "\n")
 
 
 def _normalize_ini_text_for_append(text: str) -> str:
@@ -194,6 +271,59 @@ def _remove_ini_block(connection) -> bool:
 
     _write_remote_text(connection, REMOTE_INI_PATH, updated)
     return True
+
+
+def _ensure_startup_line(connection, startup_path: str, line: str) -> bool:
+    current = _read_remote_text(connection, startup_path)
+    normalized = current.replace("\r\n", "\n")
+
+    existing_lines = [entry.rstrip() for entry in normalized.split("\n") if entry.strip()]
+    if line in existing_lines:
+        return False
+
+    updated = normalized.rstrip("\n")
+    if updated:
+        updated += "\n"
+    updated += line + "\n"
+
+    _ensure_remote_dir(connection, posixpath.dirname(startup_path))
+    _write_remote_text(connection, startup_path, updated)
+    return True
+
+
+def _remove_startup_line(connection, startup_path: str, line: str) -> bool:
+    current = _read_remote_text(connection, startup_path)
+    if not current:
+        return False
+
+    normalized = current.replace("\r\n", "\n")
+    original_lines = normalized.split("\n")
+    kept_lines = [entry for entry in original_lines if entry.strip() != line]
+
+    if kept_lines == original_lines:
+        return False
+
+    updated = "\n".join(kept_lines).rstrip("\n")
+    if updated:
+        updated += "\n"
+
+    _write_remote_text(connection, startup_path, updated)
+    return True
+
+
+def _remove_if_empty_dir(connection, path: str):
+    connection.run_command(
+        f"if [ -d {_quote(path)} ] && [ -z \"$(ls -A {_quote(path)} 2>/dev/null)\" ]; then rmdir {_quote(path)}; fi"
+    )
+
+
+def _remove_glob(connection, pattern: str):
+    command = (
+        f"for f in {pattern}; do "
+        f'[ -e "$f" ] && rm -f "$f"; '
+        f"done"
+    )
+    connection.run_command(command)
 
 
 def _migrate_old_install(connection, log):
@@ -322,6 +452,68 @@ def get_3sx_status(connection):
     }
 
 
+def get_pico8_status(connection):
+    if not connection.is_connected():
+        return {
+            "installed": False,
+            "installed_version": "",
+            "latest_version": "",
+            "latest_error": "",
+            "update_available": False,
+            "status_text": "Unknown",
+            "install_label": "Install",
+            "install_enabled": False,
+            "uninstall_enabled": False,
+        }
+
+    latest_version = ""
+    latest_error = ""
+
+    try:
+        latest = _fetch_latest_pico8_release()
+        latest_version = latest["version"]
+    except Exception as exc:
+        latest_error = str(exc)
+
+    installed = _is_pico8_installed(connection)
+    installed_version = _read_installed_pico8_version(connection) if installed else ""
+
+    update_available = False
+    if installed and latest_version and installed_version:
+        update_available = installed_version != latest_version
+    elif installed and latest_version and not installed_version:
+        update_available = True
+
+    if not installed:
+        status_text = "✗ Not installed"
+        install_label = "Install"
+        install_enabled = True
+        uninstall_enabled = False
+    elif update_available:
+        status_text = f"▲ Update available ({installed_version or 'unknown'} → {latest_version})"
+        install_label = "Update"
+        install_enabled = True
+        uninstall_enabled = True
+    else:
+        version_display = installed_version or latest_version or "unknown"
+        status_text = f"✓ Installed ({version_display})"
+        install_label = "Installed"
+        install_enabled = False
+        uninstall_enabled = True
+
+    return {
+        "installed": installed,
+        "installed_version": installed_version,
+        "latest_version": latest_version,
+        "latest_error": latest_error,
+        "update_available": update_available,
+        "status_text": status_text,
+        "install_label": install_label,
+        "install_enabled": install_enabled,
+        "uninstall_enabled": uninstall_enabled,
+    }
+
+
 def install_or_update_3sx(connection, log):
     if not connection.is_connected():
         raise RuntimeError("Not connected to MiSTer.")
@@ -431,6 +623,147 @@ def install_or_update_3sx(connection, log):
     }
 
 
+def install_or_update_pico8(connection, log):
+    if not connection.is_connected():
+        raise RuntimeError("Not connected to MiSTer.")
+
+    latest = _fetch_latest_pico8_release()
+    version = latest["version"]
+    zip_url = latest["zip_url"]
+
+    log(f"Latest version on GitHub: {version}\n")
+    log(f"Downloading: {zip_url}\n")
+
+    response = requests.get(zip_url, timeout=60)
+    response.raise_for_status()
+    archive_data = response.content
+
+    log(f"Downloaded {len(archive_data)} bytes.\n")
+
+    with zipfile.ZipFile(io.BytesIO(archive_data)) as zf:
+        members = [m for m in zf.infolist() if not m.is_dir()]
+        if not members:
+            raise RuntimeError("The MiSTer Pico-8 ZIP archive is empty.")
+
+        log("Inspecting archive contents...\n")
+
+        rbf_member = None
+        input_map_member = None
+        binary_member = None
+        bootrom_member = None
+        daemon_member = None
+        readme_member = None
+        install_script_member = None
+
+        for member in members:
+            name = member.filename.replace("\\", "/")
+            basename = posixpath.basename(name)
+            parts = [p for p in name.split("/") if p]
+
+            if parts[:1] == ["_Console"] and basename.startswith("PICO-8_") and basename.lower().endswith(".rbf"):
+                rbf_member = member
+                continue
+
+            if parts[:2] == ["config", "inputs"] and basename.startswith("PICO-8_input_") and basename.lower().endswith(".map"):
+                input_map_member = member
+                continue
+
+            if parts[:2] == ["games", "PICO-8"] and basename == "PICO-8":
+                binary_member = member
+                continue
+
+            if parts[:2] == ["games", "PICO-8"] and basename == "boot.rom":
+                bootrom_member = member
+                continue
+
+            if parts[:2] == ["games", "PICO-8"] and basename == "pico8_daemon.sh":
+                daemon_member = member
+                continue
+
+            if parts[:2] == ["docs", "PICO-8"] and basename.lower() == "readme.md":
+                readme_member = member
+                continue
+
+            if parts[:1] == ["Scripts"] and basename == "Install_PICO-8.sh":
+                install_script_member = member
+                continue
+
+        missing = []
+        if rbf_member is None:
+            missing.append("_Console/PICO-8_*.rbf")
+        if input_map_member is None:
+            missing.append("config/inputs/PICO-8_input_*.map")
+        if binary_member is None:
+            missing.append("games/PICO-8/PICO-8")
+        if bootrom_member is None:
+            missing.append("games/PICO-8/boot.rom")
+        if daemon_member is None:
+            missing.append("games/PICO-8/pico8_daemon.sh")
+        if readme_member is None:
+            missing.append("docs/PICO-8/README.md")
+        if install_script_member is None:
+            missing.append("Scripts/Install_PICO-8.sh")
+
+        if missing:
+            raise RuntimeError(
+                "The MiSTer Pico-8 ZIP archive is missing required files:\n- " + "\n- ".join(missing)
+            )
+
+        _ensure_remote_dir(connection, PICO8_REMOTE_CONSOLE_DIR)
+        _ensure_remote_dir(connection, PICO8_REMOTE_GAME_DIR)
+        _ensure_remote_dir(connection, posixpath.join(PICO8_REMOTE_GAME_DIR, "Carts"))
+        _ensure_remote_dir(connection, "/media/fat/logs/PICO-8")
+        _ensure_remote_dir(connection, "/media/fat/saves/PICO-8")
+        _ensure_remote_dir(connection, PICO8_REMOTE_DOCS_DIR)
+        _ensure_remote_dir(connection, PICO8_REMOTE_SCRIPTS_DIR)
+        _ensure_remote_dir(connection, PICO8_REMOTE_INPUTS_DIR)
+
+        log("Removing old PICO-8 RBF files...\n")
+        _remove_glob(connection, "/media/fat/_Console/PICO-8_*.rbf")
+
+        log("Removing old PICO-8 input map files...\n")
+        _remove_glob(connection, "/media/fat/config/inputs/PICO-8_input_*.map")
+
+        sftp = connection.client.open_sftp()
+        try:
+            for member, destination in [
+                (rbf_member, posixpath.join(PICO8_REMOTE_CONSOLE_DIR, posixpath.basename(rbf_member.filename.replace("\\", "/")))),
+                (input_map_member, posixpath.join(PICO8_REMOTE_INPUTS_DIR, posixpath.basename(input_map_member.filename.replace("\\", "/")))),
+                (binary_member, PICO8_REMOTE_BINARY_PATH),
+                (bootrom_member, PICO8_REMOTE_BOOTROM_PATH),
+                (daemon_member, PICO8_REMOTE_DAEMON_PATH),
+                (readme_member, PICO8_REMOTE_README_PATH),
+                (install_script_member, PICO8_REMOTE_INSTALL_SCRIPT_PATH),
+            ]:
+                data = zf.read(member)
+                log(f"Uploading {destination}\n")
+                with sftp.open(destination, "wb") as remote_file:
+                    remote_file.write(data)
+        finally:
+            sftp.close()
+
+    connection.run_command(f"chmod +x {_quote(PICO8_REMOTE_BINARY_PATH)}")
+    connection.run_command(f"chmod +x {_quote(PICO8_REMOTE_DAEMON_PATH)}")
+    connection.run_command(f"chmod +x {_quote(PICO8_REMOTE_INSTALL_SCRIPT_PATH)}")
+
+    added_startup = _ensure_startup_line(
+        connection,
+        PICO8_REMOTE_USER_STARTUP_PATH,
+        PICO8_DAEMON_STARTUP_LINE,
+    )
+    if added_startup:
+        log("Added pico8_daemon.sh entry to user-startup.sh\n")
+    else:
+        log("pico8_daemon.sh entry already present in user-startup.sh\n")
+
+    _write_installed_pico8_version(connection, version)
+    log(f"Stored installed version marker: {version}\n")
+
+    return {
+        "installed_version": version,
+    }
+
+
 def upload_3sx_afs(connection, local_path: str, log):
     if not connection.is_connected():
         raise RuntimeError("Not connected to MiSTer.")
@@ -513,5 +846,52 @@ def uninstall_3sx(connection, log):
         log("Removed 3S-ARM / 3SX block from MiSTer.ini\n")
     else:
         log("No 3S-ARM / 3SX block found in MiSTer.ini\n")
+
+    return {"uninstalled": True}
+
+
+def uninstall_pico8(connection, log):
+    if not connection.is_connected():
+        raise RuntimeError("Not connected to MiSTer.")
+
+    log("Removing PICO-8 RBF files from /media/fat/_Console\n")
+    _remove_glob(connection, "/media/fat/_Console/PICO-8_*.rbf")
+
+    log(f"Removing {PICO8_REMOTE_BINARY_PATH}\n")
+    connection.run_command(f"rm -f {_quote(PICO8_REMOTE_BINARY_PATH)}")
+
+    log(f"Removing {PICO8_REMOTE_DAEMON_PATH}\n")
+    connection.run_command(f"rm -f {_quote(PICO8_REMOTE_DAEMON_PATH)}")
+
+    log(f"Removing {PICO8_REMOTE_BOOTROM_PATH}\n")
+    connection.run_command(f"rm -f {_quote(PICO8_REMOTE_BOOTROM_PATH)}")
+
+    log(f"Removing {PICO8_REMOTE_README_PATH}\n")
+    connection.run_command(f"rm -f {_quote(PICO8_REMOTE_README_PATH)}")
+
+    log(f"Removing {PICO8_REMOTE_INSTALL_SCRIPT_PATH}\n")
+    connection.run_command(f"rm -f {_quote(PICO8_REMOTE_INSTALL_SCRIPT_PATH)}")
+
+    log("Removing PICO-8 input map files from /media/fat/config/inputs\n")
+    _remove_glob(connection, "/media/fat/config/inputs/PICO-8_input_*.map")
+
+    if _path_exists(connection, PICO8_REMOTE_VERSION_FILE):
+        log(f"Removing version marker: {PICO8_REMOTE_VERSION_FILE}\n")
+        connection.run_command(f"rm -f {_quote(PICO8_REMOTE_VERSION_FILE)}")
+
+    removed_startup = _remove_startup_line(
+        connection,
+        PICO8_REMOTE_USER_STARTUP_PATH,
+        PICO8_DAEMON_STARTUP_LINE,
+    )
+    if removed_startup:
+        log("Removed pico8_daemon.sh entry from user-startup.sh\n")
+    else:
+        log("No pico8_daemon.sh entry found in user-startup.sh\n")
+
+    _remove_if_empty_dir(connection, PICO8_REMOTE_DOCS_DIR)
+    _remove_if_empty_dir(connection, PICO8_REMOTE_GAME_DIR)
+    _remove_if_empty_dir(connection, PICO8_REMOTE_INPUTS_DIR)
+    _remove_if_empty_dir(connection, PICO8_REMOTE_SCRIPTS_DIR)
 
     return {"uninstalled": True}

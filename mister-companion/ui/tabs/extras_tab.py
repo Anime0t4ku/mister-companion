@@ -19,8 +19,11 @@ from PyQt6.QtWidgets import (
 
 from core.extras_actions import (
     get_3sx_status,
+    get_pico8_status,
     install_or_update_3sx as backend_install_or_update_3sx,
+    install_or_update_pico8 as backend_install_or_update_pico8,
     uninstall_3sx as backend_uninstall_3sx,
+    uninstall_pico8 as backend_uninstall_pico8,
     upload_3sx_afs as backend_upload_3sx_afs,
 )
 
@@ -58,6 +61,7 @@ class ExtraTaskWorker(QThread):
 
 class ExtrasTab(QWidget):
     EXTRA_3SX = "3sx_mister"
+    EXTRA_PICO8 = "mister_pico8"
 
     def __init__(self, main_window):
         super().__init__()
@@ -69,10 +73,12 @@ class ExtrasTab(QWidget):
 
         self.extra_display_order = [
             self.EXTRA_3SX,
+            self.EXTRA_PICO8,
         ]
 
         self.extra_titles = {
             self.EXTRA_3SX: "3S-ARM",
+            self.EXTRA_PICO8: "MiSTer Pico-8",
         }
 
         self.extra_descriptions = {
@@ -80,10 +86,14 @@ class ExtrasTab(QWidget):
                 "Install, update, migrate legacy 3SX installs, upload SF33RD.AFS, "
                 "and uninstall 3s-mister-arm directly from MiSTer Companion."
             ),
+            self.EXTRA_PICO8: (
+                "Install, update, and uninstall MiSTer Pico-8 directly from MiSTer Companion."
+            ),
         }
 
         self.extra_status_texts = {
             self.EXTRA_3SX: "Unknown",
+            self.EXTRA_PICO8: "Unknown",
         }
 
         self.selected_extra_key = self.EXTRA_3SX
@@ -176,9 +186,11 @@ class ExtrasTab(QWidget):
         details_layout.addWidget(self.action_buttons_container)
 
         self.threesx_actions_widget = self._build_3sx_actions()
+        self.pico8_actions_widget = self._build_pico8_actions()
 
         self.extra_action_widgets = {
             self.EXTRA_3SX: self.threesx_actions_widget,
+            self.EXTRA_PICO8: self.pico8_actions_widget,
         }
 
         for widget in self.extra_action_widgets.values():
@@ -219,6 +231,8 @@ class ExtrasTab(QWidget):
         self.install_update_3sx_button.clicked.connect(self.install_or_update_3sx)
         self.upload_afs_button.clicked.connect(self.upload_sf33rd_afs)
         self.uninstall_3sx_button.clicked.connect(self.uninstall_3sx)
+        self.install_update_pico8_button.clicked.connect(self.install_or_update_pico8)
+        self.uninstall_pico8_button.clicked.connect(self.uninstall_pico8)
         self.hide_console_button.clicked.connect(self.toggle_console)
 
     def _build_button_row(self, *buttons):
@@ -254,6 +268,28 @@ class ExtrasTab(QWidget):
         layout.addLayout(
             self._build_button_row(
                 self.uninstall_3sx_button,
+            )
+        )
+
+        widget.setLayout(layout)
+        return widget
+
+    def _build_pico8_actions(self):
+        widget = QWidget()
+        layout = QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+
+        self.install_update_pico8_button = QPushButton("Install")
+        self.install_update_pico8_button.setFixedWidth(170)
+
+        self.uninstall_pico8_button = QPushButton("Uninstall")
+        self.uninstall_pico8_button.setFixedWidth(170)
+
+        layout.addLayout(
+            self._build_button_row(
+                self.install_update_pico8_button,
+                self.uninstall_pico8_button,
             )
         )
 
@@ -343,11 +379,17 @@ class ExtrasTab(QWidget):
             self.install_update_3sx_button,
             self.upload_afs_button,
             self.uninstall_3sx_button,
+            self.install_update_pico8_button,
+            self.uninstall_pico8_button,
         ]:
             button.setEnabled(False)
 
         self.install_update_3sx_button.setText("Install")
+        self.install_update_pico8_button.setText("Install")
+
         self.extra_status_texts[self.EXTRA_3SX] = "Unknown"
+        self.extra_status_texts[self.EXTRA_PICO8] = "Unknown"
+
         self.update_extra_list_labels()
         self.update_details_panel()
 
@@ -357,24 +399,32 @@ class ExtrasTab(QWidget):
             return
 
         try:
-            status = get_3sx_status(self.connection)
+            status_3sx = get_3sx_status(self.connection)
         except Exception as e:
             self.extra_status_texts[self.EXTRA_3SX] = f"Unknown ({e})"
             self.install_update_3sx_button.setText("Install")
             self.install_update_3sx_button.setEnabled(False)
             self.upload_afs_button.setEnabled(False)
             self.uninstall_3sx_button.setEnabled(False)
-            self.update_extra_list_labels()
-            self.update_details_panel()
-            return
+        else:
+            self.extra_status_texts[self.EXTRA_3SX] = status_3sx["status_text"]
+            self.install_update_3sx_button.setText(status_3sx["install_label"])
+            self.install_update_3sx_button.setEnabled(status_3sx["install_enabled"])
+            self.upload_afs_button.setEnabled(status_3sx["upload_enabled"])
+            self.uninstall_3sx_button.setEnabled(status_3sx["uninstall_enabled"])
 
-        self.extra_status_texts[self.EXTRA_3SX] = status["status_text"]
-
-        self.install_update_3sx_button.setText(status["install_label"])
-        self.install_update_3sx_button.setEnabled(status["install_enabled"])
-
-        self.upload_afs_button.setEnabled(status["upload_enabled"])
-        self.uninstall_3sx_button.setEnabled(status["uninstall_enabled"])
+        try:
+            status_pico8 = get_pico8_status(self.connection)
+        except Exception as e:
+            self.extra_status_texts[self.EXTRA_PICO8] = f"Unknown ({e})"
+            self.install_update_pico8_button.setText("Install")
+            self.install_update_pico8_button.setEnabled(False)
+            self.uninstall_pico8_button.setEnabled(False)
+        else:
+            self.extra_status_texts[self.EXTRA_PICO8] = status_pico8["status_text"]
+            self.install_update_pico8_button.setText(status_pico8["install_label"])
+            self.install_update_pico8_button.setEnabled(status_pico8["install_enabled"])
+            self.uninstall_pico8_button.setEnabled(status_pico8["uninstall_enabled"])
 
         self.update_extra_list_labels()
         self.update_details_panel()
@@ -433,6 +483,8 @@ class ExtrasTab(QWidget):
         self.install_update_3sx_button.setEnabled(False)
         self.upload_afs_button.setEnabled(False)
         self.uninstall_3sx_button.setEnabled(False)
+        self.install_update_pico8_button.setEnabled(False)
+        self.uninstall_pico8_button.setEnabled(False)
 
         self.current_worker.start()
 
@@ -509,3 +561,37 @@ class ExtrasTab(QWidget):
             return backend_uninstall_3sx(self.connection, log)
 
         self._run_worker(task, "3S-ARM uninstalled.")
+
+    def install_or_update_pico8(self):
+        if not self.connection.is_connected():
+            return
+
+        button_text = self.install_update_pico8_button.text().strip()
+        success_message = "MiSTer Pico-8 installed."
+
+        if button_text == "Update":
+            success_message = "MiSTer Pico-8 updated."
+
+        def task(log):
+            return backend_install_or_update_pico8(self.connection, log)
+
+        self._run_worker(task, success_message)
+
+    def uninstall_pico8(self):
+        if not self.connection.is_connected():
+            return
+
+        reply = QMessageBox.question(
+            self,
+            "Uninstall MiSTer Pico-8",
+            "Remove MiSTer Pico-8 files, PICO-8 input map files, and the user-startup.sh daemon entry?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        def task(log):
+            return backend_uninstall_pico8(self.connection, log)
+
+        self._run_worker(task, "MiSTer Pico-8 uninstalled.")
