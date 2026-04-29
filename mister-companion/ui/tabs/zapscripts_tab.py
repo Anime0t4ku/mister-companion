@@ -17,7 +17,6 @@ from PyQt6.QtWidgets import (
 )
 
 from core.config import load_config, save_config
-from core.language import tr
 from core.zapscripts import (
     fetch_all_media,
     list_scripts,
@@ -96,7 +95,7 @@ class ZapScriptsTab(QWidget):
         top = QHBoxLayout()
         top.setSpacing(8)
 
-        self.scan_btn = QPushButton(tr("zapscripts_tab.scan"))
+        self.scan_btn = QPushButton("Scan")
         self.scan_btn.clicked.connect(self._handle_scan_button)
         self.scan_btn.setFixedWidth(80)
 
@@ -105,7 +104,7 @@ class ZapScriptsTab(QWidget):
         self.progress.setValue(0)
         self.progress.setTextVisible(True)
 
-        self.status = QLabel(tr("zapscripts_tab.no_library_found"))
+        self.status = QLabel("No library found")
         self.status.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
 
         top.addWidget(self.scan_btn)
@@ -117,7 +116,7 @@ class ZapScriptsTab(QWidget):
         splitter = QSplitter(Qt.Orientation.Horizontal)
 
         self.systems = QListWidget()
-        self.systems.addItems([tr("zapscripts_tab.all"), tr("zapscripts_tab.scripts")])
+        self.systems.addItems(["All", "Scripts"])
         self.systems.currentTextChanged.connect(self._filter)
         self.systems.setMinimumWidth(180)
         self.systems.setMaximumWidth(240)
@@ -129,7 +128,7 @@ class ZapScriptsTab(QWidget):
         right_layout.setSpacing(8)
 
         self.search = QLineEdit()
-        self.search.setPlaceholderText(tr("zapscripts_tab.search_placeholder"))
+        self.search.setPlaceholderText("Search...")
         self.search.textChanged.connect(self._filter)
 
         self.list = QListWidget()
@@ -138,10 +137,10 @@ class ZapScriptsTab(QWidget):
         buttons = QHBoxLayout()
         buttons.setSpacing(8)
 
-        self.launch_btn = QPushButton(tr("zapscripts_tab.launch_selected"))
+        self.launch_btn = QPushButton("Launch Selected")
         self.launch_btn.clicked.connect(self._launch)
 
-        self.controls_btn = QPushButton(tr("zapscripts_tab.controls"))
+        self.controls_btn = QPushButton("Controls")
         self.controls_btn.clicked.connect(self._open_controls)
 
         buttons.addWidget(self.launch_btn)
@@ -207,7 +206,7 @@ class ZapScriptsTab(QWidget):
         if not self.connection.is_connected():
             self.progress.setRange(0, 100)
             self.progress.setValue(0)
-            self.status.setText(tr("zapscripts_tab.no_library_found"))
+            self.status.setText("No library found")
             return
 
         try:
@@ -219,13 +218,13 @@ class ZapScriptsTab(QWidget):
             if not state.get("zaparoo_installed", False):
                 self.progress.setRange(0, 100)
                 self.progress.setValue(0)
-                self.status.setText(tr("zapscripts_tab.zaparoo_not_installed"))
+                self.status.setText("Zaparoo is not installed")
                 return
 
             if not state.get("zaparoo_service_enabled", False):
                 self.progress.setRange(0, 100)
                 self.progress.setValue(0)
-                self.status.setText(tr("zapscripts_tab.zaparoo_service_not_enabled"))
+                self.status.setText("Zaparoo service is not enabled")
                 return
 
         ts = get_last_scan_time(self.db_path) if self.db_path else None
@@ -233,10 +232,10 @@ class ZapScriptsTab(QWidget):
         if ts:
             dt = datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M")
             self.progress.setValue(100)
-            self.status.setText(tr("zapscripts_tab.last_scan", datetime=dt))
+            self.status.setText(f"Last scan: {dt}")
         else:
             self.progress.setValue(0)
-            self.status.setText(tr("zapscripts_tab.no_scan_run_yet"))
+            self.status.setText("No scan has been run yet")
 
     def _load_db(self):
         self.db_path = self._get_db_path()
@@ -255,7 +254,7 @@ class ZapScriptsTab(QWidget):
 
         systems = sorted(
             {
-                item.get("system", tr("common.unknown"))
+                item.get("system", "Unknown")
                 for item in self.entries
                 if item.get("type") == "game"
             },
@@ -266,13 +265,11 @@ class ZapScriptsTab(QWidget):
         self._update_idle_status()
 
     def _rebuild_systems(self, systems):
-        all_label = tr("zapscripts_tab.all")
-        scripts_label = tr("zapscripts_tab.scripts")
-        current = self.systems.currentItem().text() if self.systems.currentItem() else all_label
+        current = self.systems.currentItem().text() if self.systems.currentItem() else "All"
 
         self.systems.blockSignals(True)
         self.systems.clear()
-        self.systems.addItems([all_label, scripts_label] + list(systems))
+        self.systems.addItems(["All", "Scripts"] + list(systems))
 
         matches = self.systems.findItems(current, Qt.MatchFlag.MatchExactly)
         if matches:
@@ -284,21 +281,13 @@ class ZapScriptsTab(QWidget):
 
     def start_scan(self):
         if not self.connection.is_connected():
-            QMessageBox.warning(
-                self,
-                tr("zapscripts_tab.not_connected_title"),
-                tr("zapscripts_tab.connect_first"),
-            )
+            QMessageBox.warning(self, "Not connected", "Please connect to your MiSTer first.")
             return
 
         try:
             state = get_zapscripts_state(self.connection)
         except Exception as e:
-            QMessageBox.critical(
-                self,
-                tr("zapscripts_tab.zaparoo_check_failed"),
-                str(e),
-            )
+            QMessageBox.critical(self, "Zaparoo check failed", str(e))
             return
 
         if not state.get("zaparoo_installed", False):
@@ -314,61 +303,53 @@ class ZapScriptsTab(QWidget):
 
         self.db_path = self._get_db_path()
         if not self.db_path:
-            QMessageBox.warning(
-                self,
-                tr("zapscripts_tab.no_mister_ip_title"),
-                tr("zapscripts_tab.no_mister_ip_message"),
-            )
+            QMessageBox.warning(self, "No MiSTer IP", "No MiSTer IP is available.")
             return
 
         try:
             media_status = get_media_database_status(self.connection)
         except Exception as e:
-            QMessageBox.critical(
-                self,
-                tr("zapscripts_tab.media_status_failed"),
-                str(e),
-            )
+            QMessageBox.critical(self, "Media status failed", str(e))
             return
 
         if not media_status.get("exists"):
             QMessageBox.warning(
                 self,
-                tr("zapscripts_tab.no_media_database_title"),
-                tr("zapscripts_tab.no_media_database_message"),
+                "No media database",
+                "Zaparoo media database was not found on this MiSTer.",
             )
-            self.status.setText(tr("zapscripts_tab.no_media_database_found"))
+            self.status.setText("No media database found")
             self.progress.setRange(0, 100)
             self.progress.setValue(0)
             return
 
         if media_status.get("indexing"):
-            step_label = media_status.get("current_step_display") or tr("zapscripts_tab.indexing")
+            step_label = media_status.get("current_step_display") or "Indexing"
             QMessageBox.information(
                 self,
-                tr("zapscripts_tab.media_indexing_title"),
-                tr("zapscripts_tab.media_indexing_message", step=step_label),
+                "Media indexing in progress",
+                f"Zaparoo is still indexing media.\n\nCurrent step: {step_label}",
             )
-            self.status.setText(tr("zapscripts_tab.indexing_status", step=step_label))
+            self.status.setText(f"Indexing: {step_label}")
             self.progress.setRange(0, 100)
             self.progress.setValue(0)
             return
 
         if media_status.get("optimizing"):
-            step_label = media_status.get("current_step_display") or tr("zapscripts_tab.optimizing")
+            step_label = media_status.get("current_step_display") or "Optimizing"
             QMessageBox.information(
                 self,
-                tr("zapscripts_tab.media_optimizing_title"),
-                tr("zapscripts_tab.media_optimizing_message", step=step_label),
+                "Media optimization in progress",
+                f"Zaparoo is still optimizing the media database.\n\nCurrent step: {step_label}",
             )
-            self.status.setText(tr("zapscripts_tab.optimizing_status", step=step_label))
+            self.status.setText(f"Optimizing: {step_label}")
             self.progress.setRange(0, 100)
             self.progress.setValue(0)
             return
 
         self.expected_total = int(media_status.get("total_media") or 0)
 
-        self.scan_btn.setText(tr("zapscripts_tab.abort"))
+        self.scan_btn.setText("Abort")
         self.scan_btn.setEnabled(True)
         self.launch_btn.setEnabled(False)
         self.controls_btn.setEnabled(False)
@@ -379,7 +360,7 @@ class ZapScriptsTab(QWidget):
         else:
             self.progress.setRange(0, 0)
 
-        self.status.setText(tr("zapscripts_tab.items_scanned", count=0))
+        self.status.setText("Items scanned: 0")
 
         self.worker = ScanWorker(self.connection)
         self.worker.progress.connect(self._on_progress)
@@ -393,14 +374,14 @@ class ZapScriptsTab(QWidget):
             return
 
         self.scan_btn.setEnabled(False)
-        self.status.setText(tr("zapscripts_tab.aborting_scan"))
+        self.status.setText("Aborting scan...")
         self.worker.request_abort()
 
     def _on_progress(self, scanned_count):
         if self.expected_total > 0:
             self.progress.setRange(0, self.expected_total)
             self.progress.setValue(min(scanned_count, self.expected_total))
-        self.status.setText(tr("zapscripts_tab.items_scanned", count=scanned_count))
+        self.status.setText(f"Items scanned: {scanned_count}")
 
     def _on_finished(self, data):
         self.progress.setRange(0, 100)
@@ -411,7 +392,7 @@ class ZapScriptsTab(QWidget):
 
         for item in data:
             filename = item.get("filename") or item.get("name") or ""
-            system_name = item.get("system_name") or tr("common.unknown")
+            system_name = item.get("system_name") or "Unknown"
             system_id = item.get("system_id") or system_name
 
             entries.append(
@@ -435,7 +416,7 @@ class ZapScriptsTab(QWidget):
         self._rebuild_systems(sorted(systems, key=str.casefold))
         self._filter()
 
-        self.scan_btn.setText(tr("zapscripts_tab.scan"))
+        self.scan_btn.setText("Scan")
         self.scan_btn.setEnabled(True)
         self.launch_btn.setEnabled(self.connection.is_connected())
         self.controls_btn.setEnabled(self.connection.is_connected())
@@ -446,8 +427,8 @@ class ZapScriptsTab(QWidget):
     def _on_aborted(self):
         self.progress.setRange(0, 100)
         self.progress.setValue(0)
-        self.status.setText(tr("zapscripts_tab.scan_aborted"))
-        self.scan_btn.setText(tr("zapscripts_tab.scan"))
+        self.status.setText("Scan aborted")
+        self.scan_btn.setText("Scan")
         self.scan_btn.setEnabled(True)
         self.launch_btn.setEnabled(self.connection.is_connected())
         self.controls_btn.setEnabled(self.connection.is_connected())
@@ -457,14 +438,14 @@ class ZapScriptsTab(QWidget):
     def _on_error(self, message):
         self.progress.setRange(0, 100)
         self.progress.setValue(0)
-        self.status.setText(tr("zapscripts_tab.scan_failed_status", error=message))
-        self.scan_btn.setText(tr("zapscripts_tab.scan"))
+        self.status.setText(f"Scan failed: {message}")
+        self.scan_btn.setText("Scan")
         self.scan_btn.setEnabled(True)
         self.launch_btn.setEnabled(self.connection.is_connected())
         self.controls_btn.setEnabled(self.connection.is_connected())
         self.worker = None
         self.expected_total = 0
-        QMessageBox.critical(self, tr("zapscripts_tab.scan_failed_title"), message)
+        QMessageBox.critical(self, "Scan failed", message)
 
     def _get_combined_entries(self):
         scripts = list_scripts(self.connection) if self.connection.is_connected() else []
@@ -473,20 +454,20 @@ class ZapScriptsTab(QWidget):
     def _format_display_name(self, item, selected_system):
         name = item.get("name", "")
 
-        if selected_system != tr("zapscripts_tab.all"):
+        if selected_system != "All":
             return name
 
         if item.get("type") == "script":
-            return tr("zapscripts_tab.script_display", name=name)
+            return f"(SCRIPT) {name}"
 
-        system_name = item.get("system", tr("common.unknown"))
-        return tr("zapscripts_tab.game_display", system=system_name, name=name)
+        system_name = item.get("system", "Unknown")
+        return f"({system_name}) {name}"
 
     def _refresh_list(self):
         self.list.clear()
 
         current_item = self.systems.currentItem()
-        selected_system = current_item.text() if current_item else tr("zapscripts_tab.all")
+        selected_system = current_item.text() if current_item else "All"
 
         for item in self.filtered_entries:
             display_name = self._format_display_name(item, selected_system)
@@ -497,10 +478,7 @@ class ZapScriptsTab(QWidget):
     def _filter(self):
         query = self.search.text().strip().lower()
         current_item = self.systems.currentItem()
-        system = current_item.text() if current_item else tr("zapscripts_tab.all")
-
-        all_label = tr("zapscripts_tab.all")
-        scripts_label = tr("zapscripts_tab.scripts")
+        system = current_item.text() if current_item else "All"
 
         combined = self._get_combined_entries()
         filtered = []
@@ -511,10 +489,10 @@ class ZapScriptsTab(QWidget):
             if query and query not in name.lower():
                 continue
 
-            if system == scripts_label:
+            if system == "Scripts":
                 if item.get("type") != "script":
                     continue
-            elif system != all_label:
+            elif system != "All":
                 if item.get("system") != system:
                     continue
 
@@ -527,11 +505,7 @@ class ZapScriptsTab(QWidget):
 
     def _launch(self):
         if not self.connection.is_connected():
-            QMessageBox.warning(
-                self,
-                tr("zapscripts_tab.not_connected_title"),
-                tr("zapscripts_tab.connect_first"),
-            )
+            QMessageBox.warning(self, "Not connected", "Please connect to your MiSTer first.")
             return
 
         current_item = self.list.currentItem()
@@ -545,19 +519,11 @@ class ZapScriptsTab(QWidget):
         try:
             launch_media(self.connection, entry)
         except Exception as e:
-            QMessageBox.critical(
-                self,
-                tr("zapscripts_tab.launch_failed"),
-                str(e),
-            )
+            QMessageBox.critical(self, "Launch failed", str(e))
 
     def _open_controls(self):
         if not self.connection.is_connected():
-            QMessageBox.warning(
-                self,
-                tr("zapscripts_tab.not_connected_title"),
-                tr("zapscripts_tab.connect_first"),
-            )
+            QMessageBox.warning(self, "Not connected", "Please connect to your MiSTer first.")
             return
 
         dlg = ZapScriptsControlsDialog(
@@ -575,11 +541,7 @@ class ZapScriptsTab(QWidget):
         try:
             send_input_command(self.connection, command)
         except Exception as e:
-            QMessageBox.critical(
-                self,
-                tr("zapscripts_tab.control_failed"),
-                str(e),
-            )
+            QMessageBox.critical(self, "Control failed", str(e))
 
     def refresh_status(self):
         self.update_connection_state()
@@ -608,7 +570,7 @@ class ZapScriptsTab(QWidget):
 
             systems = sorted(
                 {
-                    item.get("system", tr("common.unknown"))
+                    item.get("system", "Unknown")
                     for item in self.entries
                     if item.get("type") == "game"
                 },
@@ -619,4 +581,4 @@ class ZapScriptsTab(QWidget):
 
             self.progress.setRange(0, 100)
             self.progress.setValue(0)
-            self.status.setText(tr("zapscripts_tab.no_library_found"))
+            self.status.setText("No library found")

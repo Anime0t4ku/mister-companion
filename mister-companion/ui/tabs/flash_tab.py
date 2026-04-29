@@ -31,7 +31,6 @@ from core.flasher import (
     remove_mr_fusion_image,
     remove_superstation_image,
 )
-from core.language import tr
 
 
 class FlashWorker(QThread):
@@ -87,18 +86,18 @@ class FlashTab(QWidget):
         main_layout.setContentsMargins(12, 12, 12, 12)
         main_layout.setSpacing(12)
 
-        self.main_group = QGroupBox(tr("flash_tab.title"))
+        self.main_group = QGroupBox("Flash SD")
         group_layout = QVBoxLayout(self.main_group)
         group_layout.setContentsMargins(12, 12, 12, 12)
         group_layout.setSpacing(12)
 
-        mode_group = QGroupBox(tr("flash_tab.installer"))
+        mode_group = QGroupBox("Installer")
         mode_layout = QHBoxLayout(mode_group)
         mode_layout.setContentsMargins(12, 12, 12, 12)
         mode_layout.setSpacing(12)
         mode_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        mode_label = QLabel(tr("flash_tab.select_installer"))
+        mode_label = QLabel("Select installer:")
         self.mode_combo = QComboBox()
         self.mode_combo.addItem("Mr. Fusion", self.MODE_MR_FUSION)
         self.mode_combo.addItem("SuperStationOne SD Card Installer", self.MODE_SUPERSTATION)
@@ -116,13 +115,13 @@ class FlashTab(QWidget):
 
         system = platform.system()
         if system == "Windows":
-            privilege_text = tr("flash_tab.privilege_windows")
+            privilege_text = "Important: Run MiSTer Companion as Administrator to flash SD cards."
         elif system == "Linux":
-            privilege_text = tr("flash_tab.privilege_linux")
+            privilege_text = "Important: Run MiSTer Companion with sudo or root privileges to flash SD cards."
         elif system == "Darwin":
-            privilege_text = tr("flash_tab.privilege_macos")
+            privilege_text = "balena CLI may prompt for your password to write to the SD card."
         else:
-            privilege_text = tr("flash_tab.flash_not_supported")
+            privilege_text = "Flashing is not supported on this platform."
 
         self.privileges_label = QLabel(privilege_text)
         self.privileges_label.setWordWrap(True)
@@ -130,7 +129,7 @@ class FlashTab(QWidget):
         self.privileges_label.setStyleSheet("color: #f39c12; font-weight: bold;")
         group_layout.addWidget(self.privileges_label)
 
-        status_group = QGroupBox(tr("flash_tab.status"))
+        status_group = QGroupBox("Status")
         status_layout = QVBoxLayout(status_group)
         status_layout.setContentsMargins(12, 12, 12, 12)
         status_layout.setSpacing(8)
@@ -139,12 +138,12 @@ class FlashTab(QWidget):
         status_row.setSpacing(24)
         status_row.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        self.image_status_title = QLabel(tr("flash_tab.installer_image"))
-        self.image_status_label = QLabel(tr("flash_tab.not_downloaded"))
+        self.image_status_title = QLabel("Installer image:")
+        self.image_status_label = QLabel("Not downloaded")
         self.image_status_label.setWordWrap(True)
 
-        self.balena_status_title = QLabel(tr("flash_tab.balena_cli"))
-        self.balena_status_label = QLabel(tr("flash_tab.not_downloaded"))
+        self.balena_status_title = QLabel("balena CLI:")
+        self.balena_status_label = QLabel("Not downloaded")
         self.balena_status_label.setWordWrap(True)
 
         status_row.addWidget(self.image_status_title)
@@ -156,16 +155,16 @@ class FlashTab(QWidget):
         status_layout.addLayout(status_row)
         group_layout.addWidget(status_group)
 
-        downloads_group = QGroupBox(tr("flash_tab.downloads"))
+        downloads_group = QGroupBox("Downloads")
         downloads_layout = QHBoxLayout(downloads_group)
         downloads_layout.setContentsMargins(12, 12, 12, 12)
         downloads_layout.setSpacing(12)
         downloads_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        self.download_image_button = QPushButton(tr("flash_tab.download_image"))
-        self.remove_image_button = QPushButton(tr("flash_tab.remove_image"))
-        self.download_balena_button = QPushButton(tr("flash_tab.download_balena_cli"))
-        self.remove_balena_button = QPushButton(tr("flash_tab.remove_balena_cli"))
+        self.download_image_button = QPushButton("Download Image")
+        self.remove_image_button = QPushButton("Remove Image")
+        self.download_balena_button = QPushButton("Download balena CLI")
+        self.remove_balena_button = QPushButton("Remove balena CLI")
 
         downloads_layout.addWidget(self.download_image_button)
         downloads_layout.addWidget(self.remove_image_button)
@@ -175,7 +174,7 @@ class FlashTab(QWidget):
 
         group_layout.addWidget(downloads_group)
 
-        drive_group = QGroupBox(tr("flash_tab.target_drive"))
+        drive_group = QGroupBox("Target Drive")
         drive_layout = QVBoxLayout(drive_group)
         drive_layout.setContentsMargins(12, 12, 12, 12)
         drive_layout.setSpacing(12)
@@ -186,16 +185,16 @@ class FlashTab(QWidget):
 
         self.drive_combo = QComboBox()
         self.drive_combo.setMinimumWidth(450)
-        self.drive_combo.addItem(tr("flash_tab.refresh_drives_placeholder"))
+        self.drive_combo.addItem("Click 'Refresh Drives' to load available drives")
 
-        self.refresh_drives_button = QPushButton(tr("flash_tab.refresh_drives"))
+        self.refresh_drives_button = QPushButton("Refresh Drives")
 
         drive_row.addWidget(self.drive_combo, 1)
         drive_row.addWidget(self.refresh_drives_button)
         drive_layout.addLayout(drive_row)
 
         self.drive_warning_label = QLabel(
-            tr("flash_tab.drive_warning")
+            "Warning: The selected drive will be fully erased."
         )
         self.drive_warning_label.setWordWrap(True)
         self.drive_warning_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -205,7 +204,7 @@ class FlashTab(QWidget):
         flash_row = QHBoxLayout()
         flash_row.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        self.flash_button = QPushButton(tr("flash_tab.flash_sd_card"))
+        self.flash_button = QPushButton("Flash SD Card")
         self.flash_button.setMinimumWidth(180)
         flash_row.addWidget(self.flash_button)
 
@@ -214,7 +213,7 @@ class FlashTab(QWidget):
         group_layout.addWidget(drive_group)
         main_layout.addWidget(self.main_group)
 
-        self.log_group = QGroupBox(tr("flash_tab.log"))
+        self.log_group = QGroupBox("Log")
         log_layout = QVBoxLayout(self.log_group)
         log_layout.setContentsMargins(12, 12, 12, 12)
         log_layout.setSpacing(8)
@@ -231,7 +230,7 @@ class FlashTab(QWidget):
         log_button_row = QHBoxLayout()
         log_button_row.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        self.toggle_log_button = QPushButton(tr("flash_tab.show_log"))
+        self.toggle_log_button = QPushButton("Show Log")
         self.toggle_log_button.setFixedWidth(100)
         log_button_row.addWidget(self.toggle_log_button)
 
@@ -268,12 +267,12 @@ class FlashTab(QWidget):
     def is_superstation_mode(self):
         return self.current_mode() == self.MODE_SUPERSTATION
 
-    def _set_ready_status(self, label, text=None):
-        label.setText(text or tr("flash_tab.ready"))
+    def _set_ready_status(self, label, text="Ready"):
+        label.setText(text)
         label.setStyleSheet("color: #2ecc71; font-weight: bold;")
 
     def _set_not_downloaded_status(self, label):
-        label.setText(tr("flash_tab.not_downloaded"))
+        label.setText("Not downloaded")
         label.setStyleSheet("color: #e74c3c; font-weight: bold;")
 
     def _set_warning_status(self, label, text):
@@ -283,18 +282,18 @@ class FlashTab(QWidget):
     def update_mode_ui(self):
         if self.is_mr_fusion_mode():
             self.info_label.setText(
-                tr("flash_tab.mr_fusion_info")
+                "Follow the steps below to prepare and flash an Mr. Fusion SD card for MiSTer."
             )
-            self.image_status_title.setText(tr("flash_tab.mr_fusion_image"))
-            self.download_image_button.setText(tr("flash_tab.download_mr_fusion"))
-            self.remove_image_button.setText(tr("flash_tab.remove_mr_fusion"))
+            self.image_status_title.setText("Mr. Fusion image:")
+            self.download_image_button.setText("Download Mr. Fusion")
+            self.remove_image_button.setText("Remove Mr. Fusion")
         else:
             self.info_label.setText(
-                tr("flash_tab.superstation_info")
+                "Follow the steps below to prepare and flash a SuperStationOne SD Card Installer image."
             )
-            self.image_status_title.setText(tr("flash_tab.superstation_image"))
-            self.download_image_button.setText(tr("flash_tab.download_superstation"))
-            self.remove_image_button.setText(tr("flash_tab.remove_superstation"))
+            self.image_status_title.setText("SuperStation image:")
+            self.download_image_button.setText("Download SuperStation Installer")
+            self.remove_image_button.setText("Remove SuperStation Installer")
 
     def refresh_status(self):
         self.update_mode_ui()
@@ -305,19 +304,19 @@ class FlashTab(QWidget):
                     image_path = get_mr_fusion_image()
                     self._set_ready_status(
                         self.image_status_label,
-                        tr("flash_tab.ready_with_name", name=image_path.name),
+                        f"Ready ({image_path.name})",
                     )
                 except Exception:
                     self._set_ready_status(self.image_status_label)
 
-                self.download_image_button.setText(tr("flash_tab.download_mr_fusion"))
+                self.download_image_button.setText("Download Mr. Fusion")
                 self.download_image_button.setEnabled(False)
                 self.remove_image_button.setEnabled(
                     is_flash_supported() and self.current_worker is None and has_mr_fusion_image()
                 )
             else:
                 self._set_not_downloaded_status(self.image_status_label)
-                self.download_image_button.setText(tr("flash_tab.download_mr_fusion"))
+                self.download_image_button.setText("Download Mr. Fusion")
                 if is_flash_supported() and self.current_worker is None:
                     self.download_image_button.setEnabled(True)
                 self.remove_image_button.setEnabled(False)
@@ -342,45 +341,34 @@ class FlashTab(QWidget):
 
             if not installed:
                 self._set_not_downloaded_status(self.image_status_label)
-                self.download_image_button.setText(tr("flash_tab.download_superstation"))
+                self.download_image_button.setText("Download SuperStation Installer")
                 if is_flash_supported() and self.current_worker is None:
                     self.download_image_button.setEnabled(True)
                 self.remove_image_button.setEnabled(False)
             else:
                 if update_available:
-                    label_text = tr("flash_tab.update_available")
+                    label_text = "Update available"
                     if local_name and latest_name:
-                        label_text = tr(
-                            "flash_tab.update_available_from_to",
-                            local_name=local_name,
-                            latest_name=latest_name,
-                        )
+                        label_text = f"Update available ({local_name} -> {latest_name})"
                     elif latest_name:
-                        label_text = tr(
-                            "flash_tab.update_available_name",
-                            latest_name=latest_name,
-                        )
+                        label_text = f"Update available ({latest_name})"
 
                     self._set_warning_status(self.image_status_label, label_text)
-                    self.download_image_button.setText(tr("flash_tab.update"))
+                    self.download_image_button.setText("Update")
                     if is_flash_supported() and self.current_worker is None:
                         self.download_image_button.setEnabled(True)
                     self.remove_image_button.setEnabled(
                         is_flash_supported() and self.current_worker is None
                     )
                 else:
-                    ready_text = (
-                        tr("flash_tab.ready_with_name", name=local_name)
-                        if local_name
-                        else tr("flash_tab.ready")
-                    )
+                    ready_text = f"Ready ({local_name})" if local_name else "Ready"
 
                     if up_to_date is False:
                         self._set_warning_status(self.image_status_label, ready_text)
                     else:
                         self._set_ready_status(self.image_status_label, ready_text)
 
-                    self.download_image_button.setText(tr("flash_tab.download_superstation"))
+                    self.download_image_button.setText("Download SuperStation Installer")
                     self.download_image_button.setEnabled(False)
                     self.remove_image_button.setEnabled(
                         is_flash_supported() and self.current_worker is None and has_superstation_image()
@@ -415,7 +403,7 @@ class FlashTab(QWidget):
     def get_selected_image_name(self):
         if self.is_mr_fusion_mode():
             return "Mr. Fusion"
-        return tr("flash_tab.superstation_image_name")
+        return "SuperStation image"
 
     def update_connection_state(self):
         if not is_flash_supported():
@@ -450,11 +438,11 @@ class FlashTab(QWidget):
 
     def show_log(self):
         self.log_group.show()
-        self.toggle_log_button.setText(tr("flash_tab.hide_log"))
+        self.toggle_log_button.setText("Hide Log")
 
     def hide_log(self):
         self.log_group.hide()
-        self.toggle_log_button.setText(tr("flash_tab.show_log"))
+        self.toggle_log_button.setText("Show Log")
 
     def toggle_log(self):
         if self.log_group.isVisible():
@@ -495,7 +483,7 @@ class FlashTab(QWidget):
 
     def on_task_error(self, message):
         self.append_log(message)
-        QMessageBox.critical(self, tr("common.error"), message)
+        QMessageBox.critical(self, "Error", message)
 
     def on_task_finished(self):
         self.current_worker = None
@@ -528,13 +516,13 @@ class FlashTab(QWidget):
         self.drive_map.clear()
 
         if not drives:
-            self.drive_combo.addItem(tr("flash_tab.no_drives_found"))
+            self.drive_combo.addItem("No drives found")
             self.flash_button.setEnabled(False)
             return
 
         for drive in drives:
             device = str(drive.get("device", "")).strip()
-            display_text = str(drive.get("display_name", "")).strip() or device or tr("flash_tab.unknown_drive")
+            display_text = str(drive.get("display_name", "")).strip() or device or "Unknown drive"
 
             self.drive_combo.addItem(display_text)
             self.drive_map[display_text] = device
@@ -555,7 +543,7 @@ class FlashTab(QWidget):
         def task(log):
             ensure_mr_fusion_image(force_download=True, log_callback=log)
 
-        self.start_worker(task, success_message=tr("flash_tab.mr_fusion_download_complete"))
+        self.start_worker(task, success_message="Mr. Fusion download complete.")
 
     def download_superstation(self):
         def task(log):
@@ -563,9 +551,9 @@ class FlashTab(QWidget):
 
         button_text = self.download_image_button.text().strip().lower()
         success_message = (
-            tr("flash_tab.superstation_update_complete")
-            if button_text == tr("flash_tab.update").lower()
-            else tr("flash_tab.superstation_download_complete")
+            "SuperStation image update complete."
+            if button_text == "update"
+            else "SuperStation image download complete."
         )
         self.start_worker(task, success_message=success_message)
 
@@ -573,15 +561,21 @@ class FlashTab(QWidget):
         def task(log):
             ensure_balena_cli(force_download=True, log_callback=log)
 
-        self.start_worker(task, success_message=tr("flash_tab.balena_download_complete"))
+        self.start_worker(task, success_message="balena CLI download complete.")
 
     def remove_selected_image(self):
         if self.is_mr_fusion_mode():
-            title = tr("flash_tab.remove_mr_fusion")
-            text = tr("flash_tab.remove_mr_fusion_confirm")
+            title = "Remove Mr. Fusion"
+            text = (
+                "This will remove the downloaded Mr. Fusion image files from the tools folder.\n\n"
+                "Do you want to continue?"
+            )
         else:
-            title = tr("flash_tab.remove_superstation_image_title")
-            text = tr("flash_tab.remove_superstation_confirm")
+            title = "Remove SuperStation image"
+            text = (
+                "This will remove the downloaded SuperStation image files from the tools folder.\n\n"
+                "Do you want to continue?"
+            )
 
         confirm = QMessageBox.question(self, title, text)
         if confirm != QMessageBox.StandardButton.Yes:
@@ -594,17 +588,17 @@ class FlashTab(QWidget):
                 remove_superstation_image(log_callback=log)
 
         success_message = (
-            tr("flash_tab.mr_fusion_files_removed")
+            "Mr. Fusion files removed."
             if self.is_mr_fusion_mode()
-            else tr("flash_tab.superstation_files_removed")
+            else "SuperStation files removed."
         )
         self.start_worker(task, success_message=success_message)
 
     def remove_balena(self):
         confirm = QMessageBox.question(
             self,
-            tr("flash_tab.remove_balena_cli"),
-            tr("flash_tab.remove_balena_confirm"),
+            "Remove balena CLI",
+            "This will remove the downloaded balena CLI files from the tools folder.\n\nDo you want to continue?",
         )
         if confirm != QMessageBox.StandardButton.Yes:
             return
@@ -612,7 +606,7 @@ class FlashTab(QWidget):
         def task(log):
             remove_balena_cli(log_callback=log)
 
-        self.start_worker(task, success_message=tr("flash_tab.balena_files_removed"))
+        self.start_worker(task, success_message="balena CLI files removed.")
 
     def refresh_drives(self, silent=False):
         if not is_flash_supported():
@@ -623,7 +617,7 @@ class FlashTab(QWidget):
 
         self.start_worker(
             task,
-            success_message=tr("flash_tab.drive_refresh_complete"),
+            success_message="Drive refresh complete.",
             emit_drives=True,
         )
 
@@ -632,30 +626,28 @@ class FlashTab(QWidget):
             return
 
         if not self.selected_image_ready():
-            image_name = self.get_selected_image_name()
             QMessageBox.warning(
                 self,
-                tr("flash_tab.image_missing_title", image_name=image_name),
-                tr("flash_tab.download_latest_image_first", image_name=image_name),
+                f"{self.get_selected_image_name()} missing",
+                f"Download the latest {self.get_selected_image_name()} first.",
             )
             return
 
         if not has_balena_cli():
             QMessageBox.warning(
                 self,
-                tr("flash_tab.balena_missing_title"),
-                tr("flash_tab.download_balena_first"),
+                "balena CLI missing",
+                "Download balena CLI first.",
             )
             return
 
         try:
             image_path = self.get_selected_image_path()
         except Exception:
-            image_name = self.get_selected_image_name()
             QMessageBox.warning(
                 self,
-                tr("flash_tab.image_missing_title", image_name=image_name),
-                tr("flash_tab.download_latest_image_first", image_name=image_name),
+                f"{self.get_selected_image_name()} missing",
+                f"Download the latest {self.get_selected_image_name()} first.",
             )
             return
 
@@ -663,15 +655,15 @@ class FlashTab(QWidget):
         if not drive:
             QMessageBox.warning(
                 self,
-                tr("flash_tab.no_drive_selected_title"),
-                tr("flash_tab.select_target_drive_first"),
+                "No drive selected",
+                "Select a target drive first.",
             )
             return
 
         confirm = QMessageBox.question(
             self,
-            tr("flash_tab.confirm_flash_title"),
-            tr("flash_tab.confirm_flash_message", drive=drive),
+            "Confirm Flash",
+            f"This will erase all data on:\n\n{drive}\n\nDo you want to continue?",
         )
         if confirm != QMessageBox.StandardButton.Yes:
             return
@@ -680,8 +672,8 @@ class FlashTab(QWidget):
             from PyQt6.QtWidgets import QInputDialog, QLineEdit
             password, ok = QInputDialog.getText(
                 self,
-                tr("flash_tab.admin_password_title"),
-                tr("flash_tab.admin_password_message"),
+                "Administrator Password Required",
+                "Enter your password to flash the SD card:",
                 QLineEdit.EchoMode.Password
             )
             if not ok or not password:

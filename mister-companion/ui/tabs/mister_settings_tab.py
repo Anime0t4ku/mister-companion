@@ -7,7 +7,6 @@ from PyQt6.QtWidgets import (
     QRadioButton, QButtonGroup, QSpinBox, QSizePolicy, QDialog
 )
 
-from core.language import tr
 from core.mister_ini import (
     build_easy_mode_settings,
     easy_mode_values_from_ini_settings,
@@ -54,7 +53,11 @@ class MiSTerSettingsTab(QWidget):
         main_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         self.setLayout(main_layout)
 
-        self.info_label = QLabel(tr("mister_settings_tab.info"))
+        self.info_label = QLabel(
+            "MiSTer Settings allows you to edit MiSTer.ini with an Easy and Advanced mode.\n"
+            "Backups are stored locally on your PC in a separate MiSTerSettings folder.\n"
+            "Settings are only applied when you press Save."
+        )
         self.info_label.setWordWrap(True)
         self.info_label.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
         main_layout.addWidget(self.info_label)
@@ -64,11 +67,11 @@ class MiSTerSettingsTab(QWidget):
         mode_row.setSpacing(10)
         mode_row.addStretch()
 
-        mode_label = QLabel(tr("mister_settings_tab.mode_label"))
+        mode_label = QLabel("Mode:")
         mode_row.addWidget(mode_label)
 
-        self.easy_mode_radio = QRadioButton(tr("mister_settings_tab.easy"))
-        self.advanced_mode_radio = QRadioButton(tr("mister_settings_tab.advanced"))
+        self.easy_mode_radio = QRadioButton("Easy")
+        self.advanced_mode_radio = QRadioButton("Advanced")
         self.easy_mode_radio.setChecked(True)
 
         self.mode_group = QButtonGroup(self)
@@ -88,7 +91,7 @@ class MiSTerSettingsTab(QWidget):
         self.notice_label.hide()
         main_layout.addWidget(self.notice_label)
 
-        self.easy_group = QGroupBox(tr("mister_settings_tab.easy_mode"))
+        self.easy_group = QGroupBox("Easy Mode")
         easy_layout = QGridLayout()
         easy_layout.setContentsMargins(12, 10, 12, 10)
         easy_layout.setHorizontalSpacing(10)
@@ -160,31 +163,31 @@ class MiSTerSettingsTab(QWidget):
         ])
 
         self.easy_font_combo = QComboBox()
-        self.easy_font_combo.addItem(tr("mister_settings_tab.default_font"))
+        self.easy_font_combo.addItem("Default")
 
-        easy_layout.addWidget(QLabel(tr("mister_settings_tab.hdmi_mode")), 0, 0)
+        easy_layout.addWidget(QLabel("HDMI Mode"), 0, 0)
         easy_layout.addWidget(self.easy_hdmi_mode_combo, 0, 1)
-        easy_layout.addWidget(QLabel(tr("mister_settings_tab.resolution")), 1, 0)
+        easy_layout.addWidget(QLabel("Resolution"), 1, 0)
         easy_layout.addWidget(self.easy_resolution_combo, 1, 1)
-        easy_layout.addWidget(QLabel(tr("mister_settings_tab.hdmi_scaling_mode")), 2, 0)
+        easy_layout.addWidget(QLabel("HDMI Scaling Mode"), 2, 0)
         easy_layout.addWidget(self.easy_scaling_combo, 2, 1)
-        easy_layout.addWidget(QLabel(tr("mister_settings_tab.hdmi_audio")), 3, 0)
+        easy_layout.addWidget(QLabel("HDMI Audio"), 3, 0)
         easy_layout.addWidget(self.easy_hdmi_audio_combo, 3, 1)
-        easy_layout.addWidget(QLabel(tr("mister_settings_tab.hdr")), 4, 0)
+        easy_layout.addWidget(QLabel("HDR"), 4, 0)
         easy_layout.addWidget(self.easy_hdr_combo, 4, 1)
-        easy_layout.addWidget(QLabel(tr("mister_settings_tab.hdmi_range")), 5, 0)
+        easy_layout.addWidget(QLabel("HDMI Range"), 5, 0)
         easy_layout.addWidget(self.easy_hdmi_limited_combo, 5, 1)
-        easy_layout.addWidget(QLabel(tr("mister_settings_tab.analogue_output")), 6, 0)
+        easy_layout.addWidget(QLabel("Analogue Output"), 6, 0)
         easy_layout.addWidget(self.easy_analogue_combo, 6, 1)
-        easy_layout.addWidget(QLabel(tr("mister_settings_tab.mister_logo")), 7, 0)
+        easy_layout.addWidget(QLabel("MiSTer Logo"), 7, 0)
         easy_layout.addWidget(self.easy_logo_combo, 7, 1)
-        easy_layout.addWidget(QLabel(tr("mister_settings_tab.font")), 8, 0)
+        easy_layout.addWidget(QLabel("Font"), 8, 0)
         easy_layout.addWidget(self.easy_font_combo, 8, 1)
 
         self.easy_group.setLayout(easy_layout)
         main_layout.addWidget(self.easy_group)
 
-        self.advanced_group = QGroupBox(tr("mister_settings_tab.advanced_mode"))
+        self.advanced_group = QGroupBox("Advanced Mode")
         advanced_layout = QVBoxLayout()
         advanced_layout.setContentsMargins(10, 10, 10, 10)
 
@@ -206,10 +209,10 @@ class MiSTerSettingsTab(QWidget):
         button_row = QHBoxLayout()
         button_row.addStretch()
 
-        self.save_button = QPushButton(tr("mister_settings_tab.save"))
-        self.backup_button = QPushButton(tr("mister_settings_tab.backup"))
-        self.restore_button = QPushButton(tr("mister_settings_tab.restore_backup"))
-        self.defaults_button = QPushButton(tr("mister_settings_tab.restore_defaults"))
+        self.save_button = QPushButton("Save")
+        self.backup_button = QPushButton("Backup")
+        self.restore_button = QPushButton("Restore Backup")
+        self.defaults_button = QPushButton("Restore Defaults")
 
         button_row.addWidget(self.save_button)
         button_row.addWidget(self.backup_button)
@@ -222,12 +225,12 @@ class MiSTerSettingsTab(QWidget):
         retention_row = QHBoxLayout()
         retention_row.addStretch()
 
-        self.retention_label = QLabel(tr("mister_settings_tab.backups_to_keep"))
+        self.retention_label = QLabel("Backups to keep per device:")
         self.retention_spin = QSpinBox()
         self.retention_spin.setRange(1, 100)
         self.retention_spin.setValue(self.config_data.get("mister_settings_retention", 10))
 
-        self.open_backup_folder_button = QPushButton(tr("mister_settings_tab.open_backup_folder"))
+        self.open_backup_folder_button = QPushButton("Open Backup Folder")
 
         retention_row.addWidget(self.retention_label)
         retention_row.addWidget(self.retention_spin)
@@ -254,16 +257,10 @@ class MiSTerSettingsTab(QWidget):
         self.easy_hdmi_limited_combo.setCurrentText("Full Range")
         self.easy_analogue_combo.setCurrentText("RGB (Consumer TV)")
         self.easy_logo_combo.setCurrentText("Enabled")
-        self.easy_font_combo.setCurrentText(tr("mister_settings_tab.default_font"))
+        self.easy_font_combo.setCurrentText("Default")
 
         self.update_easy_mode_state()
         self.update_settings_mode()
-
-    def default_font_text(self):
-        return tr("mister_settings_tab.default_font")
-
-    def is_default_font(self, value):
-        return (value or "").strip() in ("Default", self.default_font_text())
 
     def set_notice(self, text=""):
         text = (text or "").strip()
@@ -296,7 +293,7 @@ class MiSTerSettingsTab(QWidget):
         self.retention_label.setStyleSheet("")
         self.set_notice("")
         self.cached_font_list = None
-        self.pending_font_selection = self.default_font_text()
+        self.pending_font_selection = "Default"
         self.font_scan_scheduled = False
         self.set_mister_settings_enabled(False)
 
@@ -429,17 +426,14 @@ class MiSTerSettingsTab(QWidget):
     def set_font_combo_loading(self):
         self.easy_font_combo.blockSignals(True)
         self.easy_font_combo.clear()
-        self.easy_font_combo.addItem(self.default_font_text())
-        self.easy_font_combo.addItem(tr("mister_settings_tab.scanning_fonts"))
-        self.easy_font_combo.setCurrentText(tr("mister_settings_tab.scanning_fonts"))
+        self.easy_font_combo.addItem("Default")
+        self.easy_font_combo.addItem("Scanning fonts...")
+        self.easy_font_combo.setCurrentText("Scanning fonts...")
         self.easy_font_combo.setEnabled(False)
         self.easy_font_combo.blockSignals(False)
 
-    def populate_font_combo(self, selected_font=None):
-        current = (selected_font or self.default_font_text()).strip()
-
-        if current == "Default":
-            current = self.default_font_text()
+    def populate_font_combo(self, selected_font="Default"):
+        current = (selected_font or "Default").strip()
 
         if self.cached_font_list is not None:
             self._populate_font_combo_from_list(self.cached_font_list, current)
@@ -447,29 +441,26 @@ class MiSTerSettingsTab(QWidget):
 
         self.pending_font_selection = current
         self.set_font_combo_loading()
-        self.set_notice(tr("mister_settings_tab.scanning_fonts_notice"))
+        self.set_notice("Scanning fonts from MiSTer...")
 
         if not self.font_scan_scheduled:
             self.font_scan_scheduled = True
             QTimer.singleShot(0, self._finish_font_scan_after_render)
 
-    def _populate_font_combo_from_list(self, fonts, selected_font=None):
-        current = (selected_font or self.default_font_text()).strip()
-
-        if current == "Default":
-            current = self.default_font_text()
+    def _populate_font_combo_from_list(self, fonts, selected_font="Default"):
+        current = (selected_font or "Default").strip()
 
         self.easy_font_combo.blockSignals(True)
         self.easy_font_combo.clear()
-        self.easy_font_combo.addItem(self.default_font_text())
+        self.easy_font_combo.addItem("Default")
 
         for font_name in fonts:
             self.easy_font_combo.addItem(font_name)
 
-        if not self.is_default_font(current) and self.easy_font_combo.findText(current) == -1:
+        if current != "Default" and self.easy_font_combo.findText(current) == -1:
             self.easy_font_combo.addItem(current)
 
-        self.easy_font_combo.setCurrentText(current if current else self.default_font_text())
+        self.easy_font_combo.setCurrentText(current if current else "Default")
         self.easy_font_combo.setEnabled(
             self.connection.is_connected() and self.easy_mode_radio.isChecked()
         )
@@ -489,7 +480,7 @@ class MiSTerSettingsTab(QWidget):
 
     def extract_font_selection_from_ini_text(self, ini_text):
         if not ini_text:
-            return self.default_font_text()
+            return "Default"
 
         match = re.search(
             r"(?mi)^(?!\s*;)\s*font\s*=\s*font/([^\r\n/]+\.pf)\s*$",
@@ -498,14 +489,14 @@ class MiSTerSettingsTab(QWidget):
         if match:
             return match.group(1).strip()
 
-        return self.default_font_text()
+        return "Default"
 
     def apply_font_setting_to_ini_text(self, ini_text, selected_font):
         text = (ini_text or "").replace("\r\n", "\n")
         font_line = self.DEFAULT_FONT_LINE
 
         selected_font = (selected_font or "").strip()
-        if selected_font and not self.is_default_font(selected_font):
+        if selected_font and selected_font != "Default":
             font_line = f"font=font/{selected_font}"
 
         lines = text.splitlines()
@@ -568,7 +559,7 @@ class MiSTerSettingsTab(QWidget):
         self.easy_analogue_combo.setCurrentText(values.get("analogue", "RGB (Consumer TV)"))
         self.easy_logo_combo.setCurrentText(values.get("logo", "Enabled"))
 
-        font_value = values.get("font", self.default_font_text())
+        font_value = values.get("font", "Default")
         self.populate_font_combo(font_value)
 
         self.update_easy_mode_state()
@@ -587,17 +578,13 @@ class MiSTerSettingsTab(QWidget):
         ok, message = ensure_mister_ini_exists(self.connection)
         if not ok:
             if not silent:
-                QMessageBox.critical(self, tr("mister_settings_tab.mister_ini_error"), message)
+                QMessageBox.critical(self, "MiSTer.ini Error", message)
             return False
 
         ini_text = self.connection.run_command("cat /media/fat/MiSTer.ini")
         if not ini_text:
             if not silent:
-                QMessageBox.critical(
-                    self,
-                    tr("mister_settings_tab.mister_ini_error"),
-                    tr("mister_settings_tab.unable_to_read_mister_ini")
-                )
+                QMessageBox.critical(self, "MiSTer.ini Error", "Unable to read /media/fat/MiSTer.ini")
             return False
 
         settings = parse_mister_ini(ini_text)
@@ -626,21 +613,13 @@ class MiSTerSettingsTab(QWidget):
     def backup_mister_settings(self, silent=False):
         if not self.connection.is_connected():
             if not silent:
-                QMessageBox.critical(
-                    self,
-                    tr("common.error"),
-                    tr("device_tab.not_connected_message")
-                )
+                QMessageBox.critical(self, "Error", "Connect to a MiSTer first.")
             return False
 
         device_name = self.get_mister_settings_device_name()
         if not device_name:
             if not silent:
-                QMessageBox.critical(
-                    self,
-                    tr("common.error"),
-                    tr("mister_settings_tab.no_device_name_or_ip")
-                )
+                QMessageBox.critical(self, "Error", "No device name or IP available.")
             return False
 
         device_path = self.get_mister_settings_device_path()
@@ -654,14 +633,14 @@ class MiSTerSettingsTab(QWidget):
             )
             if not ok:
                 if not silent:
-                    QMessageBox.critical(self, tr("mister_settings_tab.mister_ini_error"), message)
+                    QMessageBox.critical(self, "MiSTer.ini Error", message)
                 return False
 
             if not silent:
                 QMessageBox.information(
                     self,
-                    tr("mister_settings_tab.backup_created_title"),
-                    tr("mister_settings_tab.backup_created_message", backup_file=backup_file)
+                    "Backup Created",
+                    f"MiSTer.ini backup created successfully.\n\n{backup_file}"
                 )
             return True
 
@@ -669,25 +648,25 @@ class MiSTerSettingsTab(QWidget):
             if not silent:
                 QMessageBox.critical(
                     self,
-                    tr("mister_settings_tab.backup_failed_title"),
-                    tr("mister_settings_tab.backup_failed_message", error=str(e))
+                    "Backup Failed",
+                    f"Unable to create MiSTer.ini backup:\n{str(e)}"
                 )
             return False
 
     def save_mister_settings(self):
         if not self.connection.is_connected():
-            QMessageBox.critical(self, tr("common.error"), tr("device_tab.not_connected_message"))
+            QMessageBox.critical(self, "Error", "Connect to a MiSTer first.")
             return
 
         ok, message = ensure_mister_ini_exists(self.connection)
         if not ok:
-            QMessageBox.critical(self, tr("mister_settings_tab.mister_ini_error"), message)
+            QMessageBox.critical(self, "MiSTer.ini Error", message)
             return
 
         choice = QMessageBox.question(
             self,
-            tr("mister_settings_tab.backup_before_apply_title"),
-            tr("mister_settings_tab.backup_before_apply_message"),
+            "Backup Before Apply",
+            "Do you want to create a backup of the current MiSTer.ini before applying settings?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No | QMessageBox.StandardButton.Cancel,
             QMessageBox.StandardButton.Yes
         )
@@ -700,8 +679,8 @@ class MiSTerSettingsTab(QWidget):
             if not backup_ok:
                 proceed = QMessageBox.question(
                     self,
-                    tr("mister_settings_tab.backup_failed_title"),
-                    tr("mister_settings_tab.backup_failed_continue_apply"),
+                    "Backup Failed",
+                    "Unable to create backup before applying settings.\n\nContinue anyway?",
                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                     QMessageBox.StandardButton.No
                 )
@@ -711,11 +690,7 @@ class MiSTerSettingsTab(QWidget):
         try:
             ini_text = self.connection.run_command("cat /media/fat/MiSTer.ini")
             if not ini_text:
-                QMessageBox.critical(
-                    self,
-                    tr("mister_settings_tab.mister_ini_error"),
-                    tr("mister_settings_tab.unable_to_read_mister_ini")
-                )
+                QMessageBox.critical(self, "MiSTer.ini Error", "Unable to read /media/fat/MiSTer.ini")
                 return
 
             if self.easy_mode_radio.isChecked():
@@ -728,11 +703,7 @@ class MiSTerSettingsTab(QWidget):
             else:
                 advanced_text = self.advanced_text.toPlainText().strip()
                 if not advanced_text:
-                    QMessageBox.critical(
-                        self,
-                        tr("mister_settings_tab.mister_ini_error"),
-                        tr("mister_settings_tab.advanced_editor_empty")
-                    )
+                    QMessageBox.critical(self, "MiSTer.ini Error", "Advanced editor is empty.")
                     return
                 new_ini_text = advanced_text + "\n"
 
@@ -748,8 +719,8 @@ class MiSTerSettingsTab(QWidget):
 
             reboot_now = QMessageBox.question(
                 self,
-                tr("mister_settings_tab.settings_applied_title"),
-                tr("mister_settings_tab.settings_applied_message"),
+                "Settings Applied",
+                "MiSTer settings were applied successfully.\n\nA reboot is recommended.\n\nReboot now?",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No
             )
@@ -758,21 +729,17 @@ class MiSTerSettingsTab(QWidget):
                 self.main_window.device_tab.reboot_device(skip_confirm=True)
 
         except Exception as e:
-            QMessageBox.critical(
-                self,
-                tr("mister_settings_tab.save_failed_title"),
-                tr("mister_settings_tab.save_failed_message", error=str(e))
-            )
+            QMessageBox.critical(self, "Save Failed", f"Unable to save MiSTer settings:\n{str(e)}")
 
     def restore_default_mister_settings(self):
         if not self.connection.is_connected():
-            QMessageBox.critical(self, tr("common.error"), tr("device_tab.not_connected_message"))
+            QMessageBox.critical(self, "Error", "Connect to a MiSTer first.")
             return
 
         confirm = QMessageBox.question(
             self,
-            tr("mister_settings_tab.restore_default_settings_title"),
-            tr("mister_settings_tab.restore_default_settings_message"),
+            "Restore Default Settings",
+            "This will replace the current MiSTer.ini with the default settings from MiSTer_example.ini.\n\nContinue?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No
         )
@@ -785,17 +752,13 @@ class MiSTerSettingsTab(QWidget):
         )
 
         if "EXISTS" not in (example_exists or ""):
-            QMessageBox.critical(
-                self,
-                tr("mister_settings_tab.restore_defaults_failed_title"),
-                tr("mister_settings_tab.mister_example_not_found")
-            )
+            QMessageBox.critical(self, "Restore Defaults Failed", "MiSTer_example.ini was not found on the MiSTer.")
             return
 
         choice = QMessageBox.question(
             self,
-            tr("mister_settings_tab.backup_current_settings_title"),
-            tr("mister_settings_tab.backup_current_settings_message"),
+            "Backup Current Settings",
+            "Do you want to create a backup of the current MiSTer.ini before restoring defaults?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No | QMessageBox.StandardButton.Cancel,
             QMessageBox.StandardButton.Yes
         )
@@ -808,8 +771,8 @@ class MiSTerSettingsTab(QWidget):
             if not backup_ok:
                 proceed = QMessageBox.question(
                     self,
-                    tr("mister_settings_tab.backup_failed_title"),
-                    tr("mister_settings_tab.backup_failed_continue_restore_defaults"),
+                    "Backup Failed",
+                    "Unable to create backup before restoring defaults.\n\nContinue anyway?",
                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                     QMessageBox.StandardButton.No
                 )
@@ -818,11 +781,7 @@ class MiSTerSettingsTab(QWidget):
 
         result = restore_default_mister_settings(self.connection)
         if "RESTORED" not in (result or ""):
-            QMessageBox.critical(
-                self,
-                tr("mister_settings_tab.restore_defaults_failed_title"),
-                tr("mister_settings_tab.unable_to_restore_from_example")
-            )
+            QMessageBox.critical(self, "Restore Defaults Failed", "Unable to restore MiSTer.ini from MiSTer_example.ini.")
             return
 
         self.load_mister_ini_into_ui(silent=True)
@@ -830,8 +789,8 @@ class MiSTerSettingsTab(QWidget):
 
         reboot_now = QMessageBox.question(
             self,
-            tr("mister_settings_tab.defaults_restored_title"),
-            tr("mister_settings_tab.defaults_restored_message"),
+            "Defaults Restored",
+            "Default MiSTer settings were restored successfully.\n\nA reboot is recommended.\n\nReboot now?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No
         )
@@ -841,27 +800,19 @@ class MiSTerSettingsTab(QWidget):
 
     def restore_mister_settings(self):
         if not self.connection.is_connected():
-            QMessageBox.critical(self, tr("common.error"), tr("device_tab.not_connected_message"))
+            QMessageBox.critical(self, "Error", "Connect to a MiSTer first.")
             return
 
         device_name = self.get_mister_settings_device_name()
         if not device_name:
-            QMessageBox.critical(
-                self,
-                tr("common.error"),
-                tr("mister_settings_tab.no_device_name_or_ip")
-            )
+            QMessageBox.critical(self, "Error", "No device name or IP available.")
             return
 
         device_path = self.get_mister_settings_device_path()
         backup_files = list_mister_settings_backups(device_path)
 
         if not backup_files:
-            QMessageBox.critical(
-                self,
-                tr("common.error"),
-                tr("mister_settings_tab.no_mister_ini_backups")
-            )
+            QMessageBox.critical(self, "Error", "No MiSTer.ini backups found for this device.")
             return
 
         dialog = RestoreBackupDialog(backup_files, self)
@@ -881,8 +832,8 @@ class MiSTerSettingsTab(QWidget):
 
             reboot_now = QMessageBox.question(
                 self,
-                tr("mister_settings_tab.backup_restored_title"),
-                tr("mister_settings_tab.backup_restored_message"),
+                "Backup Restored",
+                "MiSTer.ini backup restored successfully.\n\nA reboot is recommended.\n\nReboot now?",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No
             )
@@ -891,8 +842,4 @@ class MiSTerSettingsTab(QWidget):
                 self.main_window.device_tab.reboot_device(skip_confirm=True)
 
         except Exception as e:
-            QMessageBox.critical(
-                self,
-                tr("mister_settings_tab.restore_failed_title"),
-                tr("mister_settings_tab.restore_failed_message", error=str(e))
-            )
+            QMessageBox.critical(self, "Restore Failed", f"Unable to restore MiSTer.ini backup:\n{str(e)}")

@@ -14,7 +14,6 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from core.language import tr
 from core.savemanager import (
     SYNC_ROOT,
     create_backup,
@@ -49,12 +48,12 @@ class SaveManagerWorker(QThread):
 class RestoreBackupDialog(QDialog):
     def __init__(self, backups, parent=None):
         super().__init__(parent)
-        self.setWindowTitle(tr("savemanager_tab.restore_backup_title"))
+        self.setWindowTitle("Restore Backup")
         self.setMinimumSize(520, 360)
 
         layout = QVBoxLayout(self)
 
-        info = QLabel(tr("savemanager_tab.select_backup_to_restore"))
+        info = QLabel("Select a backup to restore:")
         layout.addWidget(info)
 
         self.list_widget = QListWidget()
@@ -63,17 +62,15 @@ class RestoreBackupDialog(QDialog):
             self.list_widget.setCurrentRow(0)
         layout.addWidget(self.list_widget)
 
-        self.backup_before_restore_checkbox = QCheckBox(
-            tr("savemanager_tab.backup_before_restore")
-        )
+        self.backup_before_restore_checkbox = QCheckBox("Backup current device before restoring")
         self.backup_before_restore_checkbox.setChecked(True)
         layout.addWidget(self.backup_before_restore_checkbox)
 
         button_row = QHBoxLayout()
         button_row.addStretch()
 
-        self.restore_button = QPushButton(tr("savemanager_tab.restore"))
-        self.cancel_button = QPushButton(tr("common.cancel"))
+        self.restore_button = QPushButton("Restore")
+        self.cancel_button = QPushButton("Cancel")
 
         button_row.addWidget(self.restore_button)
         button_row.addWidget(self.cancel_button)
@@ -93,24 +90,29 @@ class RestoreBackupDialog(QDialog):
 class SyncConfirmDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle(tr("savemanager_tab.sync_saves_title"))
+        self.setWindowTitle("Sync Saves")
         self.setMinimumWidth(420)
 
         layout = QVBoxLayout(self)
 
-        info = QLabel(tr("savemanager_tab.sync_info"))
+        info = QLabel(
+            "Sync merges local SaveManager data with the current MiSTer saves, using your PC as the middleman.\n\n"
+            "Newest files are kept, then the merged result is uploaded back to the MiSTer.\n\n"
+            "This is a manual sync process.\n"
+            "For automatic syncing, install ftp_save_sync from the Scripts tab (requires FTP access with write permissions)."
+        )
         info.setWordWrap(True)
         layout.addWidget(info)
 
-        self.backup_checkbox = QCheckBox(tr("savemanager_tab.backup_before_sync"))
+        self.backup_checkbox = QCheckBox("Backup current device before syncing")
         self.backup_checkbox.setChecked(True)
         layout.addWidget(self.backup_checkbox)
 
         button_row = QHBoxLayout()
         button_row.addStretch()
 
-        self.sync_button = QPushButton(tr("savemanager_tab.sync"))
-        self.cancel_button = QPushButton(tr("common.cancel"))
+        self.sync_button = QPushButton("Sync")
+        self.cancel_button = QPushButton("Cancel")
 
         button_row.addWidget(self.sync_button)
         button_row.addWidget(self.cancel_button)
@@ -139,12 +141,16 @@ class SaveManagerTab(QWidget):
         main_layout.setContentsMargins(12, 12, 12, 12)
         main_layout.setSpacing(12)
 
-        main_group = QGroupBox(tr("savemanager_tab.title"))
+        main_group = QGroupBox("SaveManager")
         main_group_layout = QVBoxLayout(main_group)
         main_group_layout.setContentsMargins(12, 12, 12, 12)
         main_group_layout.setSpacing(12)
 
-        self.info_label = QLabel(tr("savemanager_tab.info"))
+        self.info_label = QLabel(
+            "SaveManager allows you to backup, restore and sync MiSTer saves and savestates.\n\n"
+            "Backups are stored locally on your PC and are never modified.\n"
+            "The Sync folder is used to merge saves between devices."
+        )
         self.info_label.setWordWrap(True)
         self.info_label.setMaximumWidth(520)
         self.info_label.setAlignment(pyqt_alignment_center())
@@ -158,9 +164,9 @@ class SaveManagerTab(QWidget):
         button_row = QHBoxLayout()
         button_row.setSpacing(12)
 
-        self.backup_button = QPushButton(tr("savemanager_tab.backup_saves"))
-        self.restore_button = QPushButton(tr("savemanager_tab.restore_backup"))
-        self.sync_button = QPushButton(tr("savemanager_tab.sync_saves"))
+        self.backup_button = QPushButton("Backup Saves")
+        self.restore_button = QPushButton("Restore Backup")
+        self.sync_button = QPushButton("Sync Saves")
 
         self.backup_button.setFixedWidth(115)
         self.restore_button.setFixedWidth(115)
@@ -173,9 +179,7 @@ class SaveManagerTab(QWidget):
         button_row.addStretch()
         main_group_layout.addLayout(button_row)
 
-        self.backup_count_label = QLabel(
-            tr("savemanager_tab.current_backups", count=0)
-        )
+        self.backup_count_label = QLabel("Current backups for this device: 0")
         self.backup_count_label.setAlignment(pyqt_alignment_center())
 
         backup_count_row = QHBoxLayout()
@@ -187,7 +191,7 @@ class SaveManagerTab(QWidget):
         retention_row = QHBoxLayout()
         retention_row.setSpacing(8)
 
-        self.retention_label = QLabel(tr("savemanager_tab.backups_to_keep"))
+        self.retention_label = QLabel("Backups to keep per device:")
         self.retention_spin = QSpinBox()
         self.retention_spin.setRange(1, 100)
         self.retention_spin.setFixedWidth(80)
@@ -202,7 +206,7 @@ class SaveManagerTab(QWidget):
 
         main_layout.addWidget(main_group)
 
-        folder_group = QGroupBox(tr("savemanager_tab.folders"))
+        folder_group = QGroupBox("Folders")
         folder_group_layout = QVBoxLayout(folder_group)
         folder_group_layout.setContentsMargins(12, 12, 12, 12)
         folder_group_layout.setSpacing(12)
@@ -210,8 +214,8 @@ class SaveManagerTab(QWidget):
         folder_row = QHBoxLayout()
         folder_row.setSpacing(12)
 
-        self.open_backup_folder_button = QPushButton(tr("savemanager_tab.browse_backups"))
-        self.open_sync_folder_button = QPushButton(tr("savemanager_tab.browse_sync_folder"))
+        self.open_backup_folder_button = QPushButton("Browse Backups")
+        self.open_sync_folder_button = QPushButton("Browse Sync Folder")
 
         self.open_backup_folder_button.setFixedWidth(115)
         self.open_sync_folder_button.setFixedWidth(132)
@@ -224,14 +228,14 @@ class SaveManagerTab(QWidget):
 
         main_layout.addWidget(folder_group)
 
-        self.log_group = QGroupBox(tr("savemanager_tab.log"))
+        self.log_group = QGroupBox("Log")
         log_group_layout = QVBoxLayout(self.log_group)
         log_group_layout.setContentsMargins(12, 12, 12, 12)
         log_group_layout.setSpacing(8)
 
         log_header_row = QHBoxLayout()
         log_header_row.addStretch()
-        self.hide_log_button = QPushButton(tr("savemanager_tab.hide"))
+        self.hide_log_button = QPushButton("Hide")
         self.hide_log_button.setFixedWidth(80)
         log_header_row.addWidget(self.hide_log_button)
         log_group_layout.addLayout(log_header_row)
@@ -267,9 +271,7 @@ class SaveManagerTab(QWidget):
             profile_name=self.get_current_profile_name(),
             ip_address=self.get_current_ip(),
         )
-        self.backup_count_label.setText(
-            tr("savemanager_tab.current_backups", count=count)
-        )
+        self.backup_count_label.setText(f"Current backups for this device: {count}")
 
     def update_connection_state(self):
         connected = self.connection.is_connected()
@@ -280,8 +282,8 @@ class SaveManagerTab(QWidget):
             except Exception as e:
                 QMessageBox.warning(
                     self,
-                    tr("savemanager_tab.title"),
-                    tr("savemanager_tab.prepare_save_folders_failed", error=e),
+                    "SaveManager",
+                    f"Could not prepare the MiSTer save folders.\n\n{e}",
                 )
                 connected = False
 
@@ -326,11 +328,7 @@ class SaveManagerTab(QWidget):
 
     def start_worker(self, fn):
         if self.worker is not None and self.worker.isRunning():
-            QMessageBox.warning(
-                self,
-                tr("savemanager_tab.busy_title"),
-                tr("savemanager_tab.task_already_running"),
-            )
+            QMessageBox.warning(self, "Busy", "A SaveManager task is already running.")
             return
 
         self.show_log()
@@ -348,18 +346,12 @@ class SaveManagerTab(QWidget):
         self.update_backup_count()
 
         if not ok:
-            self.log_message(
-                tr("savemanager_tab.operation_failed", error=error_message)
-            )
-            QMessageBox.warning(self, tr("savemanager_tab.title"), error_message)
+            self.log_message(f"Operation failed: {error_message}")
+            QMessageBox.warning(self, "SaveManager", error_message)
 
     def backup_saves(self):
         if not self.connection.is_connected():
-            QMessageBox.warning(
-                self,
-                tr("common.error"),
-                tr("device_tab.not_connected_message"),
-            )
+            QMessageBox.warning(self, "Error", "Connect to a MiSTer first.")
             return
 
         profile_name = self.get_current_profile_name()
@@ -378,11 +370,7 @@ class SaveManagerTab(QWidget):
 
     def restore_saves(self):
         if not self.connection.is_connected():
-            QMessageBox.warning(
-                self,
-                tr("common.error"),
-                tr("device_tab.not_connected_message"),
-            )
+            QMessageBox.warning(self, "Error", "Connect to a MiSTer first.")
             return
 
         profile_name = self.get_current_profile_name()
@@ -390,11 +378,7 @@ class SaveManagerTab(QWidget):
 
         backups = list_backups_for_device(profile_name=profile_name, ip_address=ip_address)
         if not backups:
-            QMessageBox.warning(
-                self,
-                tr("savemanager_tab.restore_backup_title"),
-                tr("savemanager_tab.no_backups_found"),
-            )
+            QMessageBox.warning(self, "Restore Backup", "No backups found for this device.")
             return
 
         dialog = RestoreBackupDialog(backups, self)
@@ -403,18 +387,14 @@ class SaveManagerTab(QWidget):
 
         selected_backup = dialog.selected_backup()
         if not selected_backup:
-            QMessageBox.warning(
-                self,
-                tr("savemanager_tab.restore_backup_title"),
-                tr("savemanager_tab.select_backup_first"),
-            )
+            QMessageBox.warning(self, "Restore Backup", "Select a backup first.")
             return
 
         backup_before_restore = dialog.backup_before_restore()
 
         def task(log):
             if backup_before_restore:
-                log(tr("savemanager_tab.creating_safety_backup_before_restore"))
+                log("Creating safety backup before restore...")
                 create_backup(
                     self.connection,
                     self.main_window.config_data,
@@ -434,11 +414,7 @@ class SaveManagerTab(QWidget):
 
     def sync_saves_action(self):
         if not self.connection.is_connected():
-            QMessageBox.warning(
-                self,
-                tr("common.error"),
-                tr("device_tab.not_connected_message"),
-            )
+            QMessageBox.warning(self, "Error", "Connect to a MiSTer first.")
             return
 
         dialog = SyncConfirmDialog(self)
@@ -451,7 +427,7 @@ class SaveManagerTab(QWidget):
 
         def task(log):
             if backup_before_sync:
-                log(tr("savemanager_tab.creating_safety_backup_before_sync"))
+                log("Creating safety backup before sync...")
                 create_backup(
                     self.connection,
                     self.main_window.config_data,

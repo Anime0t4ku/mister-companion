@@ -13,8 +13,6 @@ from PyQt6.QtWidgets import (
     QPushButton,
 )
 
-from core.language import tr
-
 
 class NetworkScannerWorker(QThread):
     ip_found = pyqtSignal(str)
@@ -113,11 +111,11 @@ class NetworkScannerWorker(QThread):
             subnets = self.get_local_subnets()
 
             if not subnets:
-                self.status_changed.emit(tr("network_scanner_dialog.no_valid_network"))
+                self.status_changed.emit("No valid network detected")
                 self.scan_finished.emit(0)
                 return
 
-            self.status_changed.emit(tr("network_scanner_dialog.scanning_network"))
+            self.status_changed.emit("Scanning network...")
 
             active_threads = []
 
@@ -149,9 +147,7 @@ class NetworkScannerWorker(QThread):
             self.scan_finished.emit(len(self.found_ips))
 
         except Exception as e:
-            self.status_changed.emit(
-                tr("network_scanner_dialog.scan_failed", error=str(e))
-            )
+            self.status_changed.emit(f"Scan failed: {str(e)}")
             self.scan_finished.emit(len(self.found_ips))
 
 
@@ -162,7 +158,7 @@ class NetworkScannerDialog(QDialog):
         self.worker = None
         self.parent_window = parent
 
-        self.setWindowTitle(tr("network_scanner_dialog.window_title"))
+        self.setWindowTitle("Scan Network")
         self.resize(420, 360)
         self.setModal(True)
 
@@ -171,16 +167,16 @@ class NetworkScannerDialog(QDialog):
         self.list_widget = QListWidget()
         layout.addWidget(self.list_widget)
 
-        self.status_label = QLabel(tr("network_scanner_dialog.idle"))
+        self.status_label = QLabel("Idle")
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.status_label)
 
         button_row = QHBoxLayout()
 
-        self.rescan_button = QPushButton(tr("network_scanner_dialog.rescan"))
+        self.rescan_button = QPushButton("Re-Scan")
         button_row.addWidget(self.rescan_button)
 
-        self.use_button = QPushButton(tr("network_scanner_dialog.use_selected_ip"))
+        self.use_button = QPushButton("Use Selected IP")
         self.use_button.setEnabled(False)
         button_row.addWidget(self.use_button)
 
@@ -204,7 +200,7 @@ class NetworkScannerDialog(QDialog):
         self.found_ips.clear()
         self.use_button.setEnabled(False)
         self.rescan_button.setEnabled(False)
-        self.status_label.setText(tr("network_scanner_dialog.starting_scan"))
+        self.status_label.setText("Starting scan...")
 
         self.worker = NetworkScannerWorker()
         self.worker.ip_found.connect(self.add_result)
@@ -220,15 +216,13 @@ class NetworkScannerDialog(QDialog):
     def finish_scan(self, count):
         self.rescan_button.setEnabled(True)
 
-        if self.status_label.text().startswith(tr("network_scanner_dialog.scan_failed_prefix")):
+        if self.status_label.text().startswith("Scan failed:"):
             return
 
         if count > 0:
-            self.status_label.setText(
-                tr("network_scanner_dialog.scan_complete_found", count=count)
-            )
+            self.status_label.setText(f"Scan complete, found {count} device(s)")
         else:
-            self.status_label.setText(tr("network_scanner_dialog.scan_complete_none"))
+            self.status_label.setText("Scan complete, no MiSTer found")
 
     def on_select(self):
         self.use_button.setEnabled(len(self.list_widget.selectedItems()) > 0)

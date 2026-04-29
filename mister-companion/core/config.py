@@ -7,8 +7,6 @@ DEFAULT_CONFIG = {
     "devices": [],
     "last_connected": None,
     "theme_mode": "auto",
-    "language": "en",
-    "hide_setup_notice": False,
     "hide_update_all_warning": False,
     "hide_zapscripts_scan_notice": False,
     "use_ssh_agent": False,
@@ -24,12 +22,14 @@ def load_config():
         with open(CONFIG_PATH, "r", encoding="utf-8") as f:
             data = json.load(f)
 
-        merged = DEFAULT_CONFIG.copy()
-
-        if isinstance(data, dict):
+            merged = DEFAULT_CONFIG.copy()
             merged.update(data)
 
-        return merged
+            for key, value in DEFAULT_CONFIG.items():
+                if key not in merged:
+                    merged[key] = value
+
+            return merged
 
     except Exception:
         return DEFAULT_CONFIG.copy()
@@ -37,9 +37,7 @@ def load_config():
 
 def save_config(data):
     merged = DEFAULT_CONFIG.copy()
-
-    if isinstance(data, dict):
-        merged.update(data)
+    merged.update(data)
 
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:
         json.dump(merged, f, indent=4)

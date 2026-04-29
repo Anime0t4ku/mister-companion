@@ -14,7 +14,6 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from core.language import tr
 from core.scripts_actions import (
     apply_static_wallpaper,
     get_static_wallpaper_preview_bytes,
@@ -92,7 +91,7 @@ class StaticWallpaperDialog(QDialog):
 
         self._closing = False
 
-        self.setWindowTitle(tr("static_wallpaper_dialog.window_title"))
+        self.setWindowTitle("Set Static Wallpaper")
         self.setModal(True)
         self.resize(980, 620)
         self.setMinimumSize(860, 540)
@@ -105,12 +104,15 @@ class StaticWallpaperDialog(QDialog):
         outer.setContentsMargins(12, 12, 12, 12)
         outer.setSpacing(10)
 
-        title = QLabel(tr("static_wallpaper_dialog.title"))
+        title = QLabel("Static Wallpaper")
         title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         title.setStyleSheet("font-size: 16px; font-weight: bold;")
         outer.addWidget(title)
 
-        subtitle = QLabel(tr("static_wallpaper_dialog.subtitle"))
+        subtitle = QLabel(
+            "Choose a wallpaper from /media/fat/wallpapers. "
+            "The selected wallpaper will be applied and the MiSTer menu will reload."
+        )
         subtitle.setWordWrap(True)
         subtitle.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         outer.addWidget(subtitle)
@@ -122,7 +124,7 @@ class StaticWallpaperDialog(QDialog):
         left_panel = QVBoxLayout()
         left_panel.setSpacing(8)
 
-        self.status_label = QLabel(tr("static_wallpaper_dialog.loading_wallpapers"))
+        self.status_label = QLabel("Loading wallpapers...")
         self.status_label.setWordWrap(True)
         left_panel.addWidget(self.status_label)
 
@@ -132,8 +134,8 @@ class StaticWallpaperDialog(QDialog):
         left_panel.addWidget(self.wallpaper_list, 1)
 
         left_button_row = QHBoxLayout()
-        self.refresh_button = QPushButton(tr("common.refresh"))
-        self.apply_button = QPushButton(tr("static_wallpaper_dialog.apply_wallpaper"))
+        self.refresh_button = QPushButton("Refresh")
+        self.apply_button = QPushButton("Apply Wallpaper")
         self.apply_button.setEnabled(False)
 
         self.refresh_button.clicked.connect(self.refresh_wallpapers)
@@ -151,17 +153,17 @@ class StaticWallpaperDialog(QDialog):
         right_panel = QVBoxLayout()
         right_panel.setSpacing(8)
 
-        self.preview_title = QLabel(tr("static_wallpaper_dialog.preview"))
+        self.preview_title = QLabel("Preview")
         self.preview_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.preview_title.setStyleSheet("font-weight: bold;")
         right_panel.addWidget(self.preview_title)
 
-        self.preview_name_label = QLabel(tr("static_wallpaper_dialog.no_wallpaper_selected"))
+        self.preview_name_label = QLabel("No wallpaper selected")
         self.preview_name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.preview_name_label.setWordWrap(True)
         right_panel.addWidget(self.preview_name_label)
 
-        self.preview_label = QLabel(tr("static_wallpaper_dialog.no_preview"))
+        self.preview_label = QLabel("No preview")
         self.preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.preview_label.setMinimumSize(520, 360)
         self.preview_label.setStyleSheet(
@@ -183,7 +185,7 @@ class StaticWallpaperDialog(QDialog):
         bottom_row = QHBoxLayout()
         bottom_row.addStretch()
 
-        self.close_button = QPushButton(tr("common.close"))
+        self.close_button = QPushButton("Close")
         self.close_button.clicked.connect(self.reject)
         bottom_row.addWidget(self.close_button)
 
@@ -230,10 +232,10 @@ class StaticWallpaperDialog(QDialog):
             return
 
         self.set_busy(True)
-        self.status_label.setText(tr("static_wallpaper_dialog.loading_wallpapers"))
+        self.status_label.setText("Loading wallpapers...")
         self.preview_label.setPixmap(QPixmap())
-        self.preview_label.setText(tr("static_wallpaper_dialog.loading"))
-        self.preview_name_label.setText(tr("static_wallpaper_dialog.no_wallpaper_selected"))
+        self.preview_label.setText("Loading...")
+        self.preview_name_label.setText("No wallpaper selected")
         self.saved_label.setText("")
         self.wallpaper_list.clear()
         self.wallpapers = []
@@ -265,26 +267,24 @@ class StaticWallpaperDialog(QDialog):
         saved_path = state.get("saved_path", "")
 
         if saved_name:
-            saved_text = tr("static_wallpaper_dialog.saved_selection", name=saved_name)
+            saved_text = f"Saved selection: {saved_name}"
             if active_target:
-                saved_text += " | " + tr("static_wallpaper_dialog.active_target", target=active_target)
+                saved_text += f" | Active target: {active_target}"
             self.saved_label.setText(saved_text)
         elif active_target:
-            self.saved_label.setText(tr("static_wallpaper_dialog.active_target", target=active_target))
+            self.saved_label.setText(f"Active target: {active_target}")
         else:
-            self.saved_label.setText(tr("static_wallpaper_dialog.no_saved_selection"))
+            self.saved_label.setText("No saved wallpaper selection")
 
         if not self.wallpapers:
-            self.status_label.setText(tr("static_wallpaper_dialog.no_wallpapers_found_path"))
+            self.status_label.setText("No wallpapers found in /media/fat/wallpapers.")
             self.preview_label.setPixmap(QPixmap())
-            self.preview_label.setText(tr("static_wallpaper_dialog.no_wallpapers_found"))
-            self.preview_name_label.setText(tr("static_wallpaper_dialog.no_wallpaper_selected"))
+            self.preview_label.setText("No wallpapers found")
+            self.preview_name_label.setText("No wallpaper selected")
             self.apply_button.setEnabled(False)
             return
 
-        self.status_label.setText(
-            tr("static_wallpaper_dialog.found_wallpapers", count=len(self.wallpapers))
-        )
+        self.status_label.setText(f"Found {len(self.wallpapers)} wallpaper(s).")
 
         selected_row = 0
         if saved_path:
@@ -294,7 +294,7 @@ class StaticWallpaperDialog(QDialog):
                     break
 
         for wallpaper in self.wallpapers:
-            item = QListWidgetItem(wallpaper.get("name", tr("common.unknown")))
+            item = QListWidgetItem(wallpaper.get("name", "Unknown"))
             item.setData(Qt.ItemDataRole.UserRole, wallpaper.get("path", ""))
             self.wallpaper_list.addItem(item)
 
@@ -304,13 +304,13 @@ class StaticWallpaperDialog(QDialog):
         if self._closing:
             return
 
-        self.status_label.setText(tr("static_wallpaper_dialog.failed_to_load_wallpapers"))
+        self.status_label.setText("Failed to load wallpapers.")
         self.preview_label.setPixmap(QPixmap())
-        self.preview_label.setText(tr("static_wallpaper_dialog.load_failed"))
-        self.preview_name_label.setText(tr("static_wallpaper_dialog.no_wallpaper_selected"))
+        self.preview_label.setText("Load failed")
+        self.preview_name_label.setText("No wallpaper selected")
         self.saved_label.setText("")
         self.apply_button.setEnabled(False)
-        QMessageBox.critical(self, tr("common.error"), message)
+        QMessageBox.critical(self, "Error", message)
 
     def get_selected_wallpaper_path(self) -> str:
         item = self.wallpaper_list.currentItem()
@@ -325,9 +325,9 @@ class StaticWallpaperDialog(QDialog):
             return
 
         if current is None:
-            self.preview_name_label.setText(tr("static_wallpaper_dialog.no_wallpaper_selected"))
+            self.preview_name_label.setText("No wallpaper selected")
             self.preview_label.setPixmap(QPixmap())
-            self.preview_label.setText(tr("static_wallpaper_dialog.no_preview"))
+            self.preview_label.setText("No preview")
             self.current_preview_path = ""
             self.current_preview_pixmap = None
             self.apply_button.setEnabled(False)
@@ -337,11 +337,11 @@ class StaticWallpaperDialog(QDialog):
             return
 
         remote_path = current.data(Qt.ItemDataRole.UserRole) or ""
-        name = current.text().strip() or tr("common.unknown")
+        name = current.text().strip() or "Unknown"
 
         self.preview_name_label.setText(name)
         self.preview_label.setPixmap(QPixmap())
-        self.preview_label.setText(tr("static_wallpaper_dialog.loading_preview"))
+        self.preview_label.setText("Loading preview...")
         self.current_preview_pixmap = None
         self.current_preview_path = remote_path
         self.apply_button.setEnabled(bool(remote_path))
@@ -385,7 +385,7 @@ class StaticWallpaperDialog(QDialog):
         pixmap = QPixmap()
         if not pixmap.loadFromData(data):
             self.preview_label.setPixmap(QPixmap())
-            self.preview_label.setText(tr("static_wallpaper_dialog.preview_load_failed"))
+            self.preview_label.setText("Preview could not be loaded")
             self.current_preview_pixmap = None
             return
 
@@ -405,7 +405,7 @@ class StaticWallpaperDialog(QDialog):
             return
 
         self.preview_label.setPixmap(QPixmap())
-        self.preview_label.setText(tr("static_wallpaper_dialog.preview_load_failed"))
+        self.preview_label.setText("Preview could not be loaded")
         self.current_preview_pixmap = None
 
     def resizeEvent(self, event):
@@ -431,20 +431,16 @@ class StaticWallpaperDialog(QDialog):
 
         remote_path = self.get_selected_wallpaper_path()
         if not remote_path:
-            QMessageBox.warning(
-                self,
-                tr("static_wallpaper_dialog.no_wallpaper_selected_title"),
-                tr("static_wallpaper_dialog.select_wallpaper_first"),
-            )
+            QMessageBox.warning(self, "No Wallpaper Selected", "Select a wallpaper first.")
             return
 
         item = self.wallpaper_list.currentItem()
-        name = item.text().strip() if item else tr("static_wallpaper_dialog.selected_wallpaper")
+        name = item.text().strip() if item else "selected wallpaper"
 
         confirm = QMessageBox.question(
             self,
-            tr("static_wallpaper_dialog.apply_static_wallpaper_title"),
-            tr("static_wallpaper_dialog.apply_static_wallpaper_confirm", name=name),
+            "Apply Static Wallpaper",
+            f"Apply '{name}' as the static wallpaper?\n\nThe MiSTer menu will be reloaded.",
         )
         if confirm != QMessageBox.StandardButton.Yes:
             return
@@ -453,7 +449,7 @@ class StaticWallpaperDialog(QDialog):
             return
 
         self.set_busy(True)
-        self.status_label.setText(tr("static_wallpaper_dialog.applying_wallpaper", name=name))
+        self.status_label.setText(f"Applying {name}...")
 
         self.apply_worker = _WallpaperApplyWorker(self.connection, remote_path)
         self.apply_worker.success.connect(self.on_apply_success)
@@ -476,13 +472,11 @@ class StaticWallpaperDialog(QDialog):
                 name = wallpaper.get("name", "")
                 break
 
-        self.status_label.setText(
-            tr("static_wallpaper_dialog.applied_status", name=name or remote_path)
-        )
+        self.status_label.setText(f"Applied: {name or remote_path}")
         QMessageBox.information(
             self,
-            tr("static_wallpaper_dialog.applied_title"),
-            tr("static_wallpaper_dialog.applied_message", name=name or tr("static_wallpaper_dialog.wallpaper")),
+            "Static Wallpaper Applied",
+            f"{name or 'Wallpaper'} has been applied.\n\nThe MiSTer menu has been reloaded.",
         )
         self.accept()
 
@@ -490,5 +484,5 @@ class StaticWallpaperDialog(QDialog):
         if self._closing:
             return
 
-        self.status_label.setText(tr("static_wallpaper_dialog.failed_to_apply"))
-        QMessageBox.critical(self, tr("common.error"), message)
+        self.status_label.setText("Failed to apply wallpaper.")
+        QMessageBox.critical(self, "Error", message)

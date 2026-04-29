@@ -30,7 +30,6 @@ from core.extras_actions import (
     upload_3sx_afs as backend_upload_3sx_afs,
     upload_sonic_mania_data_rsdk as backend_upload_sonic_mania_data_rsdk,
 )
-from core.language import tr
 
 
 class ExtraTaskWorker(QThread):
@@ -90,15 +89,23 @@ class ExtrasTab(QWidget):
         }
 
         self.extra_descriptions = {
-            self.EXTRA_3SX: tr("extras_tab.description_3sx"),
-            self.EXTRA_PICO8: tr("extras_tab.description_pico8"),
-            self.EXTRA_SONIC_MANIA: tr("extras_tab.description_sonic_mania"),
+            self.EXTRA_3SX: (
+                "Install, update, migrate legacy 3SX installs, upload SF33RD.AFS, "
+                "and uninstall 3s-mister-arm directly from MiSTer Companion."
+            ),
+            self.EXTRA_PICO8: (
+                "Install, update, and uninstall MiSTer Pico-8 directly from MiSTer Companion."
+            ),
+            self.EXTRA_SONIC_MANIA: (
+                "Install, update, upload Data.rsdk, and uninstall Sonic Mania MiSTer "
+                "directly from MiSTer Companion."
+            ),
         }
 
         self.extra_status_texts = {
-            self.EXTRA_3SX: tr("extras_tab.status_unknown"),
-            self.EXTRA_PICO8: tr("extras_tab.status_unknown"),
-            self.EXTRA_SONIC_MANIA: tr("extras_tab.status_unknown"),
+            self.EXTRA_3SX: "Unknown",
+            self.EXTRA_PICO8: "Unknown",
+            self.EXTRA_SONIC_MANIA: "Unknown",
         }
 
         self.selected_extra_key = self.EXTRA_3SX
@@ -116,7 +123,7 @@ class ExtrasTab(QWidget):
         top_row.setSpacing(12)
         main_layout.addLayout(top_row, stretch=1)
 
-        list_group = QGroupBox(tr("extras_tab.extras"))
+        list_group = QGroupBox("Extras")
         list_layout = QVBoxLayout()
         list_layout.setContentsMargins(10, 10, 10, 10)
         list_layout.setSpacing(8)
@@ -154,19 +161,19 @@ class ExtrasTab(QWidget):
         list_group.setLayout(list_layout)
         top_row.addWidget(list_group, 1)
 
-        details_group = QGroupBox(tr("extras_tab.details"))
+        details_group = QGroupBox("Details")
         details_layout = QVBoxLayout()
         details_layout.setContentsMargins(14, 14, 14, 14)
         details_layout.setSpacing(10)
 
-        self.extra_name_label = QLabel(tr("extras_tab.select_extra"))
+        self.extra_name_label = QLabel("Select an extra")
         font = self.extra_name_label.font()
         font.setPointSize(font.pointSize() + 2)
         font.setBold(True)
         self.extra_name_label.setFont(font)
         details_layout.addWidget(self.extra_name_label)
 
-        self.extra_status_label = QLabel(tr("extras_tab.status_unknown_full"))
+        self.extra_status_label = QLabel("Status: Unknown")
         self.extra_status_label.setStyleSheet("color: gray;")
         details_layout.addWidget(self.extra_status_label)
 
@@ -209,7 +216,7 @@ class ExtrasTab(QWidget):
         details_group.setLayout(details_layout)
         top_row.addWidget(details_group, 2)
 
-        self.console_group = QGroupBox(tr("extras_tab.ssh_output"))
+        self.console_group = QGroupBox("SSH Output")
         console_layout = QVBoxLayout()
         console_layout.setContentsMargins(10, 10, 10, 10)
         console_layout.setSpacing(8)
@@ -217,7 +224,7 @@ class ExtrasTab(QWidget):
         header_row = QHBoxLayout()
         header_row.addStretch()
 
-        self.hide_console_button = QPushButton(tr("extras_tab.hide"))
+        self.hide_console_button = QPushButton("Hide")
         self.hide_console_button.setFixedWidth(70)
         header_row.addWidget(self.hide_console_button)
         console_layout.addLayout(header_row)
@@ -262,13 +269,13 @@ class ExtrasTab(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
 
-        self.install_update_3sx_button = QPushButton(tr("extras_tab.install"))
+        self.install_update_3sx_button = QPushButton("Install")
         self.install_update_3sx_button.setFixedWidth(170)
 
-        self.upload_afs_button = QPushButton(tr("extras_tab.upload_sf33rd_afs"))
+        self.upload_afs_button = QPushButton("Upload SF33RD.AFS")
         self.upload_afs_button.setFixedWidth(190)
 
-        self.uninstall_3sx_button = QPushButton(tr("extras_tab.uninstall"))
+        self.uninstall_3sx_button = QPushButton("Uninstall")
         self.uninstall_3sx_button.setFixedWidth(170)
 
         layout.addLayout(
@@ -292,10 +299,10 @@ class ExtrasTab(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
 
-        self.install_update_pico8_button = QPushButton(tr("extras_tab.install"))
+        self.install_update_pico8_button = QPushButton("Install")
         self.install_update_pico8_button.setFixedWidth(170)
 
-        self.uninstall_pico8_button = QPushButton(tr("extras_tab.uninstall"))
+        self.uninstall_pico8_button = QPushButton("Uninstall")
         self.uninstall_pico8_button.setFixedWidth(170)
 
         layout.addLayout(
@@ -314,13 +321,13 @@ class ExtrasTab(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
 
-        self.install_update_sonic_mania_button = QPushButton(tr("extras_tab.install"))
+        self.install_update_sonic_mania_button = QPushButton("Install")
         self.install_update_sonic_mania_button.setFixedWidth(170)
 
-        self.upload_data_rsdk_button = QPushButton(tr("extras_tab.upload_data_rsdk"))
+        self.upload_data_rsdk_button = QPushButton("Upload Data.rsdk")
         self.upload_data_rsdk_button.setFixedWidth(190)
 
-        self.uninstall_sonic_mania_button = QPushButton(tr("extras_tab.uninstall"))
+        self.uninstall_sonic_mania_button = QPushButton("Uninstall")
         self.uninstall_sonic_mania_button.setFixedWidth(170)
 
         layout.addLayout(
@@ -368,8 +375,8 @@ class ExtrasTab(QWidget):
     def update_details_panel(self):
         extra_key = self.selected_extra_key
         if not extra_key:
-            self.extra_name_label.setText(tr("extras_tab.select_extra"))
-            self.extra_status_label.setText(tr("extras_tab.status_unknown_full"))
+            self.extra_name_label.setText("Select an extra")
+            self.extra_status_label.setText("Status: Unknown")
             self.extra_status_label.setStyleSheet("color: gray;")
             self.extra_description_label.setText("")
             for widget in self.extra_action_widgets.values():
@@ -379,8 +386,8 @@ class ExtrasTab(QWidget):
         self.extra_name_label.setText(self.extra_titles.get(extra_key, extra_key))
         self.extra_description_label.setText(self.extra_descriptions.get(extra_key, ""))
 
-        status_text = self.extra_status_texts.get(extra_key, tr("extras_tab.status_unknown"))
-        self.extra_status_label.setText(tr("extras_tab.status_label", status=status_text))
+        status_text = self.extra_status_texts.get(extra_key, "Unknown")
+        self.extra_status_label.setText(f"Status: {status_text}")
 
         lowered = status_text.lower()
         if "update available" in lowered:
@@ -402,7 +409,7 @@ class ExtrasTab(QWidget):
             item = self.extra_list.item(index)
             extra_key = item.data(Qt.ItemDataRole.UserRole)
             title = self.extra_titles.get(extra_key, extra_key)
-            status = self.extra_status_texts.get(extra_key, tr("extras_tab.status_unknown"))
+            status = self.extra_status_texts.get(extra_key, "Unknown")
             item.setText(f"{title}    {status}")
 
     def update_connection_state(self):
@@ -429,13 +436,13 @@ class ExtrasTab(QWidget):
         ]:
             button.setEnabled(False)
 
-        self.install_update_3sx_button.setText(tr("extras_tab.install"))
-        self.install_update_pico8_button.setText(tr("extras_tab.install"))
-        self.install_update_sonic_mania_button.setText(tr("extras_tab.install"))
+        self.install_update_3sx_button.setText("Install")
+        self.install_update_pico8_button.setText("Install")
+        self.install_update_sonic_mania_button.setText("Install")
 
-        self.extra_status_texts[self.EXTRA_3SX] = tr("extras_tab.status_unknown")
-        self.extra_status_texts[self.EXTRA_PICO8] = tr("extras_tab.status_unknown")
-        self.extra_status_texts[self.EXTRA_SONIC_MANIA] = tr("extras_tab.status_unknown")
+        self.extra_status_texts[self.EXTRA_3SX] = "Unknown"
+        self.extra_status_texts[self.EXTRA_PICO8] = "Unknown"
+        self.extra_status_texts[self.EXTRA_SONIC_MANIA] = "Unknown"
 
         self.update_extra_list_labels()
         self.update_details_panel()
@@ -448,8 +455,8 @@ class ExtrasTab(QWidget):
         try:
             status_3sx = get_3sx_status(self.connection)
         except Exception as e:
-            self.extra_status_texts[self.EXTRA_3SX] = tr("extras_tab.status_unknown_with_error", error=e)
-            self.install_update_3sx_button.setText(tr("extras_tab.install"))
+            self.extra_status_texts[self.EXTRA_3SX] = f"Unknown ({e})"
+            self.install_update_3sx_button.setText("Install")
             self.install_update_3sx_button.setEnabled(False)
             self.upload_afs_button.setEnabled(False)
             self.uninstall_3sx_button.setEnabled(False)
@@ -463,8 +470,8 @@ class ExtrasTab(QWidget):
         try:
             status_pico8 = get_pico8_status(self.connection)
         except Exception as e:
-            self.extra_status_texts[self.EXTRA_PICO8] = tr("extras_tab.status_unknown_with_error", error=e)
-            self.install_update_pico8_button.setText(tr("extras_tab.install"))
+            self.extra_status_texts[self.EXTRA_PICO8] = f"Unknown ({e})"
+            self.install_update_pico8_button.setText("Install")
             self.install_update_pico8_button.setEnabled(False)
             self.uninstall_pico8_button.setEnabled(False)
         else:
@@ -476,8 +483,8 @@ class ExtrasTab(QWidget):
         try:
             status_sonic_mania = get_sonic_mania_status(self.connection)
         except Exception as e:
-            self.extra_status_texts[self.EXTRA_SONIC_MANIA] = tr("extras_tab.status_unknown_with_error", error=e)
-            self.install_update_sonic_mania_button.setText(tr("extras_tab.install"))
+            self.extra_status_texts[self.EXTRA_SONIC_MANIA] = f"Unknown ({e})"
+            self.install_update_sonic_mania_button.setText("Install")
             self.install_update_sonic_mania_button.setEnabled(False)
             self.upload_data_rsdk_button.setEnabled(False)
             self.uninstall_sonic_mania_button.setEnabled(False)
@@ -508,12 +515,12 @@ class ExtrasTab(QWidget):
             lines = self.console.toPlainText().splitlines()
 
             if lines:
-                if lines[-1].startswith(tr("extras_tab.upload_progress_prefix")):
-                    lines[-1] = tr("extras_tab.upload_progress", progress=progress_text)
+                if lines[-1].startswith("Upload progress:"):
+                    lines[-1] = f"Upload progress: {progress_text}"
                 else:
-                    lines.append(tr("extras_tab.upload_progress", progress=progress_text))
+                    lines.append(f"Upload progress: {progress_text}")
             else:
-                lines = [tr("extras_tab.upload_progress", progress=progress_text)]
+                lines = [f"Upload progress: {progress_text}"]
 
             self.console.setPlainText("\n".join(lines))
         else:
@@ -573,9 +580,9 @@ class ExtrasTab(QWidget):
 
     def on_worker_error(self, message):
         self.append_console_line("")
-        self.append_console_line(tr("extras_tab.error_label"))
+        self.append_console_line("Error:")
         self.append_console_line(message)
-        QMessageBox.warning(self, tr("extras_tab.extras"), message)
+        QMessageBox.warning(self, "Extras", message)
 
     def on_worker_finished(self):
         self.current_worker = None
@@ -590,12 +597,12 @@ class ExtrasTab(QWidget):
             return
 
         button_text = self.install_update_3sx_button.text().strip()
-        success_message = tr("extras_tab.threesx_installed")
+        success_message = "3S-ARM installed."
 
-        if button_text == tr("extras_tab.update"):
-            success_message = tr("extras_tab.threesx_updated")
-        elif button_text == tr("extras_tab.migrate_install"):
-            success_message = tr("extras_tab.threesx_migrated")
+        if button_text == "Update":
+            success_message = "3S-ARM updated."
+        elif button_text == "Migrate / Install":
+            success_message = "Legacy 3SX install migrated to 3S-ARM."
 
         def task(log):
             return backend_install_or_update_3sx(self.connection, log)
@@ -608,18 +615,18 @@ class ExtrasTab(QWidget):
 
         file_path, _ = QFileDialog.getOpenFileName(
             self,
-            tr("extras_tab.select_sf33rd_afs"),
+            "Select SF33RD.AFS",
             "",
-            tr("extras_tab.afs_file_filter"),
+            "AFS Files (SF33RD.AFS *.afs *.AFS);;All Files (*)",
         )
         if not file_path:
             return
 
         def task(log):
-            log(tr("extras_tab.selected_file", file_path=file_path))
+            log(f"Selected file: {file_path}")
             return backend_upload_3sx_afs(self.connection, file_path, log)
 
-        self._run_worker(task, tr("extras_tab.sf33rd_uploaded"))
+        self._run_worker(task, "SF33RD.AFS uploaded.")
 
     def uninstall_3sx(self):
         if not self.connection.is_connected():
@@ -627,8 +634,8 @@ class ExtrasTab(QWidget):
 
         reply = QMessageBox.question(
             self,
-            tr("extras_tab.uninstall_3sx_title"),
-            tr("extras_tab.uninstall_3sx_message"),
+            "Uninstall 3S-ARM",
+            "Remove 3S-ARM, legacy 3SX files if present, SF33RD.AFS, and the MiSTer.ini entry?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
@@ -638,17 +645,17 @@ class ExtrasTab(QWidget):
         def task(log):
             return backend_uninstall_3sx(self.connection, log)
 
-        self._run_worker(task, tr("extras_tab.threesx_uninstalled"))
+        self._run_worker(task, "3S-ARM uninstalled.")
 
     def install_or_update_pico8(self):
         if not self.connection.is_connected():
             return
 
         button_text = self.install_update_pico8_button.text().strip()
-        success_message = tr("extras_tab.pico8_installed")
+        success_message = "MiSTer Pico-8 installed."
 
-        if button_text == tr("extras_tab.update"):
-            success_message = tr("extras_tab.pico8_updated")
+        if button_text == "Update":
+            success_message = "MiSTer Pico-8 updated."
 
         def task(log):
             return backend_install_or_update_pico8(self.connection, log)
@@ -661,8 +668,8 @@ class ExtrasTab(QWidget):
 
         reply = QMessageBox.question(
             self,
-            tr("extras_tab.uninstall_pico8_title"),
-            tr("extras_tab.uninstall_pico8_message"),
+            "Uninstall MiSTer Pico-8",
+            "Remove MiSTer Pico-8 files, PICO-8 input map files, and the user-startup.sh daemon entry?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
@@ -672,17 +679,17 @@ class ExtrasTab(QWidget):
         def task(log):
             return backend_uninstall_pico8(self.connection, log)
 
-        self._run_worker(task, tr("extras_tab.pico8_uninstalled"))
+        self._run_worker(task, "MiSTer Pico-8 uninstalled.")
 
     def install_or_update_sonic_mania(self):
         if not self.connection.is_connected():
             return
 
         button_text = self.install_update_sonic_mania_button.text().strip()
-        success_message = tr("extras_tab.sonic_mania_installed")
+        success_message = "Sonic Mania MiSTer installed."
 
-        if button_text == tr("extras_tab.update"):
-            success_message = tr("extras_tab.sonic_mania_updated")
+        if button_text == "Update":
+            success_message = "Sonic Mania MiSTer updated."
 
         def task(log):
             return backend_install_or_update_sonic_mania(self.connection, log)
@@ -695,22 +702,22 @@ class ExtrasTab(QWidget):
 
         file_path, _ = QFileDialog.getOpenFileName(
             self,
-            tr("extras_tab.select_data_rsdk"),
+            "Select Data.rsdk",
             "",
-            tr("extras_tab.rsdk_file_filter"),
+            "Sonic Mania Data File (Data.rsdk *.rsdk *.RSDK);;All Files (*)",
         )
         if not file_path:
             return
 
         def task(log):
-            log(tr("extras_tab.selected_file", file_path=file_path))
+            log(f"Selected file: {file_path}")
             return backend_upload_sonic_mania_data_rsdk(
                 self.connection,
                 file_path,
                 log,
             )
 
-        self._run_worker(task, tr("extras_tab.data_rsdk_uploaded"))
+        self._run_worker(task, "Data.rsdk uploaded.")
 
     def uninstall_sonic_mania(self):
         if not self.connection.is_connected():
@@ -718,8 +725,8 @@ class ExtrasTab(QWidget):
 
         reply = QMessageBox.question(
             self,
-            tr("extras_tab.uninstall_sonic_mania_title"),
-            tr("extras_tab.uninstall_sonic_mania_message"),
+            "Uninstall Sonic Mania MiSTer",
+            "Remove Sonic Mania MiSTer files, Data.rsdk, and the MiSTer.ini entries?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
@@ -729,4 +736,4 @@ class ExtrasTab(QWidget):
         def task(log):
             return backend_uninstall_sonic_mania(self.connection, log)
 
-        self._run_worker(task, tr("extras_tab.sonic_mania_uninstalled"))
+        self._run_worker(task, "Sonic Mania MiSTer uninstalled.")

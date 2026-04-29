@@ -15,7 +15,6 @@ from core.device_actions import (
     is_smb_enabled,
     return_to_menu_remote,
 )
-from core.language import tr
 from core.share_opener import open_mister_share
 
 
@@ -40,12 +39,12 @@ class DeviceTab(QWidget):
         # =========================
         # Storage Group
         # =========================
-        storage_group = QGroupBox(tr("device_tab.storage"))
+        storage_group = QGroupBox("Storage")
         storage_layout = QVBoxLayout()
         storage_layout.setContentsMargins(16, 18, 16, 18)
         storage_layout.setSpacing(10)
 
-        self.sd_title_label = QLabel(tr("device_tab.sd_card"))
+        self.sd_title_label = QLabel("SD Card")
         self.sd_title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self.storage_bar = QProgressBar()
@@ -57,7 +56,7 @@ class DeviceTab(QWidget):
         self.storage_label = QLabel("--")
         self.storage_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        self.usb_title_label = QLabel(tr("device_tab.usb_storage"))
+        self.usb_title_label = QLabel("USB Storage")
         self.usb_title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self.usb_bar = QProgressBar()
@@ -66,10 +65,10 @@ class DeviceTab(QWidget):
         self.usb_bar.setTextVisible(False)
         self.usb_bar.setFixedWidth(500)
 
-        self.usb_label = QLabel(tr("device_tab.checking"))
+        self.usb_label = QLabel("Checking...")
         self.usb_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        self.refresh_button = QPushButton(tr("device_tab.refresh"))
+        self.refresh_button = QPushButton("Refresh")
         self.refresh_button.setFixedWidth(120)
 
         storage_layout.addWidget(self.sd_title_label)
@@ -105,35 +104,21 @@ class DeviceTab(QWidget):
         # =========================
         # File Sharing Group
         # =========================
-        sharing_group = QGroupBox(tr("device_tab.file_sharing"))
+        sharing_group = QGroupBox("File Sharing")
         sharing_layout = QVBoxLayout()
         sharing_layout.setContentsMargins(16, 18, 16, 18)
         sharing_layout.setSpacing(14)
 
-        self.smb_status_label = QLabel(
-            tr("device_tab.remote_access_unknown")
-            if sys.platform == "darwin"
-            else tr("device_tab.smb_unknown")
-        )
+        self.smb_status_label = QLabel("Remote Access: Unknown" if sys.platform == "darwin" else "SMB: Unknown")
         self.smb_status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         sharing_buttons_row = QHBoxLayout()
         sharing_buttons_row.setSpacing(24)
 
-        self.enable_smb_button = QPushButton(
-            tr("device_tab.enable_access")
-            if sys.platform == "darwin"
-            else tr("device_tab.enable_smb")
-        )
-        self.disable_smb_button = QPushButton(
-            tr("device_tab.disable_access")
-            if sys.platform == "darwin"
-            else tr("device_tab.disable_smb")
-        )
+        self.enable_smb_button = QPushButton("Enable Access" if sys.platform == "darwin" else "Enable SMB")
+        self.disable_smb_button = QPushButton("Disable Access" if sys.platform == "darwin" else "Disable SMB")
         self.open_share_button = QPushButton(
-            tr("device_tab.open_in_finder")
-            if sys.platform == "darwin"
-            else tr("device_tab.open_in_explorer")
+            "Open in Finder" if sys.platform == "darwin" else "Open in Explorer"
         )
 
         self.enable_smb_button.setFixedWidth(130)
@@ -154,17 +139,17 @@ class DeviceTab(QWidget):
         # =========================
         # Power Group
         # =========================
-        power_group = QGroupBox(tr("device_tab.power"))
+        power_group = QGroupBox("Power")
         power_layout = QVBoxLayout()
         power_layout.setContentsMargins(16, 18, 16, 18)
 
         reboot_row = QHBoxLayout()
         reboot_row.setSpacing(16)
 
-        self.return_to_menu_button = QPushButton(tr("device_tab.return_to_menu"))
+        self.return_to_menu_button = QPushButton("Return to Menu")
         self.return_to_menu_button.setFixedWidth(160)
 
-        self.reboot_button = QPushButton(tr("device_tab.reboot_mister"))
+        self.reboot_button = QPushButton("Reboot MiSTer")
         self.reboot_button.setFixedWidth(160)
 
         reboot_row.addStretch()
@@ -178,7 +163,7 @@ class DeviceTab(QWidget):
         # =========================
         # Now Playing Group
         # =========================
-        self.now_playing_group = QGroupBox(tr("device_tab.now_playing"))
+        self.now_playing_group = QGroupBox("Now Playing")
         now_playing_layout = QVBoxLayout()
         now_playing_layout.setContentsMargins(16, 18, 16, 18)
         now_playing_layout.setSpacing(8)
@@ -254,11 +239,7 @@ class DeviceTab(QWidget):
 
         self.storage_label.setText("--")
         self.usb_label.setText("--")
-        self.smb_status_label.setText(
-            tr("device_tab.remote_access_unknown")
-            if sys.platform == "darwin"
-            else tr("device_tab.smb_unknown")
-        )
+        self.smb_status_label.setText("Remote Access: Unknown" if sys.platform == "darwin" else "SMB: Unknown")
         self.smb_status_label.setStyleSheet("")
 
         self.now_playing_summary_label.setText("")
@@ -309,21 +290,13 @@ class DeviceTab(QWidget):
         smb_enabled = is_smb_enabled(self.connection)
 
         if smb_enabled:
-            self.smb_status_label.setText(
-                tr("device_tab.remote_access_enabled")
-                if sys.platform == "darwin"
-                else tr("device_tab.smb_enabled")
-            )
+            self.smb_status_label.setText("Remote Access: Enabled ✓" if sys.platform == "darwin" else "SMB: Enabled ✓")
             self.smb_status_label.setStyleSheet("color: #00aa00;")
             self.enable_smb_button.setEnabled(False)
             self.disable_smb_button.setEnabled(True)
             self.open_share_button.setEnabled(True)
         else:
-            self.smb_status_label.setText(
-                tr("device_tab.remote_access_disabled")
-                if sys.platform == "darwin"
-                else tr("device_tab.smb_disabled")
-            )
+            self.smb_status_label.setText("Remote Access: Disabled" if sys.platform == "darwin" else "SMB: Disabled")
             self.smb_status_label.setStyleSheet("color: #cc0000;")
             self.enable_smb_button.setEnabled(True)
             self.disable_smb_button.setEnabled(False)
@@ -342,23 +315,15 @@ class DeviceTab(QWidget):
 
     def enable_smb(self):
         if not self.connection.is_connected():
-            QMessageBox.warning(
-                self,
-                tr("device_tab.not_connected_title"),
-                tr("device_tab.not_connected_message"),
-            )
+            QMessageBox.warning(self, "Not Connected", "Connect to a MiSTer first.")
             return
 
         enable_smb_remote(self.connection)
 
         reboot_now = QMessageBox.question(
             self,
-            tr("device_tab.remote_access_enabled_title")
-            if sys.platform == "darwin"
-            else tr("device_tab.smb_enabled_title"),
-            tr("device_tab.remote_access_enabled_message")
-            if sys.platform == "darwin"
-            else tr("device_tab.smb_enabled_message"),
+            "Remote Access Enabled" if sys.platform == "darwin" else "SMB Enabled",
+            "Remote Access has been enabled.\n\nA reboot is required.\n\nReboot now?" if sys.platform == "darwin" else "SMB has been enabled.\n\nA reboot is required.\n\nReboot now?"
         )
 
         if reboot_now == QMessageBox.StandardButton.Yes:
@@ -369,23 +334,15 @@ class DeviceTab(QWidget):
 
     def disable_smb(self):
         if not self.connection.is_connected():
-            QMessageBox.warning(
-                self,
-                tr("device_tab.not_connected_title"),
-                tr("device_tab.not_connected_message"),
-            )
+            QMessageBox.warning(self, "Not Connected", "Connect to a MiSTer first.")
             return
 
         disable_smb_remote(self.connection)
 
         reboot_now = QMessageBox.question(
             self,
-            tr("device_tab.remote_access_disabled_title")
-            if sys.platform == "darwin"
-            else tr("device_tab.smb_disabled_title"),
-            tr("device_tab.remote_access_disabled_message")
-            if sys.platform == "darwin"
-            else tr("device_tab.smb_disabled_message"),
+            "Remote Access Disabled" if sys.platform == "darwin" else "SMB Disabled",
+            "Remote Access has been disabled.\n\nA reboot is required.\n\nReboot now?" if sys.platform == "darwin" else "SMB has been disabled.\n\nA reboot is required.\n\nReboot now?"
         )
 
         if reboot_now == QMessageBox.StandardButton.Yes:
@@ -396,11 +353,7 @@ class DeviceTab(QWidget):
 
     def open_share(self):
         if not self.connection.host:
-            QMessageBox.warning(
-                self,
-                tr("device_tab.open_in_explorer"),
-                tr("device_tab.no_mister_ip"),
-            )
+            QMessageBox.warning(self, "Open in Explorer", "No MiSTer IP address is available.")
             return
 
         try:
@@ -412,43 +365,31 @@ class DeviceTab(QWidget):
         except Exception as e:
             QMessageBox.critical(
                 self,
-                tr("common.error"),
-                tr("device_tab.unable_to_open_share", error=str(e)),
+                "Error",
+                f"Unable to open share:\n\n{str(e)}"
             )
 
     def return_to_menu(self):
         if not self.connection.is_connected():
-            QMessageBox.warning(
-                self,
-                tr("device_tab.not_connected_title"),
-                tr("device_tab.not_connected_message"),
-            )
+            QMessageBox.warning(self, "Not Connected", "Connect to a MiSTer first.")
             return
 
         try:
             return_to_menu_remote(self.connection)
         except Exception as e:
-            QMessageBox.critical(
-                self,
-                tr("device_tab.return_to_menu_failed"),
-                str(e),
-            )
+            QMessageBox.critical(self, "Return to Menu Failed", str(e))
             return
 
     def reboot_device(self, skip_confirm=False):
         if not self.connection.is_connected():
-            QMessageBox.warning(
-                self,
-                tr("device_tab.not_connected_title"),
-                tr("device_tab.not_connected_message"),
-            )
+            QMessageBox.warning(self, "Not Connected", "Connect to a MiSTer first.")
             return
 
         if not skip_confirm:
             reply = QMessageBox.question(
                 self,
-                tr("device_tab.confirm_reboot_title"),
-                tr("device_tab.confirm_reboot_message"),
+                "Confirm Reboot",
+                "Are you sure you want to reboot the MiSTer?"
             )
 
             if reply != QMessageBox.StandardButton.Yes:
@@ -458,7 +399,7 @@ class DeviceTab(QWidget):
         self.refresh_timer.stop()
 
         try:
-            self.main_window.set_connection_status(tr("status.rebooting"))
+            self.main_window.set_connection_status("Status: Rebooting...")
         except Exception:
             pass
 
@@ -466,9 +407,5 @@ class DeviceTab(QWidget):
             self.connection.reboot()
             self.main_window.start_reboot_reconnect_polling()
         except Exception as e:
-            QMessageBox.critical(
-                self,
-                tr("device_tab.reboot_failed"),
-                str(e),
-            )
+            QMessageBox.critical(self, "Reboot Failed", str(e))
             return

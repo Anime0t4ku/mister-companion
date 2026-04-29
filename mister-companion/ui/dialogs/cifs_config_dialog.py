@@ -11,7 +11,6 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
-from core.language import tr
 from core.scripts_actions import load_cifs_config, save_cifs_config, test_cifs_connection
 
 
@@ -20,12 +19,15 @@ class CifsConfigDialog(QDialog):
         super().__init__(parent)
         self.connection = connection
 
-        self.setWindowTitle(tr("cifs_config_dialog.window_title"))
+        self.setWindowTitle("Configure CIFS Network Share")
         self.setMinimumWidth(430)
 
         layout = QVBoxLayout(self)
 
-        info = QLabel(tr("cifs_config_dialog.info"))
+        info = QLabel(
+            "Configure your network share for cifs_mount.\n"
+            "Only Server IP and Share Name are required."
+        )
         info.setWordWrap(True)
         layout.addWidget(info)
 
@@ -36,15 +38,15 @@ class CifsConfigDialog(QDialog):
         self.share_input = QLineEdit()
         self.username_input = QLineEdit()
         self.password_input = QLineEdit()
-        self.mount_at_boot_check = QCheckBox(tr("cifs_config_dialog.mount_at_boot"))
+        self.mount_at_boot_check = QCheckBox("Mount at boot")
 
         self.mount_at_boot_check.setChecked(True)
         self.password_input.setEchoMode(QLineEdit.EchoMode.Password)
 
-        form.addRow(tr("cifs_config_dialog.server_ip"), self.server_input)
-        form.addRow(tr("cifs_config_dialog.share_name"), self.share_input)
-        form.addRow(tr("device_dialog.username"), self.username_input)
-        form.addRow(tr("device_dialog.password"), self.password_input)
+        form.addRow("Server IP", self.server_input)
+        form.addRow("Share Name", self.share_input)
+        form.addRow("Username", self.username_input)
+        form.addRow("Password", self.password_input)
         form.addRow("", self.mount_at_boot_check)
 
         layout.addLayout(form)
@@ -52,9 +54,9 @@ class CifsConfigDialog(QDialog):
         button_row = QHBoxLayout()
         button_row.addStretch()
 
-        self.test_button = QPushButton(tr("cifs_config_dialog.test_connection"))
-        self.save_button = QPushButton(tr("cifs_config_dialog.save"))
-        self.cancel_button = QPushButton(tr("common.cancel"))
+        self.test_button = QPushButton("Test Connection")
+        self.save_button = QPushButton("Save")
+        self.cancel_button = QPushButton("Cancel")
 
         button_row.addWidget(self.test_button)
         button_row.addWidget(self.save_button)
@@ -87,8 +89,8 @@ class CifsConfigDialog(QDialog):
         if not server or not share:
             QMessageBox.critical(
                 self,
-                tr("cifs_config_dialog.missing_information_title"),
-                tr("cifs_config_dialog.server_and_share_required"),
+                "Missing Information",
+                "Server IP and Share Name are required.",
             )
             return
 
@@ -101,16 +103,12 @@ class CifsConfigDialog(QDialog):
         )
 
         if ok:
-            QMessageBox.information(
-                self,
-                tr("cifs_config_dialog.success_title"),
-                tr("cifs_config_dialog.connection_successful"),
-            )
+            QMessageBox.information(self, "Success", "Connection successful.")
         else:
             QMessageBox.critical(
                 self,
-                tr("messages.connection_failed_title"),
-                tr("cifs_config_dialog.connection_failed"),
+                "Connection Failed",
+                "Unable to connect to the network share.",
             )
 
     def on_save(self):
@@ -121,19 +119,11 @@ class CifsConfigDialog(QDialog):
         mount_at_boot = self.mount_at_boot_check.isChecked()
 
         if not server:
-            QMessageBox.critical(
-                self,
-                tr("cifs_config_dialog.missing_information_title"),
-                tr("cifs_config_dialog.server_ip_required"),
-            )
+            QMessageBox.critical(self, "Missing Information", "Server IP is required.")
             return
 
         if not share:
-            QMessageBox.critical(
-                self,
-                tr("cifs_config_dialog.missing_information_title"),
-                tr("cifs_config_dialog.share_name_required"),
-            )
+            QMessageBox.critical(self, "Missing Information", "Share name is required.")
             return
 
         try:
@@ -147,4 +137,4 @@ class CifsConfigDialog(QDialog):
             )
             self.accept()
         except Exception as e:
-            QMessageBox.critical(self, tr("common.error"), str(e))
+            QMessageBox.critical(self, "Error", str(e))
