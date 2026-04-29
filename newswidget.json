@@ -3,12 +3,12 @@
   "items": [
     {
       "id": "v3-stable",
-      "date": "2026-04-20",
+      "date": "2026-04-29",
       "type": "update",
-      "headline": "MiSTer Companion v3.5.1 Released",
-      "message": "MiSTer Companion v3.5.1 is now available.\n\nThis release includes the changes from v3.5.0, adding official RetroAccount support to the Update All configurator for premium update_all features, with special thanks to theypsilon for the support and guidance.\n\nMiSTer Pico-8 was also added to the Extras tab, allowing you to install or uninstall it directly from MiSTer Companion.\n\nv3.5.1 then follows up with a fix for MiSTer Pico-8 support to match recent changes in the GitHub release layout, including migration support for older v1.1 installs.\n\nYou can download the latest stable release below.",
-      "url": "https://github.com/Anime0t4ku/mister-companion/releases/tag/v3.5.1",
-      "url_label": "Download v3.5.1"
+      "headline": "MiSTer Companion v3.6.0 Released",
+      "message": "MiSTer Companion v3.6.0 is now available.\n\nThis release adds Sonic Mania MiSTer to the Extras tab, allowing you to install or uninstall it directly from MiSTer Companion.\n\nIt also removes video_mode=8 from the 3S-ARM MiSTer.ini entry, as it is no longer required.\n\nAn Arch Linux-specific issue has also been fixed where Refresh Drives could show an error in the Flash SD tab.\n\nYou can download the latest stable release below.",
+      "url": "https://github.com/Anime0t4ku/mister-companion/releases/tag/v3.6.0",
+      "url_label": "Download v3.6.0"
     },
     {
       "id": "macos-support",
