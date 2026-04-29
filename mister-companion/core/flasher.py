@@ -91,6 +91,40 @@ def get_arch_key() -> str:
     raise RuntimeError(f"Unsupported CPU architecture: {machine}")
 
 
+def _clean_subprocess_env() -> dict[str, str]:
+    """
+    Return a safe environment for external system tools.
+
+    PyInstaller can modify LD_LIBRARY_PATH so the bundled libraries are preferred.
+    That is useful for the app itself, but it can break external commands.
+
+    On Arch Linux this can cause system bash to load an incompatible readline
+    library, resulting in:
+
+        bash: symbol lookup error: bash: undefined symbol: rl_print_keybinding
+
+    For external tools like balena CLI, bash, diskutil, gio, etc. we restore the
+    original library path if PyInstaller saved it, otherwise we remove the
+    PyInstaller-provided LD_LIBRARY_PATH.
+    """
+    env = os.environ.copy()
+
+    if platform.system() in {"Linux", "Darwin"}:
+        original_ld_library_path = env.get("LD_LIBRARY_PATH_ORIG")
+
+        if original_ld_library_path is not None:
+            if original_ld_library_path:
+                env["LD_LIBRARY_PATH"] = original_ld_library_path
+            else:
+                env.pop("LD_LIBRARY_PATH", None)
+        else:
+            env.pop("LD_LIBRARY_PATH", None)
+
+        env.pop("LD_PRELOAD", None)
+
+    return env
+
+
 def is_admin_windows() -> bool:
     try:
         return bool(ctypes.windll.shell32.IsUserAnAdmin())
@@ -649,6 +683,7 @@ def _run_subprocess(
         text=True,
         cwd=str(cwd) if cwd else None,
         startupinfo=startupinfo,
+        env=_clean_subprocess_env(),
     )
 
 
@@ -802,7 +837,9 @@ def list_available_drives(
 
     if result.returncode != 0:
         stderr = (result.stderr or "").strip()
-        raise RuntimeError(stderr or "Failed to get available drives.")
+        stdout = (result.stdout or "").strip()
+        combined = "\n".join(part for part in [stderr, stdout] if part).strip()
+        raise RuntimeError(combined or "Failed to get available drives.")
 
     stdout = (result.stdout or "").strip()
     if not stdout:
@@ -840,7 +877,6 @@ def flash_image(
     log_callback: LogCallback | None = None,
     password: str | None = None,
 ) -> None:
-
     _ensure_flash_privileges()
 
     image_path = Path(image_path)
@@ -864,11 +900,14 @@ def flash_image(
         drive,
         "--yes",
     ]
+
     if platform.system() == "Darwin":
         cmd = ["sudo", "-S"] + cmd
 
     _log(log_callback, f"Starting flash: {image_path.name}")
     _log(log_callback, f"Target drive: {drive}")
+
+    clean_env = _clean_subprocess_env()
 
     if platform.system() == "Darwin":
         _log(log_callback, "Unmounting disk before flash...")
@@ -876,6 +915,7 @@ def flash_image(
             ["diskutil", "unmountDisk", drive],
             capture_output=True,
             text=True,
+            env=clean_env,
         )
 
     original_autoplay_value = None
@@ -896,9 +936,11 @@ def flash_image(
         cwd=str(balena_exe.parent),
         startupinfo=startupinfo,
         bufsize=1,
+        env=clean_env,
     )
 
     if platform.system() == "Darwin" and password is not None:
+        assert process.stdin is not None
         process.stdin.write(password + "\n")
         process.stdin.flush()
         process.stdin.close()
@@ -932,10 +974,20 @@ def flash_image(
             "administrator privileges",
             "access is denied",
             "permission denied",
+            "symbol lookup error",
+            "undefined symbol",
             "error:",
         ]
 
         if return_code != 0:
+            if "symbol lookup error" in combined_output or "undefined symbol" in combined_output:
+                raise RuntimeError(
+                    "Flash failed because an external Linux system command could not start correctly.\n\n"
+                    "This is usually caused by a bundled PyInstaller library conflicting with a system library.\n"
+                    "MiSTer Companion tried to use a cleaned subprocess environment, but balena CLI still failed.\n\n"
+                    f"Exit code: {return_code}"
+                )
+
             raise RuntimeError(f"Flash failed with exit code {return_code}.")
 
         for marker in error_markers:
@@ -946,6 +998,12 @@ def flash_image(
                         "Run MiSTer Companion as Administrator and try again."
                     )
                 if platform.system() == "Linux":
+                    if marker in {"symbol lookup error", "undefined symbol"}:
+                        raise RuntimeError(
+                            "Flash failed because an external Linux system command could not start correctly.\n\n"
+                            "This is usually caused by a bundled PyInstaller library conflicting with a system library."
+                        )
+
                     raise RuntimeError(
                         "Flash failed. balena CLI reported a permission or drive access error.\n\n"
                         "Run MiSTer Companion with sudo or pkexec and try again."
@@ -968,8 +1026,10 @@ def flash_image(
                 ["diskutil", "eject", drive],
                 capture_output=True,
                 text=True,
+                env=clean_env,
             )
             _log(log_callback, "Drive ejected.")
+
     finally:
         if process.stdout is not None:
             try:
