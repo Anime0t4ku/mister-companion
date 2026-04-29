@@ -20,11 +20,15 @@ from PyQt6.QtWidgets import (
 from core.extras_actions import (
     get_3sx_status,
     get_pico8_status,
+    get_sonic_mania_status,
     install_or_update_3sx as backend_install_or_update_3sx,
     install_or_update_pico8 as backend_install_or_update_pico8,
+    install_or_update_sonic_mania as backend_install_or_update_sonic_mania,
     uninstall_3sx as backend_uninstall_3sx,
     uninstall_pico8 as backend_uninstall_pico8,
+    uninstall_sonic_mania as backend_uninstall_sonic_mania,
     upload_3sx_afs as backend_upload_3sx_afs,
+    upload_sonic_mania_data_rsdk as backend_upload_sonic_mania_data_rsdk,
 )
 
 
@@ -62,6 +66,7 @@ class ExtraTaskWorker(QThread):
 class ExtrasTab(QWidget):
     EXTRA_3SX = "3sx_mister"
     EXTRA_PICO8 = "mister_pico8"
+    EXTRA_SONIC_MANIA = "sonic_mania_mister"
 
     def __init__(self, main_window):
         super().__init__()
@@ -74,11 +79,13 @@ class ExtrasTab(QWidget):
         self.extra_display_order = [
             self.EXTRA_3SX,
             self.EXTRA_PICO8,
+            self.EXTRA_SONIC_MANIA,
         ]
 
         self.extra_titles = {
             self.EXTRA_3SX: "3S-ARM",
             self.EXTRA_PICO8: "MiSTer Pico-8",
+            self.EXTRA_SONIC_MANIA: "Sonic Mania MiSTer",
         }
 
         self.extra_descriptions = {
@@ -89,11 +96,16 @@ class ExtrasTab(QWidget):
             self.EXTRA_PICO8: (
                 "Install, update, and uninstall MiSTer Pico-8 directly from MiSTer Companion."
             ),
+            self.EXTRA_SONIC_MANIA: (
+                "Install, update, upload Data.rsdk, and uninstall Sonic Mania MiSTer "
+                "directly from MiSTer Companion."
+            ),
         }
 
         self.extra_status_texts = {
             self.EXTRA_3SX: "Unknown",
             self.EXTRA_PICO8: "Unknown",
+            self.EXTRA_SONIC_MANIA: "Unknown",
         }
 
         self.selected_extra_key = self.EXTRA_3SX
@@ -187,10 +199,12 @@ class ExtrasTab(QWidget):
 
         self.threesx_actions_widget = self._build_3sx_actions()
         self.pico8_actions_widget = self._build_pico8_actions()
+        self.sonic_mania_actions_widget = self._build_sonic_mania_actions()
 
         self.extra_action_widgets = {
             self.EXTRA_3SX: self.threesx_actions_widget,
             self.EXTRA_PICO8: self.pico8_actions_widget,
+            self.EXTRA_SONIC_MANIA: self.sonic_mania_actions_widget,
         }
 
         for widget in self.extra_action_widgets.values():
@@ -233,6 +247,11 @@ class ExtrasTab(QWidget):
         self.uninstall_3sx_button.clicked.connect(self.uninstall_3sx)
         self.install_update_pico8_button.clicked.connect(self.install_or_update_pico8)
         self.uninstall_pico8_button.clicked.connect(self.uninstall_pico8)
+        self.install_update_sonic_mania_button.clicked.connect(
+            self.install_or_update_sonic_mania
+        )
+        self.upload_data_rsdk_button.clicked.connect(self.upload_sonic_mania_data_rsdk)
+        self.uninstall_sonic_mania_button.clicked.connect(self.uninstall_sonic_mania)
         self.hide_console_button.clicked.connect(self.toggle_console)
 
     def _build_button_row(self, *buttons):
@@ -290,6 +309,36 @@ class ExtrasTab(QWidget):
             self._build_button_row(
                 self.install_update_pico8_button,
                 self.uninstall_pico8_button,
+            )
+        )
+
+        widget.setLayout(layout)
+        return widget
+
+    def _build_sonic_mania_actions(self):
+        widget = QWidget()
+        layout = QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+
+        self.install_update_sonic_mania_button = QPushButton("Install")
+        self.install_update_sonic_mania_button.setFixedWidth(170)
+
+        self.upload_data_rsdk_button = QPushButton("Upload Data.rsdk")
+        self.upload_data_rsdk_button.setFixedWidth(190)
+
+        self.uninstall_sonic_mania_button = QPushButton("Uninstall")
+        self.uninstall_sonic_mania_button.setFixedWidth(170)
+
+        layout.addLayout(
+            self._build_button_row(
+                self.install_update_sonic_mania_button,
+                self.upload_data_rsdk_button,
+            )
+        )
+        layout.addLayout(
+            self._build_button_row(
+                self.uninstall_sonic_mania_button,
             )
         )
 
@@ -381,14 +430,19 @@ class ExtrasTab(QWidget):
             self.uninstall_3sx_button,
             self.install_update_pico8_button,
             self.uninstall_pico8_button,
+            self.install_update_sonic_mania_button,
+            self.upload_data_rsdk_button,
+            self.uninstall_sonic_mania_button,
         ]:
             button.setEnabled(False)
 
         self.install_update_3sx_button.setText("Install")
         self.install_update_pico8_button.setText("Install")
+        self.install_update_sonic_mania_button.setText("Install")
 
         self.extra_status_texts[self.EXTRA_3SX] = "Unknown"
         self.extra_status_texts[self.EXTRA_PICO8] = "Unknown"
+        self.extra_status_texts[self.EXTRA_SONIC_MANIA] = "Unknown"
 
         self.update_extra_list_labels()
         self.update_details_panel()
@@ -425,6 +479,31 @@ class ExtrasTab(QWidget):
             self.install_update_pico8_button.setText(status_pico8["install_label"])
             self.install_update_pico8_button.setEnabled(status_pico8["install_enabled"])
             self.uninstall_pico8_button.setEnabled(status_pico8["uninstall_enabled"])
+
+        try:
+            status_sonic_mania = get_sonic_mania_status(self.connection)
+        except Exception as e:
+            self.extra_status_texts[self.EXTRA_SONIC_MANIA] = f"Unknown ({e})"
+            self.install_update_sonic_mania_button.setText("Install")
+            self.install_update_sonic_mania_button.setEnabled(False)
+            self.upload_data_rsdk_button.setEnabled(False)
+            self.uninstall_sonic_mania_button.setEnabled(False)
+        else:
+            self.extra_status_texts[self.EXTRA_SONIC_MANIA] = status_sonic_mania[
+                "status_text"
+            ]
+            self.install_update_sonic_mania_button.setText(
+                status_sonic_mania["install_label"]
+            )
+            self.install_update_sonic_mania_button.setEnabled(
+                status_sonic_mania["install_enabled"]
+            )
+            self.upload_data_rsdk_button.setEnabled(
+                status_sonic_mania["upload_enabled"]
+            )
+            self.uninstall_sonic_mania_button.setEnabled(
+                status_sonic_mania["uninstall_enabled"]
+            )
 
         self.update_extra_list_labels()
         self.update_details_panel()
@@ -480,11 +559,17 @@ class ExtrasTab(QWidget):
         self.current_worker.task_result.connect(self.on_worker_result)
 
         self.extra_list.setEnabled(False)
+
         self.install_update_3sx_button.setEnabled(False)
         self.upload_afs_button.setEnabled(False)
         self.uninstall_3sx_button.setEnabled(False)
+
         self.install_update_pico8_button.setEnabled(False)
         self.uninstall_pico8_button.setEnabled(False)
+
+        self.install_update_sonic_mania_button.setEnabled(False)
+        self.upload_data_rsdk_button.setEnabled(False)
+        self.uninstall_sonic_mania_button.setEnabled(False)
 
         self.current_worker.start()
 
@@ -595,3 +680,60 @@ class ExtrasTab(QWidget):
             return backend_uninstall_pico8(self.connection, log)
 
         self._run_worker(task, "MiSTer Pico-8 uninstalled.")
+
+    def install_or_update_sonic_mania(self):
+        if not self.connection.is_connected():
+            return
+
+        button_text = self.install_update_sonic_mania_button.text().strip()
+        success_message = "Sonic Mania MiSTer installed."
+
+        if button_text == "Update":
+            success_message = "Sonic Mania MiSTer updated."
+
+        def task(log):
+            return backend_install_or_update_sonic_mania(self.connection, log)
+
+        self._run_worker(task, success_message)
+
+    def upload_sonic_mania_data_rsdk(self):
+        if not self.connection.is_connected():
+            return
+
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select Data.rsdk",
+            "",
+            "Sonic Mania Data File (Data.rsdk *.rsdk *.RSDK);;All Files (*)",
+        )
+        if not file_path:
+            return
+
+        def task(log):
+            log(f"Selected file: {file_path}")
+            return backend_upload_sonic_mania_data_rsdk(
+                self.connection,
+                file_path,
+                log,
+            )
+
+        self._run_worker(task, "Data.rsdk uploaded.")
+
+    def uninstall_sonic_mania(self):
+        if not self.connection.is_connected():
+            return
+
+        reply = QMessageBox.question(
+            self,
+            "Uninstall Sonic Mania MiSTer",
+            "Remove Sonic Mania MiSTer files, Data.rsdk, and the MiSTer.ini entries?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        def task(log):
+            return backend_uninstall_sonic_mania(self.connection, log)
+
+        self._run_worker(task, "Sonic Mania MiSTer uninstalled.")
