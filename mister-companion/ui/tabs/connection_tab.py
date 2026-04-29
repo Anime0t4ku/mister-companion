@@ -17,6 +17,7 @@ from PyQt6.QtWidgets import (
 )
 
 from core.config import save_config
+from core.language import tr
 
 
 NEWSWIDGET_URL = "https://raw.githubusercontent.com/Anime0t4ku/mister-companion/main/newswidget.json"
@@ -51,14 +52,14 @@ class ConnectionTab(QWidget):
         # =========================
         # Connection Status
         # =========================
-        self.connection_status_label = QLabel("Status: Disconnected")
+        self.connection_status_label = QLabel(tr("status.disconnected"))
         self.connection_status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         main_layout.addWidget(self.connection_status_label)
 
         # =========================
         # Saved Devices
         # =========================
-        saved_group = QGroupBox("Saved Devices")
+        saved_group = QGroupBox(tr("connection_tab.saved_devices"))
         saved_layout = QHBoxLayout()
         saved_layout.setContentsMargins(12, 14, 12, 12)
         saved_layout.setSpacing(10)
@@ -70,12 +71,12 @@ class ConnectionTab(QWidget):
             QSizePolicy.Policy.Fixed,
             QSizePolicy.Policy.Fixed,
         )
-        self.profile_selector.setPlaceholderText("Select Device")
+        self.profile_selector.setPlaceholderText(tr("connection_tab.select_device"))
         self.profile_selector.setCurrentIndex(-1)
 
-        self.save_profile_btn = QPushButton("Save Device")
-        self.edit_profile_btn = QPushButton("Edit Device")
-        self.delete_profile_btn = QPushButton("Delete Device")
+        self.save_profile_btn = QPushButton(tr("connection_tab.save_device"))
+        self.edit_profile_btn = QPushButton(tr("connection_tab.edit_device"))
+        self.delete_profile_btn = QPushButton(tr("connection_tab.delete_device"))
 
         saved_layout.addStretch()
         saved_layout.addWidget(self.profile_selector)
@@ -89,28 +90,28 @@ class ConnectionTab(QWidget):
         # =========================
         # Connection Row
         # =========================
-        self.ip_label = QLabel("IP:")
+        self.ip_label = QLabel(tr("connection_tab.ip_label"))
         self.ip_input = QLineEdit()
-        self.ip_input.setPlaceholderText("MiSTer IP")
+        self.ip_input.setPlaceholderText(tr("connection_tab.mister_ip_placeholder"))
         self.ip_input.setFixedWidth(110)
 
-        self.user_label = QLabel("User:")
+        self.user_label = QLabel(tr("connection_tab.user_label"))
         self.user_input = QLineEdit()
         self.user_input.setText("root")
         self.user_input.setFixedWidth(80)
 
-        self.pass_label = QLabel("Pass:")
+        self.pass_label = QLabel(tr("connection_tab.pass_label"))
         self.pass_input = QLineEdit()
         self.pass_input.setText("1")
         self.pass_input.setEchoMode(QLineEdit.EchoMode.Password)
         self.pass_input.setFixedWidth(80)
 
-        self.scan_btn = QPushButton("Scan Network")
-        self.connect_btn = QPushButton("Connect")
-        self.disconnect_btn = QPushButton("Disconnect")
+        self.scan_btn = QPushButton(tr("connection_tab.scan_network"))
+        self.connect_btn = QPushButton(tr("connection_tab.connect"))
+        self.disconnect_btn = QPushButton(tr("connection_tab.disconnect"))
         self.disconnect_btn.setEnabled(False)
 
-        self.defaults_label = QLabel("(Defaults: root / 1)")
+        self.defaults_label = QLabel(tr("connection_tab.defaults"))
         self.defaults_label.setAlignment(Qt.AlignmentFlag.AlignVCenter)
 
         connection_row = QHBoxLayout()
@@ -140,24 +141,24 @@ class ConnectionTab(QWidget):
         # =========================
         # Advanced SSH Options
         # =========================
-        self.use_ssh_agent_checkbox = QCheckBox("Use OS SSH Agent")
+        self.use_ssh_agent_checkbox = QCheckBox(tr("connection_tab.use_ssh_agent"))
         self.use_ssh_agent_checkbox.setChecked(
             self.main_window.config_data.get("use_ssh_agent", False)
         )
         self.use_ssh_agent_checkbox.setToolTip(
-            "Uses your operating system SSH agent for authentication."
+            tr("connection_tab.use_ssh_agent_tooltip")
         )
 
-        self.look_for_ssh_keys_checkbox = QCheckBox("Use local SSH key files")
+        self.look_for_ssh_keys_checkbox = QCheckBox(tr("connection_tab.use_local_ssh_keys"))
         self.look_for_ssh_keys_checkbox.setChecked(
             self.main_window.config_data.get("look_for_ssh_keys", False)
         )
         self.look_for_ssh_keys_checkbox.setToolTip(
-            "Searches your local ~/.ssh folder for private keys."
+            tr("connection_tab.use_local_ssh_keys_tooltip")
         )
 
         self.advanced_ssh_warning_label = QLabel(
-            "Advanced options, only enable these if you know what you are doing."
+            tr("connection_tab.advanced_ssh_warning")
         )
         self.advanced_ssh_warning_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.advanced_ssh_warning_label.setStyleSheet("color: #f39c12;")
@@ -172,7 +173,7 @@ class ConnectionTab(QWidget):
         # =========================
         # News Widget
         # =========================
-        self.news_group = QGroupBox("MiSTer Companion News")
+        self.news_group = QGroupBox(tr("connection_tab.news_title"))
         self.news_group.installEventFilter(self)
 
         news_layout = QVBoxLayout()
@@ -334,7 +335,7 @@ class ConnectionTab(QWidget):
         news_type = str(item.get("type", "info")).strip().lower()
         date_text = str(item.get("date", "")).strip()
         url = str(item.get("url", "")).strip()
-        url_label = str(item.get("url_label", "")).strip() or "Open"
+        url_label = str(item.get("url_label", "")).strip() or tr("connection_tab.news_open")
 
         color_map = {
             "info": "#4da3ff",
@@ -359,7 +360,7 @@ class ConnectionTab(QWidget):
             self.news_button.setVisible(False)
 
         if date_text:
-            self.news_date_label.setText(f"Posted: {date_text}")
+            self.news_date_label.setText(tr("connection_tab.news_posted", date=date_text))
             self.news_date_label.show()
         else:
             self.news_date_label.hide()
@@ -508,7 +509,7 @@ class ConnectionTab(QWidget):
         selected_index = -1
 
         for i, profile in enumerate(profiles):
-            name = profile.get("name", f"Device {i + 1}")
+            name = profile.get("name", tr("connection_tab.default_device_name", number=i + 1))
             self.profile_selector.addItem(name, profile)
 
             if selected_name and name == selected_name:

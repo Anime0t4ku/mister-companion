@@ -25,6 +25,7 @@ from core.device_profiles import (
     get_profile_sync_roots,
     update_device,
 )
+from core.language import available_languages, current_language, tr
 from core.profile_folder_sync import profile_assigned_to_ip, profile_removed, profile_renamed
 from core.theme import apply_theme
 from core.zaplauncher_db import rename_db
@@ -87,55 +88,76 @@ class MainWindow(QMainWindow):
         bottom_bar.setContentsMargins(0, 0, 0, 0)
         bottom_bar.setSpacing(8)
 
-        self.connection_status_label = QLabel("Status: Disconnected")
+        self.connection_status_label = QLabel(tr("status.disconnected"))
         bottom_bar.addWidget(self.connection_status_label)
 
         bottom_bar.addStretch()
 
-        self.theme_label = QLabel("Theme:")
+        self.theme_label = QLabel(tr("theme.label"))
         bottom_bar.addWidget(self.theme_label)
 
         self.theme_combo = QComboBox()
-        self.theme_combo.addItems(["Auto", "Light", "Dark", "Purple"])
+        self.theme_combo.addItem(tr("theme.auto"), "auto")
+        self.theme_combo.addItem(tr("theme.light"), "light")
+        self.theme_combo.addItem(tr("theme.dark"), "dark")
+        self.theme_combo.addItem(tr("theme.purple"), "purple")
         bottom_bar.addWidget(self.theme_combo)
+
+        self.language_label = QLabel(tr("language.label"))
+        bottom_bar.addWidget(self.language_label)
+
+        self.language_combo = QComboBox()
+
+        for language in available_languages():
+            self.language_combo.addItem(
+                language.get("name", language.get("code", "en")),
+                language.get("code", "en"),
+            )
+
+        bottom_bar.addWidget(self.language_combo)
 
         central_layout.addLayout(bottom_bar)
 
-        self.set_connection_status("Status: Disconnected")
+        self.set_connection_status(tr("status.disconnected"), "disconnected")
 
         saved_theme = self.config_data.get("theme_mode", "auto").lower()
-        theme_index_map = {"auto": 0, "light": 1, "dark": 2, "purple": 3}
-        self.theme_combo.setCurrentIndex(theme_index_map.get(saved_theme, 0))
+        saved_theme_index = self.theme_combo.findData(saved_theme)
+        self.theme_combo.setCurrentIndex(saved_theme_index if saved_theme_index >= 0 else 0)
         self.theme_combo.currentIndexChanged.connect(self.on_theme_changed)
+
+        saved_language = self.config_data.get("language", current_language())
+        saved_language_index = self.language_combo.findData(saved_language)
+        self.language_combo.setCurrentIndex(saved_language_index if saved_language_index >= 0 else 0)
+        self.language_combo.currentIndexChanged.connect(self.on_language_changed)
 
         self.setCentralWidget(central_widget)
 
         self.flash_tab = FlashTab(self)
-        self.tabs.addTab(self.flash_tab, "Flash SD")
+        self.tabs.addTab(self.flash_tab, tr("tabs.flash_sd"))
 
         self.connection_tab = ConnectionTab(self)
-        self.tabs.addTab(self.connection_tab, "Connection")
+        self.tabs.addTab(self.connection_tab, tr("tabs.connection"))
 
         self.device_tab = DeviceTab(self)
-        self.tabs.addTab(self.device_tab, "Device")
+        self.tabs.addTab(self.device_tab, tr("tabs.device"))
 
         self.mister_settings_tab = MiSTerSettingsTab(self)
-        self.tabs.addTab(self.mister_settings_tab, "MiSTer Settings")
+        self.tabs.addTab(self.mister_settings_tab, tr("tabs.mister_settings"))
 
         self.scripts_tab = ScriptsTab(self)
-        self.tabs.addTab(self.scripts_tab, "Scripts")
+        self.tabs.addTab(self.scripts_tab, tr("tabs.scripts"))
 
         self.zapscripts_tab = ZapScriptsTab(self)
-        self.tabs.addTab(self.zapscripts_tab, "ZapScripts")
+        self.tabs.addTab(self.zapscripts_tab, tr("tabs.zapscripts"))
 
         self.savemanager_tab = SaveManagerTab(self)
-        self.tabs.addTab(self.savemanager_tab, "SaveManager")
+        self.tabs.addTab(self.savemanager_tab, tr("tabs.savemanager"))
 
         self.wallpapers_tab = WallpapersTab(self)
-        self.tabs.addTab(self.wallpapers_tab, "Wallpapers")
+        self.tabs.addTab(self.wallpapers_tab, tr("tabs.wallpapers"))
 
         self.extras_tab = ExtrasTab(self)
-        self.tabs.addTab(self.extras_tab, "Extras")
+        self.tabs.addTab(self.extras_tab, tr("tabs.extras"))
 
         self.tabs.setCurrentWidget(self.connection_tab)
         self.tabs.currentChanged.connect(self.on_tab_changed)
@@ -212,20 +234,19 @@ class MainWindow(QMainWindow):
                 self.config_data["hide_setup_notice"] = True
                 save_config(self.config_data)
 
-    def set_connection_status(self, text: str):
+    def set_connection_status(self, text: str, status_key: str = ""):
         self.connection_status_label.setText(text)
 
-        if "Connected" in text:
+        if status_key == "connected":
             self.connection_status_label.setStyleSheet("color: #2ecc71; font-weight: bold;")
-        elif "Disconnected" in text:
+        elif status_key == "disconnected":
             self.connection_status_label.setStyleSheet("color: #e74c3c; font-weight: bold;")
-        elif "Connecting" in text:
-            self.connection_status_label.setStyleSheet("color: #f39c12; font-weight: bold;")
-        elif "Lost" in text:
-            self.connection_status_label.setStyleSheet("color: #f39c12; font-weight: bold;")
-        elif "Rebooting" in text:
-            self.connection_status_label.setStyleSheet("color: #f39c12; font-weight: bold;")
-        elif "Waiting" in text:
+        elif status_key in {
+            "connecting",
+            "connection_lost",
+            "rebooting",
+            "waiting_for_mister",
+        }:
             self.connection_status_label.setStyleSheet("color: #f39c12; font-weight: bold;")
         else:
             self.connection_status_label.setStyleSheet("")
@@ -238,10 +259,28 @@ class MainWindow(QMainWindow):
         if self._closing:
             return
 
-        mode = self.theme_combo.currentText().lower()
+        mode = self.theme_combo.currentData() or "auto"
         self.config_data["theme_mode"] = mode
         save_config(self.config_data)
         self.refresh_theme()
+
+    def on_language_changed(self):
+        if self._closing:
+            return
+
+        language_code = self.language_combo.currentData() or "en"
+
+        if language_code == self.config_data.get("language", "en"):
+            return
+
+        self.config_data["language"] = language_code
+        save_config(self.config_data)
+
+        QMessageBox.information(
+            self,
+            tr("language.restart_title"),
+            tr("language.restart_message"),
+        )
 
     def update_all_tab_states(self):
         if hasattr(self, "device_tab"):
@@ -316,8 +355,11 @@ class MainWindow(QMainWindow):
                 return
 
     def on_tab_changed(self, index):
+        del index
+
         if self._closing:
             return
+
         self.refresh_current_tab()
 
     def check_connection_status(self):
@@ -375,14 +417,14 @@ class MainWindow(QMainWindow):
         except Exception:
             self.connection.mark_disconnected()
 
-        self.set_connection_status("Status: Connection Lost")
+        self.set_connection_status(tr("status.connection_lost"), "connection_lost")
         self.connection_tab.apply_disconnected_state()
         self.update_all_tab_states()
 
         QMessageBox.warning(
             self,
-            "Connection Lost",
-            "Connection to MiSTer was lost."
+            tr("messages.connection_lost_title"),
+            tr("messages.connection_lost_body"),
         )
 
     def start_reboot_reconnect_polling(self):
@@ -394,7 +436,7 @@ class MainWindow(QMainWindow):
         password = self.connection.password
 
         if not host or not username:
-            self.set_connection_status("Status: Disconnected")
+            self.set_connection_status(tr("status.disconnected"), "disconnected")
             self.connection_tab.apply_disconnected_state()
             self.update_all_tab_states()
             return
@@ -411,7 +453,7 @@ class MainWindow(QMainWindow):
         self.update_all_tab_states()
 
         self.reboot_reconnect_attempts = 0
-        self.set_connection_status("Status: Rebooting...")
+        self.set_connection_status(tr("status.rebooting"), "rebooting")
         self.reboot_reconnect_timer.start(5000)
 
     def try_reconnect_after_reboot(self):
@@ -424,10 +466,10 @@ class MainWindow(QMainWindow):
         host = self.reboot_reconnect_host
         if not host:
             self.reboot_reconnect_timer.stop()
-            self.set_connection_status("Status: Disconnected")
+            self.set_connection_status(tr("status.disconnected"), "disconnected")
             return
 
-        self.set_connection_status("Status: Waiting for MiSTer...")
+        self.set_connection_status(tr("status.waiting_for_mister"), "waiting_for_mister")
 
         self.reboot_reconnect_worker = ConnectionCheckWorker(host, port=22, timeout=2)
         self.reboot_reconnect_worker.result.connect(self.on_reboot_port_check_result)
@@ -450,11 +492,11 @@ class MainWindow(QMainWindow):
                 if hasattr(self, "scripts_tab"):
                     self.scripts_tab.waiting_for_reboot_reconnect = False
 
-                self.set_connection_status("Status: Disconnected")
+                self.set_connection_status(tr("status.disconnected"), "disconnected")
                 QMessageBox.warning(
                     self,
-                    "Reconnect Failed",
-                    "MiSTer did not come back online in time."
+                    tr("messages.reconnect_failed_title"),
+                    tr("messages.reconnect_timeout_body"),
                 )
             return
 
@@ -488,7 +530,7 @@ class MainWindow(QMainWindow):
             if hasattr(self, "scripts_tab"):
                 self.scripts_tab.waiting_for_reboot_reconnect = False
 
-            self.set_connection_status(f"Status: Connected to {host}")
+            self.set_connection_status(tr("status.connected_to", host=host), "connected")
             self.connection_tab.apply_connected_state()
             self.update_all_tab_states()
         else:
@@ -500,11 +542,11 @@ class MainWindow(QMainWindow):
                 if hasattr(self, "scripts_tab"):
                     self.scripts_tab.waiting_for_reboot_reconnect = False
 
-                self.set_connection_status("Status: Disconnected")
+                self.set_connection_status(tr("status.disconnected"), "disconnected")
                 QMessageBox.warning(
                     self,
-                    "Reconnect Failed",
-                    "MiSTer is reachable again, but automatic reconnect failed."
+                    tr("messages.reconnect_failed_title"),
+                    tr("messages.reconnect_failed_body"),
                 )
 
     def connect_to_mister(self):
@@ -518,10 +560,10 @@ class MainWindow(QMainWindow):
         look_for_ssh_keys = self.config_data.get("look_for_ssh_keys", False)
 
         if not host:
-            QMessageBox.warning(self, "Error", "IP Address is required.")
+            QMessageBox.warning(self, tr("common.error"), tr("messages.ip_required"))
             return
 
-        self.set_connection_status("Status: Connecting...")
+        self.set_connection_status(tr("status.connecting"), "connecting")
 
         try:
             success = self.connection.connect(
@@ -535,13 +577,13 @@ class MainWindow(QMainWindow):
             success = False
             error_message = str(e)
         else:
-            error_message = "Unable to connect to MiSTer."
+            error_message = tr("messages.unable_to_connect")
 
         if not success:
-            self.set_connection_status("Status: Disconnected")
+            self.set_connection_status(tr("status.disconnected"), "disconnected")
             self.connection_tab.apply_disconnected_state()
             self.update_all_tab_states()
-            QMessageBox.warning(self, "Connection Failed", error_message)
+            QMessageBox.warning(self, tr("messages.connection_failed_title"), error_message)
             return
 
         selected_name = self.connection_tab.get_selected_profile_name()
@@ -549,7 +591,7 @@ class MainWindow(QMainWindow):
             self.config_data["last_connected"] = selected_name
             save_config(self.config_data)
 
-        self.set_connection_status(f"Status: Connected to {host}")
+        self.set_connection_status(tr("status.connected_to", host=host), "connected")
         self.connection_tab.apply_connected_state()
         self.update_all_tab_states()
         self.refresh_current_tab()
@@ -572,7 +614,7 @@ class MainWindow(QMainWindow):
             self.scripts_tab.waiting_for_reboot_reconnect = False
 
         self.connection_fail_count = 0
-        self.set_connection_status("Status: Disconnected")
+        self.set_connection_status(tr("status.disconnected"), "disconnected")
         self.connection_tab.apply_disconnected_state()
         self.update_all_tab_states()
 
@@ -604,7 +646,7 @@ class MainWindow(QMainWindow):
         self.connection_tab.set_connection_fields(
             device.get("ip", ""),
             device.get("username", "root"),
-            device.get("password", "1")
+            device.get("password", "1"),
         )
         self.connection_tab.set_profiles(devices, selected_name=last)
 
@@ -616,7 +658,7 @@ class MainWindow(QMainWindow):
         self.connection_tab.set_connection_fields(
             device.get("ip", ""),
             device.get("username", "root"),
-            device.get("password", "1")
+            device.get("password", "1"),
         )
 
     def save_device(self):
@@ -625,13 +667,13 @@ class MainWindow(QMainWindow):
 
         dialog = DeviceDialog(
             self,
-            title="Save Device",
+            title=tr("device_dialog.save_title"),
             device={
                 "name": "",
                 "ip": self.connection_tab.ip_input.text().strip(),
                 "username": self.connection_tab.user_input.text().strip() or "root",
-                "password": self.connection_tab.pass_input.text() or "1"
-            }
+                "password": self.connection_tab.pass_input.text() or "1",
+            },
         )
 
         if dialog.exec() != dialog.DialogCode.Accepted:
@@ -640,22 +682,22 @@ class MainWindow(QMainWindow):
         device = dialog.get_device_data()
 
         if not device["name"]:
-            QMessageBox.warning(self, "Error", "Device name is required.")
+            QMessageBox.warning(self, tr("common.error"), tr("messages.device_name_required"))
             return
 
         if not device["ip"]:
-            QMessageBox.warning(self, "Error", "IP Address is required.")
+            QMessageBox.warning(self, tr("common.error"), tr("messages.ip_required"))
             return
 
         ok, result = add_device(self.config_data, device)
         if not ok:
-            QMessageBox.warning(self, "Error", result)
+            QMessageBox.warning(self, tr("common.error"), result)
             return
 
         profile_assigned_to_ip(
             self.get_profile_sync_roots(),
             device["ip"],
-            device["name"]
+            device["name"],
         )
 
         rename_db(device["ip"], device["name"])
@@ -666,7 +708,7 @@ class MainWindow(QMainWindow):
         self.connection_tab.set_connection_fields(
             device["ip"],
             device["username"],
-            device["password"]
+            device["password"],
         )
 
     def edit_device(self):
@@ -677,13 +719,13 @@ class MainWindow(QMainWindow):
         current_device = get_device_by_index(self.config_data, index)
 
         if not current_device:
-            QMessageBox.warning(self, "Error", "Select a device first.")
+            QMessageBox.warning(self, tr("common.error"), tr("messages.select_device_first"))
             return
 
         dialog = DeviceDialog(
             self,
-            title="Edit Device",
-            device=current_device
+            title=tr("device_dialog.edit_title"),
+            device=current_device,
         )
 
         if dialog.exec() != dialog.DialogCode.Accepted:
@@ -692,16 +734,16 @@ class MainWindow(QMainWindow):
         updated_device_data = dialog.get_device_data()
 
         if not updated_device_data["name"]:
-            QMessageBox.warning(self, "Error", "Device name is required.")
+            QMessageBox.warning(self, tr("common.error"), tr("messages.device_name_required"))
             return
 
         if not updated_device_data["ip"]:
-            QMessageBox.warning(self, "Error", "IP Address is required.")
+            QMessageBox.warning(self, tr("common.error"), tr("messages.ip_required"))
             return
 
         ok, result, _ = update_device(self.config_data, index, updated_device_data)
         if not ok:
-            QMessageBox.warning(self, "Error", result)
+            QMessageBox.warning(self, tr("common.error"), result)
             return
 
         old_name = result["old_name"]
@@ -712,7 +754,7 @@ class MainWindow(QMainWindow):
             profile_renamed(
                 self.get_profile_sync_roots(),
                 old_name,
-                updated_device["name"]
+                updated_device["name"],
             )
             rename_db(old_name, updated_device["name"])
 
@@ -720,7 +762,7 @@ class MainWindow(QMainWindow):
             profile_assigned_to_ip(
                 self.get_profile_sync_roots(),
                 updated_device["ip"],
-                updated_device["name"]
+                updated_device["name"],
             )
             rename_db(old_ip, updated_device["name"])
 
@@ -730,7 +772,7 @@ class MainWindow(QMainWindow):
         self.connection_tab.set_connection_fields(
             updated_device["ip"],
             updated_device["username"],
-            updated_device["password"]
+            updated_device["password"],
         )
 
     def delete_device(self):
@@ -741,7 +783,7 @@ class MainWindow(QMainWindow):
 
         ok, result, _ = delete_device(self.config_data, index)
         if not ok:
-            QMessageBox.warning(self, "Error", result)
+            QMessageBox.warning(self, tr("common.error"), result)
             return
 
         device_name = result["device_name"]
@@ -757,7 +799,7 @@ class MainWindow(QMainWindow):
         profile_removed(
             self.get_profile_sync_roots(),
             device_name,
-            device_ip
+            device_ip,
         )
 
         rename_db(device_name, device_ip)

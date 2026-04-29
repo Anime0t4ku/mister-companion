@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from core.language import tr
 from core.scripts_actions import get_scripts_status, remove_static_wallpaper
 from core.wallpapers import (
     build_install_state,
@@ -74,7 +75,7 @@ class WallpapersTab(QWidget):
         self.setLayout(main_layout)
 
         # Static Wallpapers
-        static_group = QGroupBox("Static Wallpapers")
+        static_group = QGroupBox(tr("wallpapers_tab.static_wallpapers"))
         static_layout = QVBoxLayout()
         static_layout.setContentsMargins(16, 18, 16, 18)
         static_layout.setSpacing(12)
@@ -82,10 +83,10 @@ class WallpapersTab(QWidget):
         static_buttons = QHBoxLayout()
         static_buttons.setSpacing(10)
 
-        self.set_static_wallpaper_button = QPushButton("Set Static Wallpaper")
+        self.set_static_wallpaper_button = QPushButton(tr("wallpapers_tab.set_static_wallpaper"))
         self.set_static_wallpaper_button.setFixedWidth(190)
 
-        self.remove_static_wallpaper_button = QPushButton("Remove Static Wallpaper")
+        self.remove_static_wallpaper_button = QPushButton(tr("wallpapers_tab.remove_static_wallpaper"))
         self.remove_static_wallpaper_button.setFixedWidth(190)
 
         static_buttons.addStretch()
@@ -98,13 +99,13 @@ class WallpapersTab(QWidget):
         main_layout.addWidget(static_group)
 
         # Wallpaper Sources
-        sources_group = QGroupBox("Wallpaper Sources")
+        sources_group = QGroupBox(tr("wallpapers_tab.wallpaper_sources"))
         sources_layout = QVBoxLayout()
         sources_layout.setContentsMargins(16, 18, 16, 18)
         sources_layout.setSpacing(14)
 
         # Ranny
-        ranny_group = QGroupBox("Ranny Snice Wallpapers")
+        ranny_group = QGroupBox(tr("wallpapers_tab.ranny_snice_wallpapers"))
         ranny_layout = QVBoxLayout()
         ranny_layout.setContentsMargins(16, 18, 16, 18)
         ranny_layout.setSpacing(12)
@@ -112,13 +113,13 @@ class WallpapersTab(QWidget):
         ranny_buttons = QHBoxLayout()
         ranny_buttons.setSpacing(10)
 
-        self.install_169_button = QPushButton("Install 16:9 Wallpapers")
+        self.install_169_button = QPushButton(tr("wallpapers_tab.install_169_wallpapers"))
         self.install_169_button.setFixedWidth(190)
 
-        self.install_43_button = QPushButton("Install 4:3 Wallpapers")
+        self.install_43_button = QPushButton(tr("wallpapers_tab.install_43_wallpapers"))
         self.install_43_button.setFixedWidth(190)
 
-        self.remove_ranny_button = QPushButton("Remove Installed Wallpapers")
+        self.remove_ranny_button = QPushButton(tr("wallpapers_tab.remove_installed_wallpapers"))
         self.remove_ranny_button.setFixedWidth(220)
 
         ranny_buttons.addStretch()
@@ -132,7 +133,7 @@ class WallpapersTab(QWidget):
         sources_layout.addWidget(ranny_group)
 
         # PCN
-        pcn_group = QGroupBox("PCN Challenge Wallpapers")
+        pcn_group = QGroupBox(tr("wallpapers_tab.pcn_challenge_wallpapers"))
         pcn_layout = QVBoxLayout()
         pcn_layout.setContentsMargins(16, 18, 16, 18)
         pcn_layout.setSpacing(12)
@@ -140,10 +141,10 @@ class WallpapersTab(QWidget):
         pcn_buttons = QHBoxLayout()
         pcn_buttons.setSpacing(10)
 
-        self.install_pcn_button = QPushButton("Install Wallpapers")
+        self.install_pcn_button = QPushButton(tr("wallpapers_tab.install_wallpapers"))
         self.install_pcn_button.setFixedWidth(190)
 
-        self.remove_pcn_button = QPushButton("Remove Installed Wallpapers")
+        self.remove_pcn_button = QPushButton(tr("wallpapers_tab.remove_installed_wallpapers"))
         self.remove_pcn_button.setFixedWidth(220)
 
         pcn_buttons.addStretch()
@@ -156,7 +157,7 @@ class WallpapersTab(QWidget):
         sources_layout.addWidget(pcn_group)
 
         # PCN Premium
-        pcn_premium_group = QGroupBox("PCN Premium Member Wallpapers")
+        pcn_premium_group = QGroupBox(tr("wallpapers_tab.pcn_premium_wallpapers"))
         pcn_premium_layout = QVBoxLayout()
         pcn_premium_layout.setContentsMargins(16, 18, 16, 18)
         pcn_premium_layout.setSpacing(12)
@@ -164,10 +165,10 @@ class WallpapersTab(QWidget):
         pcn_premium_buttons = QHBoxLayout()
         pcn_premium_buttons.setSpacing(10)
 
-        self.install_pcn_premium_button = QPushButton("Install Wallpapers")
+        self.install_pcn_premium_button = QPushButton(tr("wallpapers_tab.install_wallpapers"))
         self.install_pcn_premium_button.setFixedWidth(190)
 
-        self.remove_pcn_premium_button = QPushButton("Remove Installed Wallpapers")
+        self.remove_pcn_premium_button = QPushButton(tr("wallpapers_tab.remove_installed_wallpapers"))
         self.remove_pcn_premium_button.setFixedWidth(220)
 
         pcn_premium_buttons.addStretch()
@@ -180,7 +181,7 @@ class WallpapersTab(QWidget):
         sources_layout.addWidget(pcn_premium_group)
 
         # 0t4ku
-        ot4ku_group = QGroupBox("Anime0t4ku Wallpapers")
+        ot4ku_group = QGroupBox(tr("wallpapers_tab.ot4ku_wallpapers"))
         ot4ku_layout = QVBoxLayout()
         ot4ku_layout.setContentsMargins(16, 18, 16, 18)
         ot4ku_layout.setSpacing(12)
@@ -188,10 +189,10 @@ class WallpapersTab(QWidget):
         ot4ku_buttons = QHBoxLayout()
         ot4ku_buttons.setSpacing(10)
 
-        self.install_ot4ku_button = QPushButton("Install Wallpapers")
+        self.install_ot4ku_button = QPushButton(tr("wallpapers_tab.install_wallpapers"))
         self.install_ot4ku_button.setFixedWidth(190)
 
-        self.remove_ot4ku_button = QPushButton("Remove Installed Wallpapers")
+        self.remove_ot4ku_button = QPushButton(tr("wallpapers_tab.remove_installed_wallpapers"))
         self.remove_ot4ku_button.setFixedWidth(220)
 
         ot4ku_buttons.addStretch()
@@ -210,7 +211,7 @@ class WallpapersTab(QWidget):
         folder_row = QHBoxLayout()
         folder_row.addStretch()
 
-        self.open_wallpaper_folder_button = QPushButton("Open Wallpaper Folder")
+        self.open_wallpaper_folder_button = QPushButton(tr("wallpapers_tab.open_wallpaper_folder"))
         self.open_wallpaper_folder_button.setFixedWidth(180)
 
         folder_row.addWidget(self.open_wallpaper_folder_button)
@@ -218,7 +219,7 @@ class WallpapersTab(QWidget):
         main_layout.addLayout(folder_row)
 
         # SSH Output
-        self.console_group = QGroupBox("SSH Output")
+        self.console_group = QGroupBox(tr("wallpapers_tab.ssh_output"))
         console_layout = QVBoxLayout()
         console_layout.setContentsMargins(10, 10, 10, 10)
         console_layout.setSpacing(8)
@@ -226,7 +227,7 @@ class WallpapersTab(QWidget):
         header_row = QHBoxLayout()
         header_row.addStretch()
 
-        self.hide_console_button = QPushButton("Hide")
+        self.hide_console_button = QPushButton(tr("wallpapers_tab.hide"))
         self.hide_console_button.setFixedWidth(70)
         header_row.addWidget(self.hide_console_button)
 
@@ -273,11 +274,11 @@ class WallpapersTab(QWidget):
         self.set_static_wallpaper_button.setEnabled(True)
         self.remove_static_wallpaper_button.setEnabled(False)
 
-        self.install_169_button.setText("Install 16:9 Wallpapers")
-        self.install_43_button.setText("Install 4:3 Wallpapers")
-        self.install_pcn_button.setText("Install Wallpapers")
-        self.install_pcn_premium_button.setText("Install Wallpapers")
-        self.install_ot4ku_button.setText("Install Wallpapers")
+        self.install_169_button.setText(tr("wallpapers_tab.install_169_wallpapers"))
+        self.install_43_button.setText(tr("wallpapers_tab.install_43_wallpapers"))
+        self.install_pcn_button.setText(tr("wallpapers_tab.install_wallpapers"))
+        self.install_pcn_premium_button.setText(tr("wallpapers_tab.install_wallpapers"))
+        self.install_ot4ku_button.setText(tr("wallpapers_tab.install_wallpapers"))
 
         self.install_169_button.setEnabled(False)
         self.install_43_button.setEnabled(False)
@@ -298,11 +299,11 @@ class WallpapersTab(QWidget):
         self.set_static_wallpaper_button.setEnabled(False)
         self.remove_static_wallpaper_button.setEnabled(False)
 
-        self.install_169_button.setText("Install 16:9 Wallpapers")
-        self.install_43_button.setText("Install 4:3 Wallpapers")
-        self.install_pcn_button.setText("Install Wallpapers")
-        self.install_pcn_premium_button.setText("Install Wallpapers")
-        self.install_ot4ku_button.setText("Install Wallpapers")
+        self.install_169_button.setText(tr("wallpapers_tab.install_169_wallpapers"))
+        self.install_43_button.setText(tr("wallpapers_tab.install_43_wallpapers"))
+        self.install_pcn_button.setText(tr("wallpapers_tab.install_wallpapers"))
+        self.install_pcn_premium_button.setText(tr("wallpapers_tab.install_wallpapers"))
+        self.install_ot4ku_button.setText(tr("wallpapers_tab.install_wallpapers"))
 
         self.install_169_button.setEnabled(False)
         self.install_43_button.setEnabled(False)
@@ -342,23 +343,23 @@ class WallpapersTab(QWidget):
         installed_43, missing_43 = build_install_state(gh_43, installed)
 
         if not installed_169:
-            self.install_169_button.setText("Install 16:9 Wallpapers")
+            self.install_169_button.setText(tr("wallpapers_tab.install_169_wallpapers"))
             self.install_169_button.setEnabled(True)
         elif missing_169:
-            self.install_169_button.setText("Update 16:9 Wallpapers")
+            self.install_169_button.setText(tr("wallpapers_tab.update_169_wallpapers"))
             self.install_169_button.setEnabled(True)
         else:
-            self.install_169_button.setText("Install 16:9 Wallpapers")
+            self.install_169_button.setText(tr("wallpapers_tab.install_169_wallpapers"))
             self.install_169_button.setEnabled(False)
 
         if not installed_43:
-            self.install_43_button.setText("Install 4:3 Wallpapers")
+            self.install_43_button.setText(tr("wallpapers_tab.install_43_wallpapers"))
             self.install_43_button.setEnabled(True)
         elif missing_43:
-            self.install_43_button.setText("Update 4:3 Wallpapers")
+            self.install_43_button.setText(tr("wallpapers_tab.update_43_wallpapers"))
             self.install_43_button.setEnabled(True)
         else:
-            self.install_43_button.setText("Install 4:3 Wallpapers")
+            self.install_43_button.setText(tr("wallpapers_tab.install_43_wallpapers"))
             self.install_43_button.setEnabled(False)
 
         self.remove_ranny_button.setEnabled(installed_169 or installed_43)
@@ -367,13 +368,13 @@ class WallpapersTab(QWidget):
         pcn_installed, pcn_missing = build_install_state(pcn_items, installed)
 
         if not pcn_installed:
-            self.install_pcn_button.setText("Install Wallpapers")
+            self.install_pcn_button.setText(tr("wallpapers_tab.install_wallpapers"))
             self.install_pcn_button.setEnabled(True)
         elif pcn_missing:
-            self.install_pcn_button.setText("Update Wallpapers")
+            self.install_pcn_button.setText(tr("wallpapers_tab.update_wallpapers"))
             self.install_pcn_button.setEnabled(True)
         else:
-            self.install_pcn_button.setText("Install Wallpapers")
+            self.install_pcn_button.setText(tr("wallpapers_tab.install_wallpapers"))
             self.install_pcn_button.setEnabled(False)
 
         self.remove_pcn_button.setEnabled(pcn_installed)
@@ -385,13 +386,13 @@ class WallpapersTab(QWidget):
         )
 
         if not pcn_premium_installed:
-            self.install_pcn_premium_button.setText("Install Wallpapers")
+            self.install_pcn_premium_button.setText(tr("wallpapers_tab.install_wallpapers"))
             self.install_pcn_premium_button.setEnabled(True)
         elif pcn_premium_missing:
-            self.install_pcn_premium_button.setText("Update Wallpapers")
+            self.install_pcn_premium_button.setText(tr("wallpapers_tab.update_wallpapers"))
             self.install_pcn_premium_button.setEnabled(True)
         else:
-            self.install_pcn_premium_button.setText("Install Wallpapers")
+            self.install_pcn_premium_button.setText(tr("wallpapers_tab.install_wallpapers"))
             self.install_pcn_premium_button.setEnabled(False)
 
         self.remove_pcn_premium_button.setEnabled(pcn_premium_installed)
@@ -400,13 +401,13 @@ class WallpapersTab(QWidget):
         ot4ku_installed, ot4ku_missing = build_install_state(ot4ku_items, installed)
 
         if not ot4ku_installed:
-            self.install_ot4ku_button.setText("Install Wallpapers")
+            self.install_ot4ku_button.setText(tr("wallpapers_tab.install_wallpapers"))
             self.install_ot4ku_button.setEnabled(True)
         elif ot4ku_missing:
-            self.install_ot4ku_button.setText("Update Wallpapers")
+            self.install_ot4ku_button.setText(tr("wallpapers_tab.update_wallpapers"))
             self.install_ot4ku_button.setEnabled(True)
         else:
-            self.install_ot4ku_button.setText("Install Wallpapers")
+            self.install_ot4ku_button.setText(tr("wallpapers_tab.install_wallpapers"))
             self.install_ot4ku_button.setEnabled(False)
 
         self.remove_ot4ku_button.setEnabled(ot4ku_installed)
@@ -434,7 +435,7 @@ class WallpapersTab(QWidget):
             self.append_console(f"\n{message}\n")
 
     def on_task_error(self, detail: str):
-        QMessageBox.critical(self, "Wallpaper Error", detail)
+        QMessageBox.critical(self, tr("wallpapers_tab.wallpaper_error"), detail)
 
     def on_task_finished(self):
         self.current_worker = None
@@ -473,8 +474,8 @@ class WallpapersTab(QWidget):
 
         confirm = QMessageBox.question(
             self,
-            "Remove Static Wallpaper",
-            "Remove the current static wallpaper from the MiSTer?",
+            tr("wallpapers_tab.remove_static_wallpaper"),
+            tr("wallpapers_tab.remove_static_wallpaper_confirm"),
         )
         if confirm != QMessageBox.StandardButton.Yes:
             return
@@ -483,22 +484,22 @@ class WallpapersTab(QWidget):
             remove_static_wallpaper(self.connection, reload_menu=True)
             self.refresh_status()
         except Exception as e:
-            QMessageBox.critical(self, "Error", str(e))
+            QMessageBox.critical(self, tr("common.error"), str(e))
 
     def install_169_wallpapers(self):
         if not self.connection.is_connected():
             return
 
         def task(log):
-            log("Fetching wallpaper list...\n")
+            log(tr("wallpapers_tab.log_fetching_wallpaper_list") + "\n")
             wallpapers_169, _ = fetch_ranny_wallpapers()
 
             if not wallpapers_169:
-                log("No wallpapers found.\n")
+                log(tr("wallpapers_tab.log_no_wallpapers_found") + "\n")
                 return
 
             count = install_wallpaper_items(self.connection, wallpapers_169, log)
-            log(f"\nFinished. {count} wallpapers installed.\n")
+            log("\n" + tr("wallpapers_tab.log_finished_installed", count=count) + "\n")
 
         self.start_worker(task)
 
@@ -507,15 +508,15 @@ class WallpapersTab(QWidget):
             return
 
         def task(log):
-            log("Fetching wallpaper list...\n")
+            log(tr("wallpapers_tab.log_fetching_wallpaper_list") + "\n")
             _, wallpapers_43 = fetch_ranny_wallpapers()
 
             if not wallpapers_43:
-                log("No wallpapers found.\n")
+                log(tr("wallpapers_tab.log_no_wallpapers_found") + "\n")
                 return
 
             count = install_wallpaper_items(self.connection, wallpapers_43, log)
-            log(f"\nFinished. {count} wallpapers installed.\n")
+            log("\n" + tr("wallpapers_tab.log_finished_installed", count=count) + "\n")
 
         self.start_worker(task)
 
@@ -525,21 +526,21 @@ class WallpapersTab(QWidget):
 
         confirm = QMessageBox.question(
             self,
-            "Remove Wallpapers",
-            "Remove all Ranny Snice wallpapers from the MiSTer?",
+            tr("wallpapers_tab.remove_wallpapers"),
+            tr("wallpapers_tab.remove_ranny_confirm"),
         )
         if confirm != QMessageBox.StandardButton.Yes:
             return
 
         def task(log):
-            log("Removing Ranny Snice wallpapers...\n")
+            log(tr("wallpapers_tab.log_removing_ranny") + "\n")
             wallpapers_169, wallpapers_43 = fetch_ranny_wallpapers()
             removed = remove_installed_wallpapers(
                 self.connection,
                 wallpapers_169 + wallpapers_43,
                 log,
             )
-            log(f"\nFinished. {removed} wallpapers removed.\n")
+            log("\n" + tr("wallpapers_tab.log_finished_removed", count=removed) + "\n")
 
         self.start_worker(task)
 
@@ -548,15 +549,15 @@ class WallpapersTab(QWidget):
             return
 
         def task(log):
-            log("Fetching wallpaper list...\n")
+            log(tr("wallpapers_tab.log_fetching_wallpaper_list") + "\n")
             wallpapers = fetch_pcn_wallpapers()
 
             if not wallpapers:
-                log("No wallpapers found.\n")
+                log(tr("wallpapers_tab.log_no_wallpapers_found") + "\n")
                 return
 
             count = install_wallpaper_items(self.connection, wallpapers, log)
-            log(f"\nFinished. {count} wallpapers installed.\n")
+            log("\n" + tr("wallpapers_tab.log_finished_installed", count=count) + "\n")
 
         self.start_worker(task)
 
@@ -566,17 +567,17 @@ class WallpapersTab(QWidget):
 
         confirm = QMessageBox.question(
             self,
-            "Remove Wallpapers",
-            "Remove all PCN Challenge wallpapers from the MiSTer?",
+            tr("wallpapers_tab.remove_wallpapers"),
+            tr("wallpapers_tab.remove_pcn_confirm"),
         )
         if confirm != QMessageBox.StandardButton.Yes:
             return
 
         def task(log):
-            log("Removing PCN Challenge wallpapers...\n")
+            log(tr("wallpapers_tab.log_removing_pcn") + "\n")
             wallpapers = fetch_pcn_wallpapers()
             removed = remove_installed_wallpapers(self.connection, wallpapers, log)
-            log(f"\nFinished. {removed} wallpapers removed.\n")
+            log("\n" + tr("wallpapers_tab.log_finished_removed", count=removed) + "\n")
 
         self.start_worker(task)
 
@@ -585,15 +586,15 @@ class WallpapersTab(QWidget):
             return
 
         def task(log):
-            log("Fetching wallpaper list...\n")
+            log(tr("wallpapers_tab.log_fetching_wallpaper_list") + "\n")
             wallpapers = fetch_pcn_premium_wallpapers()
 
             if not wallpapers:
-                log("No wallpapers found.\n")
+                log(tr("wallpapers_tab.log_no_wallpapers_found") + "\n")
                 return
 
             count = install_wallpaper_items(self.connection, wallpapers, log)
-            log(f"\nFinished. {count} wallpapers installed.\n")
+            log("\n" + tr("wallpapers_tab.log_finished_installed", count=count) + "\n")
 
         self.start_worker(task)
 
@@ -603,17 +604,17 @@ class WallpapersTab(QWidget):
 
         confirm = QMessageBox.question(
             self,
-            "Remove Wallpapers",
-            "Remove all PCN Premium Member wallpapers from the MiSTer?",
+            tr("wallpapers_tab.remove_wallpapers"),
+            tr("wallpapers_tab.remove_pcn_premium_confirm"),
         )
         if confirm != QMessageBox.StandardButton.Yes:
             return
 
         def task(log):
-            log("Removing PCN Premium Member wallpapers...\n")
+            log(tr("wallpapers_tab.log_removing_pcn_premium") + "\n")
             wallpapers = fetch_pcn_premium_wallpapers()
             removed = remove_installed_wallpapers(self.connection, wallpapers, log)
-            log(f"\nFinished. {removed} wallpapers removed.\n")
+            log("\n" + tr("wallpapers_tab.log_finished_removed", count=removed) + "\n")
 
         self.start_worker(task)
 
@@ -622,15 +623,15 @@ class WallpapersTab(QWidget):
             return
 
         def task(log):
-            log("Fetching wallpaper list...\n")
+            log(tr("wallpapers_tab.log_fetching_wallpaper_list") + "\n")
             wallpapers = fetch_ot4ku_wallpapers()
 
             if not wallpapers:
-                log("No wallpapers found.\n")
+                log(tr("wallpapers_tab.log_no_wallpapers_found") + "\n")
                 return
 
             count = install_wallpaper_items(self.connection, wallpapers, log)
-            log(f"\nFinished. {count} wallpapers installed.\n")
+            log("\n" + tr("wallpapers_tab.log_finished_installed", count=count) + "\n")
 
         self.start_worker(task)
 
@@ -640,17 +641,17 @@ class WallpapersTab(QWidget):
 
         confirm = QMessageBox.question(
             self,
-            "Remove Wallpapers",
-            "Remove all 0t4ku wallpapers from the MiSTer?",
+            tr("wallpapers_tab.remove_wallpapers"),
+            tr("wallpapers_tab.remove_ot4ku_confirm"),
         )
         if confirm != QMessageBox.StandardButton.Yes:
             return
 
         def task(log):
-            log("Removing 0t4ku wallpapers...\n")
+            log(tr("wallpapers_tab.log_removing_ot4ku") + "\n")
             wallpapers = fetch_ot4ku_wallpapers()
             removed = remove_installed_wallpapers(self.connection, wallpapers, log)
-            log(f"\nFinished. {removed} wallpapers removed.\n")
+            log("\n" + tr("wallpapers_tab.log_finished_removed", count=removed) + "\n")
 
         self.start_worker(task)
 
@@ -665,4 +666,4 @@ class WallpapersTab(QWidget):
                 self.connection.password or "1",
             )
         except Exception as e:
-            QMessageBox.critical(self, "Error", str(e))
+            QMessageBox.critical(self, tr("common.error"), str(e))

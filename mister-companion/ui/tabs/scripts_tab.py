@@ -18,6 +18,7 @@ from PyQt6.QtWidgets import (
 )
 
 from core.config import save_config
+from core.language import tr
 from core.scripts_actions import (
     check_update_all_initialized,
     disable_ftp_save_sync_service,
@@ -117,6 +118,7 @@ class ScriptsTab(QWidget):
             self.SCRIPT_FTP_SAVE_SYNC,
             self.SCRIPT_STATIC_WALLPAPER,
         ]
+
         self.script_titles = {
             self.SCRIPT_UPDATE_ALL: "update_all",
             self.SCRIPT_ZAPAROO: "zaparoo",
@@ -127,26 +129,29 @@ class ScriptsTab(QWidget):
             self.SCRIPT_FTP_SAVE_SYNC: "ftp_save_sync",
             self.SCRIPT_STATIC_WALLPAPER: "static_wallpaper",
         }
+
         self.script_descriptions = {
-            self.SCRIPT_UPDATE_ALL: "Install, configure, and run update_all directly from MiSTer Companion.",
-            self.SCRIPT_ZAPAROO: "Install Zaparoo and enable its boot service.",
-            self.SCRIPT_MIGRATE_SD: "Install or remove the migrate_sd script for SD card migration.",
-            self.SCRIPT_CIFS: "Install, configure, mount, and remove CIFS network share scripts.",
-            self.SCRIPT_AUTO_TIME: "Automatically set timezone and current time for your MiSTer.",
-            self.SCRIPT_DAV_BROWSER: "Browse a WebDAV server, download ROMs directly to your MiSTer, and optionally launch them after download.",
-            self.SCRIPT_FTP_SAVE_SYNC: "Sync MiSTer saves to a remote FTP or SFTP server, with optional savestate syncing and automatic boot-time service startup.",
-            self.SCRIPT_STATIC_WALLPAPER: "Install or remove static_wallpaper support. Setting or removing the active static wallpaper is now handled from the Wallpapers tab.",
+            self.SCRIPT_UPDATE_ALL: tr("scripts_tab.description_update_all"),
+            self.SCRIPT_ZAPAROO: tr("scripts_tab.description_zaparoo"),
+            self.SCRIPT_MIGRATE_SD: tr("scripts_tab.description_migrate_sd"),
+            self.SCRIPT_CIFS: tr("scripts_tab.description_cifs"),
+            self.SCRIPT_AUTO_TIME: tr("scripts_tab.description_auto_time"),
+            self.SCRIPT_DAV_BROWSER: tr("scripts_tab.description_dav_browser"),
+            self.SCRIPT_FTP_SAVE_SYNC: tr("scripts_tab.description_ftp_save_sync"),
+            self.SCRIPT_STATIC_WALLPAPER: tr("scripts_tab.description_static_wallpaper"),
         }
+
         self.script_status_texts = {
-            self.SCRIPT_UPDATE_ALL: "Unknown",
-            self.SCRIPT_ZAPAROO: "Unknown",
-            self.SCRIPT_MIGRATE_SD: "Unknown",
-            self.SCRIPT_CIFS: "Unknown",
-            self.SCRIPT_AUTO_TIME: "Unknown",
-            self.SCRIPT_DAV_BROWSER: "Unknown",
-            self.SCRIPT_FTP_SAVE_SYNC: "Unknown",
-            self.SCRIPT_STATIC_WALLPAPER: "Unknown",
+            self.SCRIPT_UPDATE_ALL: tr("common.unknown"),
+            self.SCRIPT_ZAPAROO: tr("common.unknown"),
+            self.SCRIPT_MIGRATE_SD: tr("common.unknown"),
+            self.SCRIPT_CIFS: tr("common.unknown"),
+            self.SCRIPT_AUTO_TIME: tr("common.unknown"),
+            self.SCRIPT_DAV_BROWSER: tr("common.unknown"),
+            self.SCRIPT_FTP_SAVE_SYNC: tr("common.unknown"),
+            self.SCRIPT_STATIC_WALLPAPER: tr("common.unknown"),
         }
+
         self.selected_script_key = self.SCRIPT_UPDATE_ALL
 
         self.build_ui()
@@ -162,7 +167,7 @@ class ScriptsTab(QWidget):
         top_row.setSpacing(12)
         main_layout.addLayout(top_row, stretch=1)
 
-        list_group = QGroupBox("Scripts")
+        list_group = QGroupBox(tr("scripts_tab.scripts"))
         list_layout = QVBoxLayout()
         list_layout.setContentsMargins(10, 10, 10, 10)
         list_layout.setSpacing(8)
@@ -174,7 +179,8 @@ class ScriptsTab(QWidget):
         self.script_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.script_list.setMinimumWidth(290)
         self.script_list.setSizePolicy(
-            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding
+            QSizePolicy.Policy.Preferred,
+            QSizePolicy.Policy.Expanding
         )
         self.script_list.setStyleSheet(
             """
@@ -200,19 +206,19 @@ class ScriptsTab(QWidget):
         list_group.setLayout(list_layout)
         top_row.addWidget(list_group, 1)
 
-        details_group = QGroupBox("Details")
+        details_group = QGroupBox(tr("scripts_tab.details"))
         details_layout = QVBoxLayout()
         details_layout.setContentsMargins(14, 14, 14, 14)
         details_layout.setSpacing(10)
 
-        self.script_name_label = QLabel("Select a script")
+        self.script_name_label = QLabel(tr("scripts_tab.select_script"))
         font = self.script_name_label.font()
         font.setPointSize(font.pointSize() + 2)
         font.setBold(True)
         self.script_name_label.setFont(font)
         details_layout.addWidget(self.script_name_label)
 
-        self.script_status_label = QLabel("Status: Unknown")
+        self.script_status_label = QLabel(tr("scripts_tab.status_unknown_full"))
         self.script_status_label.setStyleSheet("color: gray;")
         details_layout.addWidget(self.script_status_label)
 
@@ -268,14 +274,14 @@ class ScriptsTab(QWidget):
         bottom_actions_row = QHBoxLayout()
         bottom_actions_row.addStretch()
 
-        self.open_scripts_folder_button = QPushButton("Open Scripts Folder")
+        self.open_scripts_folder_button = QPushButton(tr("scripts_tab.open_scripts_folder"))
         self.open_scripts_folder_button.setFixedWidth(180)
         bottom_actions_row.addWidget(self.open_scripts_folder_button)
 
         bottom_actions_row.addStretch()
         main_layout.addLayout(bottom_actions_row)
 
-        self.console_group = QGroupBox("SSH Output")
+        self.console_group = QGroupBox(tr("scripts_tab.ssh_output"))
         console_layout = QVBoxLayout()
         console_layout.setContentsMargins(10, 10, 10, 10)
         console_layout.setSpacing(8)
@@ -283,7 +289,7 @@ class ScriptsTab(QWidget):
         header_row = QHBoxLayout()
         header_row.addStretch()
 
-        self.hide_console_button = QPushButton("Hide")
+        self.hide_console_button = QPushButton(tr("scripts_tab.hide"))
         self.hide_console_button.setFixedWidth(70)
         header_row.addWidget(self.hide_console_button)
         console_layout.addLayout(header_row)
@@ -357,16 +363,16 @@ class ScriptsTab(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
 
-        self.install_update_button = QPushButton("Install")
+        self.install_update_button = QPushButton(tr("scripts_tab.install"))
         self.install_update_button.setFixedWidth(170)
 
-        self.uninstall_update_button = QPushButton("Uninstall")
+        self.uninstall_update_button = QPushButton(tr("scripts_tab.uninstall"))
         self.uninstall_update_button.setFixedWidth(170)
 
-        self.configure_update_button = QPushButton("Configure")
+        self.configure_update_button = QPushButton(tr("scripts_tab.configure"))
         self.configure_update_button.setFixedWidth(190)
 
-        self.run_update_button = QPushButton("Run")
+        self.run_update_button = QPushButton(tr("scripts_tab.run"))
         self.run_update_button.setFixedWidth(170)
 
         layout.addLayout(
@@ -391,13 +397,13 @@ class ScriptsTab(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
 
-        self.install_zaparoo_button = QPushButton("Install")
+        self.install_zaparoo_button = QPushButton(tr("scripts_tab.install"))
         self.install_zaparoo_button.setFixedWidth(170)
 
-        self.enable_zaparoo_service_button = QPushButton("Enable Service")
+        self.enable_zaparoo_service_button = QPushButton(tr("scripts_tab.enable_service"))
         self.enable_zaparoo_service_button.setFixedWidth(190)
 
-        self.uninstall_zaparoo_button = QPushButton("Uninstall")
+        self.uninstall_zaparoo_button = QPushButton(tr("scripts_tab.uninstall"))
         self.uninstall_zaparoo_button.setFixedWidth(170)
 
         layout.addLayout(
@@ -417,10 +423,10 @@ class ScriptsTab(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
 
-        self.install_migrate_button = QPushButton("Install")
+        self.install_migrate_button = QPushButton(tr("scripts_tab.install"))
         self.install_migrate_button.setFixedWidth(180)
 
-        self.uninstall_migrate_button = QPushButton("Uninstall")
+        self.uninstall_migrate_button = QPushButton(tr("scripts_tab.uninstall"))
         self.uninstall_migrate_button.setFixedWidth(180)
 
         layout.addLayout(
@@ -439,22 +445,22 @@ class ScriptsTab(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
 
-        self.install_cifs_button = QPushButton("Install")
+        self.install_cifs_button = QPushButton(tr("scripts_tab.install"))
         self.install_cifs_button.setFixedWidth(120)
 
-        self.configure_cifs_button = QPushButton("Configure")
+        self.configure_cifs_button = QPushButton(tr("scripts_tab.configure"))
         self.configure_cifs_button.setFixedWidth(120)
 
-        self.mount_cifs_button = QPushButton("Mount")
+        self.mount_cifs_button = QPushButton(tr("scripts_tab.mount"))
         self.mount_cifs_button.setFixedWidth(120)
 
-        self.unmount_cifs_button = QPushButton("Unmount")
+        self.unmount_cifs_button = QPushButton(tr("scripts_tab.unmount"))
         self.unmount_cifs_button.setFixedWidth(120)
 
-        self.remove_cifs_config_button = QPushButton("Remove Config")
+        self.remove_cifs_config_button = QPushButton(tr("scripts_tab.remove_config"))
         self.remove_cifs_config_button.setFixedWidth(130)
 
-        self.uninstall_cifs_button = QPushButton("Uninstall")
+        self.uninstall_cifs_button = QPushButton(tr("scripts_tab.uninstall"))
         self.uninstall_cifs_button.setFixedWidth(120)
 
         layout.addLayout(
@@ -481,10 +487,10 @@ class ScriptsTab(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
 
-        self.install_auto_time_button = QPushButton("Install")
+        self.install_auto_time_button = QPushButton(tr("scripts_tab.install"))
         self.install_auto_time_button.setFixedWidth(140)
 
-        self.uninstall_auto_time_button = QPushButton("Uninstall")
+        self.uninstall_auto_time_button = QPushButton(tr("scripts_tab.uninstall"))
         self.uninstall_auto_time_button.setFixedWidth(140)
 
         layout.addLayout(
@@ -503,16 +509,16 @@ class ScriptsTab(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
 
-        self.install_dav_browser_button = QPushButton("Install")
+        self.install_dav_browser_button = QPushButton(tr("scripts_tab.install"))
         self.install_dav_browser_button.setFixedWidth(140)
 
-        self.configure_dav_browser_button = QPushButton("Configure")
+        self.configure_dav_browser_button = QPushButton(tr("scripts_tab.configure"))
         self.configure_dav_browser_button.setFixedWidth(140)
 
-        self.remove_dav_browser_config_button = QPushButton("Remove Config")
+        self.remove_dav_browser_config_button = QPushButton(tr("scripts_tab.remove_config"))
         self.remove_dav_browser_config_button.setFixedWidth(140)
 
-        self.uninstall_dav_browser_button = QPushButton("Uninstall")
+        self.uninstall_dav_browser_button = QPushButton(tr("scripts_tab.uninstall"))
         self.uninstall_dav_browser_button.setFixedWidth(140)
 
         layout.addLayout(
@@ -537,22 +543,22 @@ class ScriptsTab(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
 
-        self.install_ftp_save_sync_button = QPushButton("Install")
+        self.install_ftp_save_sync_button = QPushButton(tr("scripts_tab.install"))
         self.install_ftp_save_sync_button.setFixedWidth(140)
 
-        self.configure_ftp_save_sync_button = QPushButton("Configure")
+        self.configure_ftp_save_sync_button = QPushButton(tr("scripts_tab.configure"))
         self.configure_ftp_save_sync_button.setFixedWidth(140)
 
-        self.enable_ftp_save_sync_service_button = QPushButton("Enable Service")
+        self.enable_ftp_save_sync_service_button = QPushButton(tr("scripts_tab.enable_service"))
         self.enable_ftp_save_sync_service_button.setFixedWidth(140)
 
-        self.disable_ftp_save_sync_service_button = QPushButton("Disable Service")
+        self.disable_ftp_save_sync_service_button = QPushButton(tr("scripts_tab.disable_service"))
         self.disable_ftp_save_sync_service_button.setFixedWidth(140)
 
-        self.remove_ftp_save_sync_config_button = QPushButton("Remove Config")
+        self.remove_ftp_save_sync_config_button = QPushButton(tr("scripts_tab.remove_config"))
         self.remove_ftp_save_sync_config_button.setFixedWidth(140)
 
-        self.uninstall_ftp_save_sync_button = QPushButton("Uninstall")
+        self.uninstall_ftp_save_sync_button = QPushButton(tr("scripts_tab.uninstall"))
         self.uninstall_ftp_save_sync_button.setFixedWidth(140)
 
         layout.addLayout(
@@ -579,10 +585,10 @@ class ScriptsTab(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
 
-        self.install_static_wallpaper_button = QPushButton("Install")
+        self.install_static_wallpaper_button = QPushButton(tr("scripts_tab.install"))
         self.install_static_wallpaper_button.setFixedWidth(150)
 
-        self.uninstall_static_wallpaper_button = QPushButton("Uninstall")
+        self.uninstall_static_wallpaper_button = QPushButton(tr("scripts_tab.uninstall"))
         self.uninstall_static_wallpaper_button.setFixedWidth(150)
 
         layout.addLayout(
@@ -625,8 +631,8 @@ class ScriptsTab(QWidget):
     def update_details_panel(self):
         script_key = self.selected_script_key
         if not script_key:
-            self.script_name_label.setText("Select a script")
-            self.script_status_label.setText("Status: Unknown")
+            self.script_name_label.setText(tr("scripts_tab.select_script"))
+            self.script_status_label.setText(tr("scripts_tab.status_unknown_full"))
             self.script_status_label.setStyleSheet("color: gray;")
             self.script_description_label.setText("")
             for widget in self.script_action_widgets.values():
@@ -636,8 +642,8 @@ class ScriptsTab(QWidget):
         self.script_name_label.setText(self.script_titles.get(script_key, script_key))
         self.script_description_label.setText(self.script_descriptions.get(script_key, ""))
 
-        status_text = self.script_status_texts.get(script_key, "Unknown")
-        self.script_status_label.setText(f"Status: {status_text}")
+        status_text = self.script_status_texts.get(script_key, tr("common.unknown"))
+        self.script_status_label.setText(tr("scripts_tab.status_label", status=status_text))
 
         lowered = status_text.lower()
         if "installed" in lowered and "not" not in lowered and "disabled" not in lowered:
@@ -666,7 +672,7 @@ class ScriptsTab(QWidget):
             item = self.script_list.item(index)
             script_key = item.data(Qt.ItemDataRole.UserRole)
             title = self.script_titles.get(script_key, script_key)
-            status = self.script_status_texts.get(script_key, "Unknown")
+            status = self.script_status_texts.get(script_key, tr("common.unknown"))
             item.setText(f"{title}    {status}")
 
     def update_connection_state(self):
@@ -680,9 +686,6 @@ class ScriptsTab(QWidget):
             return
 
         self.open_scripts_folder_button.setEnabled(True)
-
-        # Leave detailed per-script button states untouched here.
-        # They are populated by refresh_status() when the tab is opened.
 
     def apply_disconnected_state(self):
         for button in [
@@ -719,14 +722,8 @@ class ScriptsTab(QWidget):
         ]:
             button.setEnabled(False)
 
-        self.script_status_texts[self.SCRIPT_UPDATE_ALL] = "Unknown"
-        self.script_status_texts[self.SCRIPT_ZAPAROO] = "Unknown"
-        self.script_status_texts[self.SCRIPT_MIGRATE_SD] = "Unknown"
-        self.script_status_texts[self.SCRIPT_CIFS] = "Unknown"
-        self.script_status_texts[self.SCRIPT_AUTO_TIME] = "Unknown"
-        self.script_status_texts[self.SCRIPT_DAV_BROWSER] = "Unknown"
-        self.script_status_texts[self.SCRIPT_FTP_SAVE_SYNC] = "Unknown"
-        self.script_status_texts[self.SCRIPT_STATIC_WALLPAPER] = "Unknown"
+        for key in self.script_status_texts:
+            self.script_status_texts[key] = tr("common.unknown")
 
         self.update_script_list_labels()
         self.update_details_panel()
@@ -747,154 +744,154 @@ class ScriptsTab(QWidget):
         self.update_all_initialized = status.update_all_initialized
 
         if status.update_all_installed:
-            self.script_status_texts[self.SCRIPT_UPDATE_ALL] = "✓ Installed"
+            self.script_status_texts[self.SCRIPT_UPDATE_ALL] = tr("scripts_tab.status_installed")
             self.install_update_button.setEnabled(False)
             self.uninstall_update_button.setEnabled(True)
             self.run_update_button.setEnabled(True)
             self.configure_update_button.setEnabled(True)
             self.update_all_initialized = status.update_all_initialized
         else:
-            self.script_status_texts[self.SCRIPT_UPDATE_ALL] = "✗ Not installed"
+            self.script_status_texts[self.SCRIPT_UPDATE_ALL] = tr("scripts_tab.status_not_installed")
             self.install_update_button.setEnabled(True)
             self.uninstall_update_button.setEnabled(False)
             self.run_update_button.setEnabled(False)
             self.configure_update_button.setEnabled(False)
 
         if not status.zaparoo_installed:
-            self.script_status_texts[self.SCRIPT_ZAPAROO] = "✗ Not installed"
+            self.script_status_texts[self.SCRIPT_ZAPAROO] = tr("scripts_tab.status_not_installed")
             self.install_zaparoo_button.setEnabled(True)
             self.enable_zaparoo_service_button.setEnabled(False)
             self.uninstall_zaparoo_button.setEnabled(False)
         elif status.zaparoo_installed and not status.zaparoo_service_enabled:
-            self.script_status_texts[self.SCRIPT_ZAPAROO] = "⚙ Installed, service disabled"
+            self.script_status_texts[self.SCRIPT_ZAPAROO] = tr("scripts_tab.status_installed_service_disabled")
             self.install_zaparoo_button.setEnabled(False)
             self.enable_zaparoo_service_button.setEnabled(True)
             self.uninstall_zaparoo_button.setEnabled(True)
         else:
-            self.script_status_texts[self.SCRIPT_ZAPAROO] = "✓ Installed"
+            self.script_status_texts[self.SCRIPT_ZAPAROO] = tr("scripts_tab.status_installed")
             self.install_zaparoo_button.setEnabled(False)
             self.enable_zaparoo_service_button.setEnabled(False)
             self.uninstall_zaparoo_button.setEnabled(True)
 
         if status.migrate_sd_installed:
-            self.script_status_texts[self.SCRIPT_MIGRATE_SD] = "✓ Installed"
+            self.script_status_texts[self.SCRIPT_MIGRATE_SD] = tr("scripts_tab.status_installed")
             self.install_migrate_button.setEnabled(False)
             self.uninstall_migrate_button.setEnabled(True)
         else:
-            self.script_status_texts[self.SCRIPT_MIGRATE_SD] = "✗ Not installed"
+            self.script_status_texts[self.SCRIPT_MIGRATE_SD] = tr("scripts_tab.status_not_installed")
             self.install_migrate_button.setEnabled(True)
             self.uninstall_migrate_button.setEnabled(False)
 
         if not status.cifs_installed:
-            self.script_status_texts[self.SCRIPT_CIFS] = "✗ Not installed"
+            self.script_status_texts[self.SCRIPT_CIFS] = tr("scripts_tab.status_not_installed")
             self.install_cifs_button.setEnabled(True)
             self.configure_cifs_button.setEnabled(False)
-            self.configure_cifs_button.setText("Configure")
+            self.configure_cifs_button.setText(tr("scripts_tab.configure"))
             self.mount_cifs_button.setEnabled(False)
             self.unmount_cifs_button.setEnabled(False)
             self.remove_cifs_config_button.setEnabled(False)
             self.uninstall_cifs_button.setEnabled(False)
         elif status.cifs_installed and not status.cifs_configured:
-            self.script_status_texts[self.SCRIPT_CIFS] = "⚙ Installed, not configured"
+            self.script_status_texts[self.SCRIPT_CIFS] = tr("scripts_tab.status_installed_not_configured")
             self.install_cifs_button.setEnabled(False)
             self.configure_cifs_button.setEnabled(True)
-            self.configure_cifs_button.setText("Configure")
+            self.configure_cifs_button.setText(tr("scripts_tab.configure"))
             self.mount_cifs_button.setEnabled(False)
             self.unmount_cifs_button.setEnabled(False)
             self.remove_cifs_config_button.setEnabled(False)
             self.uninstall_cifs_button.setEnabled(True)
         else:
-            self.script_status_texts[self.SCRIPT_CIFS] = "✓ Configured"
+            self.script_status_texts[self.SCRIPT_CIFS] = tr("scripts_tab.status_configured")
             self.install_cifs_button.setEnabled(False)
             self.configure_cifs_button.setEnabled(True)
-            self.configure_cifs_button.setText("Reconfigure")
+            self.configure_cifs_button.setText(tr("scripts_tab.reconfigure"))
             self.mount_cifs_button.setEnabled(True)
             self.unmount_cifs_button.setEnabled(True)
             self.remove_cifs_config_button.setEnabled(True)
             self.uninstall_cifs_button.setEnabled(True)
 
         if status.auto_time_installed:
-            self.script_status_texts[self.SCRIPT_AUTO_TIME] = "✓ Installed"
+            self.script_status_texts[self.SCRIPT_AUTO_TIME] = tr("scripts_tab.status_installed")
             self.install_auto_time_button.setEnabled(False)
             self.uninstall_auto_time_button.setEnabled(True)
         else:
-            self.script_status_texts[self.SCRIPT_AUTO_TIME] = "✗ Not installed"
+            self.script_status_texts[self.SCRIPT_AUTO_TIME] = tr("scripts_tab.status_not_installed")
             self.install_auto_time_button.setEnabled(True)
             self.uninstall_auto_time_button.setEnabled(False)
 
         if not status.dav_browser_installed:
-            self.script_status_texts[self.SCRIPT_DAV_BROWSER] = "✗ Not installed"
+            self.script_status_texts[self.SCRIPT_DAV_BROWSER] = tr("scripts_tab.status_not_installed")
             self.install_dav_browser_button.setEnabled(True)
             self.configure_dav_browser_button.setEnabled(False)
-            self.configure_dav_browser_button.setText("Configure")
+            self.configure_dav_browser_button.setText(tr("scripts_tab.configure"))
             self.remove_dav_browser_config_button.setEnabled(False)
             self.uninstall_dav_browser_button.setEnabled(False)
         elif status.dav_browser_installed and not status.dav_browser_configured:
-            self.script_status_texts[self.SCRIPT_DAV_BROWSER] = "⚙ Installed, not configured"
+            self.script_status_texts[self.SCRIPT_DAV_BROWSER] = tr("scripts_tab.status_installed_not_configured")
             self.install_dav_browser_button.setEnabled(False)
             self.configure_dav_browser_button.setEnabled(True)
-            self.configure_dav_browser_button.setText("Configure")
+            self.configure_dav_browser_button.setText(tr("scripts_tab.configure"))
             self.remove_dav_browser_config_button.setEnabled(False)
             self.uninstall_dav_browser_button.setEnabled(True)
         else:
-            self.script_status_texts[self.SCRIPT_DAV_BROWSER] = "✓ Configured"
+            self.script_status_texts[self.SCRIPT_DAV_BROWSER] = tr("scripts_tab.status_configured")
             self.install_dav_browser_button.setEnabled(False)
             self.configure_dav_browser_button.setEnabled(True)
-            self.configure_dav_browser_button.setText("Reconfigure")
+            self.configure_dav_browser_button.setText(tr("scripts_tab.reconfigure"))
             self.remove_dav_browser_config_button.setEnabled(True)
             self.uninstall_dav_browser_button.setEnabled(True)
 
         if not status.ftp_save_sync_installed:
-            self.script_status_texts[self.SCRIPT_FTP_SAVE_SYNC] = "✗ Not installed"
+            self.script_status_texts[self.SCRIPT_FTP_SAVE_SYNC] = tr("scripts_tab.status_not_installed")
             self.install_ftp_save_sync_button.setEnabled(True)
             self.configure_ftp_save_sync_button.setEnabled(False)
-            self.configure_ftp_save_sync_button.setText("Configure")
+            self.configure_ftp_save_sync_button.setText(tr("scripts_tab.configure"))
             self.enable_ftp_save_sync_service_button.setEnabled(False)
             self.disable_ftp_save_sync_service_button.setEnabled(False)
             self.remove_ftp_save_sync_config_button.setEnabled(False)
             self.uninstall_ftp_save_sync_button.setEnabled(False)
         elif status.ftp_save_sync_installed and not status.ftp_save_sync_configured:
-            self.script_status_texts[self.SCRIPT_FTP_SAVE_SYNC] = "⚙ Installed, not configured"
+            self.script_status_texts[self.SCRIPT_FTP_SAVE_SYNC] = tr("scripts_tab.status_installed_not_configured")
             self.install_ftp_save_sync_button.setEnabled(False)
             self.configure_ftp_save_sync_button.setEnabled(True)
-            self.configure_ftp_save_sync_button.setText("Configure")
+            self.configure_ftp_save_sync_button.setText(tr("scripts_tab.configure"))
             self.enable_ftp_save_sync_service_button.setEnabled(False)
             self.disable_ftp_save_sync_service_button.setEnabled(False)
             self.remove_ftp_save_sync_config_button.setEnabled(False)
             self.uninstall_ftp_save_sync_button.setEnabled(True)
         elif status.ftp_save_sync_installed and status.ftp_save_sync_configured and not status.ftp_save_sync_service_enabled:
-            self.script_status_texts[self.SCRIPT_FTP_SAVE_SYNC] = "⚙ Configured, service disabled"
+            self.script_status_texts[self.SCRIPT_FTP_SAVE_SYNC] = tr("scripts_tab.status_configured_service_disabled")
             self.install_ftp_save_sync_button.setEnabled(False)
             self.configure_ftp_save_sync_button.setEnabled(True)
-            self.configure_ftp_save_sync_button.setText("Reconfigure")
+            self.configure_ftp_save_sync_button.setText(tr("scripts_tab.reconfigure"))
             self.enable_ftp_save_sync_service_button.setEnabled(True)
             self.disable_ftp_save_sync_service_button.setEnabled(False)
             self.remove_ftp_save_sync_config_button.setEnabled(True)
             self.uninstall_ftp_save_sync_button.setEnabled(True)
         else:
-            self.script_status_texts[self.SCRIPT_FTP_SAVE_SYNC] = "✓ Configured, service enabled"
+            self.script_status_texts[self.SCRIPT_FTP_SAVE_SYNC] = tr("scripts_tab.status_configured_service_enabled")
             self.install_ftp_save_sync_button.setEnabled(False)
             self.configure_ftp_save_sync_button.setEnabled(True)
-            self.configure_ftp_save_sync_button.setText("Reconfigure")
+            self.configure_ftp_save_sync_button.setText(tr("scripts_tab.reconfigure"))
             self.enable_ftp_save_sync_service_button.setEnabled(False)
             self.disable_ftp_save_sync_service_button.setEnabled(True)
             self.remove_ftp_save_sync_config_button.setEnabled(True)
             self.uninstall_ftp_save_sync_button.setEnabled(True)
 
         if not status.static_wallpaper_installed:
-            self.script_status_texts[self.SCRIPT_STATIC_WALLPAPER] = "✗ Not installed"
+            self.script_status_texts[self.SCRIPT_STATIC_WALLPAPER] = tr("scripts_tab.status_not_installed")
             self.install_static_wallpaper_button.setEnabled(True)
             self.uninstall_static_wallpaper_button.setEnabled(False)
         elif status.static_wallpaper_active:
-            self.script_status_texts[self.SCRIPT_STATIC_WALLPAPER] = "✓ Installed, wallpaper active"
+            self.script_status_texts[self.SCRIPT_STATIC_WALLPAPER] = tr("scripts_tab.status_installed_wallpaper_active")
             self.install_static_wallpaper_button.setEnabled(False)
             self.uninstall_static_wallpaper_button.setEnabled(True)
         elif status.static_wallpaper_saved:
-            self.script_status_texts[self.SCRIPT_STATIC_WALLPAPER] = "⚙ Installed, selection saved"
+            self.script_status_texts[self.SCRIPT_STATIC_WALLPAPER] = tr("scripts_tab.status_installed_selection_saved")
             self.install_static_wallpaper_button.setEnabled(False)
             self.uninstall_static_wallpaper_button.setEnabled(True)
         else:
-            self.script_status_texts[self.SCRIPT_STATIC_WALLPAPER] = "✓ Installed"
+            self.script_status_texts[self.SCRIPT_STATIC_WALLPAPER] = tr("scripts_tab.status_installed")
             self.install_static_wallpaper_button.setEnabled(False)
             self.uninstall_static_wallpaper_button.setEnabled(True)
 
@@ -926,7 +923,11 @@ class ScriptsTab(QWidget):
 
     def start_worker(self, task_fn, success_message=""):
         if self.current_worker is not None and self.current_worker.isRunning():
-            QMessageBox.warning(self, "Busy", "Another script task is still running.")
+            QMessageBox.warning(
+                self,
+                tr("scripts_tab.busy_title"),
+                tr("scripts_tab.another_task_running"),
+            )
             return
 
         self.show_console()
@@ -942,11 +943,11 @@ class ScriptsTab(QWidget):
 
     def on_worker_success(self, message):
         if message:
-            QMessageBox.information(self, "Done", message)
+            QMessageBox.information(self, tr("scripts_tab.done_title"), message)
 
     def on_worker_error(self, message):
-        self.log(f"\nERROR:\n{message}\n")
-        QMessageBox.critical(self, "Error", message.split("\n\n", 1)[0])
+        self.log(tr("scripts_tab.error_log", message=message))
+        QMessageBox.critical(self, tr("common.error"), message.split("\n\n", 1)[0])
 
     def on_worker_result(self, result):
         if not result:
@@ -980,7 +981,7 @@ class ScriptsTab(QWidget):
         def task(log):
             install_update_all(self.connection, log)
 
-        self.start_worker(task, "update_all installed successfully.")
+        self.start_worker(task, tr("scripts_tab.update_all_installed_success"))
 
     def uninstall_update_all(self):
         if not self.connection.is_connected():
@@ -988,8 +989,8 @@ class ScriptsTab(QWidget):
 
         confirm = QMessageBox.question(
             self,
-            "Uninstall update_all",
-            "Are you sure you want to remove update_all?",
+            tr("scripts_tab.uninstall_update_all_title"),
+            tr("scripts_tab.uninstall_update_all_confirm"),
         )
         if confirm != QMessageBox.StandardButton.Yes:
             return
@@ -999,14 +1000,18 @@ class ScriptsTab(QWidget):
 
     def configure_update_all(self):
         if not self.connection.is_connected():
-            QMessageBox.critical(self, "Error", "Connect to a MiSTer first.")
+            QMessageBox.critical(
+                self,
+                tr("common.error"),
+                tr("device_tab.not_connected_message"),
+            )
             return
 
         if not self.update_all_installed:
             QMessageBox.critical(
                 self,
-                "update_all not installed",
-                "Install update_all first before opening the configurator.",
+                tr("scripts_tab.update_all_not_installed_title"),
+                tr("scripts_tab.update_all_not_installed_message"),
             )
             return
 
@@ -1016,8 +1021,8 @@ class ScriptsTab(QWidget):
         except Exception as e:
             QMessageBox.critical(
                 self,
-                "update_all configuration error",
-                f"Could not prepare update_all configuration files.\n\n{e}",
+                tr("scripts_tab.update_all_config_error_title"),
+                tr("scripts_tab.update_all_config_error_message", error=e),
             )
             return
 
@@ -1032,22 +1037,14 @@ class ScriptsTab(QWidget):
         if not self.main_window.config_data.get("hide_update_all_warning", False):
             msg = QMessageBox(self)
             msg.setIcon(QMessageBox.Icon.Question)
-            msg.setWindowTitle("Run update_all")
-            msg.setText(
-                "update_all will run through SSH.\n\n"
-                "The output will NOT appear on the MiSTer TV screen.\n"
-                "It will only be visible inside MiSTer Companion.\n\n"
-                "If you want the output to appear on the TV screen, run update_all from:\n"
-                "• ZapScripts in MiSTer Companion\n"
-                "• The Scripts menu on the MiSTer itself\n\n"
-                "Continue?"
-            )
+            msg.setWindowTitle(tr("scripts_tab.run_update_all_title"))
+            msg.setText(tr("scripts_tab.run_update_all_warning"))
             msg.setStandardButtons(
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
             )
             msg.setDefaultButton(QMessageBox.StandardButton.Yes)
 
-            dont_show_checkbox = QCheckBox("Don't show this again")
+            dont_show_checkbox = QCheckBox(tr("scripts_tab.dont_show_again"))
             msg.setCheckBox(dont_show_checkbox)
 
             msg.exec()
@@ -1062,9 +1059,9 @@ class ScriptsTab(QWidget):
         def task(log):
             import time
 
-            log("Running update_all...\n\n")
+            log(tr("scripts_tab.log_running_update_all"))
             run_update_all_stream(self.connection, log)
-            log("\nupdate_all finished.\n")
+            log(tr("scripts_tab.log_update_all_finished"))
 
             time.sleep(7)
 
@@ -1078,12 +1075,12 @@ class ScriptsTab(QWidget):
                 still_connected = False
 
             if still_connected:
-                log("No reboot detected.\n")
+                log(tr("scripts_tab.log_no_reboot_detected"))
                 return {"action": "completed"}
 
             self.connection.mark_disconnected()
-            log("MiSTer disconnected after update_all, likely due to reboot.\n")
-            log("Starting automatic reconnect...\n")
+            log(tr("scripts_tab.log_mister_disconnected_after_update_all"))
+            log(tr("scripts_tab.log_starting_auto_reconnect"))
             return {"action": "reboot_reconnect"}
 
         self.start_worker(task)
@@ -1095,10 +1092,7 @@ class ScriptsTab(QWidget):
         def task(log):
             install_zaparoo(self.connection, log)
 
-        self.start_worker(
-            task,
-            "Zaparoo has been installed successfully.\n\nNext step:\nClick 'Enable Zaparoo Service' to start Zaparoo automatically at boot.",
-        )
+        self.start_worker(task, tr("scripts_tab.zaparoo_installed_success"))
 
     def enable_zaparoo_service(self):
         if not self.connection.is_connected():
@@ -1106,8 +1100,8 @@ class ScriptsTab(QWidget):
 
         confirm = QMessageBox.question(
             self,
-            "Enable Zaparoo Service",
-            "This will enable the Zaparoo service so it starts automatically on boot.\n\nContinue?",
+            tr("scripts_tab.enable_zaparoo_service_title"),
+            tr("scripts_tab.enable_zaparoo_service_confirm"),
         )
         if confirm != QMessageBox.StandardButton.Yes:
             return
@@ -1116,12 +1110,12 @@ class ScriptsTab(QWidget):
             enable_zaparoo_service(self.connection)
             QMessageBox.information(
                 self,
-                "Zaparoo Enabled",
-                "Zaparoo service enabled.\n\nPlease reboot your MiSTer.",
+                tr("scripts_tab.zaparoo_enabled_title"),
+                tr("scripts_tab.zaparoo_enabled_message"),
             )
             self.refresh_status()
         except Exception as e:
-            QMessageBox.critical(self, "Error", str(e))
+            QMessageBox.critical(self, tr("common.error"), str(e))
 
     def uninstall_zaparoo(self):
         if not self.connection.is_connected():
@@ -1129,8 +1123,8 @@ class ScriptsTab(QWidget):
 
         confirm = QMessageBox.question(
             self,
-            "Uninstall Zaparoo",
-            "Are you sure you want to remove Zaparoo?",
+            tr("scripts_tab.uninstall_zaparoo_title"),
+            tr("scripts_tab.uninstall_zaparoo_confirm"),
         )
         if confirm != QMessageBox.StandardButton.Yes:
             return
@@ -1144,13 +1138,8 @@ class ScriptsTab(QWidget):
 
         proceed = QMessageBox.question(
             self,
-            "Install migrate_sd",
-            "This tool installs the 'migrate_sd' script on your MiSTer.\n\n"
-            "Important:\n"
-            "The migration process MUST be started directly on the MiSTer\n"
-            "from the Scripts menu.\n\n"
-            "Or run it from the ZapScripts tab.\n\n"
-            "Install the script now?",
+            tr("scripts_tab.install_migrate_sd_title"),
+            tr("scripts_tab.install_migrate_sd_message"),
         )
         if proceed != QMessageBox.StandardButton.Yes:
             return
@@ -1158,7 +1147,7 @@ class ScriptsTab(QWidget):
         def task(log):
             install_migrate_sd(self.connection, log)
 
-        self.start_worker(task, "migrate_sd installed successfully.")
+        self.start_worker(task, tr("scripts_tab.migrate_sd_installed_success"))
 
     def uninstall_migrate_sd(self):
         if not self.connection.is_connected():
@@ -1166,8 +1155,8 @@ class ScriptsTab(QWidget):
 
         confirm = QMessageBox.question(
             self,
-            "Uninstall migrate_sd",
-            "Are you sure you want to remove migrate_sd?",
+            tr("scripts_tab.uninstall_migrate_sd_title"),
+            tr("scripts_tab.uninstall_migrate_sd_confirm"),
         )
         if confirm != QMessageBox.StandardButton.Yes:
             return
@@ -1175,7 +1164,7 @@ class ScriptsTab(QWidget):
         uninstall_migrate_sd(self.connection)
         self.show_console()
         self.clear_console()
-        self.log("migrate_sd removed.\n")
+        self.log(tr("scripts_tab.log_migrate_sd_removed"))
         self.refresh_status()
 
     def install_cifs_mount(self):
@@ -1185,7 +1174,7 @@ class ScriptsTab(QWidget):
         def task(log):
             install_cifs_mount(self.connection, log)
 
-        self.start_worker(task, "CIFS scripts installed successfully.")
+        self.start_worker(task, tr("scripts_tab.cifs_installed_success"))
 
     def configure_cifs(self):
         if not self.connection.is_connected():
@@ -1200,14 +1189,22 @@ class ScriptsTab(QWidget):
             return
 
         result = run_cifs_mount(self.connection)
-        QMessageBox.information(self, "Mount", result or "Mount command sent.")
+        QMessageBox.information(
+            self,
+            tr("scripts_tab.mount"),
+            result or tr("scripts_tab.mount_command_sent"),
+        )
 
     def run_cifs_umount(self):
         if not self.connection.is_connected():
             return
 
         result = run_cifs_umount(self.connection)
-        QMessageBox.information(self, "Unmount", result or "Unmount command sent.")
+        QMessageBox.information(
+            self,
+            tr("scripts_tab.unmount"),
+            result or tr("scripts_tab.unmount_command_sent"),
+        )
 
     def remove_cifs_config(self):
         if not self.connection.is_connected():
@@ -1215,8 +1212,8 @@ class ScriptsTab(QWidget):
 
         confirm = QMessageBox.question(
             self,
-            "Remove Config",
-            "Delete CIFS configuration?",
+            tr("scripts_tab.remove_config"),
+            tr("scripts_tab.delete_cifs_config_confirm"),
         )
         if confirm != QMessageBox.StandardButton.Yes:
             return
@@ -1228,7 +1225,11 @@ class ScriptsTab(QWidget):
         if not self.connection.is_connected():
             return
 
-        confirm = QMessageBox.question(self, "Uninstall", "Remove CIFS scripts?")
+        confirm = QMessageBox.question(
+            self,
+            tr("scripts_tab.uninstall"),
+            tr("scripts_tab.remove_cifs_scripts_confirm"),
+        )
         if confirm != QMessageBox.StandardButton.Yes:
             return
 
@@ -1242,10 +1243,7 @@ class ScriptsTab(QWidget):
         def task(log):
             install_auto_time(self.connection, log)
 
-        self.start_worker(
-            task,
-            "Script installed successfully.\n\nYou can run it from the MiSTer Scripts menu or from the ZapScripts tab in MiSTer Companion.",
-        )
+        self.start_worker(task, tr("scripts_tab.generic_script_installed_success"))
 
     def uninstall_auto_time(self):
         if not self.connection.is_connected():
@@ -1253,8 +1251,8 @@ class ScriptsTab(QWidget):
 
         confirm = QMessageBox.question(
             self,
-            "Uninstall Auto Time",
-            "Are you sure you want to remove Auto Time?",
+            tr("scripts_tab.uninstall_auto_time_title"),
+            tr("scripts_tab.uninstall_auto_time_confirm"),
         )
         if confirm != QMessageBox.StandardButton.Yes:
             return
@@ -1269,10 +1267,7 @@ class ScriptsTab(QWidget):
         def task(log):
             install_dav_browser(self.connection, log)
 
-        self.start_worker(
-            task,
-            "Script installed successfully.\n\nYou can run it from the MiSTer Scripts menu or from the ZapScripts tab in MiSTer Companion.",
-        )
+        self.start_worker(task, tr("scripts_tab.generic_script_installed_success"))
 
     def configure_dav_browser(self):
         if not self.connection.is_connected():
@@ -1288,8 +1283,8 @@ class ScriptsTab(QWidget):
 
         confirm = QMessageBox.question(
             self,
-            "Remove Config",
-            "Delete DAV Browser configuration?",
+            tr("scripts_tab.remove_config"),
+            tr("scripts_tab.delete_dav_browser_config_confirm"),
         )
         if confirm != QMessageBox.StandardButton.Yes:
             return
@@ -1303,8 +1298,8 @@ class ScriptsTab(QWidget):
 
         confirm = QMessageBox.question(
             self,
-            "Uninstall DAV Browser",
-            "Are you sure you want to remove DAV Browser?",
+            tr("scripts_tab.uninstall_dav_browser_title"),
+            tr("scripts_tab.uninstall_dav_browser_confirm"),
         )
         if confirm != QMessageBox.StandardButton.Yes:
             return
@@ -1319,7 +1314,7 @@ class ScriptsTab(QWidget):
         def task(log):
             install_ftp_save_sync(self.connection, log)
 
-        self.start_worker(task, "ftp_save_sync installed successfully.")
+        self.start_worker(task, tr("scripts_tab.ftp_save_sync_installed_success"))
 
     def configure_ftp_save_sync(self):
         if not self.connection.is_connected():
@@ -1335,8 +1330,8 @@ class ScriptsTab(QWidget):
 
         confirm = QMessageBox.question(
             self,
-            "Enable ftp_save_sync Service",
-            "This will enable ftp_save_sync to start automatically on boot.\n\nContinue?",
+            tr("scripts_tab.enable_ftp_save_sync_service_title"),
+            tr("scripts_tab.enable_ftp_save_sync_service_confirm"),
         )
         if confirm != QMessageBox.StandardButton.Yes:
             return
@@ -1345,12 +1340,12 @@ class ScriptsTab(QWidget):
             enable_ftp_save_sync_service(self.connection)
             QMessageBox.information(
                 self,
-                "ftp_save_sync Enabled",
-                "ftp_save_sync service enabled.\n\nPlease reboot your MiSTer.",
+                tr("scripts_tab.ftp_save_sync_enabled_title"),
+                tr("scripts_tab.ftp_save_sync_enabled_message"),
             )
             self.refresh_status()
         except Exception as e:
-            QMessageBox.critical(self, "Error", str(e))
+            QMessageBox.critical(self, tr("common.error"), str(e))
 
     def disable_ftp_save_sync_service(self):
         if not self.connection.is_connected():
@@ -1358,8 +1353,8 @@ class ScriptsTab(QWidget):
 
         confirm = QMessageBox.question(
             self,
-            "Disable ftp_save_sync Service",
-            "This will remove the ftp_save_sync startup entry from user-startup.sh.\n\nContinue?",
+            tr("scripts_tab.disable_ftp_save_sync_service_title"),
+            tr("scripts_tab.disable_ftp_save_sync_service_confirm"),
         )
         if confirm != QMessageBox.StandardButton.Yes:
             return
@@ -1368,12 +1363,12 @@ class ScriptsTab(QWidget):
             disable_ftp_save_sync_service(self.connection)
             QMessageBox.information(
                 self,
-                "ftp_save_sync Disabled",
-                "ftp_save_sync service disabled.",
+                tr("scripts_tab.ftp_save_sync_disabled_title"),
+                tr("scripts_tab.ftp_save_sync_disabled_message"),
             )
             self.refresh_status()
         except Exception as e:
-            QMessageBox.critical(self, "Error", str(e))
+            QMessageBox.critical(self, tr("common.error"), str(e))
 
     def remove_ftp_save_sync_config(self):
         if not self.connection.is_connected():
@@ -1381,8 +1376,8 @@ class ScriptsTab(QWidget):
 
         confirm = QMessageBox.question(
             self,
-            "Remove Config",
-            "Delete ftp_save_sync configuration?",
+            tr("scripts_tab.remove_config"),
+            tr("scripts_tab.delete_ftp_save_sync_config_confirm"),
         )
         if confirm != QMessageBox.StandardButton.Yes:
             return
@@ -1396,8 +1391,8 @@ class ScriptsTab(QWidget):
 
         confirm = QMessageBox.question(
             self,
-            "Uninstall ftp_save_sync",
-            "This will uninstall ftp_save_sync, remove its config folder, and disable its startup service.\n\nContinue?",
+            tr("scripts_tab.uninstall_ftp_save_sync_title"),
+            tr("scripts_tab.uninstall_ftp_save_sync_confirm"),
         )
         if confirm != QMessageBox.StandardButton.Yes:
             return
@@ -1412,7 +1407,7 @@ class ScriptsTab(QWidget):
         def task(log):
             install_static_wallpaper(self.connection, log)
 
-        self.start_worker(task, "static_wallpaper installed successfully.")
+        self.start_worker(task, tr("scripts_tab.static_wallpaper_installed_success"))
 
     def uninstall_static_wallpaper(self):
         if not self.connection.is_connected():
@@ -1420,8 +1415,8 @@ class ScriptsTab(QWidget):
 
         confirm = QMessageBox.question(
             self,
-            "Uninstall static_wallpaper",
-            "This will uninstall static_wallpaper, remove its config folder, remove menu.jpg/menu.png, and disable the current static wallpaper.\n\nContinue?",
+            tr("scripts_tab.uninstall_static_wallpaper_title"),
+            tr("scripts_tab.uninstall_static_wallpaper_confirm"),
         )
         if confirm != QMessageBox.StandardButton.Yes:
             return
@@ -1430,20 +1425,20 @@ class ScriptsTab(QWidget):
             uninstall_static_wallpaper(self.connection)
             QMessageBox.information(
                 self,
-                "static_wallpaper Removed",
-                "static_wallpaper has been removed.",
+                tr("scripts_tab.static_wallpaper_removed_title"),
+                tr("scripts_tab.static_wallpaper_removed_message"),
             )
             self.refresh_status()
         except Exception as e:
-            QMessageBox.critical(self, "Error", str(e))
+            QMessageBox.critical(self, tr("common.error"), str(e))
 
     def open_scripts_folder(self):
         host = self.connection.host
         if not host:
             QMessageBox.warning(
                 self,
-                "Open Scripts Folder",
-                "No MiSTer IP address is available.",
+                tr("scripts_tab.open_scripts_folder"),
+                tr("device_tab.no_mister_ip"),
             )
             return
 
@@ -1454,4 +1449,4 @@ class ScriptsTab(QWidget):
                 password=self.connection.password,
             )
         except Exception as e:
-            QMessageBox.critical(self, "Error", str(e))
+            QMessageBox.critical(self, tr("common.error"), str(e))

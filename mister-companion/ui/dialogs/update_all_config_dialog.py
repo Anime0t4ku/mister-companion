@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from core.language import tr
 from core.retroaccount import (
     get_retroaccount_status,
     poll_retroaccount_login,
@@ -39,7 +40,7 @@ class UpdateAllConfigDialog(QDialog):
         self.retro_countdown_timer.setInterval(1000)
         self.retro_countdown_timer.timeout.connect(self.on_retro_countdown_timeout)
 
-        self.setWindowTitle("Update_All Configuration")
+        self.setWindowTitle(tr("update_all_config_dialog.window_title"))
         self.resize(900, 850)
         self.setMinimumSize(760, 500)
 
@@ -52,7 +53,7 @@ class UpdateAllConfigDialog(QDialog):
         outer.setContentsMargins(12, 12, 12, 12)
         outer.setSpacing(10)
 
-        title = QLabel("Update_All Configuration")
+        title = QLabel(tr("update_all_config_dialog.title"))
         title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         title.setStyleSheet("font-weight: bold; font-size: 16px;")
         outer.addWidget(title)
@@ -80,42 +81,39 @@ class UpdateAllConfigDialog(QDialog):
         columns_layout.addLayout(self.left_column_layout, 3)
         columns_layout.addLayout(self.right_column_layout, 2)
 
-        # ===== Main Cores =====
-        main_group = self._group("Main Cores", self.left_column_layout)
-        self.main_cores_check = QCheckBox("Enable Main Cores")
+        main_group = self._group(tr("update_all_config_dialog.main_cores"), self.left_column_layout)
+        self.main_cores_check = QCheckBox(tr("update_all_config_dialog.enable_main_cores"))
         self.main_source_combo = QComboBox()
         self.main_source_combo.addItems([
-            "MiSTer-devel (Recommended)",
-            "DB9 / SNAC8 forks with ENCC",
-            "AitorGomez fork",
+            tr("update_all_config_dialog.main_source_mister_devel"),
+            tr("update_all_config_dialog.main_source_db9_snac8"),
+            tr("update_all_config_dialog.main_source_aitorgomez"),
         ])
         self._add(main_group, self.main_cores_check)
 
         row = QHBoxLayout()
         row.addSpacing(20)
-        row.addWidget(QLabel("Source:"))
+        row.addWidget(QLabel(tr("update_all_config_dialog.source_label")))
         row.addWidget(self.main_source_combo)
         row.addStretch()
         main_group.layout().addLayout(row)
 
-        # ===== JTCores =====
-        jt_group = self._group("JTCores", self.left_column_layout)
-        self.jtcores_check = QCheckBox("Enable JTCores")
-        self.jt_beta_check = QCheckBox("Enable Beta Cores")
+        jt_group = self._group(tr("update_all_config_dialog.jtcores"), self.left_column_layout)
+        self.jtcores_check = QCheckBox(tr("update_all_config_dialog.enable_jtcores"))
+        self.jt_beta_check = QCheckBox(tr("update_all_config_dialog.enable_beta_cores"))
         self._add(jt_group, self.jtcores_check)
         self._add(jt_group, self.jt_beta_check, indent=True)
         self.jtcores_check.toggled.connect(self.update_jt_beta_state)
 
-        # ===== Other Cores =====
-        other_group = self._group("Other Cores", self.left_column_layout)
-        self.coinop_check = QCheckBox("Coin-Op Collection")
-        self.arcade_offset_check = QCheckBox("Arcade Offset Folder")
-        self.llapi_check = QCheckBox("LLAPI Forks Folder")
-        self.unofficial_check = QCheckBox("Unofficial Distribution")
-        self.yc_check = QCheckBox("Y/C Builds")
-        self.agg23_check = QCheckBox("agg23’s MiSTer Cores")
-        self.altcores_check = QCheckBox("Alt Cores")
-        self.dualram_check = QCheckBox("Dual RAM Console Cores")
+        other_group = self._group(tr("update_all_config_dialog.other_cores"), self.left_column_layout)
+        self.coinop_check = QCheckBox(tr("update_all_config_dialog.coinop_collection"))
+        self.arcade_offset_check = QCheckBox(tr("update_all_config_dialog.arcade_offset_folder"))
+        self.llapi_check = QCheckBox(tr("update_all_config_dialog.llapi_forks_folder"))
+        self.unofficial_check = QCheckBox(tr("update_all_config_dialog.unofficial_distribution"))
+        self.yc_check = QCheckBox(tr("update_all_config_dialog.yc_builds"))
+        self.agg23_check = QCheckBox(tr("update_all_config_dialog.agg23_cores"))
+        self.altcores_check = QCheckBox(tr("update_all_config_dialog.alt_cores"))
+        self.dualram_check = QCheckBox(tr("update_all_config_dialog.dual_ram_console_cores"))
 
         for widget in [
             self.coinop_check,
@@ -129,15 +127,14 @@ class UpdateAllConfigDialog(QDialog):
         ]:
             self._add(other_group, widget)
 
-        # ===== Tools & Scripts =====
-        tools_group = self._group("Tools & Scripts", self.left_column_layout)
-        self.arcade_org_check = QCheckBox("Arcade Organizer")
-        self.mrext_check = QCheckBox("MiSTer Extensions (Wizzo Scripts)")
-        self.sam_check = QCheckBox("MiSTer Super Attract Mode")
-        self.tty2oled_check = QCheckBox("tty2oled Add-on Script")
-        self.i2c2oled_check = QCheckBox("i2c2oled Add-on Script")
-        self.retrospy_check = QCheckBox("RetroSpy Utility")
-        self.anime0t4ku_mister_scripts_check = QCheckBox("Anime0t4ku MiSTer Scripts")
+        tools_group = self._group(tr("update_all_config_dialog.tools_scripts"), self.left_column_layout)
+        self.arcade_org_check = QCheckBox(tr("update_all_config_dialog.arcade_organizer"))
+        self.mrext_check = QCheckBox(tr("update_all_config_dialog.mister_extensions"))
+        self.sam_check = QCheckBox(tr("update_all_config_dialog.super_attract_mode"))
+        self.tty2oled_check = QCheckBox(tr("update_all_config_dialog.tty2oled"))
+        self.i2c2oled_check = QCheckBox(tr("update_all_config_dialog.i2c2oled"))
+        self.retrospy_check = QCheckBox(tr("update_all_config_dialog.retrospy"))
+        self.anime0t4ku_mister_scripts_check = QCheckBox(tr("update_all_config_dialog.anime0t4ku_mister_scripts"))
 
         for widget in [
             self.arcade_org_check,
@@ -150,20 +147,19 @@ class UpdateAllConfigDialog(QDialog):
         ]:
             self._add(tools_group, widget)
 
-        # ===== Extra Content =====
-        extra_group = self._group("Extra Content", self.left_column_layout)
-        self.bios_check = QCheckBox("BIOS Database")
-        self.arcade_roms_check = QCheckBox("Arcade ROMs Database")
-        self.bootroms_check = QCheckBox("Uberyoji Boot ROMs")
-        self.gba_borders_check = QCheckBox("Dinierto GBA Borders")
-        self.anime0t4ku_wallpapers_check = QCheckBox("Anime0t4ku Wallpapers")
-        self.pcn_challenge_wallpapers_check = QCheckBox("PCN Challenge Wallpapers")
-        self.ranny_wallpapers_check = QCheckBox("Ranny Snice Wallpapers")
+        extra_group = self._group(tr("update_all_config_dialog.extra_content"), self.left_column_layout)
+        self.bios_check = QCheckBox(tr("update_all_config_dialog.bios_database"))
+        self.arcade_roms_check = QCheckBox(tr("update_all_config_dialog.arcade_roms_database"))
+        self.bootroms_check = QCheckBox(tr("update_all_config_dialog.uberyoji_boot_roms"))
+        self.gba_borders_check = QCheckBox(tr("update_all_config_dialog.dinierto_gba_borders"))
+        self.anime0t4ku_wallpapers_check = QCheckBox(tr("update_all_config_dialog.anime0t4ku_wallpapers"))
+        self.pcn_challenge_wallpapers_check = QCheckBox(tr("update_all_config_dialog.pcn_challenge_wallpapers"))
+        self.ranny_wallpapers_check = QCheckBox(tr("update_all_config_dialog.ranny_snice_wallpapers"))
         self.ranny_wallpapers_source_combo = QComboBox()
         self.ranny_wallpapers_source_combo.addItems([
-            "16:9 Wallpapers",
-            "4:3 Wallpapers",
-            "All Wallpapers",
+            tr("update_all_config_dialog.wallpapers_169"),
+            tr("update_all_config_dialog.wallpapers_43"),
+            tr("update_all_config_dialog.wallpapers_all"),
         ])
 
         for widget in [
@@ -179,16 +175,15 @@ class UpdateAllConfigDialog(QDialog):
 
         wallpaper_row = QHBoxLayout()
         wallpaper_row.addSpacing(20)
-        wallpaper_row.addWidget(QLabel("Source:"))
+        wallpaper_row.addWidget(QLabel(tr("update_all_config_dialog.source_label")))
         wallpaper_row.addWidget(self.ranny_wallpapers_source_combo)
         wallpaper_row.addStretch()
         extra_group.layout().addLayout(wallpaper_row)
         self.ranny_wallpapers_check.toggled.connect(self.update_wallpaper_state)
 
-        # ===== Community Sources =====
-        community_group = self._group("Community Sources", self.left_column_layout)
-        self.insert_coin_check = QCheckBox("Insert-Coin")
-        self.pcn_premium_wallpapers_check = QCheckBox("PCN Premium Member Wallpapers")
+        community_group = self._group(tr("update_all_config_dialog.community_sources"), self.left_column_layout)
+        self.insert_coin_check = QCheckBox(tr("update_all_config_dialog.insert_coin"))
+        self.pcn_premium_wallpapers_check = QCheckBox(tr("update_all_config_dialog.pcn_premium_wallpapers"))
 
         for widget in [
             self.insert_coin_check,
@@ -196,10 +191,9 @@ class UpdateAllConfigDialog(QDialog):
         ]:
             self._add(community_group, widget)
 
-        # ===== RetroAccount =====
-        retro_group = self._group("RetroAccount", self.right_column_layout)
+        retro_group = self._group(tr("update_all_config_dialog.retroaccount"), self.right_column_layout)
 
-        self.retro_status_label = QLabel("Status: Not logged in")
+        self.retro_status_label = QLabel(tr("update_all_config_dialog.retro_status_not_logged_in"))
         self.retro_status_label.setStyleSheet("font-weight: bold;")
         retro_group.layout().addWidget(self.retro_status_label)
 
@@ -208,17 +202,14 @@ class UpdateAllConfigDialog(QDialog):
         retro_normal_layout.setContentsMargins(0, 0, 0, 0)
         retro_normal_layout.setSpacing(6)
 
-        self.retro_description_label = QLabel(
-            "Log in to this MiSTer device with your RetroAccount to enable "
-            "premium update_all features."
-        )
+        self.retro_description_label = QLabel(tr("update_all_config_dialog.retro_description"))
         self.retro_description_label.setWordWrap(True)
         retro_normal_layout.addWidget(self.retro_description_label)
 
-        self.retro_login_button = QPushButton("Login")
+        self.retro_login_button = QPushButton(tr("update_all_config_dialog.login"))
         retro_normal_layout.addWidget(self.retro_login_button)
 
-        self.retro_device_id_title_label = QLabel("Device ID:")
+        self.retro_device_id_title_label = QLabel(tr("update_all_config_dialog.device_id"))
         self.retro_device_id_title_label.setStyleSheet("font-weight: bold;")
         retro_normal_layout.addWidget(self.retro_device_id_title_label)
 
@@ -236,11 +227,13 @@ class UpdateAllConfigDialog(QDialog):
         retro_login_layout.setContentsMargins(0, 0, 0, 0)
         retro_login_layout.setSpacing(6)
 
-        self.retro_countdown_label = QLabel("Time remaining: 05:00")
+        self.retro_countdown_label = QLabel(
+            tr("update_all_config_dialog.time_remaining", time="05:00")
+        )
         self.retro_countdown_label.setStyleSheet("font-weight: bold;")
         retro_login_layout.addWidget(self.retro_countdown_label)
 
-        self.retro_code_title_label = QLabel("Code:")
+        self.retro_code_title_label = QLabel(tr("update_all_config_dialog.code"))
         self.retro_code_title_label.setStyleSheet("font-weight: bold;")
         retro_login_layout.addWidget(self.retro_code_title_label)
 
@@ -251,7 +244,7 @@ class UpdateAllConfigDialog(QDialog):
         )
         retro_login_layout.addWidget(self.retro_code_value_label)
 
-        self.retro_url_title_label = QLabel("Login URL:")
+        self.retro_url_title_label = QLabel(tr("update_all_config_dialog.login_url"))
         self.retro_url_title_label.setStyleSheet("font-weight: bold;")
         retro_login_layout.addWidget(self.retro_url_title_label)
 
@@ -262,16 +255,13 @@ class UpdateAllConfigDialog(QDialog):
         )
         retro_login_layout.addWidget(self.retro_url_value_label)
 
-        self.retro_login_info_label = QLabel(
-            "Your browser should open automatically. Finish the login flow on "
-            "RetroAccount. No further action is needed here unless the browser did not open."
-        )
+        self.retro_login_info_label = QLabel(tr("update_all_config_dialog.retro_login_info"))
         self.retro_login_info_label.setWordWrap(True)
         retro_login_layout.addWidget(self.retro_login_info_label)
 
         retro_button_row = QHBoxLayout()
-        self.retro_copy_url_button = QPushButton("Copy URL")
-        self.retro_cancel_button = QPushButton("Cancel")
+        self.retro_copy_url_button = QPushButton(tr("update_all_config_dialog.copy_url"))
+        self.retro_cancel_button = QPushButton(tr("common.cancel"))
         retro_button_row.addWidget(self.retro_copy_url_button)
         retro_button_row.addWidget(self.retro_cancel_button)
         retro_login_layout.addLayout(retro_button_row)
@@ -290,8 +280,8 @@ class UpdateAllConfigDialog(QDialog):
         button_row = QHBoxLayout()
         button_row.addStretch()
 
-        self.save_button = QPushButton("Save")
-        self.close_button = QPushButton("Close")
+        self.save_button = QPushButton(tr("update_all_config_dialog.save"))
+        self.close_button = QPushButton(tr("common.close"))
 
         button_row.addWidget(self.save_button)
         button_row.addWidget(self.close_button)
@@ -342,11 +332,8 @@ class UpdateAllConfigDialog(QDialog):
 
     def _set_retro_ui_state(self, state):
         if state == "idle":
-            self.retro_status_label.setText("Status: Not logged in")
-            self.retro_description_label.setText(
-                "Log in to this MiSTer device with your RetroAccount to enable "
-                "premium update_all features."
-            )
+            self.retro_status_label.setText(tr("update_all_config_dialog.retro_status_not_logged_in"))
+            self.retro_description_label.setText(tr("update_all_config_dialog.retro_description"))
             self.retro_normal_widget.show()
             self.retro_login_widget.hide()
             self.retro_device_id_title_label.hide()
@@ -355,16 +342,16 @@ class UpdateAllConfigDialog(QDialog):
             self.retro_login_button.setEnabled(True)
 
         elif state == "pending":
-            self.retro_status_label.setText("Status: Waiting for login")
+            self.retro_status_label.setText(tr("update_all_config_dialog.retro_status_waiting"))
             self.retro_normal_widget.hide()
             self.retro_login_widget.show()
-            self.retro_countdown_label.setText(f"Time remaining: {self._format_retro_time()}")
+            self.retro_countdown_label.setText(
+                tr("update_all_config_dialog.time_remaining", time=self._format_retro_time())
+            )
 
         elif state == "logged_in":
-            self.retro_status_label.setText("Status: Logged in")
-            self.retro_description_label.setText(
-                "update_all premium features are enabled on this MiSTer device."
-            )
+            self.retro_status_label.setText(tr("update_all_config_dialog.retro_status_logged_in"))
+            self.retro_description_label.setText(tr("update_all_config_dialog.retro_logged_in_description"))
             self.retro_normal_widget.show()
             self.retro_login_widget.hide()
             self.retro_device_id_title_label.show()
@@ -393,7 +380,11 @@ class UpdateAllConfigDialog(QDialog):
                 self.retro_countdown_timer.start()
 
         except Exception as e:
-            QMessageBox.critical(self, "RetroAccount", f"Failed to start login:\n{e}")
+            QMessageBox.critical(
+                self,
+                tr("update_all_config_dialog.retroaccount"),
+                tr("update_all_config_dialog.retro_login_start_failed", error=e),
+            )
 
     def on_retro_copy_url(self):
         url = self.retro_url_value_label.text().strip()
@@ -418,14 +409,16 @@ class UpdateAllConfigDialog(QDialog):
             self.retro_pending_code = ""
             QMessageBox.information(
                 self,
-                "RetroAccount",
-                "Login timed out. Please try again.",
+                tr("update_all_config_dialog.retroaccount"),
+                tr("update_all_config_dialog.retro_login_timeout"),
             )
             self.load_retro_status()
             return
 
         self.retro_seconds_remaining -= 1
-        self.retro_countdown_label.setText(f"Time remaining: {self._format_retro_time()}")
+        self.retro_countdown_label.setText(
+            tr("update_all_config_dialog.time_remaining", time=self._format_retro_time())
+        )
 
         if self.retro_seconds_remaining <= 0:
             self.retro_countdown_timer.stop()
@@ -433,8 +426,8 @@ class UpdateAllConfigDialog(QDialog):
             self.retro_pending_code = ""
             QMessageBox.information(
                 self,
-                "RetroAccount",
-                "Login timed out. Please try again.",
+                tr("update_all_config_dialog.retroaccount"),
+                tr("update_all_config_dialog.retro_login_timeout"),
             )
             self.load_retro_status()
 
@@ -459,14 +452,18 @@ class UpdateAllConfigDialog(QDialog):
                 self.retro_device_id_value_label.setText(result["device_id"])
                 QMessageBox.information(
                     self,
-                    "RetroAccount",
-                    "This MiSTer is now logged in successfully.",
+                    tr("update_all_config_dialog.retroaccount"),
+                    tr("update_all_config_dialog.retro_login_success"),
                 )
 
         except Exception as e:
             self.retro_poll_timer.stop()
             self.retro_countdown_timer.stop()
-            QMessageBox.critical(self, "RetroAccount", f"Login failed:\n{e}")
+            QMessageBox.critical(
+                self,
+                tr("update_all_config_dialog.retroaccount"),
+                tr("update_all_config_dialog.retro_login_failed", error=e),
+            )
             self.load_retro_status()
 
     def load_retro_status(self):
@@ -498,7 +495,11 @@ class UpdateAllConfigDialog(QDialog):
         try:
             data = load_update_all_config(self.connection)
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to load config:\n{e}")
+            QMessageBox.critical(
+                self,
+                tr("common.error"),
+                tr("update_all_config_dialog.load_config_failed", error=e),
+            )
             return
 
         self.main_cores_check.setChecked(data["main_cores"])
@@ -576,10 +577,18 @@ class UpdateAllConfigDialog(QDialog):
     def on_save(self):
         try:
             save_update_all_config(self.connection, self.collect_config())
-            QMessageBox.information(self, "Saved", "update_all configuration saved successfully.")
+            QMessageBox.information(
+                self,
+                tr("update_all_config_dialog.saved_title"),
+                tr("update_all_config_dialog.saved_message"),
+            )
             self.accept()
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to save config:\n{e}")
+            QMessageBox.critical(
+                self,
+                tr("common.error"),
+                tr("update_all_config_dialog.save_config_failed", error=e),
+            )
 
     def closeEvent(self, event):
         self.retro_poll_timer.stop()

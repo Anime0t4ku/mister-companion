@@ -39,7 +39,7 @@ jobs:
 
       - name: Build Executable
         working-directory: mister-companion
-        run: pyinstaller --clean --onefile --windowed --icon app.ico --add-data "assets/icon.png;assets" --name MiSTer-Companion main.py
+        run: pyinstaller --clean --onefile --windowed --icon app.ico --add-data "assets/icon.png;assets" --add-data "languages;languages" --name MiSTer-Companion main.py
 
       - name: Upload Windows Artifact
         uses: actions/upload-artifact@v4
@@ -78,7 +78,7 @@ jobs:
 
       - name: Build Executable
         working-directory: mister-companion
-        run: pyinstaller --clean --onefile --windowed --add-data "assets/icon.png:assets" --name MiSTer-Companion main.py
+        run: pyinstaller --clean --onefile --windowed --add-data "assets/icon.png:assets" --add-data "languages:languages" --name MiSTer-Companion main.py
 
       - name: Make binary executable
         run: chmod +x mister-companion/dist/MiSTer-Companion

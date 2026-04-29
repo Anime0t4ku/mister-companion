@@ -3,11 +3,14 @@ from PyQt6.QtWidgets import (
     QDialogButtonBox
 )
 
+from core.language import tr
+
+
 class DeviceDialog(QDialog):
-    def __init__(self, parent=None, title="Device", device=None):
+    def __init__(self, parent=None, title=None, device=None):
         super().__init__(parent)
 
-        self.setWindowTitle(title)
+        self.setWindowTitle(title or tr("device_dialog.title"))
         self.setMinimumWidth(320)
 
         layout = QVBoxLayout(self)
@@ -20,10 +23,10 @@ class DeviceDialog(QDialog):
         self.password_input = QLineEdit()
         self.password_input.setEchoMode(QLineEdit.EchoMode.Password)
 
-        form.addRow("Device Name", self.name_input)
-        form.addRow("IP Address", self.ip_input)
-        form.addRow("Username", self.username_input)
-        form.addRow("Password", self.password_input)
+        form.addRow(tr("device_dialog.device_name"), self.name_input)
+        form.addRow(tr("device_dialog.ip_address"), self.ip_input)
+        form.addRow(tr("device_dialog.username"), self.username_input)
+        form.addRow(tr("device_dialog.password"), self.password_input)
 
         layout.addLayout(form)
 

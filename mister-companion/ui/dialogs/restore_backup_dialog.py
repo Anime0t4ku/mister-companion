@@ -1,15 +1,17 @@
 from PyQt6.QtWidgets import QDialog, QHBoxLayout, QLabel, QListWidget, QPushButton, QVBoxLayout
 
+from core.language import tr
+
 
 class RestoreBackupDialog(QDialog):
     def __init__(self, backup_files, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Restore MiSTer.ini Backup")
+        self.setWindowTitle(tr("restore_backup_dialog.window_title"))
         self.setMinimumSize(520, 360)
 
         layout = QVBoxLayout(self)
 
-        info = QLabel("Select a backup to restore:")
+        info = QLabel(tr("restore_backup_dialog.select_backup"))
         layout.addWidget(info)
 
         self.list_widget = QListWidget()
@@ -19,8 +21,8 @@ class RestoreBackupDialog(QDialog):
         button_row = QHBoxLayout()
         button_row.addStretch()
 
-        self.restore_button = QPushButton("Restore")
-        self.cancel_button = QPushButton("Cancel")
+        self.restore_button = QPushButton(tr("restore_backup_dialog.restore"))
+        self.cancel_button = QPushButton(tr("common.cancel"))
 
         button_row.addWidget(self.restore_button)
         button_row.addWidget(self.cancel_button)
@@ -29,6 +31,9 @@ class RestoreBackupDialog(QDialog):
         self.restore_button.clicked.connect(self.accept)
         self.cancel_button.clicked.connect(self.reject)
         self.list_widget.itemDoubleClicked.connect(lambda _: self.accept())
+
+        if backup_files:
+            self.list_widget.setCurrentRow(0)
 
     def selected_backup(self):
         item = self.list_widget.currentItem()

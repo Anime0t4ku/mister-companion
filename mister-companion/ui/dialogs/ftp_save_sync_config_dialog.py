@@ -12,6 +12,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
+from core.language import tr
 from core.scripts_actions import (
     load_ftp_save_sync_config,
     save_ftp_save_sync_config,
@@ -24,7 +25,7 @@ class FtpSaveSyncConfigDialog(QDialog):
         self.connection = connection
         self.main_window = main_window
 
-        self.setWindowTitle("Configure ftp_save_sync")
+        self.setWindowTitle(tr("ftp_save_sync_config_dialog.window_title"))
         self.setModal(True)
         self.resize(500, 340)
 
@@ -36,10 +37,7 @@ class FtpSaveSyncConfigDialog(QDialog):
         main_layout.setContentsMargins(14, 14, 14, 14)
         main_layout.setSpacing(12)
 
-        info_label = QLabel(
-            "Configure the remote sync connection used by ftp_save_sync.\n"
-            "Remote Base is the working directory on the remote server."
-        )
+        info_label = QLabel(tr("ftp_save_sync_config_dialog.info"))
         info_label.setWordWrap(True)
         main_layout.addWidget(info_label)
 
@@ -50,43 +48,43 @@ class FtpSaveSyncConfigDialog(QDialog):
         form_layout.setVerticalSpacing(10)
 
         self.protocol_combo = QComboBox()
-        self.protocol_combo.addItem("FTP", "ftp")
-        self.protocol_combo.addItem("SFTP (recommended)", "sftp")
+        self.protocol_combo.addItem(tr("ftp_save_sync_config_dialog.protocol_ftp"), "ftp")
+        self.protocol_combo.addItem(tr("ftp_save_sync_config_dialog.protocol_sftp"), "sftp")
 
         self.host_edit = QLineEdit()
-        self.host_edit.setPlaceholderText("example.com or 192.168.1.10")
+        self.host_edit.setPlaceholderText(tr("ftp_save_sync_config_dialog.host_placeholder"))
 
         self.port_edit = QLineEdit()
-        self.port_edit.setPlaceholderText("21 or 22")
+        self.port_edit.setPlaceholderText(tr("ftp_save_sync_config_dialog.port_placeholder"))
 
         self.username_edit = QLineEdit()
-        self.username_edit.setPlaceholderText("Username")
+        self.username_edit.setPlaceholderText(tr("device_dialog.username"))
 
         self.password_edit = QLineEdit()
         self.password_edit.setEchoMode(QLineEdit.EchoMode.Password)
-        self.password_edit.setPlaceholderText("Password")
+        self.password_edit.setPlaceholderText(tr("device_dialog.password"))
 
         self.remote_base_edit = QLineEdit()
         self.remote_base_edit.setPlaceholderText("/")
         self.remote_base_edit.setText("/")
 
         self.device_name_edit = QLineEdit()
-        self.device_name_edit.setPlaceholderText("Device name")
+        self.device_name_edit.setPlaceholderText(tr("ftp_save_sync_config_dialog.device_name_placeholder"))
 
-        self.sync_savestates_checkbox = QCheckBox("Sync savestates")
+        self.sync_savestates_checkbox = QCheckBox(tr("ftp_save_sync_config_dialog.sync_savestates"))
         self.sync_savestates_warning_label = QLabel(
-            "Warning: syncing savestates may cause issues depending on the core or game."
+            tr("ftp_save_sync_config_dialog.sync_savestates_warning")
         )
         self.sync_savestates_warning_label.setWordWrap(True)
         self.sync_savestates_warning_label.setStyleSheet("color: #cc8400;")
 
-        form_layout.addRow("Protocol:", self.protocol_combo)
-        form_layout.addRow("Host:", self.host_edit)
-        form_layout.addRow("Port:", self.port_edit)
-        form_layout.addRow("Username:", self.username_edit)
-        form_layout.addRow("Password:", self.password_edit)
-        form_layout.addRow("Remote Base:", self.remote_base_edit)
-        form_layout.addRow("Device Name:", self.device_name_edit)
+        form_layout.addRow(tr("ftp_save_sync_config_dialog.protocol"), self.protocol_combo)
+        form_layout.addRow(tr("ftp_save_sync_config_dialog.host"), self.host_edit)
+        form_layout.addRow(tr("ftp_save_sync_config_dialog.port"), self.port_edit)
+        form_layout.addRow(tr("device_dialog.username") + ":", self.username_edit)
+        form_layout.addRow(tr("device_dialog.password") + ":", self.password_edit)
+        form_layout.addRow(tr("ftp_save_sync_config_dialog.remote_base"), self.remote_base_edit)
+        form_layout.addRow(tr("ftp_save_sync_config_dialog.device_name"), self.device_name_edit)
         form_layout.addRow("", self.sync_savestates_checkbox)
         form_layout.addRow("", self.sync_savestates_warning_label)
 
@@ -95,8 +93,8 @@ class FtpSaveSyncConfigDialog(QDialog):
         buttons_row = QHBoxLayout()
         buttons_row.addStretch()
 
-        self.save_button = QPushButton("Save")
-        self.cancel_button = QPushButton("Cancel")
+        self.save_button = QPushButton(tr("ftp_save_sync_config_dialog.save"))
+        self.cancel_button = QPushButton(tr("common.cancel"))
 
         buttons_row.addWidget(self.save_button)
         buttons_row.addWidget(self.cancel_button)
@@ -122,8 +120,8 @@ class FtpSaveSyncConfigDialog(QDialog):
         except Exception as e:
             QMessageBox.critical(
                 self,
-                "Error",
-                f"Could not load ftp_save_sync configuration.\n\n{e}",
+                tr("common.error"),
+                tr("ftp_save_sync_config_dialog.load_failed", error=e),
             )
             return
 
@@ -142,7 +140,7 @@ class FtpSaveSyncConfigDialog(QDialog):
             sync_savestates = config.get("SYNC_SAVESTATES", "false").strip().lower() == "true"
             self.sync_savestates_checkbox.setChecked(sync_savestates)
         else:
-            self.protocol_combo.setCurrentIndex(1)  # default to SFTP
+            self.protocol_combo.setCurrentIndex(1)
             self.on_protocol_changed()
 
             profile_name = self.get_selected_profile_name()
@@ -170,27 +168,51 @@ class FtpSaveSyncConfigDialog(QDialog):
         sync_savestates = self.sync_savestates_checkbox.isChecked()
 
         if not host:
-            QMessageBox.warning(self, "Missing Host", "Please enter a Host.")
+            QMessageBox.warning(
+                self,
+                tr("ftp_save_sync_config_dialog.missing_host_title"),
+                tr("ftp_save_sync_config_dialog.missing_host_message"),
+            )
             return
 
         if not port:
-            QMessageBox.warning(self, "Missing Port", "Please enter a Port.")
+            QMessageBox.warning(
+                self,
+                tr("ftp_save_sync_config_dialog.missing_port_title"),
+                tr("ftp_save_sync_config_dialog.missing_port_message"),
+            )
             return
 
         if not port.isdigit():
-            QMessageBox.warning(self, "Invalid Port", "Port must be a number.")
+            QMessageBox.warning(
+                self,
+                tr("ftp_save_sync_config_dialog.invalid_port_title"),
+                tr("ftp_save_sync_config_dialog.invalid_port_message"),
+            )
             return
 
         if not username:
-            QMessageBox.warning(self, "Missing Username", "Please enter a Username.")
+            QMessageBox.warning(
+                self,
+                tr("dav_browser_config_dialog.missing_username_title"),
+                tr("dav_browser_config_dialog.missing_username_message"),
+            )
             return
 
         if not password:
-            QMessageBox.warning(self, "Missing Password", "Please enter a Password.")
+            QMessageBox.warning(
+                self,
+                tr("dav_browser_config_dialog.missing_password_title"),
+                tr("dav_browser_config_dialog.missing_password_message"),
+            )
             return
 
         if not device_name:
-            QMessageBox.warning(self, "Missing Device Name", "Please enter a Device Name.")
+            QMessageBox.warning(
+                self,
+                tr("ftp_save_sync_config_dialog.missing_device_name_title"),
+                tr("ftp_save_sync_config_dialog.missing_device_name_message"),
+            )
             return
 
         if not remote_base.startswith("/"):
@@ -211,10 +233,14 @@ class FtpSaveSyncConfigDialog(QDialog):
         except Exception as e:
             QMessageBox.critical(
                 self,
-                "Error",
-                f"Could not save ftp_save_sync configuration.\n\n{e}",
+                tr("common.error"),
+                tr("ftp_save_sync_config_dialog.save_failed", error=e),
             )
             return
 
-        QMessageBox.information(self, "Saved", "ftp_save_sync configuration saved.")
+        QMessageBox.information(
+            self,
+            tr("ftp_save_sync_config_dialog.saved_title"),
+            tr("ftp_save_sync_config_dialog.saved_message"),
+        )
         self.accept()

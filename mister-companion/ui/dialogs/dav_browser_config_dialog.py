@@ -2,7 +2,6 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QCheckBox,
     QDialog,
-    QDialogButtonBox,
     QFormLayout,
     QHBoxLayout,
     QLabel,
@@ -12,6 +11,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
+from core.language import tr
 from core.scripts_actions import load_dav_browser_config, save_dav_browser_config
 
 
@@ -20,7 +20,7 @@ class DavBrowserConfigDialog(QDialog):
         super().__init__(parent)
         self.connection = connection
 
-        self.setWindowTitle("Configure DAV Browser")
+        self.setWindowTitle(tr("dav_browser_config_dialog.window_title"))
         self.setModal(True)
         self.resize(460, 260)
 
@@ -32,10 +32,7 @@ class DavBrowserConfigDialog(QDialog):
         main_layout.setContentsMargins(14, 14, 14, 14)
         main_layout.setSpacing(12)
 
-        info_label = QLabel(
-            "Configure the WebDAV connection used by DAV Browser.\n"
-            "Leave Remote Path empty to browse from the server root."
-        )
+        info_label = QLabel(tr("dav_browser_config_dialog.info"))
         info_label.setWordWrap(True)
         main_layout.addWidget(info_label)
 
@@ -46,24 +43,30 @@ class DavBrowserConfigDialog(QDialog):
         form_layout.setVerticalSpacing(10)
 
         self.server_url_edit = QLineEdit()
-        self.server_url_edit.setPlaceholderText("https://example.com/webdav")
+        self.server_url_edit.setPlaceholderText(
+            tr("dav_browser_config_dialog.server_url_placeholder")
+        )
 
         self.username_edit = QLineEdit()
-        self.username_edit.setPlaceholderText("Username")
+        self.username_edit.setPlaceholderText(tr("device_dialog.username"))
 
         self.password_edit = QLineEdit()
         self.password_edit.setEchoMode(QLineEdit.EchoMode.Password)
-        self.password_edit.setPlaceholderText("Password")
+        self.password_edit.setPlaceholderText(tr("device_dialog.password"))
 
         self.remote_path_edit = QLineEdit()
-        self.remote_path_edit.setPlaceholderText("Optional, e.g. /roms")
+        self.remote_path_edit.setPlaceholderText(
+            tr("dav_browser_config_dialog.remote_path_placeholder")
+        )
 
-        self.skip_tls_verify_checkbox = QCheckBox("Skip TLS certificate verification")
+        self.skip_tls_verify_checkbox = QCheckBox(
+            tr("dav_browser_config_dialog.skip_tls_verify")
+        )
 
-        form_layout.addRow("Server URL:", self.server_url_edit)
-        form_layout.addRow("Username:", self.username_edit)
-        form_layout.addRow("Password:", self.password_edit)
-        form_layout.addRow("Remote Path:", self.remote_path_edit)
+        form_layout.addRow(tr("dav_browser_config_dialog.server_url"), self.server_url_edit)
+        form_layout.addRow(tr("device_dialog.username") + ":", self.username_edit)
+        form_layout.addRow(tr("device_dialog.password") + ":", self.password_edit)
+        form_layout.addRow(tr("dav_browser_config_dialog.remote_path"), self.remote_path_edit)
         form_layout.addRow("", self.skip_tls_verify_checkbox)
 
         main_layout.addLayout(form_layout)
@@ -71,8 +74,8 @@ class DavBrowserConfigDialog(QDialog):
         buttons_row = QHBoxLayout()
         buttons_row.addStretch()
 
-        self.save_button = QPushButton("Save")
-        self.cancel_button = QPushButton("Cancel")
+        self.save_button = QPushButton(tr("dav_browser_config_dialog.save"))
+        self.cancel_button = QPushButton(tr("common.cancel"))
 
         buttons_row.addWidget(self.save_button)
         buttons_row.addWidget(self.cancel_button)
@@ -88,8 +91,8 @@ class DavBrowserConfigDialog(QDialog):
         except Exception as e:
             QMessageBox.critical(
                 self,
-                "Error",
-                f"Could not load DAV Browser configuration.\n\n{e}",
+                tr("common.error"),
+                tr("dav_browser_config_dialog.load_failed", error=e),
             )
             return
 
@@ -109,15 +112,27 @@ class DavBrowserConfigDialog(QDialog):
         skip_tls_verify = self.skip_tls_verify_checkbox.isChecked()
 
         if not server_url:
-            QMessageBox.warning(self, "Missing Server URL", "Please enter a Server URL.")
+            QMessageBox.warning(
+                self,
+                tr("dav_browser_config_dialog.missing_server_url_title"),
+                tr("dav_browser_config_dialog.missing_server_url_message"),
+            )
             return
 
         if not username:
-            QMessageBox.warning(self, "Missing Username", "Please enter a Username.")
+            QMessageBox.warning(
+                self,
+                tr("dav_browser_config_dialog.missing_username_title"),
+                tr("dav_browser_config_dialog.missing_username_message"),
+            )
             return
 
         if not password:
-            QMessageBox.warning(self, "Missing Password", "Please enter a Password.")
+            QMessageBox.warning(
+                self,
+                tr("dav_browser_config_dialog.missing_password_title"),
+                tr("dav_browser_config_dialog.missing_password_message"),
+            )
             return
 
         try:
@@ -132,10 +147,14 @@ class DavBrowserConfigDialog(QDialog):
         except Exception as e:
             QMessageBox.critical(
                 self,
-                "Error",
-                f"Could not save DAV Browser configuration.\n\n{e}",
+                tr("common.error"),
+                tr("dav_browser_config_dialog.save_failed", error=e),
             )
             return
 
-        QMessageBox.information(self, "Saved", "DAV Browser configuration saved.")
+        QMessageBox.information(
+            self,
+            tr("dav_browser_config_dialog.saved_title"),
+            tr("dav_browser_config_dialog.saved_message"),
+        )
         self.accept()
