@@ -136,10 +136,12 @@ jobs:
 
   # ============================================================
   # macOS Apple Silicon Build
+  # This job runs separately and does NOT block the pre-release.
   # ============================================================
   build-macos-apple-silicon:
     name: Build macOS Apple Silicon App
     runs-on: macos-15-arm64
+    timeout-minutes: 30
 
     steps:
       - name: Checkout Repository
@@ -188,7 +190,6 @@ jobs:
       - build-windows
       - build-linux
       - build-macos-intel
-      - build-macos-apple-silicon
     if: github.ref == 'refs/heads/main'
 
     steps:
@@ -216,9 +217,6 @@ jobs:
       - name: Move macOS Intel DMG
         run: mv dist/MiSTer-Companion-macOS-Intel.dmg ./MiSTer-Companion-macOS-Intel.dmg
 
-      - name: Move macOS Apple Silicon DMG
-        run: mv dist/MiSTer-Companion-macOS-Apple-Silicon.dmg ./MiSTer-Companion-macOS-Apple-Silicon.dmg
-
       - name: Update Git Tag
         run: |
           git tag -f Pre-release
@@ -235,4 +233,3 @@ jobs:
             MiSTer-Companion-Windows-x86_64.zip
             MiSTer-Companion-Linux-x86_64.tar.gz
             MiSTer-Companion-macOS-Intel.dmg
-            MiSTer-Companion-macOS-Apple-Silicon.dmg
