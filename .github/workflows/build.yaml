@@ -91,6 +91,94 @@ jobs:
 
 
   # ============================================================
+  # macOS Intel Build
+  # ============================================================
+  build-macos-intel:
+    name: Build macOS Intel App
+    runs-on: macos-15-intel
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          architecture: "x64"
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller paramiko requests websocket-client psutil PyQt6
+
+      - name: List Files
+        working-directory: mister-companion
+        run: |
+          pwd
+          ls -la
+          ls -la assets
+
+      - name: Build macOS Intel App
+        working-directory: mister-companion
+        run: pyinstaller --clean --windowed --icon app.icns --add-data "assets/icon.png:assets" --osx-bundle-identifier "com.anime0t4ku.mistercompanion" --name MiSTer-Companion main.py
+
+      - name: Create Intel DMG
+        working-directory: mister-companion
+        run: hdiutil create -volname "MiSTer Companion" -srcfolder "dist/MiSTer-Companion.app" -ov -format UDZO "../MiSTer-Companion-macOS-Intel.dmg"
+
+      - name: Upload macOS Intel Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MiSTer-Companion-macOS-Intel
+          path: MiSTer-Companion-macOS-Intel.dmg
+
+
+  # ============================================================
+  # macOS Apple Silicon Build
+  # ============================================================
+  build-macos-apple-silicon:
+    name: Build macOS Apple Silicon App
+    runs-on: macos-15-arm64
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          architecture: "arm64"
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller paramiko requests websocket-client psutil PyQt6
+
+      - name: List Files
+        working-directory: mister-companion
+        run: |
+          pwd
+          ls -la
+          ls -la assets
+
+      - name: Build macOS Apple Silicon App
+        working-directory: mister-companion
+        run: pyinstaller --clean --windowed --icon app.icns --add-data "assets/icon.png:assets" --osx-bundle-identifier "com.anime0t4ku.mistercompanion" --name MiSTer-Companion main.py
+
+      - name: Create Apple Silicon DMG
+        working-directory: mister-companion
+        run: hdiutil create -volname "MiSTer Companion" -srcfolder "dist/MiSTer-Companion.app" -ov -format UDZO "../MiSTer-Companion-macOS-Apple-Silicon.dmg"
+
+      - name: Upload macOS Apple Silicon Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MiSTer-Companion-macOS-Apple-Silicon
+          path: MiSTer-Companion-macOS-Apple-Silicon.dmg
+
+
+  # ============================================================
   # Pre-release Creation
   # ============================================================
   release:
@@ -99,6 +187,8 @@ jobs:
     needs:
       - build-windows
       - build-linux
+      - build-macos-intel
+      - build-macos-apple-silicon
     if: github.ref == 'refs/heads/main'
 
     steps:
@@ -123,6 +213,12 @@ jobs:
           cd dist
           tar -czvf ../MiSTer-Companion-Linux-x86_64.tar.gz MiSTer-Companion
 
+      - name: Move macOS Intel DMG
+        run: mv dist/MiSTer-Companion-macOS-Intel.dmg ./MiSTer-Companion-macOS-Intel.dmg
+
+      - name: Move macOS Apple Silicon DMG
+        run: mv dist/MiSTer-Companion-macOS-Apple-Silicon.dmg ./MiSTer-Companion-macOS-Apple-Silicon.dmg
+
       - name: Update Git Tag
         run: |
           git tag -f Pre-release
@@ -138,3 +234,5 @@ jobs:
           artifacts: |
             MiSTer-Companion-Windows-x86_64.zip
             MiSTer-Companion-Linux-x86_64.tar.gz
+            MiSTer-Companion-macOS-Intel.dmg
+            MiSTer-Companion-macOS-Apple-Silicon.dmg
