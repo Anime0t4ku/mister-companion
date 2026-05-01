@@ -3,12 +3,12 @@
   "items": [
     {
       "id": "v3-stable",
-      "date": "2026-04-29",
+      "date": "2026-05-01",
       "type": "update",
-      "headline": "MiSTer Companion v3.6.0 Released",
-      "message": "MiSTer Companion v3.6.0 is now available.\n\nThis release adds Sonic Mania MiSTer to the Extras tab, allowing you to install or uninstall it directly from MiSTer Companion.\n\nIt also removes video_mode=8 from the 3S-ARM MiSTer.ini entry, as it is no longer required.\n\nAn Arch Linux-specific issue has also been fixed where Refresh Drives could show an error in the Flash SD tab.\n\nYou can download the latest stable release below.",
-      "url": "https://github.com/Anime0t4ku/mister-companion/releases/tag/v3.6.0",
-      "url_label": "Download v3.6.0"
+      "headline": "MiSTer Companion v3.7.0 Released",
+      "message": "MiSTer Companion v3.7.0 is now available.\n\nThis release adds MiSTer OpenBOR 7533 and MiSTer OpenBOR 4086 to the Extras tab, allowing you to install or uninstall them directly from MiSTer Companion.\n\nThe Update_All configurator now includes MiSTer Frontier as a community source.\n\nMiSTer Settings has also been improved with a fix for extra blank lines appearing when switching between Easy and Advanced mode, plus updated analogue video presets including a new RGB (PVM/BVM SoG Alt) option and improved VGA Monitor behavior.\n\nAn official macOS 13+ Intel binary is also now available.\n\nYou can download the latest stable release below.",
+      "url": "https://github.com/Anime0t4ku/mister-companion/releases/tag/v3.7.0",
+      "url_label": "Download v3.7.0"
     },
     {
       "id": "macos-support",
