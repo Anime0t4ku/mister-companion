@@ -1,18 +1,20 @@
+import html as html_lib
 import io
 import os
 import posixpath
 import re
 import shlex
 import zipfile
+from urllib.parse import unquote, urljoin
 
 import requests
 
 
-GITHUB_RELEASES_API = "https://api.github.com/repos/kimchiman52/3s-mister-arm/releases/latest"
-PICO8_GITHUB_RELEASES_API = "https://api.github.com/repos/MiSTerOrganize/MiSTer_PICO-8/releases/latest"
-OPENBOR_4086_GITHUB_RELEASES_API = "https://api.github.com/repos/MiSTerOrganize/MiSTer_OpenBOR_4086/releases/latest"
-OPENBOR_7533_GITHUB_RELEASES_API = "https://api.github.com/repos/MiSTerOrganize/MiSTer_OpenBOR_7533/releases/latest"
-SONIC_MANIA_GITHUB_RELEASES_API = "https://api.github.com/repos/kimchiman52/sonic-mania-mister/releases/latest"
+GITHUB_3SX_REPO = "kimchiman52/3s-mister-arm"
+PICO8_GITHUB_REPO = "MiSTerOrganize/MiSTer_PICO-8"
+OPENBOR_4086_GITHUB_REPO = "MiSTerOrganize/MiSTer_OpenBOR_4086"
+OPENBOR_7533_GITHUB_REPO = "MiSTerOrganize/MiSTer_OpenBOR_7533"
+SONIC_MANIA_GITHUB_REPO = "kimchiman52/sonic-mania-mister"
 
 REMOTE_RBF_PATH = "/media/fat/_Other/3S-ARM.rbf"
 REMOTE_GAME_DIR = "/media/fat/games/3s-arm"
@@ -241,172 +243,143 @@ def _is_sonic_mania_installed(connection) -> bool:
     )
 
 
-def _fetch_latest_release():
+def _fetch_latest_release_from_html(repo: str, title: str) -> dict:
+    latest_url = f"https://github.com/{repo}/releases/latest"
+
     response = requests.get(
-        GITHUB_RELEASES_API,
-        headers={"Accept": "application/vnd.github+json"},
-        timeout=20,
+        latest_url,
+        headers={"User-Agent": "MiSTer-Companion"},
+        timeout=30,
+        allow_redirects=True,
     )
     response.raise_for_status()
 
-    payload = response.json()
-    tag_name = (payload.get("tag_name") or "").strip()
+    final_url = response.url
+    marker = "/releases/tag/"
+    if marker not in final_url:
+        raise RuntimeError(f"Unable to determine latest {title} version from GitHub.")
 
-    zip_url = None
-    for asset in payload.get("assets", []):
-        url = asset.get("browser_download_url", "")
-        name = asset.get("name", "")
-        if url.lower().endswith(".zip") or name.lower().endswith(".zip"):
-            zip_url = url
-            break
-
+    tag_name = unquote(final_url.split(marker, 1)[1].split("?", 1)[0].strip())
     if not tag_name:
-        raise RuntimeError("Unable to determine latest 3s-mister-arm version from GitHub.")
+        raise RuntimeError(f"Unable to determine latest {title} version from GitHub.")
 
-    if not zip_url:
-        raise RuntimeError("Unable to find a ZIP asset in the latest 3s-mister-arm release.")
+    assets_url = f"https://github.com/{repo}/releases/expanded_assets/{tag_name}"
+
+    assets_response = requests.get(
+        assets_url,
+        headers={
+            "User-Agent": "MiSTer-Companion",
+            "Accept": "text/html",
+        },
+        timeout=30,
+    )
+    assets_response.raise_for_status()
+
+    page = assets_response.text
+    assets = []
+    seen_urls = set()
+
+    href_pattern = re.compile(r'href="([^"]+)"')
+
+    for match in href_pattern.finditer(page):
+        href = html_lib.unescape(match.group(1))
+
+        if "/releases/download/" not in href:
+            continue
+
+        if f"/{repo}/releases/download/{tag_name}/" not in href:
+            continue
+
+        url = urljoin("https://github.com", href)
+
+        if url in seen_urls:
+            continue
+
+        seen_urls.add(url)
+
+        name = unquote(posixpath.basename(url.split("?", 1)[0]))
+        if not name:
+            continue
+
+        lower_name = name.lower()
+        if lower_name.startswith("source code"):
+            continue
+
+        assets.append(
+            {
+                "name": name,
+                "url": url,
+                "size": 0,
+            }
+        )
+
+    if not assets:
+        raise RuntimeError(f"Unable to find downloadable release assets for {title} {tag_name}.")
 
     return {
         "version": tag_name,
-        "zip_url": zip_url,
-        "release_name": payload.get("name", tag_name),
+        "release_name": tag_name,
+        "assets": assets,
     }
+
+
+def _select_zip_asset(release: dict, title: str) -> str:
+    for asset in release.get("assets", []):
+        name = asset.get("name", "")
+        url = asset.get("url", "")
+        lower_name = name.lower()
+        lower_url = url.lower()
+
+        if lower_name.endswith(".zip") or lower_url.endswith(".zip"):
+            return url
+
+    raise RuntimeError(f"Unable to find a ZIP asset in the latest {title} release.")
+
+
+def _fetch_latest_zip_release(repo: str, title: str) -> dict:
+    release = _fetch_latest_release_from_html(repo, title)
+    zip_url = _select_zip_asset(release, title)
+
+    return {
+        "version": release["version"],
+        "zip_url": zip_url,
+        "release_name": release.get("release_name", release["version"]),
+    }
+
+
+def _fetch_latest_release():
+    return _fetch_latest_zip_release(
+        GITHUB_3SX_REPO,
+        "3s-mister-arm",
+    )
 
 
 def _fetch_latest_pico8_release():
-    response = requests.get(
-        PICO8_GITHUB_RELEASES_API,
-        headers={"Accept": "application/vnd.github+json"},
-        timeout=20,
+    return _fetch_latest_zip_release(
+        PICO8_GITHUB_REPO,
+        "MiSTer Pico-8",
     )
-    response.raise_for_status()
-
-    payload = response.json()
-    tag_name = (payload.get("tag_name") or "").strip()
-
-    zip_url = None
-    for asset in payload.get("assets", []):
-        url = asset.get("browser_download_url", "")
-        name = asset.get("name", "")
-        lower_name = name.lower()
-        lower_url = url.lower()
-        if lower_name.endswith(".zip") or lower_url.endswith(".zip"):
-            zip_url = url
-            break
-
-    if not tag_name:
-        raise RuntimeError("Unable to determine latest MiSTer Pico-8 version from GitHub.")
-
-    if not zip_url:
-        raise RuntimeError("Unable to find a ZIP asset in the latest MiSTer Pico-8 release.")
-
-    return {
-        "version": tag_name,
-        "zip_url": zip_url,
-        "release_name": payload.get("name", tag_name),
-    }
 
 
 def _fetch_latest_openbor_4086_release():
-    response = requests.get(
-        OPENBOR_4086_GITHUB_RELEASES_API,
-        headers={"Accept": "application/vnd.github+json"},
-        timeout=20,
+    return _fetch_latest_zip_release(
+        OPENBOR_4086_GITHUB_REPO,
+        "MiSTer OpenBOR 4086",
     )
-    response.raise_for_status()
-
-    payload = response.json()
-    tag_name = (payload.get("tag_name") or "").strip()
-
-    zip_url = None
-    for asset in payload.get("assets", []):
-        url = asset.get("browser_download_url", "")
-        name = asset.get("name", "")
-        lower_name = name.lower()
-        lower_url = url.lower()
-        if lower_name.endswith(".zip") or lower_url.endswith(".zip"):
-            zip_url = url
-            break
-
-    if not tag_name:
-        raise RuntimeError("Unable to determine latest MiSTer OpenBOR 4086 version from GitHub.")
-
-    if not zip_url:
-        raise RuntimeError("Unable to find a ZIP asset in the latest MiSTer OpenBOR 4086 release.")
-
-    return {
-        "version": tag_name,
-        "zip_url": zip_url,
-        "release_name": payload.get("name", tag_name),
-    }
 
 
 def _fetch_latest_openbor_7533_release():
-    response = requests.get(
-        OPENBOR_7533_GITHUB_RELEASES_API,
-        headers={"Accept": "application/vnd.github+json"},
-        timeout=20,
+    return _fetch_latest_zip_release(
+        OPENBOR_7533_GITHUB_REPO,
+        "MiSTer OpenBOR 7533",
     )
-    response.raise_for_status()
-
-    payload = response.json()
-    tag_name = (payload.get("tag_name") or "").strip()
-
-    zip_url = None
-    for asset in payload.get("assets", []):
-        url = asset.get("browser_download_url", "")
-        name = asset.get("name", "")
-        lower_name = name.lower()
-        lower_url = url.lower()
-        if lower_name.endswith(".zip") or lower_url.endswith(".zip"):
-            zip_url = url
-            break
-
-    if not tag_name:
-        raise RuntimeError("Unable to determine latest MiSTer OpenBOR 7533 version from GitHub.")
-
-    if not zip_url:
-        raise RuntimeError("Unable to find a ZIP asset in the latest MiSTer OpenBOR 7533 release.")
-
-    return {
-        "version": tag_name,
-        "zip_url": zip_url,
-        "release_name": payload.get("name", tag_name),
-    }
 
 
 def _fetch_latest_sonic_mania_release():
-    response = requests.get(
-        SONIC_MANIA_GITHUB_RELEASES_API,
-        headers={"Accept": "application/vnd.github+json"},
-        timeout=20,
+    return _fetch_latest_zip_release(
+        SONIC_MANIA_GITHUB_REPO,
+        "Sonic Mania MiSTer",
     )
-    response.raise_for_status()
-
-    payload = response.json()
-    tag_name = (payload.get("tag_name") or "").strip()
-
-    zip_url = None
-    for asset in payload.get("assets", []):
-        url = asset.get("browser_download_url", "")
-        name = asset.get("name", "")
-        lower_name = name.lower()
-        lower_url = url.lower()
-        if lower_name.endswith(".zip") or lower_url.endswith(".zip"):
-            zip_url = url
-            break
-
-    if not tag_name:
-        raise RuntimeError("Unable to determine latest Sonic Mania MiSTer version from GitHub.")
-
-    if not zip_url:
-        raise RuntimeError("Unable to find a ZIP asset in the latest Sonic Mania MiSTer release.")
-
-    return {
-        "version": tag_name,
-        "zip_url": zip_url,
-        "release_name": payload.get("name", tag_name),
-    }
 
 
 def _read_installed_version(connection) -> str:
@@ -781,7 +754,7 @@ def _migrate_old_pico8_install(connection, log):
     return True
 
 
-def get_3sx_status(connection):
+def get_3sx_status(connection, check_latest: bool = False):
     if not connection.is_connected():
         return {
             "installed": False,
@@ -800,15 +773,17 @@ def get_3sx_status(connection):
     latest_version = ""
     latest_error = ""
 
-    try:
-        latest = _fetch_latest_release()
-        latest_version = latest["version"]
-    except Exception as exc:
-        latest_error = str(exc)
+    if check_latest:
+        try:
+            latest = _fetch_latest_release()
+            latest_version = latest["version"]
+        except Exception as exc:
+            latest_error = str(exc)
 
     installed = _is_3sx_installed(connection)
     legacy_installed = _is_old_3sx_installed(connection)
     installed_version = _read_installed_version(connection) if (installed or legacy_installed) else ""
+
     afs_present = False
     if installed:
         afs_present = _path_exists(connection, REMOTE_AFS_PATH)
@@ -816,10 +791,11 @@ def get_3sx_status(connection):
         afs_present = _path_exists(connection, OLD_REMOTE_AFS_PATH)
 
     update_available = False
-    if (installed or legacy_installed) and latest_version and installed_version:
-        update_available = installed_version != latest_version
-    elif (installed or legacy_installed) and latest_version and not installed_version:
-        update_available = True
+    if check_latest:
+        if (installed or legacy_installed) and latest_version and installed_version:
+            update_available = installed_version != latest_version
+        elif (installed or legacy_installed) and latest_version and not installed_version:
+            update_available = True
 
     if not installed and not legacy_installed:
         status_text = "✗ Not installed"
@@ -840,12 +816,15 @@ def get_3sx_status(connection):
         upload_enabled = not afs_present
         uninstall_enabled = True
     else:
-        version_display = installed_version or latest_version or "unknown"
+        version_display = installed_version or "unknown"
         status_text = f"✓ Installed ({version_display})"
         install_label = "Installed"
         install_enabled = False
         upload_enabled = not afs_present
         uninstall_enabled = True
+
+    if latest_error and check_latest:
+        status_text = f"{status_text} (update check failed: {latest_error})"
 
     return {
         "installed": installed or legacy_installed,
@@ -862,7 +841,7 @@ def get_3sx_status(connection):
     }
 
 
-def get_pico8_status(connection):
+def get_pico8_status(connection, check_latest: bool = False):
     if not connection.is_connected():
         return {
             "installed": False,
@@ -879,21 +858,23 @@ def get_pico8_status(connection):
     latest_version = ""
     latest_error = ""
 
-    try:
-        latest = _fetch_latest_pico8_release()
-        latest_version = latest["version"]
-    except Exception as exc:
-        latest_error = str(exc)
+    if check_latest:
+        try:
+            latest = _fetch_latest_pico8_release()
+            latest_version = latest["version"]
+        except Exception as exc:
+            latest_error = str(exc)
 
     installed = _is_pico8_installed(connection)
     legacy_installed = _is_pico8_legacy_installed(connection)
     installed_version = _read_installed_pico8_version(connection) if (installed or legacy_installed) else ""
 
     update_available = False
-    if (installed or legacy_installed) and latest_version and installed_version:
-        update_available = installed_version != latest_version
-    elif (installed or legacy_installed) and latest_version and not installed_version:
-        update_available = True
+    if check_latest:
+        if (installed or legacy_installed) and latest_version and installed_version:
+            update_available = installed_version != latest_version
+        elif (installed or legacy_installed) and latest_version and not installed_version:
+            update_available = True
 
     if not installed and not legacy_installed:
         status_text = "✗ Not installed"
@@ -911,11 +892,14 @@ def get_pico8_status(connection):
         install_enabled = True
         uninstall_enabled = True
     else:
-        version_display = installed_version or latest_version or "unknown"
+        version_display = installed_version or "unknown"
         status_text = f"✓ Installed ({version_display})"
         install_label = "Installed"
         install_enabled = False
         uninstall_enabled = True
+
+    if latest_error and check_latest:
+        status_text = f"{status_text} (update check failed: {latest_error})"
 
     return {
         "installed": installed or legacy_installed,
@@ -930,7 +914,7 @@ def get_pico8_status(connection):
     }
 
 
-def get_openbor_4086_status(connection):
+def get_openbor_4086_status(connection, check_latest: bool = False):
     if not connection.is_connected():
         return {
             "installed": False,
@@ -947,20 +931,22 @@ def get_openbor_4086_status(connection):
     latest_version = ""
     latest_error = ""
 
-    try:
-        latest = _fetch_latest_openbor_4086_release()
-        latest_version = latest["version"]
-    except Exception as exc:
-        latest_error = str(exc)
+    if check_latest:
+        try:
+            latest = _fetch_latest_openbor_4086_release()
+            latest_version = latest["version"]
+        except Exception as exc:
+            latest_error = str(exc)
 
     installed = _is_openbor_4086_installed(connection)
     installed_version = _read_installed_openbor_4086_version(connection) if installed else ""
 
     update_available = False
-    if installed and latest_version and installed_version:
-        update_available = installed_version != latest_version
-    elif installed and latest_version and not installed_version:
-        update_available = True
+    if check_latest:
+        if installed and latest_version and installed_version:
+            update_available = installed_version != latest_version
+        elif installed and latest_version and not installed_version:
+            update_available = True
 
     if not installed:
         status_text = "✗ Not installed"
@@ -973,11 +959,14 @@ def get_openbor_4086_status(connection):
         install_enabled = True
         uninstall_enabled = True
     else:
-        version_display = installed_version or latest_version or "unknown"
+        version_display = installed_version or "unknown"
         status_text = f"✓ Installed ({version_display})"
         install_label = "Installed"
         install_enabled = False
         uninstall_enabled = True
+
+    if latest_error and check_latest:
+        status_text = f"{status_text} (update check failed: {latest_error})"
 
     return {
         "installed": installed,
@@ -992,7 +981,7 @@ def get_openbor_4086_status(connection):
     }
 
 
-def get_openbor_7533_status(connection):
+def get_openbor_7533_status(connection, check_latest: bool = False):
     if not connection.is_connected():
         return {
             "installed": False,
@@ -1009,20 +998,22 @@ def get_openbor_7533_status(connection):
     latest_version = ""
     latest_error = ""
 
-    try:
-        latest = _fetch_latest_openbor_7533_release()
-        latest_version = latest["version"]
-    except Exception as exc:
-        latest_error = str(exc)
+    if check_latest:
+        try:
+            latest = _fetch_latest_openbor_7533_release()
+            latest_version = latest["version"]
+        except Exception as exc:
+            latest_error = str(exc)
 
     installed = _is_openbor_7533_installed(connection)
     installed_version = _read_installed_openbor_7533_version(connection) if installed else ""
 
     update_available = False
-    if installed and latest_version and installed_version:
-        update_available = installed_version != latest_version
-    elif installed and latest_version and not installed_version:
-        update_available = True
+    if check_latest:
+        if installed and latest_version and installed_version:
+            update_available = installed_version != latest_version
+        elif installed and latest_version and not installed_version:
+            update_available = True
 
     if not installed:
         status_text = "✗ Not installed"
@@ -1035,11 +1026,14 @@ def get_openbor_7533_status(connection):
         install_enabled = True
         uninstall_enabled = True
     else:
-        version_display = installed_version or latest_version or "unknown"
+        version_display = installed_version or "unknown"
         status_text = f"✓ Installed ({version_display})"
         install_label = "Installed"
         install_enabled = False
         uninstall_enabled = True
+
+    if latest_error and check_latest:
+        status_text = f"{status_text} (update check failed: {latest_error})"
 
     return {
         "installed": installed,
@@ -1054,7 +1048,7 @@ def get_openbor_7533_status(connection):
     }
 
 
-def get_sonic_mania_status(connection):
+def get_sonic_mania_status(connection, check_latest: bool = False):
     if not connection.is_connected():
         return {
             "installed": False,
@@ -1073,21 +1067,23 @@ def get_sonic_mania_status(connection):
     latest_version = ""
     latest_error = ""
 
-    try:
-        latest = _fetch_latest_sonic_mania_release()
-        latest_version = latest["version"]
-    except Exception as exc:
-        latest_error = str(exc)
+    if check_latest:
+        try:
+            latest = _fetch_latest_sonic_mania_release()
+            latest_version = latest["version"]
+        except Exception as exc:
+            latest_error = str(exc)
 
     installed = _is_sonic_mania_installed(connection)
     installed_version = _read_installed_sonic_mania_version(connection) if installed else ""
     data_rsdk_present = _path_exists(connection, SONIC_MANIA_REMOTE_DATA_RSDK_PATH) if installed else False
 
     update_available = False
-    if installed and latest_version and installed_version:
-        update_available = installed_version != latest_version
-    elif installed and latest_version and not installed_version:
-        update_available = True
+    if check_latest:
+        if installed and latest_version and installed_version:
+            update_available = installed_version != latest_version
+        elif installed and latest_version and not installed_version:
+            update_available = True
 
     if not installed:
         status_text = "✗ Not installed"
@@ -1102,12 +1098,15 @@ def get_sonic_mania_status(connection):
         upload_enabled = not data_rsdk_present
         uninstall_enabled = True
     else:
-        version_display = installed_version or latest_version or "unknown"
+        version_display = installed_version or "unknown"
         status_text = f"✓ Installed ({version_display})"
         install_label = "Installed"
         install_enabled = False
         upload_enabled = not data_rsdk_present
         uninstall_enabled = True
+
+    if latest_error and check_latest:
+        status_text = f"{status_text} (update check failed: {latest_error})"
 
     return {
         "installed": installed,

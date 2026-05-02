@@ -37,6 +37,14 @@ from core.extras_actions import (
     upload_sonic_mania_data_rsdk as backend_upload_sonic_mania_data_rsdk,
 )
 
+from core.ra_cores import (
+    get_ra_cores_status,
+    install_or_update_ra_cores as backend_install_or_update_ra_cores,
+    uninstall_ra_cores as backend_uninstall_ra_cores,
+)
+
+from ui.dialogs.ra_cores_config_dialog import RetroAchievementsConfigDialog
+
 
 class ExtraTaskWorker(QThread):
     log_line = pyqtSignal(str)
@@ -75,6 +83,14 @@ class ExtrasTab(QWidget):
     EXTRA_OPENBOR_4086 = "mister_openbor_4086"
     EXTRA_OPENBOR_7533 = "mister_openbor_7533"
     EXTRA_SONIC_MANIA = "sonic_mania_mister"
+    EXTRA_RA_CORES = "retroachievement_cores"
+
+    TASK_CHECK_3SX = "check_updates_3sx"
+    TASK_CHECK_PICO8 = "check_updates_pico8"
+    TASK_CHECK_OPENBOR_4086 = "check_updates_openbor_4086"
+    TASK_CHECK_OPENBOR_7533 = "check_updates_openbor_7533"
+    TASK_CHECK_SONIC_MANIA = "check_updates_sonic_mania"
+    TASK_CHECK_RA_CORES = "check_updates_ra_cores"
 
     def __init__(self, main_window):
         super().__init__()
@@ -83,6 +99,9 @@ class ExtrasTab(QWidget):
 
         self.console_visible = False
         self.current_worker = None
+        self.current_task_kind = None
+        self.current_check_result = None
+        self.ra_cores_show_install_info_after_success = False
 
         self.extra_display_order = [
             self.EXTRA_3SX,
@@ -90,6 +109,7 @@ class ExtrasTab(QWidget):
             self.EXTRA_OPENBOR_4086,
             self.EXTRA_OPENBOR_7533,
             self.EXTRA_SONIC_MANIA,
+            self.EXTRA_RA_CORES,
         ]
 
         self.extra_titles = {
@@ -98,6 +118,7 @@ class ExtrasTab(QWidget):
             self.EXTRA_OPENBOR_4086: "MiSTer OpenBOR 4086",
             self.EXTRA_OPENBOR_7533: "MiSTer OpenBOR 7533",
             self.EXTRA_SONIC_MANIA: "Sonic Mania MiSTer",
+            self.EXTRA_RA_CORES: "RetroAchievement Cores",
         }
 
         self.extra_descriptions = {
@@ -120,6 +141,10 @@ class ExtrasTab(QWidget):
                 "Install, update, upload Data.rsdk, and uninstall Sonic Mania MiSTer "
                 "directly from MiSTer Companion."
             ),
+            self.EXTRA_RA_CORES: (
+                "Install, update, configure, and uninstall RetroAchievement-enabled "
+                "MiSTer support files and supported RA cores directly from MiSTer Companion."
+            ),
         }
 
         self.extra_status_texts = {
@@ -128,6 +153,7 @@ class ExtrasTab(QWidget):
             self.EXTRA_OPENBOR_4086: "Unknown",
             self.EXTRA_OPENBOR_7533: "Unknown",
             self.EXTRA_SONIC_MANIA: "Unknown",
+            self.EXTRA_RA_CORES: "Unknown",
         }
 
         self.selected_extra_key = self.EXTRA_3SX
@@ -224,6 +250,7 @@ class ExtrasTab(QWidget):
         self.openbor_4086_actions_widget = self._build_openbor_4086_actions()
         self.openbor_7533_actions_widget = self._build_openbor_7533_actions()
         self.sonic_mania_actions_widget = self._build_sonic_mania_actions()
+        self.ra_cores_actions_widget = self._build_ra_cores_actions()
 
         self.extra_action_widgets = {
             self.EXTRA_3SX: self.threesx_actions_widget,
@@ -231,6 +258,7 @@ class ExtrasTab(QWidget):
             self.EXTRA_OPENBOR_4086: self.openbor_4086_actions_widget,
             self.EXTRA_OPENBOR_7533: self.openbor_7533_actions_widget,
             self.EXTRA_SONIC_MANIA: self.sonic_mania_actions_widget,
+            self.EXTRA_RA_CORES: self.ra_cores_actions_widget,
         }
 
         for widget in self.extra_action_widgets.values():
@@ -270,27 +298,43 @@ class ExtrasTab(QWidget):
         self.extra_list.currentItemChanged.connect(self.on_extra_selection_changed)
 
         self.install_update_3sx_button.clicked.connect(self.install_or_update_3sx)
+        self.check_updates_3sx_button.clicked.connect(self.check_3sx_updates)
         self.upload_afs_button.clicked.connect(self.upload_sf33rd_afs)
         self.uninstall_3sx_button.clicked.connect(self.uninstall_3sx)
 
         self.install_update_pico8_button.clicked.connect(self.install_or_update_pico8)
+        self.check_updates_pico8_button.clicked.connect(self.check_pico8_updates)
         self.uninstall_pico8_button.clicked.connect(self.uninstall_pico8)
 
         self.install_update_openbor_4086_button.clicked.connect(
             self.install_or_update_openbor_4086
+        )
+        self.check_updates_openbor_4086_button.clicked.connect(
+            self.check_openbor_4086_updates
         )
         self.uninstall_openbor_4086_button.clicked.connect(self.uninstall_openbor_4086)
 
         self.install_update_openbor_7533_button.clicked.connect(
             self.install_or_update_openbor_7533
         )
+        self.check_updates_openbor_7533_button.clicked.connect(
+            self.check_openbor_7533_updates
+        )
         self.uninstall_openbor_7533_button.clicked.connect(self.uninstall_openbor_7533)
 
         self.install_update_sonic_mania_button.clicked.connect(
             self.install_or_update_sonic_mania
         )
+        self.check_updates_sonic_mania_button.clicked.connect(
+            self.check_sonic_mania_updates
+        )
         self.upload_data_rsdk_button.clicked.connect(self.upload_sonic_mania_data_rsdk)
         self.uninstall_sonic_mania_button.clicked.connect(self.uninstall_sonic_mania)
+
+        self.install_update_ra_cores_button.clicked.connect(self.install_or_update_ra_cores)
+        self.check_updates_ra_cores_button.clicked.connect(self.check_ra_cores_updates)
+        self.edit_ra_cores_config_button.clicked.connect(self.edit_ra_cores_config)
+        self.uninstall_ra_cores_button.clicked.connect(self.uninstall_ra_cores)
 
         self.hide_console_button.clicked.connect(self.toggle_console)
 
@@ -312,6 +356,9 @@ class ExtrasTab(QWidget):
         self.install_update_3sx_button = QPushButton("Install")
         self.install_update_3sx_button.setFixedWidth(170)
 
+        self.check_updates_3sx_button = QPushButton("Check for Updates")
+        self.check_updates_3sx_button.setFixedWidth(170)
+
         self.upload_afs_button = QPushButton("Upload SF33RD.AFS")
         self.upload_afs_button.setFixedWidth(190)
 
@@ -321,11 +368,12 @@ class ExtrasTab(QWidget):
         layout.addLayout(
             self._build_button_row(
                 self.install_update_3sx_button,
-                self.upload_afs_button,
+                self.check_updates_3sx_button,
             )
         )
         layout.addLayout(
             self._build_button_row(
+                self.upload_afs_button,
                 self.uninstall_3sx_button,
             )
         )
@@ -342,12 +390,20 @@ class ExtrasTab(QWidget):
         self.install_update_pico8_button = QPushButton("Install")
         self.install_update_pico8_button.setFixedWidth(170)
 
+        self.check_updates_pico8_button = QPushButton("Check for Updates")
+        self.check_updates_pico8_button.setFixedWidth(170)
+
         self.uninstall_pico8_button = QPushButton("Uninstall")
         self.uninstall_pico8_button.setFixedWidth(170)
 
         layout.addLayout(
             self._build_button_row(
                 self.install_update_pico8_button,
+                self.check_updates_pico8_button,
+            )
+        )
+        layout.addLayout(
+            self._build_button_row(
                 self.uninstall_pico8_button,
             )
         )
@@ -364,12 +420,20 @@ class ExtrasTab(QWidget):
         self.install_update_openbor_4086_button = QPushButton("Install")
         self.install_update_openbor_4086_button.setFixedWidth(170)
 
+        self.check_updates_openbor_4086_button = QPushButton("Check for Updates")
+        self.check_updates_openbor_4086_button.setFixedWidth(170)
+
         self.uninstall_openbor_4086_button = QPushButton("Uninstall")
         self.uninstall_openbor_4086_button.setFixedWidth(170)
 
         layout.addLayout(
             self._build_button_row(
                 self.install_update_openbor_4086_button,
+                self.check_updates_openbor_4086_button,
+            )
+        )
+        layout.addLayout(
+            self._build_button_row(
                 self.uninstall_openbor_4086_button,
             )
         )
@@ -386,12 +450,20 @@ class ExtrasTab(QWidget):
         self.install_update_openbor_7533_button = QPushButton("Install")
         self.install_update_openbor_7533_button.setFixedWidth(170)
 
+        self.check_updates_openbor_7533_button = QPushButton("Check for Updates")
+        self.check_updates_openbor_7533_button.setFixedWidth(170)
+
         self.uninstall_openbor_7533_button = QPushButton("Uninstall")
         self.uninstall_openbor_7533_button.setFixedWidth(170)
 
         layout.addLayout(
             self._build_button_row(
                 self.install_update_openbor_7533_button,
+                self.check_updates_openbor_7533_button,
+            )
+        )
+        layout.addLayout(
+            self._build_button_row(
                 self.uninstall_openbor_7533_button,
             )
         )
@@ -408,6 +480,9 @@ class ExtrasTab(QWidget):
         self.install_update_sonic_mania_button = QPushButton("Install")
         self.install_update_sonic_mania_button.setFixedWidth(170)
 
+        self.check_updates_sonic_mania_button = QPushButton("Check for Updates")
+        self.check_updates_sonic_mania_button.setFixedWidth(170)
+
         self.upload_data_rsdk_button = QPushButton("Upload Data.rsdk")
         self.upload_data_rsdk_button.setFixedWidth(190)
 
@@ -417,12 +492,47 @@ class ExtrasTab(QWidget):
         layout.addLayout(
             self._build_button_row(
                 self.install_update_sonic_mania_button,
-                self.upload_data_rsdk_button,
+                self.check_updates_sonic_mania_button,
             )
         )
         layout.addLayout(
             self._build_button_row(
+                self.upload_data_rsdk_button,
                 self.uninstall_sonic_mania_button,
+            )
+        )
+
+        widget.setLayout(layout)
+        return widget
+
+    def _build_ra_cores_actions(self):
+        widget = QWidget()
+        layout = QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+
+        self.install_update_ra_cores_button = QPushButton("Install")
+        self.install_update_ra_cores_button.setFixedWidth(170)
+
+        self.check_updates_ra_cores_button = QPushButton("Check for Updates")
+        self.check_updates_ra_cores_button.setFixedWidth(170)
+
+        self.edit_ra_cores_config_button = QPushButton("Edit Config")
+        self.edit_ra_cores_config_button.setFixedWidth(170)
+
+        self.uninstall_ra_cores_button = QPushButton("Uninstall")
+        self.uninstall_ra_cores_button.setFixedWidth(170)
+
+        layout.addLayout(
+            self._build_button_row(
+                self.install_update_ra_cores_button,
+                self.check_updates_ra_cores_button,
+            )
+        )
+        layout.addLayout(
+            self._build_button_row(
+                self.edit_ra_cores_config_button,
+                self.uninstall_ra_cores_button,
             )
         )
 
@@ -508,19 +618,30 @@ class ExtrasTab(QWidget):
         self.refresh_status()
 
     def apply_disconnected_state(self):
+        self.ra_cores_show_install_info_after_success = False
+
         for button in [
             self.install_update_3sx_button,
+            self.check_updates_3sx_button,
             self.upload_afs_button,
             self.uninstall_3sx_button,
             self.install_update_pico8_button,
+            self.check_updates_pico8_button,
             self.uninstall_pico8_button,
             self.install_update_openbor_4086_button,
+            self.check_updates_openbor_4086_button,
             self.uninstall_openbor_4086_button,
             self.install_update_openbor_7533_button,
+            self.check_updates_openbor_7533_button,
             self.uninstall_openbor_7533_button,
             self.install_update_sonic_mania_button,
+            self.check_updates_sonic_mania_button,
             self.upload_data_rsdk_button,
             self.uninstall_sonic_mania_button,
+            self.install_update_ra_cores_button,
+            self.check_updates_ra_cores_button,
+            self.edit_ra_cores_config_button,
+            self.uninstall_ra_cores_button,
         ]:
             button.setEnabled(False)
 
@@ -529,12 +650,14 @@ class ExtrasTab(QWidget):
         self.install_update_openbor_4086_button.setText("Install")
         self.install_update_openbor_7533_button.setText("Install")
         self.install_update_sonic_mania_button.setText("Install")
+        self.install_update_ra_cores_button.setText("Install")
 
         self.extra_status_texts[self.EXTRA_3SX] = "Unknown"
         self.extra_status_texts[self.EXTRA_PICO8] = "Unknown"
         self.extra_status_texts[self.EXTRA_OPENBOR_4086] = "Unknown"
         self.extra_status_texts[self.EXTRA_OPENBOR_7533] = "Unknown"
         self.extra_status_texts[self.EXTRA_SONIC_MANIA] = "Unknown"
+        self.extra_status_texts[self.EXTRA_RA_CORES] = "Unknown"
 
         self.update_extra_list_labels()
         self.update_details_panel()
@@ -550,14 +673,11 @@ class ExtrasTab(QWidget):
             self.extra_status_texts[self.EXTRA_3SX] = f"Unknown ({e})"
             self.install_update_3sx_button.setText("Install")
             self.install_update_3sx_button.setEnabled(False)
+            self.check_updates_3sx_button.setEnabled(False)
             self.upload_afs_button.setEnabled(False)
             self.uninstall_3sx_button.setEnabled(False)
         else:
-            self.extra_status_texts[self.EXTRA_3SX] = status_3sx["status_text"]
-            self.install_update_3sx_button.setText(status_3sx["install_label"])
-            self.install_update_3sx_button.setEnabled(status_3sx["install_enabled"])
-            self.upload_afs_button.setEnabled(status_3sx["upload_enabled"])
-            self.uninstall_3sx_button.setEnabled(status_3sx["uninstall_enabled"])
+            self._apply_status_result_for_extra(self.EXTRA_3SX, status_3sx)
 
         try:
             status_pico8 = get_pico8_status(self.connection)
@@ -565,12 +685,10 @@ class ExtrasTab(QWidget):
             self.extra_status_texts[self.EXTRA_PICO8] = f"Unknown ({e})"
             self.install_update_pico8_button.setText("Install")
             self.install_update_pico8_button.setEnabled(False)
+            self.check_updates_pico8_button.setEnabled(False)
             self.uninstall_pico8_button.setEnabled(False)
         else:
-            self.extra_status_texts[self.EXTRA_PICO8] = status_pico8["status_text"]
-            self.install_update_pico8_button.setText(status_pico8["install_label"])
-            self.install_update_pico8_button.setEnabled(status_pico8["install_enabled"])
-            self.uninstall_pico8_button.setEnabled(status_pico8["uninstall_enabled"])
+            self._apply_status_result_for_extra(self.EXTRA_PICO8, status_pico8)
 
         try:
             status_openbor_4086 = get_openbor_4086_status(self.connection)
@@ -578,20 +696,10 @@ class ExtrasTab(QWidget):
             self.extra_status_texts[self.EXTRA_OPENBOR_4086] = f"Unknown ({e})"
             self.install_update_openbor_4086_button.setText("Install")
             self.install_update_openbor_4086_button.setEnabled(False)
+            self.check_updates_openbor_4086_button.setEnabled(False)
             self.uninstall_openbor_4086_button.setEnabled(False)
         else:
-            self.extra_status_texts[self.EXTRA_OPENBOR_4086] = status_openbor_4086[
-                "status_text"
-            ]
-            self.install_update_openbor_4086_button.setText(
-                status_openbor_4086["install_label"]
-            )
-            self.install_update_openbor_4086_button.setEnabled(
-                status_openbor_4086["install_enabled"]
-            )
-            self.uninstall_openbor_4086_button.setEnabled(
-                status_openbor_4086["uninstall_enabled"]
-            )
+            self._apply_status_result_for_extra(self.EXTRA_OPENBOR_4086, status_openbor_4086)
 
         try:
             status_openbor_7533 = get_openbor_7533_status(self.connection)
@@ -599,20 +707,10 @@ class ExtrasTab(QWidget):
             self.extra_status_texts[self.EXTRA_OPENBOR_7533] = f"Unknown ({e})"
             self.install_update_openbor_7533_button.setText("Install")
             self.install_update_openbor_7533_button.setEnabled(False)
+            self.check_updates_openbor_7533_button.setEnabled(False)
             self.uninstall_openbor_7533_button.setEnabled(False)
         else:
-            self.extra_status_texts[self.EXTRA_OPENBOR_7533] = status_openbor_7533[
-                "status_text"
-            ]
-            self.install_update_openbor_7533_button.setText(
-                status_openbor_7533["install_label"]
-            )
-            self.install_update_openbor_7533_button.setEnabled(
-                status_openbor_7533["install_enabled"]
-            )
-            self.uninstall_openbor_7533_button.setEnabled(
-                status_openbor_7533["uninstall_enabled"]
-            )
+            self._apply_status_result_for_extra(self.EXTRA_OPENBOR_7533, status_openbor_7533)
 
         try:
             status_sonic_mania = get_sonic_mania_status(self.connection)
@@ -620,24 +718,23 @@ class ExtrasTab(QWidget):
             self.extra_status_texts[self.EXTRA_SONIC_MANIA] = f"Unknown ({e})"
             self.install_update_sonic_mania_button.setText("Install")
             self.install_update_sonic_mania_button.setEnabled(False)
+            self.check_updates_sonic_mania_button.setEnabled(False)
             self.upload_data_rsdk_button.setEnabled(False)
             self.uninstall_sonic_mania_button.setEnabled(False)
         else:
-            self.extra_status_texts[self.EXTRA_SONIC_MANIA] = status_sonic_mania[
-                "status_text"
-            ]
-            self.install_update_sonic_mania_button.setText(
-                status_sonic_mania["install_label"]
-            )
-            self.install_update_sonic_mania_button.setEnabled(
-                status_sonic_mania["install_enabled"]
-            )
-            self.upload_data_rsdk_button.setEnabled(
-                status_sonic_mania["upload_enabled"]
-            )
-            self.uninstall_sonic_mania_button.setEnabled(
-                status_sonic_mania["uninstall_enabled"]
-            )
+            self._apply_status_result_for_extra(self.EXTRA_SONIC_MANIA, status_sonic_mania)
+
+        try:
+            status_ra_cores = get_ra_cores_status(self.connection)
+        except Exception as e:
+            self.extra_status_texts[self.EXTRA_RA_CORES] = f"Unknown ({e})"
+            self.install_update_ra_cores_button.setText("Install")
+            self.install_update_ra_cores_button.setEnabled(False)
+            self.check_updates_ra_cores_button.setEnabled(False)
+            self.edit_ra_cores_config_button.setEnabled(False)
+            self.uninstall_ra_cores_button.setEnabled(False)
+        else:
+            self._apply_status_result_for_extra(self.EXTRA_RA_CORES, status_ra_cores)
 
         self.update_extra_list_labels()
         self.update_details_panel()
@@ -678,12 +775,15 @@ class ExtrasTab(QWidget):
         else:
             self.show_console()
 
-    def _run_worker(self, task_fn, success_message=""):
+    def _run_worker(self, task_fn, success_message="", task_kind=None):
         if self.current_worker is not None and self.current_worker.isRunning():
             return
 
         self.show_console()
         self.console.clear()
+
+        self.current_task_kind = task_kind
+        self.current_check_result = None
 
         self.current_worker = ExtraTaskWorker(task_fn, success_message)
         self.current_worker.log_line.connect(self.append_console_line)
@@ -695,21 +795,31 @@ class ExtrasTab(QWidget):
         self.extra_list.setEnabled(False)
 
         self.install_update_3sx_button.setEnabled(False)
+        self.check_updates_3sx_button.setEnabled(False)
         self.upload_afs_button.setEnabled(False)
         self.uninstall_3sx_button.setEnabled(False)
 
         self.install_update_pico8_button.setEnabled(False)
+        self.check_updates_pico8_button.setEnabled(False)
         self.uninstall_pico8_button.setEnabled(False)
 
         self.install_update_openbor_4086_button.setEnabled(False)
+        self.check_updates_openbor_4086_button.setEnabled(False)
         self.uninstall_openbor_4086_button.setEnabled(False)
 
         self.install_update_openbor_7533_button.setEnabled(False)
+        self.check_updates_openbor_7533_button.setEnabled(False)
         self.uninstall_openbor_7533_button.setEnabled(False)
 
         self.install_update_sonic_mania_button.setEnabled(False)
+        self.check_updates_sonic_mania_button.setEnabled(False)
         self.upload_data_rsdk_button.setEnabled(False)
         self.uninstall_sonic_mania_button.setEnabled(False)
+
+        self.install_update_ra_cores_button.setEnabled(False)
+        self.check_updates_ra_cores_button.setEnabled(False)
+        self.edit_ra_cores_config_button.setEnabled(False)
+        self.uninstall_ra_cores_button.setEnabled(False)
 
         self.current_worker.start()
 
@@ -718,19 +828,220 @@ class ExtrasTab(QWidget):
             self.append_console_line("")
             self.append_console_line(message)
 
+        if (
+            message == "RetroAchievement Cores installed."
+            and self.ra_cores_show_install_info_after_success
+        ):
+            self.ra_cores_show_install_info_after_success = False
+            self.show_ra_cores_install_info()
+
     def on_worker_error(self, message):
+        self.ra_cores_show_install_info_after_success = False
+
         self.append_console_line("")
         self.append_console_line("Error:")
         self.append_console_line(message)
         QMessageBox.warning(self, "Extras", message)
 
     def on_worker_finished(self):
+        task_kind = self.current_task_kind
+        check_result = self.current_check_result
+
         self.current_worker = None
+        self.current_task_kind = None
+        self.current_check_result = None
         self.extra_list.setEnabled(True)
+
+        if self._is_check_updates_task(task_kind):
+            extra_key = self._extra_key_for_check_task(task_kind)
+
+            self.refresh_status()
+
+            if extra_key and isinstance(check_result, dict):
+                self._apply_status_result_for_extra(extra_key, check_result)
+                self.update_extra_list_labels()
+                self.update_details_panel()
+
+            return
+
         self.refresh_status()
 
     def on_worker_result(self, result):
-        del result
+        task_kind = self.current_task_kind
+
+        if not self._is_check_updates_task(task_kind):
+            return
+
+        if not isinstance(result, dict):
+            return
+
+        required_keys = {
+            "status_text",
+            "install_label",
+            "install_enabled",
+            "uninstall_enabled",
+        }
+
+        if not required_keys.issubset(result.keys()):
+            return
+
+        extra_key = self._extra_key_for_check_task(task_kind)
+        if not extra_key:
+            return
+
+        self.current_check_result = result
+
+        self._apply_status_result_for_extra(extra_key, result)
+
+        self.update_extra_list_labels()
+        self.update_details_panel()
+
+        title = self.extra_titles.get(extra_key, "Extra")
+
+        if result.get("update_available"):
+            self.append_console_line("Update available.")
+            QMessageBox.information(
+                self,
+                title,
+                f"An update is available for {title}.",
+            )
+            return
+
+        if result.get("latest_error"):
+            self.append_console_line(f"Update check failed: {result['latest_error']}")
+            QMessageBox.warning(
+                self,
+                title,
+                f"Failed to check for updates:\n\n{result['latest_error']}",
+            )
+            return
+
+        self.append_console_line(f"{title} is up to date.")
+        QMessageBox.information(
+            self,
+            title,
+            f"{title} is up to date.",
+        )
+
+    def _is_check_updates_task(self, task_kind):
+        return task_kind in {
+            self.TASK_CHECK_3SX,
+            self.TASK_CHECK_PICO8,
+            self.TASK_CHECK_OPENBOR_4086,
+            self.TASK_CHECK_OPENBOR_7533,
+            self.TASK_CHECK_SONIC_MANIA,
+            self.TASK_CHECK_RA_CORES,
+        }
+
+    def _extra_key_for_check_task(self, task_kind):
+        return {
+            self.TASK_CHECK_3SX: self.EXTRA_3SX,
+            self.TASK_CHECK_PICO8: self.EXTRA_PICO8,
+            self.TASK_CHECK_OPENBOR_4086: self.EXTRA_OPENBOR_4086,
+            self.TASK_CHECK_OPENBOR_7533: self.EXTRA_OPENBOR_7533,
+            self.TASK_CHECK_SONIC_MANIA: self.EXTRA_SONIC_MANIA,
+            self.TASK_CHECK_RA_CORES: self.EXTRA_RA_CORES,
+        }.get(task_kind)
+
+    def _apply_status_result_for_extra(self, extra_key, result):
+        self.extra_status_texts[extra_key] = result["status_text"]
+
+        if extra_key == self.EXTRA_3SX:
+            self.install_update_3sx_button.setText(result["install_label"])
+            self.install_update_3sx_button.setEnabled(result["install_enabled"])
+            self.check_updates_3sx_button.setEnabled(result.get("installed", False))
+            self.upload_afs_button.setEnabled(result.get("upload_enabled", False))
+            self.uninstall_3sx_button.setEnabled(result["uninstall_enabled"])
+
+        elif extra_key == self.EXTRA_PICO8:
+            self.install_update_pico8_button.setText(result["install_label"])
+            self.install_update_pico8_button.setEnabled(result["install_enabled"])
+            self.check_updates_pico8_button.setEnabled(result.get("installed", False))
+            self.uninstall_pico8_button.setEnabled(result["uninstall_enabled"])
+
+        elif extra_key == self.EXTRA_OPENBOR_4086:
+            self.install_update_openbor_4086_button.setText(result["install_label"])
+            self.install_update_openbor_4086_button.setEnabled(result["install_enabled"])
+            self.check_updates_openbor_4086_button.setEnabled(
+                result.get("installed", False)
+            )
+            self.uninstall_openbor_4086_button.setEnabled(result["uninstall_enabled"])
+
+        elif extra_key == self.EXTRA_OPENBOR_7533:
+            self.install_update_openbor_7533_button.setText(result["install_label"])
+            self.install_update_openbor_7533_button.setEnabled(result["install_enabled"])
+            self.check_updates_openbor_7533_button.setEnabled(
+                result.get("installed", False)
+            )
+            self.uninstall_openbor_7533_button.setEnabled(result["uninstall_enabled"])
+
+        elif extra_key == self.EXTRA_SONIC_MANIA:
+            self.install_update_sonic_mania_button.setText(result["install_label"])
+            self.install_update_sonic_mania_button.setEnabled(result["install_enabled"])
+            self.check_updates_sonic_mania_button.setEnabled(
+                result.get("installed", False)
+            )
+            self.upload_data_rsdk_button.setEnabled(result.get("upload_enabled", False))
+            self.uninstall_sonic_mania_button.setEnabled(result["uninstall_enabled"])
+
+        elif extra_key == self.EXTRA_RA_CORES:
+            self.install_update_ra_cores_button.setText(result["install_label"])
+            self.install_update_ra_cores_button.setEnabled(result["install_enabled"])
+            self.check_updates_ra_cores_button.setEnabled(result.get("installed", False))
+            self.edit_ra_cores_config_button.setEnabled(
+                result.get("edit_config_enabled", False)
+            )
+            self.uninstall_ra_cores_button.setEnabled(result["uninstall_enabled"])
+
+    def check_3sx_updates(self):
+        if not self.connection.is_connected():
+            return
+
+        def task(log):
+            log("Checking 3S-ARM updates...\n")
+            return get_3sx_status(self.connection, check_latest=True)
+
+        self._run_worker(task, "", task_kind=self.TASK_CHECK_3SX)
+
+    def check_pico8_updates(self):
+        if not self.connection.is_connected():
+            return
+
+        def task(log):
+            log("Checking MiSTer Pico-8 updates...\n")
+            return get_pico8_status(self.connection, check_latest=True)
+
+        self._run_worker(task, "", task_kind=self.TASK_CHECK_PICO8)
+
+    def check_openbor_4086_updates(self):
+        if not self.connection.is_connected():
+            return
+
+        def task(log):
+            log("Checking MiSTer OpenBOR 4086 updates...\n")
+            return get_openbor_4086_status(self.connection, check_latest=True)
+
+        self._run_worker(task, "", task_kind=self.TASK_CHECK_OPENBOR_4086)
+
+    def check_openbor_7533_updates(self):
+        if not self.connection.is_connected():
+            return
+
+        def task(log):
+            log("Checking MiSTer OpenBOR 7533 updates...\n")
+            return get_openbor_7533_status(self.connection, check_latest=True)
+
+        self._run_worker(task, "", task_kind=self.TASK_CHECK_OPENBOR_7533)
+
+    def check_sonic_mania_updates(self):
+        if not self.connection.is_connected():
+            return
+
+        def task(log):
+            log("Checking Sonic Mania MiSTer updates...\n")
+            return get_sonic_mania_status(self.connection, check_latest=True)
+
+        self._run_worker(task, "", task_kind=self.TASK_CHECK_SONIC_MANIA)
 
     def install_or_update_3sx(self):
         if not self.connection.is_connected():
@@ -796,6 +1107,8 @@ class ExtrasTab(QWidget):
 
         if button_text == "Update":
             success_message = "MiSTer Pico-8 updated."
+        elif button_text == "Migrate / Install":
+            success_message = "Legacy MiSTer Pico-8 install migrated."
 
         def task(log):
             return backend_install_or_update_pico8(self.connection, log)
@@ -953,3 +1266,85 @@ class ExtrasTab(QWidget):
             return backend_uninstall_sonic_mania(self.connection, log)
 
         self._run_worker(task, "Sonic Mania MiSTer uninstalled.")
+
+    def check_ra_cores_updates(self):
+        if not self.connection.is_connected():
+            return
+
+        def task(log):
+            log("Checking RetroAchievement Cores updates...\n")
+            return get_ra_cores_status(
+                self.connection,
+                check_latest=True,
+            )
+
+        self._run_worker(
+            task,
+            "",
+            task_kind=self.TASK_CHECK_RA_CORES,
+        )
+
+    def show_ra_cores_install_info(self):
+        QMessageBox.information(
+            self,
+            "RetroAchievement Cores Installed",
+            (
+                "RetroAchievement Cores have been installed.\n\n"
+                "Before using them, open Edit Config and enter your RetroAchievements "
+                "username and password.\n\n"
+                "To use the RetroAchievement-enabled cores:\n\n"
+                "1. Open the MiSTer OSD menu.\n"
+                "2. Select MiSTer_RA.ini as your active ini file.\n"
+                "3. Launch the cores from the _RA Cores folder.\n\n"
+                "Your regular MiSTer.ini and normal cores are left unchanged."
+            ),
+        )
+
+    def install_or_update_ra_cores(self):
+        if not self.connection.is_connected():
+            return
+
+        button_text = self.install_update_ra_cores_button.text().strip()
+        is_update = button_text == "Update"
+
+        success_message = "RetroAchievement Cores installed."
+        if is_update:
+            success_message = "RetroAchievement Cores updated."
+
+        self.ra_cores_show_install_info_after_success = not is_update
+
+        def task(log):
+            return backend_install_or_update_ra_cores(self.connection, log)
+
+        self._run_worker(task, success_message)
+
+    def edit_ra_cores_config(self):
+        if not self.connection.is_connected():
+            return
+
+        dialog = RetroAchievementsConfigDialog(self, self.connection)
+        if dialog.exec() == dialog.DialogCode.Accepted:
+            self.refresh_status()
+
+    def uninstall_ra_cores(self):
+        if not self.connection.is_connected():
+            return
+
+        reply = QMessageBox.question(
+            self,
+            "Uninstall RetroAchievement Cores",
+            (
+                "Remove RetroAchievement Cores, MiSTer_RA, MiSTer_RA.ini, "
+                "achievement.wav, and installed RA core files?\n\n"
+                "retroachievements.cfg will be kept so your login settings are preserved."
+            ),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        def task(log):
+            return backend_uninstall_ra_cores(self.connection, log)
+
+        self._run_worker(task, "RetroAchievement Cores uninstalled.")
