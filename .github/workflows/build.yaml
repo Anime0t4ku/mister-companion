@@ -171,28 +171,19 @@ jobs:
       - name: Move macOS Intel DMG
         run: mv dist/MiSTer-Companion-macOS-Intel.dmg ./MiSTer-Companion-macOS-Intel.dmg
 
-      - name: Recreate Pre-release Tag
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Update Git Tag
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          gh release delete Pre-release --yes --cleanup-tag || true
-
           git tag -f Pre-release
-          git push origin refs/tags/Pre-release
+          git push -f origin Pre-release
 
-      - name: Create Pre-release
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release create Pre-release \
-            MiSTer-Companion-Windows-x86_64.zip \
-            MiSTer-Companion-Linux-x86_64.tar.gz \
-            MiSTer-Companion-macOS-Intel.dmg \
-            --title "Pre-release" \
-            --notes "Automated pre-release build." \
-            --prerelease
+      - name: Create or Update Release
+        uses: ncipollo/release-action@v1
+        with:
+          prerelease: true
+          allowUpdates: true
+          removeArtifacts: true
+          tag: Pre-release
+          artifacts: |
+            MiSTer-Companion-Windows-x86_64.zip
+            MiSTer-Companion-Linux-x86_64.tar.gz
+            MiSTer-Companion-macOS-Intel.dmg
