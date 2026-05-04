@@ -13,7 +13,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
-from core.ra_cores import (
+from core.extras_ra_cores import (
     read_ra_config as backend_read_ra_config,
     write_ra_config as backend_write_ra_config,
 )

@@ -638,30 +638,79 @@ def install_or_update_ra_cores(connection, log):
     _ensure_remote_dir(connection, RA_CORES_DIR)
     _ensure_remote_dir(connection, RA_CONFIG_DIR)
 
+    installed = _is_ra_cores_installed(connection)
     versions = _read_versions(connection)
+    versions.setdefault("sources", {})
+
     existing_config_present = _path_exists(connection, RA_CONFIG_PATH)
 
+    if installed:
+        sources_to_install = _get_outdated_sources(
+            versions,
+            latest_versions,
+        )
+
+        if not sources_to_install:
+            log("All RetroAchievement Cores sources are already up to date.\n")
+    else:
+        log("RetroAchievement Cores are not fully installed, installing all sources...\n")
+        sources_to_install = [source["key"] for source in RA_SOURCES]
+
+    source_lookup = {source["key"]: source for source in RA_SOURCES}
+    title_lookup = _source_titles_by_key()
+
+    if installed and sources_to_install:
+        readable_sources = ", ".join(
+            title_lookup.get(source_key, source_key)
+            for source_key in sources_to_install
+        )
+        log(f"Sources needing update: {readable_sources}\n")
+
     main_source = RA_SOURCES[0]
-    main_release = latest_versions[main_source["key"]]
-    versions.setdefault("sources", {})[main_source["key"]] = _install_main_package(
-        connection,
-        main_release,
-        existing_config_present,
-        log,
-    )
+    main_key = main_source["key"]
+
+    if main_key in sources_to_install:
+        main_release = latest_versions[main_key]
+        versions["sources"][main_key] = _install_main_package(
+            connection,
+            main_release,
+            existing_config_present,
+            log,
+        )
+    else:
+        log("Main_MiSTer is already up to date, skipping download.\n")
 
     _create_ra_ini_if_missing(connection, log)
     _ensure_ra_ini_blocks(connection, log)
 
-    for source in RA_SOURCES[1:]:
-        release = latest_versions[source["key"]]
-        versions["sources"][source["key"]] = _install_core_source(
+    for source_key in sources_to_install:
+        if source_key == main_key:
+            continue
+
+        source = source_lookup.get(source_key)
+        if not source:
+            continue
+
+        release = latest_versions[source_key]
+        versions["sources"][source_key] = _install_core_source(
             connection,
             source,
             release,
             versions,
             log,
         )
+
+    if installed:
+        skipped_sources = [
+            source
+            for source in RA_SOURCES
+            if source["key"] not in sources_to_install
+        ]
+
+        for source in skipped_sources:
+            if source["key"] == main_key:
+                continue
+            log(f"{source['title']} is already up to date, skipping download.\n")
 
     _write_versions(connection, versions)
     log("Saved RetroAchievement Cores installed version information.\n")

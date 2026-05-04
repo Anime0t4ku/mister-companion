@@ -351,7 +351,7 @@ def save_update_all_config(connection, config):
             main_lines,
             [
                 "[llapi_folder]",
-                "db_url = https://raw.githubusercontent.com/MiSTer-LLAPI/LLAPI_folder_MiSTer/main/llapidb.json",
+                "db_url = https://raw.githubusercontent.com/MiSTer-LLAPI/LLAPI_folder_MiSTer/main/llapidb.json.zip",
             ],
         )
         main_lines = handle_simple_section(

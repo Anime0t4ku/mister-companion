@@ -80,7 +80,6 @@ class UpdateAllConfigDialog(QDialog):
         columns_layout.addLayout(self.left_column_layout, 3)
         columns_layout.addLayout(self.right_column_layout, 2)
 
-        # ===== Main Cores =====
         main_group = self._group("Main Cores", self.left_column_layout)
         self.main_cores_check = QCheckBox("Enable Main Cores")
         self.main_source_combo = QComboBox()
@@ -98,7 +97,6 @@ class UpdateAllConfigDialog(QDialog):
         row.addStretch()
         main_group.layout().addLayout(row)
 
-        # ===== JTCores =====
         jt_group = self._group("JTCores", self.left_column_layout)
         self.jtcores_check = QCheckBox("Enable JTCores")
         self.jt_beta_check = QCheckBox("Enable Beta Cores")
@@ -106,7 +104,6 @@ class UpdateAllConfigDialog(QDialog):
         self._add(jt_group, self.jt_beta_check, indent=True)
         self.jtcores_check.toggled.connect(self.update_jt_beta_state)
 
-        # ===== Other Cores =====
         other_group = self._group("Other Cores", self.left_column_layout)
         self.coinop_check = QCheckBox("Coin-Op Collection")
         self.arcade_offset_check = QCheckBox("Arcade Offset Folder")
@@ -129,7 +126,6 @@ class UpdateAllConfigDialog(QDialog):
         ]:
             self._add(other_group, widget)
 
-        # ===== Tools & Scripts =====
         tools_group = self._group("Tools & Scripts", self.left_column_layout)
         self.arcade_org_check = QCheckBox("Arcade Organizer")
         self.mrext_check = QCheckBox("MiSTer Extensions (Wizzo Scripts)")
@@ -150,7 +146,6 @@ class UpdateAllConfigDialog(QDialog):
         ]:
             self._add(tools_group, widget)
 
-        # ===== Extra Content =====
         extra_group = self._group("Extra Content", self.left_column_layout)
         self.bios_check = QCheckBox("BIOS Database")
         self.arcade_roms_check = QCheckBox("Arcade ROMs Database")
@@ -185,7 +180,6 @@ class UpdateAllConfigDialog(QDialog):
         extra_group.layout().addLayout(wallpaper_row)
         self.ranny_wallpapers_check.toggled.connect(self.update_wallpaper_state)
 
-        # ===== Community Sources =====
         community_group = self._group("Community Sources", self.left_column_layout)
         self.insert_coin_check = QCheckBox("Insert-Coin")
         self.mister_frontier_check = QCheckBox("MiSTer Frontier")
@@ -198,7 +192,6 @@ class UpdateAllConfigDialog(QDialog):
         ]:
             self._add(community_group, widget)
 
-        # ===== RetroAccount =====
         retro_group = self._group("RetroAccount", self.right_column_layout)
 
         self.retro_status_label = QLabel("Status: Not logged in")
