@@ -5,10 +5,10 @@
       "id": "v3-stable",
       "date": "2026-05-04",
       "type": "update",
-      "headline": "MiSTer Companion v3.9.0 Released",
-      "message": "MiSTer Companion v3.9.0 is now available.\n\nThis release redesigns the backend for the Scripts and Extras tabs, making the code easier to maintain and easier to expand in future releases.\n\nZaparoo Launcher/UI Beta has been added to the Extras tab, allowing it to be installed, updated, and uninstalled directly from MiSTer Companion.\n\nSyncthing has been added to the Scripts tab, with options to install it, start it immediately, enable or disable start on boot, and uninstall it completely.\n\nRA Viewer has also been added to the Scripts tab, including an Edit Config option for your RetroAchievements username and Web API key.\n\nYou can download the latest stable release below.",
-      "url": "https://github.com/Anime0t4ku/mister-companion/releases/tag/v3.9.0",
-      "url_label": "Download v3.9.0"
+      "headline": "MiSTer Companion v3.9.1 Released",
+      "message": "MiSTer Companion v3.9.1 is now available.\n\nThis is a small maintenance update with a few quality-of-life improvements.\n\nSyncthing start-on-boot detection has been improved so existing startup entries are now recognized correctly.\n\nSyncthing also now includes an Open Web Config button, making it easier to access the web interface when the service is running.\n\nThe RA Viewer configurator now includes an Open in Browser button to help users find their RetroAchievements Web API key more easily.\n\nThe Connection tab news widget can now be shown or hidden, and this preference is saved in the app configuration.\n\nYou can download the latest stable release below.",
+      "url": "https://github.com/Anime0t4ku/mister-companion/releases/tag/v3.9.1",
+      "url_label": "Download v3.9.1"
     },
     {
       "id": "macos-support",

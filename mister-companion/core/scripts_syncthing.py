@@ -28,9 +28,8 @@ SYNCTHING_SERVICE_PATH = f"{SYNCTHING_BASE_DIR}/syncthing_service.sh"
 
 USER_STARTUP_PATH = "/media/fat/linux/user-startup.sh"
 
-SYNCTHING_STARTUP_BEGIN = "# Syncthing START"
-SYNCTHING_STARTUP_END = "# Syncthing END"
-SYNCTHING_STARTUP_LINE = f"{SYNCTHING_SERVICE_PATH} >/dev/null 2>&1 &"
+SYNCTHING_STARTUP_BEGIN = "# Start Syncthing"
+SYNCTHING_STARTUP_LINE = f"{SYNCTHING_SERVICE_PATH} start &"
 
 SYNCTHING_SERVICE_SCRIPT = f"""#!/bin/sh
 
@@ -122,9 +121,14 @@ def is_syncthing_start_on_boot_enabled(connection):
         return False
 
     output = connection.run_command(
-        f"grep -F '{SYNCTHING_STARTUP_LINE}' {USER_STARTUP_PATH} 2>/dev/null"
+        f"grep -F '{SYNCTHING_SERVICE_PATH}' {USER_STARTUP_PATH} 2>/dev/null"
     )
-    return bool(output and SYNCTHING_SERVICE_PATH in output)
+
+    return bool(
+        output
+        and SYNCTHING_SERVICE_PATH in output
+        and "start" in output
+    )
 
 
 def is_syncthing_running(connection):
@@ -272,7 +276,7 @@ def start_syncthing(connection):
     if not connection.is_connected():
         raise RuntimeError("Not connected to MiSTer.")
 
-    connection.run_command(f"{SYNCTHING_SERVICE_PATH} >/dev/null 2>&1 &")
+    connection.run_command(f"{SYNCTHING_SERVICE_PATH} start >/dev/null 2>&1 &")
 
 
 def stop_syncthing(connection):
@@ -310,13 +314,10 @@ def enable_syncthing_start_on_boot(connection):
         script = f"""#!/bin/sh
 
 {SYNCTHING_STARTUP_BEGIN}
-(
-    sleep 15
-    {SYNCTHING_STARTUP_LINE}
-) &
-{SYNCTHING_STARTUP_END}
+{SYNCTHING_STARTUP_LINE}
 """
         _write_remote_text(connection, USER_STARTUP_PATH, script)
+        connection.run_command(f"chmod +x {USER_STARTUP_PATH}")
         return
 
     if is_syncthing_start_on_boot_enabled(connection):
@@ -324,11 +325,8 @@ def enable_syncthing_start_on_boot(connection):
 
     connection.run_command(f'echo "" >> {USER_STARTUP_PATH}')
     connection.run_command(f'echo "{SYNCTHING_STARTUP_BEGIN}" >> {USER_STARTUP_PATH}')
-    connection.run_command(f'echo "(" >> {USER_STARTUP_PATH}')
-    connection.run_command(f'echo "    sleep 15" >> {USER_STARTUP_PATH}')
-    connection.run_command(f'echo "    {SYNCTHING_STARTUP_LINE}" >> {USER_STARTUP_PATH}')
-    connection.run_command(f'echo ") &" >> {USER_STARTUP_PATH}')
-    connection.run_command(f'echo "{SYNCTHING_STARTUP_END}" >> {USER_STARTUP_PATH}')
+    connection.run_command(f'echo "{SYNCTHING_STARTUP_LINE}" >> {USER_STARTUP_PATH}')
+    connection.run_command(f"chmod +x {USER_STARTUP_PATH}")
 
 
 def disable_syncthing_start_on_boot(connection):
@@ -336,7 +334,7 @@ def disable_syncthing_start_on_boot(connection):
         return
 
     connection.run_command(
-        f"sed -i '/{SYNCTHING_STARTUP_BEGIN}/,/{SYNCTHING_STARTUP_END}/d' "
+        f"sed -i '\\|{SYNCTHING_STARTUP_BEGIN}|,+1d' "
         f"{USER_STARTUP_PATH} 2>/dev/null || true"
     )
 

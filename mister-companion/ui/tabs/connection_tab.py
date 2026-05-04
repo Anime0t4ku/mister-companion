@@ -21,6 +21,7 @@ from core.config import save_config
 
 NEWSWIDGET_URL = "https://raw.githubusercontent.com/Anime0t4ku/mister-companion/main/newswidget.json"
 NEWS_ROTATION_INTERVAL_MS = 10000
+CONFIG_SHOW_NEWS_WIDGET = "show_news_widget"
 
 
 class ConnectionTab(QWidget):
@@ -41,7 +42,12 @@ class ConnectionTab(QWidget):
         self.init_ui()
         self.connect_signals()
         self.update_connection_state()
-        self.load_news_widget()
+
+        if self.is_news_widget_enabled():
+            self.load_news_widget()
+        else:
+            self.news_group.hide()
+            self.stop_news_rotation()
 
     def init_ui(self):
         main_layout = QVBoxLayout()
@@ -170,6 +176,21 @@ class ConnectionTab(QWidget):
         ssh_options_row.addStretch()
 
         # =========================
+        # News Widget Toggle
+        # =========================
+        news_toggle_row = QHBoxLayout()
+        news_toggle_row.addStretch()
+
+        self.show_news_widget_checkbox = QCheckBox("Show MiSTer Companion News")
+        self.show_news_widget_checkbox.setChecked(self.is_news_widget_enabled())
+        self.show_news_widget_checkbox.setToolTip(
+            "Show or hide the MiSTer Companion news widget on this tab."
+        )
+
+        news_toggle_row.addWidget(self.show_news_widget_checkbox)
+        news_toggle_row.addStretch()
+
+        # =========================
         # News Widget
         # =========================
         self.news_group = QGroupBox("MiSTer Companion News")
@@ -234,6 +255,7 @@ class ConnectionTab(QWidget):
         main_layout.addWidget(self.advanced_ssh_warning_label)
         main_layout.addLayout(ssh_options_row)
         main_layout.addStretch()
+        main_layout.addLayout(news_toggle_row)
         main_layout.addWidget(self.news_group)
 
         self.setLayout(main_layout)
@@ -255,6 +277,7 @@ class ConnectionTab(QWidget):
 
         self.use_ssh_agent_checkbox.toggled.connect(self.handle_ssh_option_changed)
         self.look_for_ssh_keys_checkbox.toggled.connect(self.handle_ssh_option_changed)
+        self.show_news_widget_checkbox.toggled.connect(self.handle_show_news_widget_changed)
 
         self.news_button.clicked.connect(self.open_news_link)
         self.news_prev_button.clicked.connect(self.show_previous_news)
@@ -273,6 +296,22 @@ class ConnectionTab(QWidget):
     # News Widget
     # =============================
 
+    def is_news_widget_enabled(self):
+        return self.main_window.config_data.get(CONFIG_SHOW_NEWS_WIDGET, True)
+
+    def handle_show_news_widget_changed(self, checked):
+        self.main_window.config_data[CONFIG_SHOW_NEWS_WIDGET] = checked
+        save_config(self.main_window.config_data)
+
+        if checked:
+            self.load_news_widget()
+        else:
+            self.news_group.hide()
+            self.news_items = []
+            self.current_news_index = 0
+            self.news_url = ""
+            self.stop_news_rotation()
+
     def eventFilter(self, watched, event):
         if watched is self.news_group:
             if event.type() == QEvent.Type.Enter:
@@ -286,6 +325,14 @@ class ConnectionTab(QWidget):
         return super().eventFilter(watched, event)
 
     def load_news_widget(self):
+        if not self.is_news_widget_enabled():
+            self.news_group.hide()
+            self.news_items = []
+            self.current_news_index = 0
+            self.news_url = ""
+            self.stop_news_rotation()
+            return
+
         self.news_group.hide()
         self.news_items = []
         self.current_news_index = 0
@@ -320,6 +367,10 @@ class ConnectionTab(QWidget):
             self.news_group.hide()
 
     def show_news_item(self, index):
+        if not self.is_news_widget_enabled():
+            self.news_group.hide()
+            return
+
         if not self.news_items:
             self.news_group.hide()
             return
@@ -383,12 +434,20 @@ class ConnectionTab(QWidget):
         self.show_news_item(self.current_news_index - 1)
 
     def update_news_nav_visibility(self):
-        show_nav = self.news_hovered and len(self.news_items) > 1
+        show_nav = (
+            self.is_news_widget_enabled()
+            and self.news_hovered
+            and len(self.news_items) > 1
+        )
         self.news_prev_button.setVisible(show_nav)
         self.news_next_button.setVisible(show_nav)
 
     def start_news_rotation_if_needed(self):
-        if len(self.news_items) > 1 and not self.news_hovered:
+        if (
+            self.is_news_widget_enabled()
+            and len(self.news_items) > 1
+            and not self.news_hovered
+        ):
             if not self.news_timer.isActive():
                 self.news_timer.start(NEWS_ROTATION_INTERVAL_MS)
 
@@ -431,6 +490,7 @@ class ConnectionTab(QWidget):
 
         self.use_ssh_agent_checkbox.setEnabled(False)
         self.look_for_ssh_keys_checkbox.setEnabled(False)
+        self.show_news_widget_checkbox.setEnabled(True)
 
     def apply_disconnected_state(self):
         self.sync_status_from_main_window()
@@ -450,6 +510,7 @@ class ConnectionTab(QWidget):
 
         self.use_ssh_agent_checkbox.setEnabled(True)
         self.look_for_ssh_keys_checkbox.setEnabled(True)
+        self.show_news_widget_checkbox.setEnabled(True)
 
     def update_connection_state(self):
         self.sync_status_from_main_window()

@@ -1,3 +1,5 @@
+import webbrowser
+
 from PyQt6.QtWidgets import (
     QDialog,
     QFormLayout,
@@ -13,6 +15,9 @@ from core.scripts_actions import (
     load_ra_viewer_config,
     save_ra_viewer_config,
 )
+
+
+RA_SETTINGS_URL = "https://retroachievements.org/settings"
 
 
 class RAViewerConfigDialog(QDialog):
@@ -33,8 +38,8 @@ class RAViewerConfigDialog(QDialog):
 
         info_label = QLabel(
             "Enter your RetroAchievements username and Web API key.\n\n"
-            "You can find your Web API key on the RetroAchievements website "
-            "under your account settings."
+            "You can find your Web API key on the RetroAchievements website. "
+            "Click 'Open in Browser' below to open your account settings page."
         )
         info_label.setWordWrap(True)
         main_layout.addWidget(info_label)
@@ -55,6 +60,11 @@ class RAViewerConfigDialog(QDialog):
         main_layout.addLayout(form_layout)
 
         button_row = QHBoxLayout()
+
+        self.open_settings_button = QPushButton("Open in Browser")
+        self.open_settings_button.setFixedWidth(160)
+
+        button_row.addWidget(self.open_settings_button)
         button_row.addStretch()
 
         self.save_button = QPushButton("Save")
@@ -68,8 +78,12 @@ class RAViewerConfigDialog(QDialog):
 
         main_layout.addLayout(button_row)
 
+        self.open_settings_button.clicked.connect(self.open_ra_settings)
         self.save_button.clicked.connect(self.save_config)
         self.cancel_button.clicked.connect(self.reject)
+
+    def open_ra_settings(self):
+        webbrowser.open(RA_SETTINGS_URL)
 
     def load_config(self):
         try:

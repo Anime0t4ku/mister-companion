@@ -1,4 +1,5 @@
 import traceback
+import webbrowser
 
 from PyQt6.QtCore import QThread, Qt, pyqtSignal
 from PyQt6.QtWidgets import (
@@ -152,7 +153,7 @@ class ScriptsTab(QWidget):
             self.SCRIPT_DAV_BROWSER: "Browse a WebDAV server, download ROMs directly to your MiSTer, and optionally launch them after download.",
             self.SCRIPT_FTP_SAVE_SYNC: "Sync MiSTer saves to a remote FTP or SFTP server, with optional savestate syncing and automatic boot-time service startup.",
             self.SCRIPT_STATIC_WALLPAPER: "Install or remove static_wallpaper support. Setting or removing the active static wallpaper is now handled from the Wallpapers tab.",
-            self.SCRIPT_SYNCTHING: "Install Syncthing on your MiSTer, start it immediately, optionally enable start on boot, or uninstall it completely.",
+            self.SCRIPT_SYNCTHING: "Install Syncthing on your MiSTer, start it immediately, optionally enable start on boot, open the web config, or uninstall it completely.",
             self.SCRIPT_RA_VIEWER: "Install RA Viewer on your MiSTer and configure your RetroAchievements username and Web API key.",
         }
 
@@ -367,6 +368,7 @@ class ScriptsTab(QWidget):
 
         self.install_syncthing_button.clicked.connect(self.install_syncthing)
         self.toggle_syncthing_boot_button.clicked.connect(self.toggle_syncthing_start_on_boot)
+        self.open_syncthing_web_config_button.clicked.connect(self.open_syncthing_web_config)
         self.uninstall_syncthing_button.clicked.connect(self.uninstall_syncthing)
 
         self.install_ra_viewer_button.clicked.connect(self.install_ra_viewer)
@@ -641,6 +643,9 @@ class ScriptsTab(QWidget):
         self.toggle_syncthing_boot_button = QPushButton("Enable Start on Boot")
         self.toggle_syncthing_boot_button.setFixedWidth(190)
 
+        self.open_syncthing_web_config_button = QPushButton("Open Web Config")
+        self.open_syncthing_web_config_button.setFixedWidth(190)
+
         self.uninstall_syncthing_button = QPushButton("Uninstall")
         self.uninstall_syncthing_button.setFixedWidth(170)
 
@@ -652,6 +657,7 @@ class ScriptsTab(QWidget):
         )
         layout.addLayout(
             self._build_button_row(
+                self.open_syncthing_web_config_button,
                 self.uninstall_syncthing_button,
             )
         )
@@ -810,6 +816,7 @@ class ScriptsTab(QWidget):
             self.uninstall_static_wallpaper_button,
             self.install_syncthing_button,
             self.toggle_syncthing_boot_button,
+            self.open_syncthing_web_config_button,
             self.uninstall_syncthing_button,
             self.install_ra_viewer_button,
             self.edit_ra_viewer_config_button,
@@ -1008,12 +1015,14 @@ class ScriptsTab(QWidget):
             self.install_syncthing_button.setEnabled(False)
             self.toggle_syncthing_boot_button.setText("Enable Start on Boot")
             self.toggle_syncthing_boot_button.setEnabled(False)
+            self.open_syncthing_web_config_button.setEnabled(False)
             self.uninstall_syncthing_button.setEnabled(False)
         else:
             self.script_status_texts[self.SCRIPT_SYNCTHING] = syncthing_status["status_text"]
             self.install_syncthing_button.setEnabled(syncthing_status["install_enabled"])
             self.toggle_syncthing_boot_button.setText(syncthing_status["boot_label"])
             self.toggle_syncthing_boot_button.setEnabled(syncthing_status["boot_enabled"])
+            self.open_syncthing_web_config_button.setEnabled(syncthing_status["running"])
             self.uninstall_syncthing_button.setEnabled(syncthing_status["uninstall_enabled"])
 
         try:
@@ -1625,6 +1634,21 @@ class ScriptsTab(QWidget):
             self.refresh_status()
         except Exception as e:
             QMessageBox.critical(self, "Error", str(e))
+
+    def open_syncthing_web_config(self):
+        if not self.connection.is_connected():
+            return
+
+        host = self.connection.host
+        if not host:
+            QMessageBox.warning(
+                self,
+                "Open Syncthing Web Config",
+                "No MiSTer IP address is available.",
+            )
+            return
+
+        webbrowser.open(f"http://{host}:8384")
 
     def uninstall_syncthing(self):
         if not self.connection.is_connected():
