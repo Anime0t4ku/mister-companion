@@ -5,10 +5,10 @@
       "id": "v3-stable",
       "date": "2026-05-05",
       "type": "update",
-      "headline": "MiSTer Companion v3.9.2 Released",
-      "message": "MiSTer Companion v3.9.2 is now available.\n\nThis is a small update with big gains for the ZapScripts tab.\n\nZapScripts now uses a local copy of Zaparoo’s media.db, reducing scan times from minutes to seconds.\n\nYou can download the latest stable release below.",
-      "url": "https://github.com/Anime0t4ku/mister-companion/releases/tag/v3.9.2",
-      "url_label": "Download v3.9.2"
+      "headline": "MiSTer Companion v3.9.3 Released",
+      "message": "MiSTer Companion v3.9.3 is now available.\n\nThis is a small maintenance update focused on Syncthing.\n\nThis release fixes an issue where Syncthing could install through MiSTer Companion but fail to start afterwards.\n\nSyncthing should now install and run correctly directly from the Scripts tab.\n\nYou can download the latest stable release below.",
+      "url": "https://github.com/Anime0t4ku/mister-companion/releases/tag/v3.9.3",
+      "url_label": "Download v3.9.3"
     },
     {
       "id": "macos-support",
