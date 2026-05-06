@@ -155,8 +155,9 @@ class ExtrasTab(QWidget):
                 "launcher dev zaparoo.sh, updates MiSTer.ini, and requires a reboot."
             ),
             self.EXTRA_RA_CORES: (
-                "Install, update, configure, and uninstall RetroAchievement-enabled "
-                "MiSTer support files and supported RA cores directly from MiSTer Companion."
+                "Install, update, migrate legacy installs, configure, and uninstall "
+                "RetroAchievement-enabled MiSTer support files and supported RA cores. "
+                "Uses MGL launchers so normal cores remain untouched."
             ),
         }
 
@@ -887,7 +888,10 @@ class ExtrasTab(QWidget):
             self.append_console_line(message)
 
         if (
-            message == "RetroAchievement Cores installed."
+            message in {
+                "RetroAchievement Cores installed.",
+                "RetroAchievement Cores migrated.",
+            }
             and self.ra_cores_show_install_info_after_success
         ):
             self.ra_cores_show_install_info_after_success = False
@@ -1495,13 +1499,17 @@ class ExtrasTab(QWidget):
             "RetroAchievement Cores Installed",
             (
                 "RetroAchievement Cores have been installed.\n\n"
+                "MiSTer Companion now uses the MGL launcher method.\n\n"
                 "Before using them, open Edit Config and enter your RetroAchievements "
                 "username and password.\n\n"
                 "To use the RetroAchievement-enabled cores:\n\n"
                 "1. Open the MiSTer OSD menu.\n"
-                "2. Select MiSTer_RA.ini as your active ini file.\n"
-                "3. Launch the cores from the _RA Cores folder.\n\n"
-                "Your regular MiSTer.ini and normal cores are left unchanged."
+                "2. Go to the _RA_Cores folder.\n"
+                "3. Launch a RetroAchievement core using one of the .mgl launchers.\n\n"
+                "MiSTer Companion adds this block to your regular MiSTer.ini:\n\n"
+                "[RA_*]\n"
+                "main=MiSTer_RA\n\n"
+                "Your normal cores remain untouched."
             ),
         )
 
@@ -1510,11 +1518,16 @@ class ExtrasTab(QWidget):
             return
 
         button_text = self.install_update_ra_cores_button.text().strip()
+
         is_update = button_text == "Update"
+        is_migrate = button_text == "Migrate"
 
         success_message = "RetroAchievement Cores installed."
+
         if is_update:
             success_message = "RetroAchievement Cores updated."
+        elif is_migrate:
+            success_message = "RetroAchievement Cores migrated."
 
         self.ra_cores_show_install_info_after_success = not is_update
 
@@ -1539,8 +1552,11 @@ class ExtrasTab(QWidget):
             self,
             "Uninstall RetroAchievement Cores",
             (
-                "Remove RetroAchievement Cores, MiSTer_RA, MiSTer_RA.ini, "
-                "achievement.wav, and installed RA core files?\n\n"
+                "Remove RetroAchievement Cores, MiSTer_RA, achievement.wav, "
+                "the _RA_Cores folder, generated .mgl launchers, and the [RA_*] "
+                "block from MiSTer.ini?\n\n"
+                "Any legacy MiSTer_RA.ini or old _RA Cores folder will also be removed "
+                "if present.\n\n"
                 "retroachievements.cfg will be kept so your login settings are preserved."
             ),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
