@@ -197,44 +197,45 @@ class MiSTerSettingsRefreshWorker(QThread):
             if not root:
                 return [], "", "Select a valid MiSTer SD card first."
 
-            files = self.scan_offline_ini_files()
-            if files:
-                return files, "", ""
+            mister_ini_path = root / "MiSTer.ini"
 
-            default_text = self.download_default_mister_ini()
-            (root / "MiSTer.ini").write_text(default_text, encoding="utf-8")
+            if not mister_ini_path.exists():
+                default_text = self.download_default_mister_ini()
+                mister_ini_path.write_text(default_text, encoding="utf-8")
+                notice = "MiSTer.ini was missing, so it was created from the default template."
+
             files = self.scan_offline_ini_files()
-            notice = "No MiSTer INI file was found, so MiSTer.ini was created from the default template."
             return files, notice, ""
 
         if not self.connection or not self.connection.is_connected():
             return [], "", "Connect to a MiSTer first."
 
         files = self.scan_remote_ini_files()
-        if files:
-            return files, "", ""
 
-        default_text = self.download_default_mister_ini()
-        sftp = self.connection.client.open_sftp()
-        try:
-            with sftp.open("/media/fat/MiSTer.ini", "w") as f:
-                f.write(default_text)
-        finally:
-            sftp.close()
+        if "MiSTer.ini" not in files:
+            default_text = self.download_default_mister_ini()
+
+            sftp = self.connection.client.open_sftp()
+            try:
+                with sftp.open("/media/fat/MiSTer.ini", "w") as f:
+                    f.write(default_text)
+            finally:
+                sftp.close()
+
+            notice = "MiSTer.ini was missing, so it was created from the default template."
 
         files = self.scan_remote_ini_files()
-        notice = "No MiSTer INI file was found, so MiSTer.ini was created from the default template."
         return files, notice, ""
 
     def choose_selected_file(self, files):
         if not files:
             return ""
 
-        if self.preferred_filename in files:
-            return self.preferred_filename
-
         if "MiSTer.ini" in files:
             return "MiSTer.ini"
+
+        if self.preferred_filename in files:
+            return self.preferred_filename
 
         return files[0]
 
@@ -874,20 +875,21 @@ class MiSTerSettingsTab(QWidget):
             if not root:
                 return False, "Select a valid MiSTer SD card first."
 
-            existing_files = self.scan_offline_ini_files()
-            if existing_files:
+            target = root / "MiSTer.ini"
+
+            if target.exists():
                 return True, ""
 
-            target = root / "MiSTer.ini"
             default_text = self.download_default_mister_ini()
             target.write_text(default_text, encoding="utf-8")
-            return True, ""
+            return True, "MiSTer.ini was missing, so it was created from the default template."
 
         if not self.connection.is_connected():
             return False, "Connect to a MiSTer first."
 
         existing_files = self.scan_remote_ini_files()
-        if existing_files:
+
+        if "MiSTer.ini" in existing_files:
             return True, ""
 
         default_text = self.download_default_mister_ini()
@@ -899,29 +901,19 @@ class MiSTerSettingsTab(QWidget):
         finally:
             sftp.close()
 
-        return True, ""
+        return True, "MiSTer.ini was missing, so it was created from the default template."
 
     def handle_refresh_ini_file_list(self):
         return self.refresh_ini_file_list()
 
     def refresh_ini_file_list(self):
-        previous = self.selected_ini_filename()
-        preferred = self.normalize_ini_filename(
-            self.config_data.get("mister_settings_ini_file", previous)
-        ) or previous
-
-        if self.is_offline_mode():
-            files = self.scan_offline_ini_files()
-        elif self.connection.is_connected():
-            files = self.scan_remote_ini_files()
-        else:
-            files = []
+        preferred = "MiSTer.ini"
 
         connected_or_offline = self.connection.is_connected() or (
             self.is_offline_mode() and bool(self.offline_root_path())
         )
 
-        if not files and connected_or_offline:
+        if connected_or_offline:
             try:
                 ok, message = self.create_default_ini_if_none_exists()
                 if not ok:
@@ -934,25 +926,8 @@ class MiSTerSettingsTab(QWidget):
                     self.set_notice(message or "No MiSTer.ini or MiSTer_*.ini files found.")
                     return False
 
-                if self.is_offline_mode():
-                    files = self.scan_offline_ini_files()
-                else:
-                    files = self.scan_remote_ini_files()
-
-                if files:
-                    preferred = "MiSTer.ini"
-                    self.set_notice(
-                        "No MiSTer INI file was found, so MiSTer.ini was created from the default template."
-                    )
-                else:
-                    self.loading_settings = True
-                    self.advanced_text.blockSignals(True)
-                    self.advanced_text.setPlainText("")
-                    self.advanced_text.blockSignals(False)
-                    self.loading_settings = False
-                    self.set_mister_settings_enabled(False)
-                    self.set_notice("No INI file found and MiSTer.ini could not be created.")
-                    return False
+                if message:
+                    self.set_notice(message)
             except Exception as e:
                 self.loading_settings = True
                 self.advanced_text.blockSignals(True)
@@ -960,8 +935,15 @@ class MiSTerSettingsTab(QWidget):
                 self.advanced_text.blockSignals(False)
                 self.loading_settings = False
                 self.set_mister_settings_enabled(False)
-                self.set_notice(f"No INI file found and creating MiSTer.ini failed: {e}")
+                self.set_notice(f"Creating MiSTer.ini failed: {e}")
                 return False
+
+        if self.is_offline_mode():
+            files = self.scan_offline_ini_files()
+        elif self.connection.is_connected():
+            files = self.scan_remote_ini_files()
+        else:
+            files = []
 
         self.ini_selector_loading = True
         self.ini_file_combo.blockSignals(True)
@@ -998,7 +980,7 @@ class MiSTerSettingsTab(QWidget):
 
         if has_files:
             self.remember_selected_ini_filename()
-            if "No MiSTer INI file was found" not in self.notice_label.text():
+            if "MiSTer.ini was missing" not in self.notice_label.text():
                 self.set_notice("")
             return True
 
@@ -1286,15 +1268,11 @@ class MiSTerSettingsTab(QWidget):
 
         self.show_refreshing_state()
 
-        preferred = self.normalize_ini_filename(
-            self.config_data.get("mister_settings_ini_file", self.selected_ini_filename())
-        ) or self.selected_ini_filename()
-
         self.refresh_worker = MiSTerSettingsRefreshWorker(
             self.connection,
             offline_mode=offline_mode,
             sd_root=sd_root,
-            preferred_filename=preferred,
+            preferred_filename="MiSTer.ini",
         )
         self.refresh_worker.result.connect(self.on_refresh_worker_result)
         self.refresh_worker.failed.connect(self.on_refresh_worker_failed)

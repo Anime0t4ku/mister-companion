@@ -85,7 +85,6 @@ class DeviceTab(QWidget):
 
         self.refresh_timer = QTimer(self)
         self.refresh_timer.setInterval(2000)
-        self.refresh_timer.timeout.connect(self.refresh_info)
 
         self.build_ui()
         self.apply_disconnected_state()
@@ -297,15 +296,15 @@ class DeviceTab(QWidget):
     def showEvent(self, event):
         super().showEvent(event)
 
+        self.refresh_timer.stop()
+
         if self.is_offline_mode():
             self.apply_offline_state(lightweight=True)
             self.refresh_info()
-            self.refresh_timer.stop()
             return
 
         if self.connection.is_connected():
             self.refresh_info()
-            self.refresh_timer.start()
 
     def hideEvent(self, event):
         super().hideEvent(event)
@@ -320,9 +319,10 @@ class DeviceTab(QWidget):
         return ""
 
     def update_connection_state(self, lightweight=True):
+        self.refresh_timer.stop()
+
         if self.is_offline_mode():
             self.apply_offline_state(lightweight=lightweight)
-            self.refresh_timer.stop()
 
             if not lightweight and self.isVisible():
                 self.refresh_info()
@@ -334,14 +334,8 @@ class DeviceTab(QWidget):
 
             if not lightweight and self.isVisible():
                 self.refresh_info()
-                self.refresh_timer.start()
-            elif self.isVisible():
-                self.refresh_timer.start()
-            else:
-                self.refresh_timer.stop()
         else:
             self.apply_disconnected_state()
-            self.refresh_timer.stop()
 
     def refresh_status(self):
         self.update_connection_state(lightweight=False)
@@ -372,6 +366,8 @@ class DeviceTab(QWidget):
         self.show_usb_storage(True)
 
     def apply_disconnected_state(self):
+        self.refresh_timer.stop()
+
         self.refresh_button.setEnabled(False)
         self.return_to_menu_button.setEnabled(False)
         self.enable_smb_button.setEnabled(False)
@@ -414,6 +410,8 @@ class DeviceTab(QWidget):
         self.now_playing_group.setVisible(False)
 
     def apply_offline_state(self, lightweight=True):
+        self.refresh_timer.stop()
+
         self.refresh_button.setEnabled(True)
         self.return_to_menu_button.setEnabled(False)
         self.reboot_button.setEnabled(False)
@@ -470,6 +468,8 @@ class DeviceTab(QWidget):
         self.refresh_info()
 
     def refresh_info(self):
+        self.refresh_timer.stop()
+
         if self.status_worker is not None and self.status_worker.isRunning():
             return
 
@@ -478,7 +478,6 @@ class DeviceTab(QWidget):
 
             if not sd_root:
                 self.apply_offline_state(lightweight=True)
-                self.refresh_timer.stop()
                 return
 
             self.apply_offline_state(lightweight=True)
@@ -493,13 +492,10 @@ class DeviceTab(QWidget):
             self.status_worker.error.connect(self.on_status_refresh_error)
             self.status_worker.finished.connect(self.on_status_refresh_finished)
             self.status_worker.start()
-
-            self.refresh_timer.stop()
             return
 
         if not self.connection.is_connected():
             self.apply_disconnected_state()
-            self.refresh_timer.stop()
             return
 
         self.apply_connected_state()
@@ -529,6 +525,8 @@ class DeviceTab(QWidget):
         self.apply_online_status_result(result)
 
     def on_status_refresh_error(self, message):
+        self.refresh_timer.stop()
+
         if self.is_offline_mode():
             self.storage_bar.setValue(0)
             self.storage_bar.setStyleSheet("")
@@ -552,6 +550,7 @@ class DeviceTab(QWidget):
 
     def on_status_refresh_finished(self):
         self.status_worker = None
+        self.refresh_timer.stop()
 
     def apply_offline_status_result(self, result):
         sd_info = result.get("sd_info")
