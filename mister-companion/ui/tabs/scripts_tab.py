@@ -1635,20 +1635,31 @@ class ScriptsTab(QWidget):
             run_update_all_stream(self.connection, log)
             log("\nupdate_all finished.\n")
 
-            time.sleep(7)
+            log("Checking if a reboot was triggered...\n")
 
-            still_connected = False
-            try:
-                still_connected = self.connection.is_connected()
-                if still_connected and self.connection.client:
-                    transport = self.connection.client.get_transport()
-                    still_connected = bool(transport and transport.is_active())
-            except Exception:
+            watch_seconds = 10
+            interval_seconds = 1
+
+            for _ in range(watch_seconds):
+                time.sleep(interval_seconds)
+
                 still_connected = False
+                try:
+                    still_connected = self.connection.is_connected()
+                    if still_connected and self.connection.client:
+                        transport = self.connection.client.get_transport()
+                        still_connected = bool(transport and transport.is_active())
+                except Exception:
+                    still_connected = False
 
-            if still_connected:
-                log("No reboot detected.\n")
-                return {"action": "completed"}
+                if not still_connected:
+                    self.connection.mark_disconnected()
+                    log("MiSTer disconnected after update_all, likely due to reboot.\n")
+                    log("Starting automatic reconnect...\n")
+                    return {"action": "reboot_reconnect"}
+
+            log("No reboot detected after update_all.\n")
+            return {"action": "completed"}
 
             self.connection.mark_disconnected()
             log("MiSTer disconnected after update_all, likely due to reboot.\n")

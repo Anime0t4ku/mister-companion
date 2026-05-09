@@ -194,6 +194,7 @@ class ExtrasTab(QWidget):
         self.current_task_kind = None
         self.current_check_result = None
         self.cached_update_results = {}
+        self.action_button_state_before_task = None
         self.ra_cores_show_install_info_after_success = False
         self.zaparoo_launcher_show_reboot_after_success = False
 
@@ -223,7 +224,9 @@ class ExtrasTab(QWidget):
             self.EXTRA_ZAPAROO_LAUNCHER: (
                 "Zaparoo Launcher/UI Beta is a MiSTer frontend that provides a "
                 "controller-friendly interface for browsing and launching your games, "
-                "media, and other MiSTer content, with artwork support."
+                "media, and other MiSTer content, with artwork support.\n\n"
+                "Make sure you are using the latest version of Zaparoo before installing "
+                "or updating Zaparoo Launcher/UI Beta."
             ),
             self.EXTRA_RA_CORES: (
                 "RetroAchievement Cores adds RetroAchievements-enabled MiSTer cores "
@@ -675,6 +678,7 @@ class ExtrasTab(QWidget):
     def apply_disconnected_state(self):
         self.ra_cores_show_install_info_after_success = False
         self.zaparoo_launcher_show_reboot_after_success = False
+        self.action_button_state_before_task = None
         self._clear_all_cached_update_results()
 
         for button in self._all_action_buttons():
@@ -709,6 +713,29 @@ class ExtrasTab(QWidget):
             self.edit_ra_cores_config_button,
             self.uninstall_ra_cores_button,
         ]
+
+    def _snapshot_action_button_state(self):
+        self.action_button_state_before_task = {}
+
+        for button in self._all_action_buttons():
+            self.action_button_state_before_task[button] = {
+                "enabled": button.isEnabled(),
+                "text": button.text(),
+            }
+
+    def _restore_action_button_state(self):
+        if not isinstance(self.action_button_state_before_task, dict):
+            return
+
+        for button, state in self.action_button_state_before_task.items():
+            if button is None:
+                continue
+
+            if "text" in state:
+                button.setText(state["text"])
+
+            if "enabled" in state:
+                button.setEnabled(bool(state["enabled"]))
 
     def show_refreshing_state(self):
         if self.current_worker is not None and self.current_worker.isRunning():
@@ -883,6 +910,10 @@ class ExtrasTab(QWidget):
 
         self.current_task_kind = task_kind
         self.current_check_result = None
+        self.action_button_state_before_task = None
+
+        if self._is_check_updates_task(task_kind):
+            self._snapshot_action_button_state()
 
         self.current_worker = ExtraTaskWorker(task_fn, success_message)
         self.current_worker.log_line.connect(self.append_console_line)
@@ -944,16 +975,20 @@ class ExtrasTab(QWidget):
         self.extra_list.setEnabled(True)
 
         if self._is_check_updates_task(task_kind):
+            self._restore_action_button_state()
+
             extra_key = self._extra_key_for_check_task(task_kind)
 
             if extra_key and isinstance(check_result, dict):
                 self._cache_update_check_result(extra_key, check_result)
                 self._apply_status_result_for_extra(extra_key, check_result)
-                self.update_extra_list_labels()
-                self.update_details_panel()
 
+            self.action_button_state_before_task = None
+            self.update_extra_list_labels()
+            self.update_details_panel()
             return
 
+        self.action_button_state_before_task = None
         self.refresh_status()
 
     def on_worker_result(self, result):
@@ -1440,10 +1475,10 @@ class ExtrasTab(QWidget):
                 self,
                 "Uninstall Zaparoo Launcher/UI Beta",
                 (
-                    "Remove Zaparoo Launcher/UI Beta files from the Offline SD Card and restore "
-                    "the previous zaparoo.sh backup if one exists?\n\n"
+                    "Remove Zaparoo Launcher/UI Beta files from the Offline SD Card?\n\n"
                     "This will also remove the Zaparoo launcher main and alt_launcher entries "
-                    "from the [MiSTer] section in MiSTer.ini."
+                    "from the [MiSTer] section in MiSTer.ini.\n\n"
+                    "Your existing Zaparoo installation and zaparoo.sh script will be left untouched."
                 ),
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No,
@@ -1470,10 +1505,10 @@ class ExtrasTab(QWidget):
             self,
             "Uninstall Zaparoo Launcher/UI Beta",
             (
-                "Remove Zaparoo Launcher/UI Beta files and restore the previous "
-                "zaparoo.sh backup if one exists?\n\n"
+                "Remove Zaparoo Launcher/UI Beta files?\n\n"
                 "This will also remove the Zaparoo launcher main and alt_launcher "
                 "entries from the [MiSTer] section in MiSTer.ini.\n\n"
+                "Your existing Zaparoo installation and zaparoo.sh script will be left untouched.\n\n"
                 "A reboot will be required after uninstall."
             ),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,

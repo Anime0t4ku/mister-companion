@@ -399,7 +399,6 @@ def _is_zaparoo_launcher_installed(connection) -> bool:
     return (
         _path_exists(connection, ZAPAROO_LAUNCHER_MAIN_PATH)
         and _path_exists(connection, ZAPAROO_LAUNCHER_UI_PATH)
-        and _path_exists(connection, ZAPAROO_LAUNCHER_SCRIPT_PATH)
         and _mister_ini_has_zaparoo_launcher_entries(connection)
     )
 
@@ -408,7 +407,6 @@ def _is_zaparoo_launcher_installed_local(sd_root: str) -> bool:
     return (
         _path_exists_local(sd_root, ZAPAROO_LAUNCHER_MAIN_PATH)
         and _path_exists_local(sd_root, ZAPAROO_LAUNCHER_UI_PATH)
-        and _path_exists_local(sd_root, ZAPAROO_LAUNCHER_SCRIPT_PATH)
         and _mister_ini_has_zaparoo_launcher_entries_local(sd_root)
     )
 
@@ -557,7 +555,6 @@ def install_or_update_zaparoo_launcher(connection, log):
     log(f"Downloaded {len(archive_data)} bytes.\n")
 
     with zipfile.ZipFile(io.BytesIO(archive_data)) as zf:
-        zaparoo_script = _extract_required_file(zf, "Scripts/zaparoo.sh")
         mister_zaparoo = _extract_required_file(zf, "zaparoo/MiSTer_Zaparoo")
         launcher = _extract_required_file(zf, "zaparoo/launcher")
 
@@ -573,31 +570,11 @@ def install_or_update_zaparoo_launcher(connection, log):
     _ensure_remote_dir(connection, ZAPAROO_LAUNCHER_REMOTE_DIR)
     _ensure_remote_dir(connection, ZAPAROO_LAUNCHER_CONFIG_DIR)
 
-    backup_exists = _path_exists(connection, ZAPAROO_LAUNCHER_BACKUP_SCRIPT_PATH)
-    script_exists = _path_exists(connection, ZAPAROO_LAUNCHER_SCRIPT_PATH)
-    marker_exists = _path_exists(connection, ZAPAROO_LAUNCHER_SCRIPT_MARKER)
-
-    if script_exists and not backup_exists and not marker_exists:
-        log(
-            "Existing zaparoo.sh found, backing it up to "
-            "zaparoo.sh.companion...\n"
-        )
-        connection.run_command(
-            f"mv {_quote(ZAPAROO_LAUNCHER_SCRIPT_PATH)} "
-            f"{_quote(ZAPAROO_LAUNCHER_BACKUP_SCRIPT_PATH)}"
-        )
-    elif backup_exists:
-        log("Existing zaparoo.sh.companion backup found, keeping it untouched.\n")
-    elif marker_exists:
-        log("Existing Zaparoo Launcher dev zaparoo.sh detected, replacing it.\n")
-
     log("Removing old Zaparoo Launcher/UI Beta files before upload...\n")
     _remove_remote_file(connection, ZAPAROO_LAUNCHER_MAIN_PATH)
     _remove_remote_file(connection, ZAPAROO_LAUNCHER_UI_PATH)
-    _remove_remote_file(connection, ZAPAROO_LAUNCHER_SCRIPT_PATH)
 
-    log(f"Uploading launcher dev script: {ZAPAROO_LAUNCHER_SCRIPT_PATH}\n")
-    _write_remote_bytes(connection, ZAPAROO_LAUNCHER_SCRIPT_PATH, zaparoo_script)
+    log("Leaving existing Zaparoo script untouched.\n")
 
     log(f"Uploading: {ZAPAROO_LAUNCHER_MAIN_PATH}\n")
     _write_remote_bytes(connection, ZAPAROO_LAUNCHER_MAIN_PATH, mister_zaparoo)
@@ -605,11 +582,8 @@ def install_or_update_zaparoo_launcher(connection, log):
     log(f"Uploading: {ZAPAROO_LAUNCHER_UI_PATH}\n")
     _write_remote_bytes(connection, ZAPAROO_LAUNCHER_UI_PATH, launcher)
 
-    connection.run_command(f"chmod +x {_quote(ZAPAROO_LAUNCHER_SCRIPT_PATH)}")
     connection.run_command(f"chmod +x {_quote(ZAPAROO_LAUNCHER_MAIN_PATH)}")
     connection.run_command(f"chmod +x {_quote(ZAPAROO_LAUNCHER_UI_PATH)}")
-
-    _write_remote_text(connection, ZAPAROO_LAUNCHER_SCRIPT_MARKER, "1\n")
 
     _patch_remote_mister_ini(connection, log)
 
@@ -634,7 +608,6 @@ def install_or_update_zaparoo_launcher_local(sd_root: str, log):
     log(f"Downloaded {len(archive_data)} bytes.\n")
 
     with zipfile.ZipFile(io.BytesIO(archive_data)) as zf:
-        zaparoo_script = _extract_required_file(zf, "Scripts/zaparoo.sh")
         mister_zaparoo = _extract_required_file(zf, "zaparoo/MiSTer_Zaparoo")
         launcher = _extract_required_file(zf, "zaparoo/launcher")
 
@@ -646,39 +619,17 @@ def install_or_update_zaparoo_launcher_local(sd_root: str, log):
     _ensure_local_dir(sd_root, ZAPAROO_LAUNCHER_REMOTE_DIR)
     _ensure_local_dir(sd_root, ZAPAROO_LAUNCHER_CONFIG_DIR)
 
-    backup_exists = _path_exists_local(sd_root, ZAPAROO_LAUNCHER_BACKUP_SCRIPT_PATH)
-    script_exists = _path_exists_local(sd_root, ZAPAROO_LAUNCHER_SCRIPT_PATH)
-    marker_exists = _path_exists_local(sd_root, ZAPAROO_LAUNCHER_SCRIPT_MARKER)
-
-    script_path = _local_target_path(sd_root, ZAPAROO_LAUNCHER_SCRIPT_PATH)
-    backup_path = _local_target_path(sd_root, ZAPAROO_LAUNCHER_BACKUP_SCRIPT_PATH)
-
-    if script_exists and not backup_exists and not marker_exists:
-        log(
-            "Existing zaparoo.sh found, backing it up to "
-            "zaparoo.sh.companion...\n"
-        )
-        os.replace(script_path, backup_path)
-    elif backup_exists:
-        log("Existing zaparoo.sh.companion backup found, keeping it untouched.\n")
-    elif marker_exists:
-        log("Existing Zaparoo Launcher dev zaparoo.sh detected, replacing it.\n")
-
     log("Removing old Zaparoo Launcher/UI Beta files before writing...\n")
     _remove_local_path(sd_root, ZAPAROO_LAUNCHER_MAIN_PATH)
     _remove_local_path(sd_root, ZAPAROO_LAUNCHER_UI_PATH)
-    _remove_local_path(sd_root, ZAPAROO_LAUNCHER_SCRIPT_PATH)
 
-    log(f"Writing launcher dev script: {ZAPAROO_LAUNCHER_SCRIPT_PATH}\n")
-    _write_local_bytes(sd_root, ZAPAROO_LAUNCHER_SCRIPT_PATH, zaparoo_script)
+    log("Leaving existing Zaparoo script untouched.\n")
 
     log(f"Writing: {ZAPAROO_LAUNCHER_MAIN_PATH}\n")
     _write_local_bytes(sd_root, ZAPAROO_LAUNCHER_MAIN_PATH, mister_zaparoo)
 
     log(f"Writing: {ZAPAROO_LAUNCHER_UI_PATH}\n")
     _write_local_bytes(sd_root, ZAPAROO_LAUNCHER_UI_PATH, launcher)
-
-    _write_local_text(sd_root, ZAPAROO_LAUNCHER_SCRIPT_MARKER, "1\n")
 
     _patch_local_mister_ini(sd_root, log)
 
@@ -697,30 +648,21 @@ def uninstall_zaparoo_launcher(connection, log):
 
     log("Removing Zaparoo Launcher/UI Beta files...\n")
 
-    marker_exists = _path_exists(connection, ZAPAROO_LAUNCHER_SCRIPT_MARKER)
-    backup_exists = _path_exists(connection, ZAPAROO_LAUNCHER_BACKUP_SCRIPT_PATH)
-
     _remove_remote_file(connection, ZAPAROO_LAUNCHER_MAIN_PATH)
     _remove_remote_file(connection, ZAPAROO_LAUNCHER_UI_PATH)
     _remove_remote_file(connection, ZAPAROO_LAUNCHER_VERSION_FILE)
 
     _remove_remote_mister_ini_entries(connection, log)
 
-    if backup_exists:
-        log("Restoring original zaparoo.sh from zaparoo.sh.companion...\n")
-        _remove_remote_file(connection, ZAPAROO_LAUNCHER_SCRIPT_PATH)
-        connection.run_command(
-            f"mv {_quote(ZAPAROO_LAUNCHER_BACKUP_SCRIPT_PATH)} "
-            f"{_quote(ZAPAROO_LAUNCHER_SCRIPT_PATH)}"
-        )
-        connection.run_command(f"chmod +x {_quote(ZAPAROO_LAUNCHER_SCRIPT_PATH)}")
-    elif marker_exists:
-        log("No zaparoo.sh.companion backup found, removing launcher dev zaparoo.sh.\n")
-        _remove_remote_file(connection, ZAPAROO_LAUNCHER_SCRIPT_PATH)
-    else:
-        log("No zaparoo.sh.companion backup or Companion marker found, leaving zaparoo.sh untouched.\n")
+    if _path_exists(connection, ZAPAROO_LAUNCHER_BACKUP_SCRIPT_PATH):
+        log("Legacy zaparoo.sh.companion backup found, leaving it untouched.\n")
 
-    _remove_remote_file(connection, ZAPAROO_LAUNCHER_SCRIPT_MARKER)
+    if _path_exists(connection, ZAPAROO_LAUNCHER_SCRIPT_MARKER):
+        log("Removing legacy Companion Zaparoo Launcher marker.\n")
+        _remove_remote_file(connection, ZAPAROO_LAUNCHER_SCRIPT_MARKER)
+
+    log("Leaving existing Zaparoo script untouched.\n")
+
     connection.run_command(
         f"rmdir {_quote(ZAPAROO_LAUNCHER_CONFIG_DIR)} 2>/dev/null || true"
     )
@@ -736,29 +678,20 @@ def uninstall_zaparoo_launcher(connection, log):
 def uninstall_zaparoo_launcher_local(sd_root: str, log):
     log("Removing Zaparoo Launcher/UI Beta files...\n")
 
-    marker_exists = _path_exists_local(sd_root, ZAPAROO_LAUNCHER_SCRIPT_MARKER)
-    backup_exists = _path_exists_local(sd_root, ZAPAROO_LAUNCHER_BACKUP_SCRIPT_PATH)
-
     _remove_local_path(sd_root, ZAPAROO_LAUNCHER_MAIN_PATH)
     _remove_local_path(sd_root, ZAPAROO_LAUNCHER_UI_PATH)
     _remove_local_path(sd_root, ZAPAROO_LAUNCHER_VERSION_FILE)
 
     _remove_local_mister_ini_entries(sd_root, log)
 
-    script_path = _local_target_path(sd_root, ZAPAROO_LAUNCHER_SCRIPT_PATH)
-    backup_path = _local_target_path(sd_root, ZAPAROO_LAUNCHER_BACKUP_SCRIPT_PATH)
+    if _path_exists_local(sd_root, ZAPAROO_LAUNCHER_BACKUP_SCRIPT_PATH):
+        log("Legacy zaparoo.sh.companion backup found, leaving it untouched.\n")
 
-    if backup_exists:
-        log("Restoring original zaparoo.sh from zaparoo.sh.companion...\n")
-        _remove_local_path(sd_root, ZAPAROO_LAUNCHER_SCRIPT_PATH)
-        os.replace(backup_path, script_path)
-    elif marker_exists:
-        log("No zaparoo.sh.companion backup found, removing launcher dev zaparoo.sh.\n")
-        _remove_local_path(sd_root, ZAPAROO_LAUNCHER_SCRIPT_PATH)
-    else:
-        log("No zaparoo.sh.companion backup or Companion marker found, leaving zaparoo.sh untouched.\n")
+    if _path_exists_local(sd_root, ZAPAROO_LAUNCHER_SCRIPT_MARKER):
+        log("Removing legacy Companion Zaparoo Launcher marker.\n")
+        _remove_local_path(sd_root, ZAPAROO_LAUNCHER_SCRIPT_MARKER)
 
-    _remove_local_path(sd_root, ZAPAROO_LAUNCHER_SCRIPT_MARKER)
+    log("Leaving existing Zaparoo script untouched.\n")
 
     config_dir = _local_target_path(sd_root, ZAPAROO_LAUNCHER_CONFIG_DIR)
     try:
