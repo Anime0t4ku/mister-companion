@@ -5,6 +5,7 @@ import subprocess
 import sys
 import time
 import zipfile
+from pathlib import Path
 from typing import Callable
 
 import requests
@@ -21,6 +22,7 @@ PCN_PREMIUM_RAW_BASE = "https://raw.githubusercontent.com/Anime0t4ku/MiSTerWallp
 OT4KU_RAW_BASE = "https://raw.githubusercontent.com/Anime0t4ku/MiSTerWallpapers/main/"
 
 WALLPAPER_DIR = "/media/fat/wallpapers"
+LOCAL_WALLPAPER_DIR = "wallpapers"
 
 REQUEST_HEADERS = {
     "User-Agent": "MiSTer-Companion",
@@ -45,7 +47,7 @@ def _request_with_retry(url: str, timeout: int = 15) -> requests.Response | None
 def _candidate_db_urls(url: str) -> list[str]:
     urls = [url]
     if url.lower().endswith(".json.zip"):
-        urls.append(url[:-4])  # .json.zip -> .json
+        urls.append(url[:-4])
     return urls
 
 
@@ -118,7 +120,6 @@ def _normalize_db_items(data: dict | list, raw_base: str = "") -> list[dict]:
             if items:
                 return items
 
-        # fallback: top-level dict keyed by path
         for repo_path, info in data.items():
             if not isinstance(info, dict):
                 continue
@@ -216,6 +217,14 @@ def get_installed_wallpapers(connection) -> list[str]:
         return []
 
 
+def get_installed_wallpapers_local(sd_root) -> list[str]:
+    wallpaper_dir = Path(sd_root) / LOCAL_WALLPAPER_DIR
+    if not wallpaper_dir.exists():
+        return []
+
+    return sorted([p.name for p in wallpaper_dir.iterdir() if p.is_file()], key=str.casefold)
+
+
 def wallpaper_folder_exists(connection) -> bool:
     if not connection.is_connected():
         return False
@@ -227,11 +236,21 @@ def wallpaper_folder_exists(connection) -> bool:
         return False
 
 
+def wallpaper_folder_exists_local(sd_root) -> bool:
+    return (Path(sd_root) / LOCAL_WALLPAPER_DIR).is_dir()
+
+
 def ensure_wallpaper_folder(connection) -> None:
     if not connection.is_connected():
         return
 
     connection.run_command(f"mkdir -p {WALLPAPER_DIR}")
+
+
+def ensure_wallpaper_folder_local(sd_root) -> Path:
+    wallpaper_dir = Path(sd_root) / LOCAL_WALLPAPER_DIR
+    wallpaper_dir.mkdir(parents=True, exist_ok=True)
+    return wallpaper_dir
 
 
 def download_wallpaper(url: str) -> bytes | None:
@@ -262,6 +281,16 @@ def upload_wallpaper(connection, name: str, data: bytes) -> bool:
                 sftp.close()
             except Exception:
                 pass
+
+
+def upload_wallpaper_local(sd_root, name: str, data: bytes) -> bool:
+    try:
+        wallpaper_dir = ensure_wallpaper_folder_local(sd_root)
+        target = wallpaper_dir / name
+        target.write_bytes(data)
+        return True
+    except Exception:
+        return False
 
 
 def install_wallpaper_items(
@@ -309,6 +338,48 @@ def install_wallpaper_items(
     return new_count
 
 
+def install_wallpaper_items_local(
+    sd_root,
+    wallpapers: list[dict],
+    log: Callable[[str], None],
+) -> int:
+    if not wallpapers:
+        return 0
+
+    ensure_wallpaper_folder_local(sd_root)
+    installed = get_installed_wallpapers_local(sd_root)
+
+    new_count = 0
+
+    for item in wallpapers:
+        name = item.get("name", "")
+        download_url = item.get("download_url", "")
+
+        if not name or not download_url:
+            continue
+
+        if any(name.lower() == installed_name.lower() for installed_name in installed):
+            continue
+
+        log(f"Downloading {name}...\n")
+        data = download_wallpaper(download_url)
+
+        if not data:
+            log("Download failed\n")
+            continue
+
+        log(f"Writing {name}...\n")
+        ok = upload_wallpaper_local(sd_root, name, data)
+
+        if ok:
+            new_count += 1
+            log(f"Installed {name}\n")
+        else:
+            log(f"Write failed: {name}\n")
+
+    return new_count
+
+
 def remove_installed_wallpapers(
     connection,
     repo_items: list[dict],
@@ -331,6 +402,31 @@ def remove_installed_wallpapers(
     return removed
 
 
+def remove_installed_wallpapers_local(
+    sd_root,
+    repo_items: list[dict],
+    log: Callable[[str], None],
+) -> int:
+    wallpaper_dir = Path(sd_root) / LOCAL_WALLPAPER_DIR
+    if not wallpaper_dir.exists():
+        return 0
+
+    repo_files = {item.get("name", "") for item in repo_items if item.get("name")}
+    installed = get_installed_wallpapers_local(sd_root)
+
+    removed = 0
+
+    for name in installed:
+        if name in repo_files:
+            target = wallpaper_dir / name
+            if target.exists():
+                target.unlink()
+                removed += 1
+                log(f"Removed {name}\n")
+
+    return removed
+
+
 def build_install_state(repo_items: list[dict], installed_files: list[str]) -> tuple[bool, bool]:
     installed_set = {name.lower() for name in installed_files}
     repo_names = {item.get("name", "").lower() for item in repo_items if item.get("name")}
@@ -342,6 +438,30 @@ def build_install_state(repo_items: list[dict], installed_files: list[str]) -> t
     has_missing = bool(missing)
 
     return has_installed, has_missing
+
+
+def open_wallpaper_folder_local(sd_root) -> None:
+    wallpaper_dir = ensure_wallpaper_folder_local(sd_root)
+
+    if sys.platform.startswith("win"):
+        subprocess.Popen(["explorer", str(wallpaper_dir)])
+        return
+
+    if sys.platform.startswith("linux"):
+        env = os.environ.copy()
+        subprocess.Popen(
+            ["gio", "open", str(wallpaper_dir)],
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        return
+
+    if sys.platform == "darwin":
+        subprocess.Popen(["open", str(wallpaper_dir)])
+        return
+
+    raise RuntimeError(f"Unsupported platform: {sys.platform}")
 
 
 def open_wallpaper_folder_on_host(ip: str, username: str = "root", password: str = "1") -> None:

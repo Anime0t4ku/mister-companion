@@ -19,13 +19,20 @@ from core.retroaccount import (
     poll_retroaccount_login,
     start_retroaccount_login,
 )
-from core.update_all_config import load_update_all_config, save_update_all_config
+from core.update_all_config import (
+    load_update_all_config,
+    load_update_all_config_local,
+    save_update_all_config,
+    save_update_all_config_local,
+)
 
 
 class UpdateAllConfigDialog(QDialog):
-    def __init__(self, connection, parent=None):
+    def __init__(self, connection=None, parent=None, sd_root=None):
         super().__init__(parent)
         self.connection = connection
+        self.sd_root = sd_root
+        self.offline_mode = bool(sd_root)
 
         self.retro_pending_code = ""
         self.retro_pending_link = ""
@@ -56,6 +63,15 @@ class UpdateAllConfigDialog(QDialog):
         title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         title.setStyleSheet("font-weight: bold; font-size: 16px;")
         outer.addWidget(title)
+
+        if self.offline_mode:
+            offline_label = QLabel(
+                "Offline Mode: configuration will be saved directly to the selected SD card."
+            )
+            offline_label.setWordWrap(True)
+            offline_label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+            offline_label.setStyleSheet("color: #cc8400;")
+            outer.addWidget(offline_label)
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -113,6 +129,18 @@ class UpdateAllConfigDialog(QDialog):
         self.agg23_check = QCheckBox("agg23’s MiSTer Cores")
         self.altcores_check = QCheckBox("Alt Cores")
         self.dualram_check = QCheckBox("Dual RAM Console Cores")
+        self.mister_frontier_check = QCheckBox("MiSTer Frontier")
+
+        self.mister_frontier_source_combo = QComboBox()
+        self.mister_frontier_source_combo.addItems([
+            "All Frontier Cores",
+            "PICO-8 only",
+            "OpenBOR 4086 only",
+            "OpenBOR 7533 only",
+            "OpenBOR 4086 + 7533",
+            "PICO-8 + OpenBOR 4086",
+            "PICO-8 + OpenBOR 7533",
+        ])
 
         for widget in [
             self.coinop_check,
@@ -123,8 +151,17 @@ class UpdateAllConfigDialog(QDialog):
             self.agg23_check,
             self.altcores_check,
             self.dualram_check,
+            self.mister_frontier_check,
         ]:
             self._add(other_group, widget)
+
+        frontier_row = QHBoxLayout()
+        frontier_row.addSpacing(20)
+        frontier_row.addWidget(QLabel("Filter:"))
+        frontier_row.addWidget(self.mister_frontier_source_combo)
+        frontier_row.addStretch()
+        other_group.layout().addLayout(frontier_row)
+        self.mister_frontier_check.toggled.connect(self.update_mister_frontier_state)
 
         tools_group = self._group("Tools & Scripts", self.left_column_layout)
         self.arcade_org_check = QCheckBox("Arcade Organizer")
@@ -182,12 +219,10 @@ class UpdateAllConfigDialog(QDialog):
 
         community_group = self._group("Community Sources", self.left_column_layout)
         self.insert_coin_check = QCheckBox("Insert-Coin")
-        self.mister_frontier_check = QCheckBox("MiSTer Frontier")
         self.pcn_premium_wallpapers_check = QCheckBox("PCN Premium Member Wallpapers")
 
         for widget in [
             self.insert_coin_check,
-            self.mister_frontier_check,
             self.pcn_premium_wallpapers_check,
         ]:
             self._add(community_group, widget)
@@ -336,7 +371,22 @@ class UpdateAllConfigDialog(QDialog):
         return f"{minutes:02d}:{seconds:02d}"
 
     def _set_retro_ui_state(self, state):
-        if state == "idle":
+        if state == "offline":
+            self.retro_status_label.setText("Status: Unavailable in Offline Mode")
+            self.retro_description_label.setText(
+                "RetroAccount login is only available in Online / SSH Mode.\n\n"
+                "RetroAccount needs to register the MiSTer’s device ID during the login process, "
+                "so the MiSTer must be connected and reachable over SSH.\n\n"
+                "You can still configure update_all sources on the selected SD card in Offline Mode."
+            )
+            self.retro_normal_widget.show()
+            self.retro_login_widget.hide()
+            self.retro_device_id_title_label.hide()
+            self.retro_device_id_value_label.hide()
+            self.retro_device_id_value_label.setText("—")
+            self.retro_login_button.setEnabled(False)
+
+        elif state == "idle":
             self.retro_status_label.setText("Status: Not logged in")
             self.retro_description_label.setText(
                 "Log in to this MiSTer device with your RetroAccount to enable "
@@ -369,6 +419,14 @@ class UpdateAllConfigDialog(QDialog):
             self.retro_url_value_label.setText("—")
 
     def on_retro_login(self):
+        if self.offline_mode:
+            QMessageBox.information(
+                self,
+                "RetroAccount",
+                "RetroAccount login is only available in Online / SSH Mode because it needs to register this MiSTer’s device ID.",
+            )
+            return
+
         try:
             result = start_retroaccount_login(self.connection)
             self.retro_pending_code = result["device_code"]
@@ -434,6 +492,10 @@ class UpdateAllConfigDialog(QDialog):
             self.load_retro_status()
 
     def on_retro_poll_timeout(self):
+        if self.offline_mode:
+            self.retro_poll_timer.stop()
+            return
+
         if not self.retro_pending_code:
             self.retro_poll_timer.stop()
             return
@@ -465,6 +527,15 @@ class UpdateAllConfigDialog(QDialog):
             self.load_retro_status()
 
     def load_retro_status(self):
+        if self.offline_mode:
+            self.retro_poll_timer.stop()
+            self.retro_countdown_timer.stop()
+            self.retro_pending_code = ""
+            self.retro_pending_link = ""
+            self.retro_seconds_remaining = 0
+            self._set_retro_ui_state("offline")
+            return
+
         try:
             status = get_retroaccount_status(self.connection)
         except Exception:
@@ -489,9 +560,15 @@ class UpdateAllConfigDialog(QDialog):
     def update_wallpaper_state(self):
         self.ranny_wallpapers_source_combo.setEnabled(self.ranny_wallpapers_check.isChecked())
 
+    def update_mister_frontier_state(self):
+        self.mister_frontier_source_combo.setEnabled(self.mister_frontier_check.isChecked())
+
     def load_current_config(self):
         try:
-            data = load_update_all_config(self.connection)
+            if self.offline_mode:
+                data = load_update_all_config_local(self.sd_root)
+            else:
+                data = load_update_all_config(self.connection)
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to load config:\n{e}")
             return
@@ -509,6 +586,10 @@ class UpdateAllConfigDialog(QDialog):
         self.agg23_check.setChecked(data["agg23"])
         self.altcores_check.setChecked(data["altcores"])
         self.dualram_check.setChecked(data["dualram"])
+        self.mister_frontier_check.setChecked(data["mister_frontier"])
+        self.mister_frontier_source_combo.setCurrentText(
+            data.get("mister_frontier_source", "All Frontier Cores")
+        )
 
         self.arcade_org_check.setChecked(data["arcade_org"])
         self.mrext_check.setChecked(data["mrext"])
@@ -523,7 +604,6 @@ class UpdateAllConfigDialog(QDialog):
         self.bootroms_check.setChecked(data["bootroms"])
         self.gba_borders_check.setChecked(data["gbaborders"])
         self.insert_coin_check.setChecked(data["insert_coin"])
-        self.mister_frontier_check.setChecked(data["mister_frontier"])
         self.anime0t4ku_wallpapers_check.setChecked(data["anime0t4ku_wallpapers"])
         self.pcn_challenge_wallpapers_check.setChecked(data["pcn_challenge_wallpapers"])
         self.pcn_premium_wallpapers_check.setChecked(data["pcn_premium_wallpapers"])
@@ -532,6 +612,7 @@ class UpdateAllConfigDialog(QDialog):
 
         self.update_jt_beta_state()
         self.update_wallpaper_state()
+        self.update_mister_frontier_state()
 
     def collect_config(self):
         return {
@@ -548,6 +629,8 @@ class UpdateAllConfigDialog(QDialog):
             "agg23": self.agg23_check.isChecked(),
             "altcores": self.altcores_check.isChecked(),
             "dualram": self.dualram_check.isChecked(),
+            "mister_frontier": self.mister_frontier_check.isChecked(),
+            "mister_frontier_source": self.mister_frontier_source_combo.currentText(),
 
             "arcade_org": self.arcade_org_check.isChecked(),
             "mrext": self.mrext_check.isChecked(),
@@ -562,7 +645,6 @@ class UpdateAllConfigDialog(QDialog):
             "bootroms": self.bootroms_check.isChecked(),
             "gbaborders": self.gba_borders_check.isChecked(),
             "insert_coin": self.insert_coin_check.isChecked(),
-            "mister_frontier": self.mister_frontier_check.isChecked(),
             "anime0t4ku_wallpapers": self.anime0t4ku_wallpapers_check.isChecked(),
             "pcn_challenge_wallpapers": self.pcn_challenge_wallpapers_check.isChecked(),
             "pcn_premium_wallpapers": self.pcn_premium_wallpapers_check.isChecked(),
@@ -572,7 +654,11 @@ class UpdateAllConfigDialog(QDialog):
 
     def on_save(self):
         try:
-            save_update_all_config(self.connection, self.collect_config())
+            if self.offline_mode:
+                save_update_all_config_local(self.sd_root, self.collect_config())
+            else:
+                save_update_all_config(self.connection, self.collect_config())
+
             QMessageBox.information(self, "Saved", "update_all configuration saved successfully.")
             self.accept()
         except Exception as e:

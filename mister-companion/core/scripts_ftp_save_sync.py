@@ -1,3 +1,4 @@
+import shutil
 import zipfile
 from io import BytesIO
 
@@ -13,16 +14,23 @@ from core.scripts_common import (
     FTP_SAVE_SYNC_RCLONE_URL,
     FTP_SAVE_SYNC_STARTUP_PATH,
     FTP_SAVE_SYNC_STATE_PATH,
+    _chmod_local_executable,
+    _local_path,
     _remote_command_success,
+    _write_local_bytes,
+    _write_local_text,
     _write_remote_bytes,
     _write_remote_text,
+    ensure_local_scripts_dir,
     ensure_remote_scripts_dir,
     is_ftp_save_sync_service_enabled,
+    is_ftp_save_sync_service_enabled_local,
 )
 
 
 FTP_SAVE_SYNC_URL = "https://raw.githubusercontent.com/Anime0t4ku/0t4ku-mister-scripts/refs/heads/main/Scripts/ftp_save_sync.sh"
 FTP_SAVE_SYNC_RCLONE_URL = "https://downloads.rclone.org/rclone-current-linux-arm.zip"
+FTP_SAVE_SYNC_SCRIPT_PATH = "/media/fat/Scripts/ftp_save_sync.sh"
 
 
 FTP_SAVE_SYNC_DAEMON_SCRIPT = """#!/bin/sh
@@ -481,6 +489,12 @@ main "$@"
 """
 
 
+def _download_ftp_save_sync_script():
+    response = requests.get(FTP_SAVE_SYNC_URL, timeout=30)
+    response.raise_for_status()
+    return response.content
+
+
 def _download_ftp_save_sync_rclone_binary():
     response = requests.get(FTP_SAVE_SYNC_RCLONE_URL, timeout=60)
     response.raise_for_status()
@@ -493,6 +507,63 @@ def _download_ftp_save_sync_rclone_binary():
             return zip_file.read(entry)
 
     raise RuntimeError("Could not find rclone binary inside the downloaded ZIP.")
+
+
+def _parse_ftp_save_sync_config_text(text):
+    config = {}
+
+    if not text:
+        return config
+
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line or "=" not in line:
+            continue
+
+        key, value = line.split("=", 1)
+        config[key.strip()] = value.strip().strip('"')
+
+    return config
+
+
+def _build_ftp_save_sync_ini(
+    protocol,
+    host,
+    port,
+    username,
+    password,
+    remote_base,
+    device_name,
+    sync_savestates,
+):
+    return f"""PROTOCOL={protocol}
+HOST={host}
+PORT={port}
+USERNAME={username}
+PASSWORD={password}
+REMOTE_BASE={remote_base}
+DEVICE_NAME={device_name}
+
+SYNC_SAVES=true
+SYNC_SAVESTATES={"true" if sync_savestates else "false"}
+SYNC_INTERVAL=15
+
+SKIP_HOST_KEY_CHECK=true
+SKIP_TLS_VERIFY=false
+PAUSE_WHILE_CORE_RUNNING=true
+
+MIN_AGE_SECONDS=5
+"""
+
+
+def _ftp_save_sync_startup_block():
+    return f"""# ftp_save_sync START
+(
+    sleep 15
+    {FTP_SAVE_SYNC_DAEMON_LINE}
+) &
+# ftp_save_sync END
+"""
 
 
 def ensure_ftp_save_sync_bootstrap(connection, log=None):
@@ -533,44 +604,107 @@ def ensure_ftp_save_sync_bootstrap(connection, log=None):
     _log("ftp_save_sync bootstrap complete.\n")
 
 
+def ensure_ftp_save_sync_bootstrap_local(sd_root, log=None):
+    def _log(message):
+        if log:
+            log(message)
+
+    ensure_local_scripts_dir(sd_root)
+
+    config_dir = _local_path(sd_root, FTP_SAVE_SYNC_CONFIG_DIR)
+    config_dir.mkdir(parents=True, exist_ok=True)
+
+    log_path = _local_path(sd_root, FTP_SAVE_SYNC_LOG_PATH)
+    state_path = _local_path(sd_root, FTP_SAVE_SYNC_STATE_PATH)
+
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if not log_path.exists():
+        log_path.write_text("", encoding="utf-8")
+
+    if not state_path.exists():
+        state_path.write_text("", encoding="utf-8")
+
+    rclone_path = _local_path(sd_root, FTP_SAVE_SYNC_RCLONE_PATH)
+    if rclone_path.exists() and rclone_path.stat().st_size > 0:
+        _log("Existing ftp_save_sync rclone binary found, keeping it.\n")
+    else:
+        _log("Installing ftp_save_sync rclone binary...\n")
+        rclone_binary = _download_ftp_save_sync_rclone_binary()
+        _write_local_bytes(sd_root, FTP_SAVE_SYNC_RCLONE_PATH, rclone_binary)
+        _chmod_local_executable(sd_root, FTP_SAVE_SYNC_RCLONE_PATH)
+        _log("ftp_save_sync rclone installed successfully.\n")
+
+    _log("Writing ftp_save_sync daemon script...\n")
+    _write_local_text(sd_root, FTP_SAVE_SYNC_DAEMON_PATH, FTP_SAVE_SYNC_DAEMON_SCRIPT)
+    _chmod_local_executable(sd_root, FTP_SAVE_SYNC_DAEMON_PATH)
+
+    _log("ftp_save_sync bootstrap complete.\n")
+
+
 def install_ftp_save_sync(connection, log):
     log("Installing ftp_save_sync...\n")
-    script_data = requests.get(FTP_SAVE_SYNC_URL, timeout=30).content
+    script_data = _download_ftp_save_sync_script()
 
     ensure_remote_scripts_dir(connection)
-    _write_remote_bytes(connection, "/media/fat/Scripts/ftp_save_sync.sh", script_data)
+    _write_remote_bytes(connection, FTP_SAVE_SYNC_SCRIPT_PATH, script_data)
 
-    connection.run_command("chmod +x /media/fat/Scripts/ftp_save_sync.sh")
+    connection.run_command(f"chmod +x {FTP_SAVE_SYNC_SCRIPT_PATH}")
     log("ftp_save_sync main script uploaded.\n")
 
     ensure_ftp_save_sync_bootstrap(connection, log)
     log("ftp_save_sync installed successfully.\n")
 
 
+def install_ftp_save_sync_local(sd_root, log):
+    log("Installing ftp_save_sync to Offline SD Card...\n")
+    script_data = _download_ftp_save_sync_script()
+
+    ensure_local_scripts_dir(sd_root)
+    _write_local_bytes(sd_root, FTP_SAVE_SYNC_SCRIPT_PATH, script_data)
+    _chmod_local_executable(sd_root, FTP_SAVE_SYNC_SCRIPT_PATH)
+
+    log("ftp_save_sync main script copied.\n")
+
+    ensure_ftp_save_sync_bootstrap_local(sd_root, log)
+    log("ftp_save_sync installed successfully.\n")
+
+
 def uninstall_ftp_save_sync(connection):
     disable_ftp_save_sync_service(connection)
-    connection.run_command("rm -f /media/fat/Scripts/ftp_save_sync.sh")
+    connection.run_command(f"rm -f {FTP_SAVE_SYNC_SCRIPT_PATH}")
     connection.run_command(f"rm -rf {FTP_SAVE_SYNC_CONFIG_DIR}")
 
 
-def load_ftp_save_sync_config(connection):
-    config = {}
+def uninstall_ftp_save_sync_local(sd_root):
+    disable_ftp_save_sync_service_local(sd_root)
 
+    script_path = _local_path(sd_root, FTP_SAVE_SYNC_SCRIPT_PATH)
+    config_dir = _local_path(sd_root, FTP_SAVE_SYNC_CONFIG_DIR)
+
+    if script_path.exists():
+        script_path.unlink()
+
+    if config_dir.exists():
+        shutil.rmtree(config_dir)
+
+
+def load_ftp_save_sync_config(connection):
     if not connection.is_connected():
-        return config
+        return {}
 
     output = connection.run_command(f"cat {FTP_SAVE_SYNC_CONFIG_PATH} 2>/dev/null")
-    if not output:
-        return config
+    return _parse_ftp_save_sync_config_text(output or "")
 
-    for raw_line in output.splitlines():
-        line = raw_line.strip()
-        if not line or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        config[key.strip()] = value.strip().strip('"')
 
-    return config
+def load_ftp_save_sync_config_local(sd_root):
+    path = _local_path(sd_root, FTP_SAVE_SYNC_CONFIG_PATH)
+    if not path.exists():
+        return {}
+
+    text = path.read_text(encoding="utf-8", errors="ignore")
+    return _parse_ftp_save_sync_config_text(text)
 
 
 def save_ftp_save_sync_config(
@@ -584,24 +718,16 @@ def save_ftp_save_sync_config(
     device_name,
     sync_savestates,
 ):
-    ini = f"""PROTOCOL={protocol}
-HOST={host}
-PORT={port}
-USERNAME={username}
-PASSWORD={password}
-REMOTE_BASE={remote_base}
-DEVICE_NAME={device_name}
-
-SYNC_SAVES=true
-SYNC_SAVESTATES={"true" if sync_savestates else "false"}
-SYNC_INTERVAL=15
-
-SKIP_HOST_KEY_CHECK=true
-SKIP_TLS_VERIFY=false
-PAUSE_WHILE_CORE_RUNNING=true
-
-MIN_AGE_SECONDS=5
-"""
+    ini = _build_ftp_save_sync_ini(
+        protocol=protocol,
+        host=host,
+        port=port,
+        username=username,
+        password=password,
+        remote_base=remote_base,
+        device_name=device_name,
+        sync_savestates=sync_savestates,
+    )
 
     ensure_remote_scripts_dir(connection)
 
@@ -613,8 +739,43 @@ MIN_AGE_SECONDS=5
         sftp.close()
 
 
+def save_ftp_save_sync_config_local(
+    sd_root,
+    protocol,
+    host,
+    port,
+    username,
+    password,
+    remote_base,
+    device_name,
+    sync_savestates,
+):
+    ini = _build_ftp_save_sync_ini(
+        protocol=protocol,
+        host=host,
+        port=port,
+        username=username,
+        password=password,
+        remote_base=remote_base,
+        device_name=device_name,
+        sync_savestates=sync_savestates,
+    )
+
+    ensure_local_scripts_dir(sd_root)
+
+    path = _local_path(sd_root, FTP_SAVE_SYNC_CONFIG_PATH)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(ini, encoding="utf-8")
+
+
 def remove_ftp_save_sync_config(connection):
     connection.run_command(f"rm -f {FTP_SAVE_SYNC_CONFIG_PATH}")
+
+
+def remove_ftp_save_sync_config_local(sd_root):
+    path = _local_path(sd_root, FTP_SAVE_SYNC_CONFIG_PATH)
+    if path.exists():
+        path.unlink()
 
 
 def enable_ftp_save_sync_service(connection):
@@ -625,13 +786,7 @@ def enable_ftp_save_sync_service(connection):
     if "EXISTS" not in (exists or ""):
         script = f"""#!/bin/sh
 
-# ftp_save_sync START
-(
-    sleep 15
-    {FTP_SAVE_SYNC_DAEMON_LINE}
-) &
-# ftp_save_sync END
-"""
+{_ftp_save_sync_startup_block()}"""
         sftp = connection.client.open_sftp()
         try:
             with sftp.open(FTP_SAVE_SYNC_STARTUP_PATH, "w") as handle:
@@ -654,6 +809,27 @@ def enable_ftp_save_sync_service(connection):
     connection.run_command(f'echo "# ftp_save_sync END" >> {FTP_SAVE_SYNC_STARTUP_PATH}')
 
 
+def enable_ftp_save_sync_service_local(sd_root):
+    startup_path = _local_path(sd_root, FTP_SAVE_SYNC_STARTUP_PATH)
+    startup_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if not startup_path.exists():
+        startup_path.write_text(
+            f"#!/bin/sh\n\n{_ftp_save_sync_startup_block()}",
+            encoding="utf-8",
+        )
+        _chmod_local_executable(sd_root, FTP_SAVE_SYNC_STARTUP_PATH)
+        return
+
+    if is_ftp_save_sync_service_enabled_local(sd_root):
+        return
+
+    text = startup_path.read_text(encoding="utf-8", errors="ignore").rstrip()
+    text = f"{text}\n\n{_ftp_save_sync_startup_block()}"
+    startup_path.write_text(text, encoding="utf-8")
+    _chmod_local_executable(sd_root, FTP_SAVE_SYNC_STARTUP_PATH)
+
+
 def disable_ftp_save_sync_service(connection):
     if not connection.is_connected():
         return
@@ -661,3 +837,29 @@ def disable_ftp_save_sync_service(connection):
     connection.run_command(
         f"sed -i '/# ftp_save_sync START/,/# ftp_save_sync END/d' {FTP_SAVE_SYNC_STARTUP_PATH} 2>/dev/null"
     )
+
+
+def disable_ftp_save_sync_service_local(sd_root):
+    startup_path = _local_path(sd_root, FTP_SAVE_SYNC_STARTUP_PATH)
+    if not startup_path.exists():
+        return
+
+    lines = startup_path.read_text(encoding="utf-8", errors="ignore").splitlines()
+    new_lines = []
+    skipping = False
+
+    for line in lines:
+        stripped = line.strip()
+
+        if stripped == "# ftp_save_sync START":
+            skipping = True
+            continue
+
+        if stripped == "# ftp_save_sync END":
+            skipping = False
+            continue
+
+        if not skipping:
+            new_lines.append(line)
+
+    startup_path.write_text("\n".join(new_lines).rstrip() + "\n", encoding="utf-8")

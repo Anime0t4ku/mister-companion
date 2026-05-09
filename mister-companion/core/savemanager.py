@@ -17,6 +17,9 @@ SYNC_ROOT = SAVE_ROOT / "sync"
 REMOTE_SAVES_DIR = "/media/fat/saves"
 REMOTE_SAVESTATES_DIR = "/media/fat/savestates"
 
+LOCAL_SAVES_DIR = "saves"
+LOCAL_SAVESTATES_DIR = "savestates"
+
 
 def ensure_savemanager_dirs():
     BACKUP_ROOT.mkdir(parents=True, exist_ok=True)
@@ -35,6 +38,22 @@ def ensure_remote_save_dirs(connection, log_callback=None):
 
     if log_callback:
         log_callback("MiSTer save folders are ready.")
+
+
+def ensure_local_save_dirs(sd_root, log_callback=None):
+    sd_root = Path(sd_root)
+
+    if not sd_root.exists():
+        raise RuntimeError("Offline SD Card folder was not found.")
+
+    if log_callback:
+        log_callback("Checking local SD Card save folders...")
+
+    (sd_root / LOCAL_SAVES_DIR).mkdir(parents=True, exist_ok=True)
+    (sd_root / LOCAL_SAVESTATES_DIR).mkdir(parents=True, exist_ok=True)
+
+    if log_callback:
+        log_callback("Local SD Card save folders are ready.")
 
 
 def get_device_folder_name(profile_name: str = "", ip_address: str = "") -> str:
@@ -147,6 +166,23 @@ def _upload_dir(connection, sftp, local_dir: Path, remote_dir: str):
             sftp.put(str(item), remote_path)
 
 
+def _copy_dir(source_dir: Path, target_dir: Path):
+    if not source_dir.exists():
+        target_dir.mkdir(parents=True, exist_ok=True)
+        return
+
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    for item in source_dir.iterdir():
+        target_path = target_dir / item.name
+
+        if item.is_dir():
+            _copy_dir(item, target_path)
+        else:
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(item, target_path)
+
+
 def _merge_remote_newer_into_local(sftp, remote_dir: str, local_dir: Path):
     local_dir.mkdir(parents=True, exist_ok=True)
 
@@ -166,7 +202,6 @@ def _merge_remote_newer_into_local(sftp, remote_dir: str, local_dir: Path):
                     local_time = 0
 
                 if remote_time > local_time:
-                    shutil.copy2(local_path, local_path) if False else None
                     sftp.get(remote_path, str(local_path))
             else:
                 sftp.get(remote_path, str(local_path))
@@ -221,7 +256,7 @@ def rebuild_sync_folder_from_latest_backups(log_callback=None):
         backups = sorted(
             [p for p in device_folder.iterdir() if p.is_dir()],
             key=lambda p: p.name,
-            reverse=True
+            reverse=True,
         )
 
         if not backups:
@@ -276,6 +311,41 @@ def create_backup(connection, config_data, profile_name: str = "", ip_address: s
     return backup_path
 
 
+def create_backup_local(sd_root, config_data, profile_name: str = "", ip_address: str = "", log_callback=None):
+    ensure_savemanager_dirs()
+    ensure_local_save_dirs(sd_root, log_callback=log_callback)
+
+    sd_root = Path(sd_root)
+    device_root = get_device_backup_root(profile_name, ip_address)
+    if not device_root.name:
+        raise RuntimeError("No device name available.")
+
+    timestamp = time.strftime("%Y-%m-%d_%H-%M-%S")
+    backup_path = device_root / timestamp
+    saves_path = backup_path / "saves"
+    savestates_path = backup_path / "savestates"
+
+    backup_path.mkdir(parents=True, exist_ok=True)
+
+    if log_callback:
+        log_callback("Starting offline backup...")
+
+    _copy_dir(sd_root / LOCAL_SAVES_DIR, saves_path)
+    _copy_dir(sd_root / LOCAL_SAVESTATES_DIR, savestates_path)
+
+    if log_callback:
+        log_callback(f"Backup created: {backup_path}")
+
+    enforce_backup_retention(config_data, profile_name, ip_address, log_callback=log_callback)
+
+    if log_callback:
+        log_callback("Rebuilding sync folder from latest backups...")
+
+    rebuild_sync_folder_from_latest_backups(log_callback=log_callback)
+
+    return backup_path
+
+
 def restore_backup(connection, backup_name: str, profile_name: str = "", ip_address: str = "", log_callback=None):
     ensure_remote_save_dirs(connection, log_callback=log_callback)
 
@@ -297,6 +367,29 @@ def restore_backup(connection, backup_name: str, profile_name: str = "", ip_addr
         _upload_dir(connection, sftp, savestates_path, REMOTE_SAVESTATES_DIR)
     finally:
         sftp.close()
+
+    if log_callback:
+        log_callback("Restore completed successfully.")
+
+
+def restore_backup_local(sd_root, backup_name: str, profile_name: str = "", ip_address: str = "", log_callback=None):
+    ensure_local_save_dirs(sd_root, log_callback=log_callback)
+
+    sd_root = Path(sd_root)
+    device_root = get_device_backup_root(profile_name, ip_address)
+    backup_path = device_root / backup_name
+
+    if not backup_path.exists():
+        raise RuntimeError("Selected backup was not found.")
+
+    saves_path = backup_path / "saves"
+    savestates_path = backup_path / "savestates"
+
+    if log_callback:
+        log_callback(f"Restoring backup: {backup_name}")
+
+    _copy_dir(saves_path, sd_root / LOCAL_SAVES_DIR)
+    _copy_dir(savestates_path, sd_root / LOCAL_SAVESTATES_DIR)
 
     if log_callback:
         log_callback("Restore completed successfully.")
@@ -329,6 +422,36 @@ def sync_saves(connection, log_callback=None):
         _upload_dir(connection, sftp, sync_savestates_path, REMOTE_SAVESTATES_DIR)
     finally:
         sftp.close()
+
+    if log_callback:
+        log_callback("Sync completed successfully.")
+
+
+def sync_saves_local(sd_root, log_callback=None):
+    ensure_savemanager_dirs()
+    ensure_local_save_dirs(sd_root, log_callback=log_callback)
+
+    sd_root = Path(sd_root)
+
+    sync_saves_path = SYNC_ROOT / "saves"
+    sync_savestates_path = SYNC_ROOT / "savestates"
+
+    if not sync_saves_path.exists() or not sync_savestates_path.exists():
+        if log_callback:
+            log_callback("Sync folder missing, rebuilding from latest backups...")
+        rebuild_sync_folder_from_latest_backups(log_callback=log_callback)
+
+    if log_callback:
+        log_callback("Merging newest saves from local SD Card...")
+
+    _merge_local_dir_newer_into_local(sd_root / LOCAL_SAVES_DIR, sync_saves_path)
+    _merge_local_dir_newer_into_local(sd_root / LOCAL_SAVESTATES_DIR, sync_savestates_path)
+
+    if log_callback:
+        log_callback("Writing newest saves to local SD Card...")
+
+    _merge_local_dir_newer_into_local(sync_saves_path, sd_root / LOCAL_SAVES_DIR)
+    _merge_local_dir_newer_into_local(sync_savestates_path, sd_root / LOCAL_SAVESTATES_DIR)
 
     if log_callback:
         log_callback("Sync completed successfully.")

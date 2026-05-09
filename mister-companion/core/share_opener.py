@@ -1,6 +1,7 @@
 import os
 import subprocess
 import sys
+from pathlib import Path
 
 
 def open_mister_share(ip, username="root", password="1"):
@@ -43,6 +44,33 @@ def open_mister_share(ip, username="root", password="1"):
             )
 
         subprocess.Popen(["open", os.path.join(home, "MiSTer_sdcard")])
+        return
+
+    raise RuntimeError(f"Unsupported platform: {sys.platform}")
+
+
+def open_local_folder(path):
+    folder = Path(str(path or "")).expanduser()
+
+    if not folder.exists() or not folder.is_dir():
+        raise ValueError("The selected folder does not exist.")
+
+    folder_path = str(folder)
+
+    if sys.platform.startswith("win"):
+        os.startfile(folder_path)
+        return
+
+    if sys.platform == "darwin":
+        subprocess.Popen(["open", folder_path])
+        return
+
+    if sys.platform.startswith("linux"):
+        subprocess.Popen(
+            ["xdg-open", folder_path],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
         return
 
     raise RuntimeError(f"Unsupported platform: {sys.platform}")

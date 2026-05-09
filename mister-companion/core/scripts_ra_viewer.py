@@ -1,9 +1,16 @@
 import configparser
 import posixpath
 import re
+import shutil
 from io import StringIO
 
 import requests
+
+from core.scripts_common import (
+    _chmod_local_executable,
+    _local_path,
+    _write_local_text,
+)
 
 
 RA_VIEWER_SCRIPT_URL = (
@@ -93,15 +100,6 @@ def _read_remote_text(connection, path: str, default: str = "") -> str:
 
 
 def _extract_heredoc(script_text: str, target_path_variable: str) -> str:
-    """
-    Extracts a heredoc like:
-
-        cat > "$HELPER" <<'EOF'
-        ...
-        EOF
-
-    target_path_variable should be something like "$HELPER".
-    """
     escaped_target = re.escape(target_path_variable)
 
     pattern = re.compile(
@@ -122,7 +120,6 @@ def _extract_helper_python(script_text: str) -> str:
     except Exception:
         pass
 
-    # Fallback for scripts that write directly to the path instead of using $HELPER.
     pattern = re.compile(
         r"""cat\s*>\s*["']?\$BASE/ra_viewer\.py["']?\s*<<\s*['"]?([A-Za-z0-9_]+)['"]?\n(.*?)\n\1""",
         re.DOTALL,
@@ -134,12 +131,61 @@ def _extract_helper_python(script_text: str) -> str:
     return match.group(2).rstrip("\n") + "\n"
 
 
+def _parse_ra_viewer_config_text(text: str) -> dict:
+    parser = configparser.ConfigParser()
+    parser.read_file(StringIO(text or RA_VIEWER_DEFAULT_CONFIG))
+
+    if not parser.has_section("retroachievements"):
+        parser.add_section("retroachievements")
+
+    return {
+        "username": parser.get("retroachievements", "username", fallback=""),
+        "api_key": parser.get("retroachievements", "api_key", fallback=""),
+    }
+
+
+def _build_ra_viewer_config_text(username: str, api_key: str) -> str:
+    parser = configparser.ConfigParser()
+    parser["retroachievements"] = {
+        "username": username.strip(),
+        "api_key": api_key.strip(),
+    }
+
+    output = StringIO()
+    parser.write(output)
+    return output.getvalue()
+
+
 def _ensure_default_config(connection):
     if _remote_file_exists(connection, RA_VIEWER_CONFIG_PATH):
         return False
 
     _write_remote_text(connection, RA_VIEWER_CONFIG_PATH, RA_VIEWER_DEFAULT_CONFIG)
     return True
+
+
+def _ensure_default_config_local(sd_root):
+    config_path = _local_path(sd_root, RA_VIEWER_CONFIG_PATH)
+    if config_path.exists():
+        return False
+
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(RA_VIEWER_DEFAULT_CONFIG, encoding="utf-8")
+    return True
+
+
+def _ensure_ra_viewer_local_dirs(sd_root):
+    for path in [
+        "/media/fat/Scripts",
+        RA_VIEWER_BASE_DIR,
+        RA_VIEWER_PY_LIB_DIR,
+        RA_VIEWER_PIP_BOOTSTRAP_DIR,
+        RA_VIEWER_LIB_DIR,
+        RA_VIEWER_DEB_DIR,
+        RA_VIEWER_TMP_DIR,
+        RA_VIEWER_FONT_DIR,
+    ]:
+        _local_path(sd_root, path).mkdir(parents=True, exist_ok=True)
 
 
 def get_ra_viewer_status(connection):
@@ -162,6 +208,47 @@ def get_ra_viewer_status(connection):
     configured = False
     if config_exists:
         config = load_ra_viewer_config(connection)
+        configured = bool(
+            config.get("username", "").strip()
+            and config.get("api_key", "").strip()
+        )
+
+    if not installed:
+        status_text = "✗ Not installed"
+        install_enabled = True
+        edit_config_enabled = False
+        uninstall_enabled = False
+    elif installed and not configured:
+        status_text = "⚙ Installed, not configured"
+        install_enabled = False
+        edit_config_enabled = True
+        uninstall_enabled = True
+    else:
+        status_text = "✓ Installed, configured"
+        install_enabled = False
+        edit_config_enabled = True
+        uninstall_enabled = True
+
+    return {
+        "installed": installed,
+        "configured": configured,
+        "status_text": status_text,
+        "install_enabled": install_enabled,
+        "edit_config_enabled": edit_config_enabled,
+        "uninstall_enabled": uninstall_enabled,
+    }
+
+
+def get_ra_viewer_status_local(sd_root):
+    script_path = _local_path(sd_root, RA_VIEWER_SCRIPT_PATH)
+    helper_path = _local_path(sd_root, RA_VIEWER_HELPER_PATH)
+    config_path = _local_path(sd_root, RA_VIEWER_CONFIG_PATH)
+
+    installed = script_path.exists() and helper_path.exists()
+
+    configured = False
+    if config_path.exists():
+        config = load_ra_viewer_config_local(sd_root)
         configured = bool(
             config.get("username", "").strip()
             and config.get("api_key", "").strip()
@@ -240,6 +327,46 @@ def install_ra_viewer(connection, log):
     }
 
 
+def install_ra_viewer_local(sd_root, log):
+    log("Installing RA Viewer to Offline SD Card...\n")
+
+    _ensure_ra_viewer_local_dirs(sd_root)
+
+    log("Downloading ra_viewer.sh...\n")
+    script_text = _download_text(RA_VIEWER_SCRIPT_URL)
+
+    log("Extracting embedded ra_viewer.py...\n")
+    helper_python = _extract_helper_python(script_text)
+
+    log(f"Writing script: {RA_VIEWER_SCRIPT_PATH}\n")
+    _write_local_text(sd_root, RA_VIEWER_SCRIPT_PATH, script_text)
+    _chmod_local_executable(sd_root, RA_VIEWER_SCRIPT_PATH)
+
+    log(f"Writing helper: {RA_VIEWER_HELPER_PATH}\n")
+    _write_local_text(sd_root, RA_VIEWER_HELPER_PATH, helper_python)
+    _chmod_local_executable(sd_root, RA_VIEWER_HELPER_PATH)
+
+    log("Preparing config files and folders...\n")
+    created_config = _ensure_default_config_local(sd_root)
+
+    if created_config:
+        log(f"Created default config: {RA_VIEWER_CONFIG_PATH}\n")
+    else:
+        log("Existing config.ini found, keeping it.\n")
+
+    log_path = _local_path(sd_root, RA_VIEWER_LOG_PATH)
+    if not log_path.exists():
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.write_text("", encoding="utf-8")
+
+    log("RA Viewer installed successfully.\n")
+    log("Open Edit Config and enter your RetroAchievements username and Web API key.\n")
+
+    return {
+        "installed": True,
+    }
+
+
 def uninstall_ra_viewer(connection, log):
     if not connection.is_connected():
         raise RuntimeError("Not connected to MiSTer.")
@@ -259,6 +386,27 @@ def uninstall_ra_viewer(connection, log):
     }
 
 
+def uninstall_ra_viewer_local(sd_root, log):
+    log("Removing RA Viewer...\n")
+
+    script_path = _local_path(sd_root, RA_VIEWER_SCRIPT_PATH)
+    base_dir = _local_path(sd_root, RA_VIEWER_BASE_DIR)
+
+    log(f"Removing script: {RA_VIEWER_SCRIPT_PATH}\n")
+    if script_path.exists():
+        script_path.unlink()
+
+    log(f"Removing config folder: {RA_VIEWER_BASE_DIR}\n")
+    if base_dir.exists():
+        shutil.rmtree(base_dir)
+
+    log("RA Viewer uninstalled successfully.\n")
+
+    return {
+        "uninstalled": True,
+    }
+
+
 def load_ra_viewer_config(connection) -> dict:
     if not connection.is_connected():
         return {
@@ -267,17 +415,20 @@ def load_ra_viewer_config(connection) -> dict:
         }
 
     text = _read_remote_text(connection, RA_VIEWER_CONFIG_PATH, RA_VIEWER_DEFAULT_CONFIG)
+    return _parse_ra_viewer_config_text(text)
 
-    parser = configparser.ConfigParser()
-    parser.read_file(StringIO(text))
 
-    if not parser.has_section("retroachievements"):
-        parser.add_section("retroachievements")
+def load_ra_viewer_config_local(sd_root) -> dict:
+    config_path = _local_path(sd_root, RA_VIEWER_CONFIG_PATH)
 
-    return {
-        "username": parser.get("retroachievements", "username", fallback=""),
-        "api_key": parser.get("retroachievements", "api_key", fallback=""),
-    }
+    if not config_path.exists():
+        return {
+            "username": "",
+            "api_key": "",
+        }
+
+    text = config_path.read_text(encoding="utf-8", errors="replace")
+    return _parse_ra_viewer_config_text(text)
 
 
 def save_ra_viewer_config(connection, username: str, api_key: str):
@@ -286,17 +437,20 @@ def save_ra_viewer_config(connection, username: str, api_key: str):
 
     _ensure_remote_dir(connection, RA_VIEWER_BASE_DIR)
 
-    parser = configparser.ConfigParser()
-    parser["retroachievements"] = {
-        "username": username.strip(),
-        "api_key": api_key.strip(),
+    text = _build_ra_viewer_config_text(username, api_key)
+    _write_remote_text(connection, RA_VIEWER_CONFIG_PATH, text)
+
+    return {
+        "configured": bool(username.strip() and api_key.strip()),
     }
 
-    output = StringIO()
-    parser.write(output)
 
-    text = output.getvalue()
-    _write_remote_text(connection, RA_VIEWER_CONFIG_PATH, text)
+def save_ra_viewer_config_local(sd_root, username: str, api_key: str):
+    config_path = _local_path(sd_root, RA_VIEWER_CONFIG_PATH)
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+
+    text = _build_ra_viewer_config_text(username, api_key)
+    config_path.write_text(text, encoding="utf-8")
 
     return {
         "configured": bool(username.strip() and api_key.strip()),

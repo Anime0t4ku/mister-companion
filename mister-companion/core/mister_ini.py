@@ -28,9 +28,262 @@ SCALING_REVERSE_MAP = {value: key for key, value in SCALING_MAP.items()}
 
 DEFAULT_FONT_LINE = ";font=font/myfont.pf"
 
+AMIGAVISION_PRESET_KEY = "__amigavision_preset"
+MENU_CRT_PRESET_KEY = "__menu_crt_preset"
+
+AMIGAVISION_PRESET_HEADER_LINES = [
+    "[Amiga",
+    "+Amiga500",
+    "+Amiga500HD",
+    "+Amiga600HD",
+    "+AmigaCD32]",
+]
+
+AMIGAVISION_PRESET_BODY_LINES = [
+    "video_mode_ntsc=8 ; These two use the recommended setting of 1080p60 and",
+    "video_mode_pal=9  ; 1080p50, adjust if you want a different resolution",
+    "vscale_mode=0",
+    "vsync_adjust=1 ; You can set this to 2 if your display can handle it",
+    "custom_aspect_ratio_1=40:27",
+    "bootscreen=0",
+]
+
+AMIGAVISION_PRESET_BLOCK_LINES = (
+    AMIGAVISION_PRESET_HEADER_LINES + AMIGAVISION_PRESET_BODY_LINES
+)
+
+MENU_CRT_PRESETS = {
+    "NTSC, Large Text": [
+        "[Menu]",
+        "vga_scaler=1",
+        "video_mode=384,16,37,63,224,10,3,24,7830",
+    ],
+    "NTSC, Small Text": [
+        "[Menu]",
+        "vga_scaler=1",
+        "video_mode=640,30,60,70,240,4,4,14,12587",
+    ],
+    "PAL, Large Text": [
+        "[Menu]",
+        "vga_scaler=1",
+        "video_mode=320,13,31,52,288,4,3,18,6510",
+    ],
+    "PAL, Small Text": [
+        "[Menu]",
+        "vga_scaler=1",
+        "video_mode=640,30,60,70,288,6,4,14,12587",
+    ],
+}
+
+
+def _normalized_line(line):
+    return str(line or "").strip()
+
+
+def _line_without_comment(line):
+    line = str(line or "").strip()
+
+    if ";" in line:
+        line = line.split(";", 1)[0].strip()
+
+    return line
+
+
+def _is_section_start(line):
+    stripped = _normalized_line(line)
+    return stripped.startswith("[") and stripped != ""
+
+
+def _is_single_line_section(line):
+    stripped = _normalized_line(line)
+    return stripped.startswith("[") and stripped.endswith("]")
+
+
+def _is_mister_section_header(line):
+    return _normalized_line(line) == "[MiSTer]"
+
+
+def _is_menu_section_header(line):
+    return _normalized_line(line) == "[Menu]"
+
+
+def _is_amigavision_header_at(lines, index):
+    if index < 0 or index >= len(lines):
+        return False
+
+    if index + len(AMIGAVISION_PRESET_HEADER_LINES) > len(lines):
+        return False
+
+    for offset, expected in enumerate(AMIGAVISION_PRESET_HEADER_LINES):
+        if _normalized_line(lines[index + offset]) != expected:
+            return False
+
+    return True
+
+
+def _amigavision_block_end_index(lines, start_index):
+    index = start_index + len(AMIGAVISION_PRESET_HEADER_LINES)
+
+    while index < len(lines):
+        stripped = _normalized_line(lines[index])
+
+        if index > start_index + len(AMIGAVISION_PRESET_HEADER_LINES) and _is_section_start(lines[index]):
+            break
+
+        index += 1
+
+        if _line_without_comment(stripped) == "bootscreen=0":
+            break
+
+    return index
+
+
+def _has_amigavision_preset(text):
+    lines = str(text or "").replace("\r\n", "\n").replace("\r", "\n").split("\n")
+
+    index = 0
+    while index < len(lines):
+        if _is_amigavision_header_at(lines, index):
+            block_end = _amigavision_block_end_index(lines, index)
+            block_lines = lines[index:block_end]
+
+            required_settings = {
+                "video_mode_ntsc": "8",
+                "video_mode_pal": "9",
+                "vscale_mode": "0",
+                "vsync_adjust": "1",
+                "custom_aspect_ratio_1": "40:27",
+                "bootscreen": "0",
+            }
+
+            found_settings = {}
+
+            for line in block_lines:
+                clean = _line_without_comment(line)
+                if "=" not in clean:
+                    continue
+
+                key, value = clean.split("=", 1)
+                found_settings[key.strip()] = value.strip()
+
+            if all(found_settings.get(key) == value for key, value in required_settings.items()):
+                return True
+
+        index += 1
+
+    return False
+
+
+def _remove_existing_amigavision_preset_blocks(lines):
+    cleaned_lines = []
+    index = 0
+
+    while index < len(lines):
+        if _is_amigavision_header_at(lines, index):
+            index = _amigavision_block_end_index(lines, index)
+
+            while cleaned_lines and not cleaned_lines[-1].strip():
+                cleaned_lines.pop()
+
+            while index < len(lines) and not lines[index].strip():
+                index += 1
+
+            continue
+
+        cleaned_lines.append(lines[index])
+        index += 1
+
+    return cleaned_lines
+
+
+def _menu_section_bounds(lines):
+    index = 0
+
+    while index < len(lines):
+        if _is_menu_section_header(lines[index]):
+            start = index
+            index += 1
+
+            while index < len(lines):
+                if _is_section_start(lines[index]):
+                    break
+                index += 1
+
+            return start, index
+
+        index += 1
+
+    return None, None
+
+
+def _read_section_settings(lines, start, end):
+    settings = {}
+
+    if start is None or end is None:
+        return settings
+
+    for line in lines[start + 1:end]:
+        clean = _line_without_comment(line)
+
+        if "=" not in clean:
+            continue
+
+        key, value = clean.split("=", 1)
+        settings[key.strip()] = value.strip()
+
+    return settings
+
+
+def _detect_menu_crt_preset(text):
+    lines = str(text or "").replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    start, end = _menu_section_bounds(lines)
+
+    if start is None:
+        return "Disabled"
+
+    settings = _read_section_settings(lines, start, end)
+
+    if settings.get("vga_scaler") != "1":
+        return "Disabled"
+
+    video_mode = settings.get("video_mode", "")
+
+    for preset_name, preset_lines in MENU_CRT_PRESETS.items():
+        expected_video_mode = ""
+
+        for line in preset_lines:
+            clean = _line_without_comment(line)
+            if clean.startswith("video_mode="):
+                expected_video_mode = clean.split("=", 1)[1].strip()
+                break
+
+        if video_mode == expected_video_mode:
+            return preset_name
+
+    return "Disabled"
+
+
+def _remove_existing_menu_section(lines):
+    start, end = _menu_section_bounds(lines)
+
+    if start is None or end is None:
+        return lines
+
+    cleaned_lines = lines[:start] + lines[end:]
+
+    while cleaned_lines and not cleaned_lines[-1].strip():
+        cleaned_lines.pop()
+
+    return cleaned_lines
+
 
 def parse_mister_ini(text):
     settings = {}
+    text = str(text or "")
+
+    settings["amigavision_preset"] = "Enabled" if _has_amigavision_preset(text) else "Disabled"
+    settings["menu_crt_preset"] = _detect_menu_crt_preset(text)
+
     current_section = None
 
     for raw_line in text.splitlines():
@@ -39,8 +292,13 @@ def parse_mister_ini(text):
         if not line:
             continue
 
-        if line.startswith("[") and line.endswith("]"):
-            current_section = line[1:-1].strip()
+        if _is_section_start(line):
+            if _is_mister_section_header(line):
+                current_section = "MiSTer"
+            elif _is_single_line_section(line):
+                current_section = line[1:-1].strip()
+            else:
+                current_section = None
             continue
 
         if current_section != "MiSTer":
@@ -127,6 +385,9 @@ def easy_mode_values_from_ini_settings(settings):
     else:
         values["font"] = "Default"
 
+    values["amigavision_preset"] = settings.get("amigavision_preset", "Disabled")
+    values["menu_crt_preset"] = settings.get("menu_crt_preset", "Disabled")
+
     return values
 
 
@@ -199,32 +460,123 @@ def build_easy_mode_settings(easy_values):
     else:
         settings["font_commented"] = "font/myfont.pf"
 
+    amigavision_preset = easy_values.get("amigavision_preset", "Disabled").strip()
+    settings[AMIGAVISION_PRESET_KEY] = (
+        "Enabled" if amigavision_preset == "Enabled" else "Disabled"
+    )
+
+    menu_crt_preset = easy_values.get("menu_crt_preset", "Disabled").strip()
+    settings[MENU_CRT_PRESET_KEY] = (
+        menu_crt_preset if menu_crt_preset in MENU_CRT_PRESETS else "Disabled"
+    )
+
     return settings
 
 
-def update_mister_ini_text(ini_text, updated_settings):
-    lines = ini_text.splitlines()
-    new_lines = []
+def _split_assignment_line(line):
+    stripped = line.strip()
+    commented = False
 
+    if stripped.startswith(";"):
+        commented = True
+        stripped = stripped[1:].strip()
+
+    if "=" not in stripped:
+        return "", "", commented
+
+    key, value = stripped.split("=", 1)
+    return key.strip(), value.strip(), commented
+
+
+def _line_indent(line):
+    return line[: len(line) - len(line.lstrip())]
+
+
+def _format_setting_line(existing_line, key, value, commented=False):
+    indent = _line_indent(existing_line or "")
+    prefix = ";" if commented else ""
+    return f"{indent}{prefix}{key}={value}"
+
+
+def _append_missing_settings(new_lines, updated_settings, replaced_keys):
+    for key, value in updated_settings.items():
+        if key.startswith("__"):
+            continue
+
+        if key in replaced_keys:
+            continue
+
+        if key == "font_commented":
+            if "font" in replaced_keys or "font_commented" in replaced_keys:
+                continue
+            new_lines.append(DEFAULT_FONT_LINE)
+            replaced_keys.add("font")
+            replaced_keys.add("font_commented")
+        else:
+            new_lines.append(f"{key}={value}")
+            replaced_keys.add(key)
+
+
+def _append_amigavision_preset_block(new_lines, updated_settings):
+    if updated_settings.get(AMIGAVISION_PRESET_KEY) != "Enabled":
+        return
+
+    if new_lines and new_lines[-1].strip():
+        new_lines.append("")
+
+    new_lines.extend(AMIGAVISION_PRESET_BLOCK_LINES)
+
+
+def _append_menu_crt_preset_block(new_lines, updated_settings):
+    preset_name = updated_settings.get(MENU_CRT_PRESET_KEY)
+
+    if preset_name not in MENU_CRT_PRESETS:
+        return
+
+    if new_lines and new_lines[-1].strip():
+        new_lines.append("")
+
+    new_lines.extend(MENU_CRT_PRESETS[preset_name])
+
+
+def update_mister_ini_text(ini_text, updated_settings):
+    text = str(ini_text or "").replace("\r\n", "\n").replace("\r", "\n")
+    had_trailing_newline = text.endswith("\n")
+
+    lines = text.split("\n")
+
+    if had_trailing_newline and lines and lines[-1] == "":
+        lines = lines[:-1]
+
+    if AMIGAVISION_PRESET_KEY in updated_settings:
+        lines = _remove_existing_amigavision_preset_blocks(lines)
+
+    if MENU_CRT_PRESET_KEY in updated_settings:
+        lines = _remove_existing_menu_section(lines)
+
+    new_lines = []
     in_mister_section = False
-    replaced_keys = set()
     found_mister_section = False
+    replaced_keys = set()
+    post_mister_blocks_inserted = False
 
     for line in lines:
         stripped = line.strip()
 
-        if stripped.startswith("[") and stripped.endswith("]"):
-            section_name = stripped[1:-1].strip()
+        if _is_section_start(stripped):
+            if in_mister_section and not _is_mister_section_header(stripped):
+                _append_missing_settings(new_lines, updated_settings, replaced_keys)
 
-            if in_mister_section and section_name != "MiSTer":
-                for key, value in updated_settings.items():
-                    if key not in replaced_keys:
-                        if key == "font_commented":
-                            new_lines.append(DEFAULT_FONT_LINE)
-                        else:
-                            new_lines.append(f"{key}={value}")
+                if not post_mister_blocks_inserted:
+                    _append_amigavision_preset_block(new_lines, updated_settings)
+                    _append_menu_crt_preset_block(new_lines, updated_settings)
+                    post_mister_blocks_inserted = True
 
-            in_mister_section = section_name == "MiSTer"
+                if new_lines and new_lines[-1].strip():
+                    new_lines.append("")
+
+            in_mister_section = _is_mister_section_header(stripped)
+
             if in_mister_section:
                 found_mister_section = True
 
@@ -232,25 +584,38 @@ def update_mister_ini_text(ini_text, updated_settings):
             continue
 
         if in_mister_section:
-            clean = stripped.lstrip(";").strip()
+            key, _value, commented = _split_assignment_line(line)
 
-            if "=" in clean:
-                key = clean.split("=", 1)[0].strip()
-
+            if key:
                 if key == "font":
                     if "font" in updated_settings:
-                        new_lines.append(f"font={updated_settings['font']}")
+                        new_lines.append(
+                            _format_setting_line(
+                                line,
+                                "font",
+                                updated_settings["font"],
+                                commented=False,
+                            )
+                        )
                         replaced_keys.add("font")
                         replaced_keys.add("font_commented")
                         continue
+
                     if "font_commented" in updated_settings:
                         new_lines.append(DEFAULT_FONT_LINE)
                         replaced_keys.add("font")
                         replaced_keys.add("font_commented")
                         continue
 
-                if key in updated_settings and key not in ("font_commented",):
-                    new_lines.append(f"{key}={updated_settings[key]}")
+                if key in updated_settings and key != "font_commented":
+                    new_lines.append(
+                        _format_setting_line(
+                            line,
+                            key,
+                            updated_settings[key],
+                            commented=False,
+                        )
+                    )
                     replaced_keys.add(key)
                     continue
 
@@ -259,19 +624,18 @@ def update_mister_ini_text(ini_text, updated_settings):
     if not found_mister_section:
         if new_lines and new_lines[-1].strip():
             new_lines.append("")
+
         new_lines.append("[MiSTer]")
-        for key, value in updated_settings.items():
-            if key == "font_commented":
-                new_lines.append(DEFAULT_FONT_LINE)
-            else:
-                new_lines.append(f"{key}={value}")
+        _append_missing_settings(new_lines, updated_settings, replaced_keys)
+
+        _append_amigavision_preset_block(new_lines, updated_settings)
+        _append_menu_crt_preset_block(new_lines, updated_settings)
 
     elif in_mister_section:
-        for key, value in updated_settings.items():
-            if key not in replaced_keys:
-                if key == "font_commented":
-                    new_lines.append(DEFAULT_FONT_LINE)
-                else:
-                    new_lines.append(f"{key}={value}")
+        _append_missing_settings(new_lines, updated_settings, replaced_keys)
+
+        if not post_mister_blocks_inserted:
+            _append_amigavision_preset_block(new_lines, updated_settings)
+            _append_menu_crt_preset_block(new_lines, updated_settings)
 
     return "\n".join(new_lines).rstrip("\n") + "\n"

@@ -2,7 +2,6 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QCheckBox,
     QDialog,
-    QDialogButtonBox,
     QFormLayout,
     QHBoxLayout,
     QLabel,
@@ -12,13 +11,20 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
-from core.scripts_actions import load_dav_browser_config, save_dav_browser_config
+from core.scripts_actions import (
+    load_dav_browser_config,
+    load_dav_browser_config_local,
+    save_dav_browser_config,
+    save_dav_browser_config_local,
+)
 
 
 class DavBrowserConfigDialog(QDialog):
-    def __init__(self, connection, parent=None):
+    def __init__(self, connection=None, parent=None, sd_root=None):
         super().__init__(parent)
         self.connection = connection
+        self.sd_root = sd_root
+        self.offline_mode = bool(sd_root)
 
         self.setWindowTitle("Configure DAV Browser")
         self.setModal(True)
@@ -32,10 +38,19 @@ class DavBrowserConfigDialog(QDialog):
         main_layout.setContentsMargins(14, 14, 14, 14)
         main_layout.setSpacing(12)
 
-        info_label = QLabel(
-            "Configure the WebDAV connection used by DAV Browser.\n"
-            "Leave Remote Path empty to browse from the server root."
-        )
+        if self.offline_mode:
+            info_text = (
+                "Configure the WebDAV connection used by DAV Browser.\n"
+                "Offline Mode: this configuration will be saved directly to the selected SD card.\n"
+                "Leave Remote Path empty to browse from the server root."
+            )
+        else:
+            info_text = (
+                "Configure the WebDAV connection used by DAV Browser.\n"
+                "Leave Remote Path empty to browse from the server root."
+            )
+
+        info_label = QLabel(info_text)
         info_label.setWordWrap(True)
         main_layout.addWidget(info_label)
 
@@ -84,7 +99,10 @@ class DavBrowserConfigDialog(QDialog):
 
     def load_existing_config(self):
         try:
-            config = load_dav_browser_config(self.connection)
+            if self.offline_mode:
+                config = load_dav_browser_config_local(self.sd_root)
+            else:
+                config = load_dav_browser_config(self.connection)
         except Exception as e:
             QMessageBox.critical(
                 self,
@@ -121,14 +139,24 @@ class DavBrowserConfigDialog(QDialog):
             return
 
         try:
-            save_dav_browser_config(
-                self.connection,
-                server_url=server_url,
-                username=username,
-                password=password,
-                remote_path=remote_path,
-                skip_tls_verify=skip_tls_verify,
-            )
+            if self.offline_mode:
+                save_dav_browser_config_local(
+                    self.sd_root,
+                    server_url=server_url,
+                    username=username,
+                    password=password,
+                    remote_path=remote_path,
+                    skip_tls_verify=skip_tls_verify,
+                )
+            else:
+                save_dav_browser_config(
+                    self.connection,
+                    server_url=server_url,
+                    username=username,
+                    password=password,
+                    remote_path=remote_path,
+                    skip_tls_verify=skip_tls_verify,
+                )
         except Exception as e:
             QMessageBox.critical(
                 self,

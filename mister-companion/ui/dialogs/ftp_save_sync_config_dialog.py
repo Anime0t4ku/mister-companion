@@ -14,19 +14,23 @@ from PyQt6.QtWidgets import (
 
 from core.scripts_actions import (
     load_ftp_save_sync_config,
+    load_ftp_save_sync_config_local,
     save_ftp_save_sync_config,
+    save_ftp_save_sync_config_local,
 )
 
 
 class FtpSaveSyncConfigDialog(QDialog):
-    def __init__(self, connection, main_window, parent=None):
+    def __init__(self, connection=None, main_window=None, parent=None, sd_root=None):
         super().__init__(parent)
         self.connection = connection
         self.main_window = main_window
+        self.sd_root = sd_root
+        self.offline_mode = bool(sd_root)
 
         self.setWindowTitle("Configure ftp_save_sync")
         self.setModal(True)
-        self.resize(500, 340)
+        self.resize(500, 360)
 
         self.build_ui()
         self.load_existing_config()
@@ -36,10 +40,19 @@ class FtpSaveSyncConfigDialog(QDialog):
         main_layout.setContentsMargins(14, 14, 14, 14)
         main_layout.setSpacing(12)
 
-        info_label = QLabel(
-            "Configure the remote sync connection used by ftp_save_sync.\n"
-            "Remote Base is the working directory on the remote server."
-        )
+        if self.offline_mode:
+            info_text = (
+                "Configure the remote sync connection used by ftp_save_sync.\n"
+                "Offline Mode: this configuration will be saved directly to the selected SD card.\n"
+                "Remote Base is the working directory on the remote server."
+            )
+        else:
+            info_text = (
+                "Configure the remote sync connection used by ftp_save_sync.\n"
+                "Remote Base is the working directory on the remote server."
+            )
+
+        info_label = QLabel(info_text)
         info_label.setWordWrap(True)
         main_layout.addWidget(info_label)
 
@@ -108,17 +121,24 @@ class FtpSaveSyncConfigDialog(QDialog):
         self.cancel_button.clicked.connect(self.reject)
 
     def get_selected_profile_name(self):
+        if self.offline_mode:
+            return "Offline SD Card"
+
         try:
             connection_tab = getattr(self.main_window, "connection_tab", None)
             if connection_tab and hasattr(connection_tab, "get_selected_profile_name"):
                 return connection_tab.get_selected_profile_name().strip()
         except Exception:
             pass
+
         return ""
 
     def load_existing_config(self):
         try:
-            config = load_ftp_save_sync_config(self.connection)
+            if self.offline_mode:
+                config = load_ftp_save_sync_config_local(self.sd_root)
+            else:
+                config = load_ftp_save_sync_config(self.connection)
         except Exception as e:
             QMessageBox.critical(
                 self,
@@ -142,7 +162,7 @@ class FtpSaveSyncConfigDialog(QDialog):
             sync_savestates = config.get("SYNC_SAVESTATES", "false").strip().lower() == "true"
             self.sync_savestates_checkbox.setChecked(sync_savestates)
         else:
-            self.protocol_combo.setCurrentIndex(1)  # default to SFTP
+            self.protocol_combo.setCurrentIndex(1)
             self.on_protocol_changed()
 
             profile_name = self.get_selected_profile_name()
@@ -151,12 +171,13 @@ class FtpSaveSyncConfigDialog(QDialog):
 
     def on_protocol_changed(self):
         current_protocol = self.protocol_combo.currentData()
+        current_port = self.port_edit.text().strip()
 
         if current_protocol == "sftp":
-            if not self.port_edit.text().strip():
+            if not current_port or current_port == "21":
                 self.port_edit.setText("22")
         else:
-            if not self.port_edit.text().strip():
+            if not current_port or current_port == "22":
                 self.port_edit.setText("21")
 
     def save_config(self):
@@ -197,17 +218,30 @@ class FtpSaveSyncConfigDialog(QDialog):
             remote_base = f"/{remote_base}"
 
         try:
-            save_ftp_save_sync_config(
-                self.connection,
-                protocol=protocol,
-                host=host,
-                port=port,
-                username=username,
-                password=password,
-                remote_base=remote_base,
-                device_name=device_name,
-                sync_savestates=sync_savestates,
-            )
+            if self.offline_mode:
+                save_ftp_save_sync_config_local(
+                    self.sd_root,
+                    protocol=protocol,
+                    host=host,
+                    port=port,
+                    username=username,
+                    password=password,
+                    remote_base=remote_base,
+                    device_name=device_name,
+                    sync_savestates=sync_savestates,
+                )
+            else:
+                save_ftp_save_sync_config(
+                    self.connection,
+                    protocol=protocol,
+                    host=host,
+                    port=port,
+                    username=username,
+                    password=password,
+                    remote_base=remote_base,
+                    device_name=device_name,
+                    sync_savestates=sync_savestates,
+                )
         except Exception as e:
             QMessageBox.critical(
                 self,

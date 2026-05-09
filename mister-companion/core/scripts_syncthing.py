@@ -1,7 +1,15 @@
 import io
+import shutil
 import tarfile
 
 import requests
+
+from core.scripts_common import (
+    _chmod_local_executable,
+    _local_path,
+    _write_local_bytes,
+    _write_local_text,
+)
 
 
 SYNCTHING_SCRIPT_URL = (
@@ -186,6 +194,21 @@ def _download_syncthing_binary():
     raise RuntimeError("Could not find the Syncthing executable inside the downloaded archive.")
 
 
+def _ensure_syncthing_local_dirs(sd_root):
+    for path in [
+        "/media/fat/Scripts",
+        SYNCTHING_BASE_DIR,
+        SYNCTHING_BIN_DIR,
+        SYNCTHING_HOME_DIR,
+        SYNCTHING_TMP_DIR,
+    ]:
+        _local_path(sd_root, path).mkdir(parents=True, exist_ok=True)
+
+    log_path = _local_path(sd_root, SYNCTHING_LOG_FILE)
+    if not log_path.exists():
+        log_path.write_text("", encoding="utf-8")
+
+
 def is_syncthing_start_on_boot_enabled(connection):
     if not connection.is_connected():
         return False
@@ -199,6 +222,15 @@ def is_syncthing_start_on_boot_enabled(connection):
         and SYNCTHING_SERVICE_PATH in output
         and "start" in output
     )
+
+
+def is_syncthing_start_on_boot_enabled_local(sd_root):
+    startup_path = _local_path(sd_root, USER_STARTUP_PATH)
+    if not startup_path.exists():
+        return False
+
+    text = startup_path.read_text(encoding="utf-8", errors="ignore")
+    return SYNCTHING_SERVICE_PATH in text and "start" in text
 
 
 def is_syncthing_running(connection):
@@ -293,6 +325,55 @@ def get_syncthing_status(connection):
     }
 
 
+def get_syncthing_status_local(sd_root):
+    script_path = _local_path(sd_root, SYNCTHING_SCRIPT_PATH)
+    binary_path = _local_path(sd_root, SYNCTHING_BINARY_PATH)
+    service_path = _local_path(sd_root, SYNCTHING_SERVICE_PATH)
+
+    installed = (
+        script_path.exists()
+        and binary_path.exists()
+        and service_path.exists()
+    )
+
+    running = False
+    start_on_boot_enabled = (
+        is_syncthing_start_on_boot_enabled_local(sd_root) if installed else False
+    )
+
+    if not installed:
+        status_text = "✗ Not installed"
+        install_enabled = True
+        boot_label = "Enable Start on Boot"
+        boot_enabled = False
+        uninstall_enabled = False
+    else:
+        if start_on_boot_enabled:
+            status_text = "✓ Installed, start on boot enabled"
+        else:
+            status_text = "✓ Installed"
+
+        install_enabled = False
+        boot_label = (
+            "Disable Start on Boot"
+            if start_on_boot_enabled
+            else "Enable Start on Boot"
+        )
+        boot_enabled = True
+        uninstall_enabled = True
+
+    return {
+        "installed": installed,
+        "running": running,
+        "start_on_boot_enabled": start_on_boot_enabled,
+        "status_text": status_text,
+        "install_enabled": install_enabled,
+        "boot_label": boot_label,
+        "boot_enabled": boot_enabled,
+        "uninstall_enabled": uninstall_enabled,
+    }
+
+
 def install_syncthing(connection, log):
     if not connection.is_connected():
         raise RuntimeError("Not connected to MiSTer.")
@@ -351,6 +432,39 @@ def install_syncthing(connection, log):
     return {
         "installed": True,
         "running": True,
+    }
+
+
+def install_syncthing_local(sd_root, log):
+    log("Installing Syncthing to Offline SD Card...\n")
+
+    _ensure_syncthing_local_dirs(sd_root)
+
+    log("Downloading syncthing.sh...\n")
+    script_data = _download_bytes(SYNCTHING_SCRIPT_URL, timeout=60)
+
+    log(f"Writing script: {SYNCTHING_SCRIPT_PATH}\n")
+    _write_local_bytes(sd_root, SYNCTHING_SCRIPT_PATH, script_data)
+    _chmod_local_executable(sd_root, SYNCTHING_SCRIPT_PATH)
+
+    log(f"Downloading Syncthing {SYNCTHING_VERSION} binary...\n")
+    binary_data = _download_syncthing_binary()
+
+    log(f"Writing binary: {SYNCTHING_BINARY_PATH}\n")
+    _write_local_bytes(sd_root, SYNCTHING_BINARY_PATH, binary_data)
+    _chmod_local_executable(sd_root, SYNCTHING_BINARY_PATH)
+
+    log(f"Writing service script: {SYNCTHING_SERVICE_PATH}\n")
+    _write_local_text(sd_root, SYNCTHING_SERVICE_PATH, SYNCTHING_SERVICE_SCRIPT)
+    _chmod_local_executable(sd_root, SYNCTHING_SERVICE_PATH)
+
+    log("Syncthing installed successfully.\n")
+    log("Syncthing was not started because Offline Mode cannot execute services.\n")
+    log("Enable Start on Boot if you want it to start after booting this SD card.\n")
+
+    return {
+        "installed": True,
+        "running": False,
     }
 
 
@@ -413,6 +527,31 @@ def enable_syncthing_start_on_boot(connection):
     connection.run_command(f"chmod +x {USER_STARTUP_PATH}")
 
 
+def enable_syncthing_start_on_boot_local(sd_root):
+    startup_path = _local_path(sd_root, USER_STARTUP_PATH)
+    startup_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if not startup_path.exists():
+        startup_path.write_text(
+            f"""#!/bin/sh
+
+{SYNCTHING_STARTUP_BEGIN}
+{SYNCTHING_STARTUP_LINE}
+""",
+            encoding="utf-8",
+        )
+        _chmod_local_executable(sd_root, USER_STARTUP_PATH)
+        return
+
+    if is_syncthing_start_on_boot_enabled_local(sd_root):
+        return
+
+    text = startup_path.read_text(encoding="utf-8", errors="ignore").rstrip()
+    text = f"{text}\n\n{SYNCTHING_STARTUP_BEGIN}\n{SYNCTHING_STARTUP_LINE}\n"
+    startup_path.write_text(text, encoding="utf-8")
+    _chmod_local_executable(sd_root, USER_STARTUP_PATH)
+
+
 def disable_syncthing_start_on_boot(connection):
     if not connection.is_connected():
         return
@@ -421,6 +560,29 @@ def disable_syncthing_start_on_boot(connection):
         f"sed -i '\\|{SYNCTHING_STARTUP_BEGIN}|,+1d' "
         f"{USER_STARTUP_PATH} 2>/dev/null || true"
     )
+
+
+def disable_syncthing_start_on_boot_local(sd_root):
+    startup_path = _local_path(sd_root, USER_STARTUP_PATH)
+    if not startup_path.exists():
+        return
+
+    lines = startup_path.read_text(encoding="utf-8", errors="ignore").splitlines()
+    new_lines = []
+    skip_next = False
+
+    for line in lines:
+        if skip_next:
+            skip_next = False
+            continue
+
+        if line.strip() == SYNCTHING_STARTUP_BEGIN:
+            skip_next = True
+            continue
+
+        new_lines.append(line)
+
+    startup_path.write_text("\n".join(new_lines).rstrip() + "\n", encoding="utf-8")
 
 
 def toggle_syncthing_start_on_boot(connection):
@@ -434,6 +596,19 @@ def toggle_syncthing_start_on_boot(connection):
         }
 
     enable_syncthing_start_on_boot(connection)
+    return {
+        "start_on_boot_enabled": True,
+    }
+
+
+def toggle_syncthing_start_on_boot_local(sd_root):
+    if is_syncthing_start_on_boot_enabled_local(sd_root):
+        disable_syncthing_start_on_boot_local(sd_root)
+        return {
+            "start_on_boot_enabled": False,
+        }
+
+    enable_syncthing_start_on_boot_local(sd_root)
     return {
         "start_on_boot_enabled": True,
     }
@@ -454,6 +629,28 @@ def uninstall_syncthing(connection, log):
 
     log(f"Removing config and binary folder: {SYNCTHING_BASE_DIR}\n")
     connection.run_command(f"rm -rf {SYNCTHING_BASE_DIR}")
+
+    log("Syncthing uninstalled successfully.\n")
+
+    return {
+        "uninstalled": True,
+    }
+
+
+def uninstall_syncthing_local(sd_root, log):
+    log("Removing Syncthing start-on-boot entry...\n")
+    disable_syncthing_start_on_boot_local(sd_root)
+
+    script_path = _local_path(sd_root, SYNCTHING_SCRIPT_PATH)
+    base_dir = _local_path(sd_root, SYNCTHING_BASE_DIR)
+
+    log(f"Removing script: {SYNCTHING_SCRIPT_PATH}\n")
+    if script_path.exists():
+        script_path.unlink()
+
+    log(f"Removing config and binary folder: {SYNCTHING_BASE_DIR}\n")
+    if base_dir.exists():
+        shutil.rmtree(base_dir)
 
     log("Syncthing uninstalled successfully.\n")
 

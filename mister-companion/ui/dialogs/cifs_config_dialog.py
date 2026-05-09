@@ -11,23 +11,40 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
-from core.scripts_actions import load_cifs_config, save_cifs_config, test_cifs_connection
+from core.scripts_actions import (
+    load_cifs_config,
+    load_cifs_config_local,
+    save_cifs_config,
+    save_cifs_config_local,
+    test_cifs_connection,
+)
 
 
 class CifsConfigDialog(QDialog):
-    def __init__(self, connection, parent=None):
+    def __init__(self, connection=None, parent=None, sd_root=None):
         super().__init__(parent)
         self.connection = connection
+        self.sd_root = sd_root
+        self.offline_mode = bool(sd_root)
 
         self.setWindowTitle("Configure CIFS Network Share")
         self.setMinimumWidth(430)
 
         layout = QVBoxLayout(self)
 
-        info = QLabel(
-            "Configure your network share for cifs_mount.\n"
-            "Only Server IP and Share Name are required."
-        )
+        if self.offline_mode:
+            info_text = (
+                "Configure your network share for cifs_mount.\n"
+                "Offline Mode: this configuration will be saved directly to the selected SD card.\n\n"
+                "Test Connection is only available in Online / SSH Mode because it must run from the MiSTer."
+            )
+        else:
+            info_text = (
+                "Configure your network share for cifs_mount.\n"
+                "Only Server IP and Share Name are required."
+            )
+
+        info = QLabel(info_text)
         info.setWordWrap(True)
         layout.addWidget(info)
 
@@ -67,10 +84,23 @@ class CifsConfigDialog(QDialog):
         self.save_button.clicked.connect(self.on_save)
         self.cancel_button.clicked.connect(self.reject)
 
+        if self.offline_mode:
+            self.test_button.setEnabled(False)
+            self.test_button.setToolTip(
+                "Testing the CIFS connection requires Online / SSH Mode."
+            )
+
         self.load_existing_config()
 
     def load_existing_config(self):
-        config = load_cifs_config(self.connection)
+        try:
+            if self.offline_mode:
+                config = load_cifs_config_local(self.sd_root)
+            else:
+                config = load_cifs_config(self.connection)
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to load CIFS config:\n{e}")
+            return
 
         self.server_input.setText(config.get("SERVER", ""))
         self.share_input.setText(config.get("SHARE", ""))
@@ -79,8 +109,18 @@ class CifsConfigDialog(QDialog):
 
         if config.get("MOUNT_AT_BOOT", "true").lower() == "false":
             self.mount_at_boot_check.setChecked(False)
+        else:
+            self.mount_at_boot_check.setChecked(True)
 
     def on_test_connection(self):
+        if self.offline_mode:
+            QMessageBox.information(
+                self,
+                "Test Connection",
+                "Testing the CIFS connection requires Online / SSH Mode because the test must run from the MiSTer.",
+            )
+            return
+
         server = self.server_input.text().strip()
         share = self.share_input.text().strip()
         username = self.username_input.text().strip()
@@ -127,14 +167,25 @@ class CifsConfigDialog(QDialog):
             return
 
         try:
-            save_cifs_config(
-                self.connection,
-                server=server,
-                share=share,
-                username=username,
-                password=password,
-                mount_at_boot=mount_at_boot,
-            )
+            if self.offline_mode:
+                save_cifs_config_local(
+                    self.sd_root,
+                    server=server,
+                    share=share,
+                    username=username,
+                    password=password,
+                    mount_at_boot=mount_at_boot,
+                )
+            else:
+                save_cifs_config(
+                    self.connection,
+                    server=server,
+                    share=share,
+                    username=username,
+                    password=password,
+                    mount_at_boot=mount_at_boot,
+                )
+
             self.accept()
         except Exception as e:
             QMessageBox.critical(self, "Error", str(e))

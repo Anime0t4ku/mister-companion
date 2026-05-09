@@ -1,5 +1,6 @@
 import re
-from pathlib import PurePosixPath
+import shutil
+from pathlib import Path, PurePosixPath
 
 
 def run_remote_command(connection, command: str):
@@ -14,6 +15,24 @@ def progress_bar_style_for_percent(percent: int) -> str:
     if percent > 70:
         return "QProgressBar::chunk { background-color: #FF9800; }"
     return "QProgressBar::chunk { background-color: #4CAF50; }"
+
+
+def format_bytes(size_bytes: int) -> str:
+    try:
+        size = float(size_bytes)
+    except Exception:
+        return "0 B"
+
+    units = ["B", "KB", "MB", "GB", "TB"]
+
+    for unit in units:
+        if size < 1024 or unit == units[-1]:
+            if unit == "B":
+                return f"{int(size)} {unit}"
+            return f"{size:.1f} {unit}"
+        size /= 1024
+
+    return f"{size:.1f} TB"
 
 
 def parse_df_line(df_line: str):
@@ -45,6 +64,33 @@ def get_sd_storage_info(connection):
     return parse_df_line(df)
 
 
+def get_sd_storage_info_offline(sd_root: str):
+    root = Path(str(sd_root or "")).expanduser()
+
+    if not root.exists() or not root.is_dir():
+        return None
+
+    try:
+        usage = shutil.disk_usage(root)
+        total = usage.total
+        free = usage.free
+        used = usage.used
+        percent = int(round((used / total) * 100)) if total else 0
+
+        total_text = format_bytes(total)
+        free_text = format_bytes(free)
+
+        return {
+            "size": total_text,
+            "avail": free_text,
+            "percent": percent,
+            "label": f"{free_text} free of {total_text} ({percent}% used)",
+            "style": progress_bar_style_for_percent(percent),
+        }
+    except Exception:
+        return None
+
+
 def get_usb_storage_info(connection):
     usb = run_remote_command(connection, "df -h | grep /media/usb")
     if not usb:
@@ -69,12 +115,29 @@ def get_usb_storage_info(connection):
     return parsed
 
 
+def get_samba_paths(sd_root: str):
+    root = Path(str(sd_root or "")).expanduser()
+    linux_dir = root / "linux"
+
+    return {
+        "root": root,
+        "linux_dir": linux_dir,
+        "enabled": linux_dir / "samba.sh",
+        "disabled": linux_dir / "_samba.sh",
+    }
+
+
 def is_smb_enabled(connection):
     smb_check = run_remote_command(
         connection,
         "test -f /media/fat/linux/samba.sh && echo EXISTS"
     )
     return "EXISTS" in (smb_check or "")
+
+
+def is_smb_enabled_offline(sd_root: str):
+    paths = get_samba_paths(sd_root)
+    return paths["enabled"].exists()
 
 
 def enable_smb_remote(connection):
@@ -89,6 +152,44 @@ def disable_smb_remote(connection):
         connection,
         "if [ -f /media/fat/linux/samba.sh ]; then mv /media/fat/linux/samba.sh /media/fat/linux/_samba.sh; fi"
     )
+
+
+def enable_smb_offline(sd_root: str):
+    paths = get_samba_paths(sd_root)
+
+    if not paths["root"].exists() or not paths["root"].is_dir():
+        raise FileNotFoundError("Selected SD card root does not exist.")
+
+    if not paths["linux_dir"].exists():
+        raise FileNotFoundError("The selected SD card does not contain a linux folder.")
+
+    if paths["enabled"].exists():
+        return True
+
+    if not paths["disabled"].exists():
+        raise FileNotFoundError("Could not find linux/_samba.sh on the selected SD card.")
+
+    paths["disabled"].rename(paths["enabled"])
+    return True
+
+
+def disable_smb_offline(sd_root: str):
+    paths = get_samba_paths(sd_root)
+
+    if not paths["root"].exists() or not paths["root"].is_dir():
+        raise FileNotFoundError("Selected SD card root does not exist.")
+
+    if not paths["linux_dir"].exists():
+        raise FileNotFoundError("The selected SD card does not contain a linux folder.")
+
+    if paths["disabled"].exists():
+        return True
+
+    if not paths["enabled"].exists():
+        raise FileNotFoundError("Could not find linux/samba.sh on the selected SD card.")
+
+    paths["enabled"].rename(paths["disabled"])
+    return True
 
 
 def return_to_menu_remote(connection):

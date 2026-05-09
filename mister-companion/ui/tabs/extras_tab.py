@@ -1,4 +1,5 @@
 import traceback
+from pathlib import Path
 
 from PyQt6.QtCore import QThread, Qt, pyqtSignal
 from PyQt6.QtWidgets import (
@@ -19,31 +20,45 @@ from PyQt6.QtWidgets import (
 
 from core.extras_actions import (
     get_3sx_status,
-    get_openbor_4086_status,
-    get_openbor_7533_status,
-    get_pico8_status,
     get_sonic_mania_status,
     get_zaparoo_launcher_status,
     install_or_update_3sx as backend_install_or_update_3sx,
-    install_or_update_openbor_4086 as backend_install_or_update_openbor_4086,
-    install_or_update_openbor_7533 as backend_install_or_update_openbor_7533,
-    install_or_update_pico8 as backend_install_or_update_pico8,
     install_or_update_sonic_mania as backend_install_or_update_sonic_mania,
     install_or_update_zaparoo_launcher as backend_install_or_update_zaparoo_launcher,
     uninstall_3sx as backend_uninstall_3sx,
-    uninstall_openbor_4086 as backend_uninstall_openbor_4086,
-    uninstall_openbor_7533 as backend_uninstall_openbor_7533,
-    uninstall_pico8 as backend_uninstall_pico8,
     uninstall_sonic_mania as backend_uninstall_sonic_mania,
     uninstall_zaparoo_launcher as backend_uninstall_zaparoo_launcher,
     upload_3sx_afs as backend_upload_3sx_afs,
     upload_sonic_mania_data_rsdk as backend_upload_sonic_mania_data_rsdk,
 )
 
+from core.extras_3s_arm import (
+    get_3sx_status_local,
+    install_or_update_3sx_local as backend_install_or_update_3sx_local,
+    uninstall_3sx_local as backend_uninstall_3sx_local,
+    upload_3sx_afs_local as backend_upload_3sx_afs_local,
+)
+
+from core.extras_sonic_mania import (
+    get_sonic_mania_status_local,
+    install_or_update_sonic_mania_local as backend_install_or_update_sonic_mania_local,
+    uninstall_sonic_mania_local as backend_uninstall_sonic_mania_local,
+    upload_sonic_mania_data_rsdk_local as backend_upload_sonic_mania_data_rsdk_local,
+)
+
+from core.extras_zaparoo_launcher import (
+    get_zaparoo_launcher_status_local,
+    install_or_update_zaparoo_launcher_local as backend_install_or_update_zaparoo_launcher_local,
+    uninstall_zaparoo_launcher_local as backend_uninstall_zaparoo_launcher_local,
+)
+
 from core.extras_ra_cores import (
     get_ra_cores_status,
+    get_ra_cores_status_local,
     install_or_update_ra_cores as backend_install_or_update_ra_cores,
+    install_or_update_ra_cores_local as backend_install_or_update_ra_cores_local,
     uninstall_ra_cores as backend_uninstall_ra_cores,
+    uninstall_ra_cores_local as backend_uninstall_ra_cores_local,
 )
 
 from ui.dialogs.ra_cores_config_dialog import RetroAchievementsConfigDialog
@@ -80,22 +95,93 @@ class ExtraTaskWorker(QThread):
             self.finished_task.emit()
 
 
+class ExtrasStatusWorker(QThread):
+    result = pyqtSignal(object)
+    error = pyqtSignal(str)
+    finished_status = pyqtSignal()
+
+    EXTRA_3SX = "3sx_mister"
+    EXTRA_SONIC_MANIA = "sonic_mania_mister"
+    EXTRA_ZAPAROO_LAUNCHER = "zaparoo_launcher_ui_beta"
+    EXTRA_RA_CORES = "retroachievement_cores"
+
+    def __init__(self, connection, offline=False, sd_root=""):
+        super().__init__()
+        self.connection = connection
+        self.offline = offline
+        self.sd_root = str(sd_root or "").strip()
+
+    def run(self):
+        results = {}
+
+        try:
+            checks = [
+                (
+                    self.EXTRA_3SX,
+                    lambda: get_3sx_status_local(self.sd_root)
+                    if self.offline
+                    else get_3sx_status(self.connection),
+                ),
+                (
+                    self.EXTRA_SONIC_MANIA,
+                    lambda: get_sonic_mania_status_local(self.sd_root)
+                    if self.offline
+                    else get_sonic_mania_status(self.connection),
+                ),
+                (
+                    self.EXTRA_ZAPAROO_LAUNCHER,
+                    lambda: get_zaparoo_launcher_status_local(self.sd_root)
+                    if self.offline
+                    else get_zaparoo_launcher_status(self.connection),
+                ),
+                (
+                    self.EXTRA_RA_CORES,
+                    lambda: get_ra_cores_status_local(self.sd_root)
+                    if self.offline
+                    else get_ra_cores_status(self.connection),
+                ),
+            ]
+
+            for extra_key, status_fn in checks:
+                try:
+                    results[extra_key] = {
+                        "ok": True,
+                        "status": status_fn(),
+                        "error": "",
+                    }
+                except Exception as e:
+                    results[extra_key] = {
+                        "ok": False,
+                        "status": None,
+                        "error": str(e),
+                    }
+
+            self.result.emit(results)
+
+        except Exception as e:
+            detail = traceback.format_exc()
+            self.error.emit(f"{str(e)}\n\n{detail}")
+        finally:
+            self.finished_status.emit()
+
+
 class ExtrasTab(QWidget):
     EXTRA_3SX = "3sx_mister"
-    EXTRA_PICO8 = "mister_pico8"
-    EXTRA_OPENBOR_4086 = "mister_openbor_4086"
-    EXTRA_OPENBOR_7533 = "mister_openbor_7533"
     EXTRA_SONIC_MANIA = "sonic_mania_mister"
     EXTRA_ZAPAROO_LAUNCHER = "zaparoo_launcher_ui_beta"
     EXTRA_RA_CORES = "retroachievement_cores"
 
     TASK_CHECK_3SX = "check_updates_3sx"
-    TASK_CHECK_PICO8 = "check_updates_pico8"
-    TASK_CHECK_OPENBOR_4086 = "check_updates_openbor_4086"
-    TASK_CHECK_OPENBOR_7533 = "check_updates_openbor_7533"
     TASK_CHECK_SONIC_MANIA = "check_updates_sonic_mania"
     TASK_CHECK_ZAPAROO_LAUNCHER = "check_updates_zaparoo_launcher"
     TASK_CHECK_RA_CORES = "check_updates_ra_cores"
+
+    OFFLINE_SUPPORTED_EXTRAS = {
+        EXTRA_3SX,
+        EXTRA_SONIC_MANIA,
+        EXTRA_ZAPAROO_LAUNCHER,
+        EXTRA_RA_CORES,
+    }
 
     def __init__(self, main_window):
         super().__init__()
@@ -104,16 +190,15 @@ class ExtrasTab(QWidget):
 
         self.console_visible = False
         self.current_worker = None
+        self.status_worker = None
         self.current_task_kind = None
         self.current_check_result = None
+        self.cached_update_results = {}
         self.ra_cores_show_install_info_after_success = False
         self.zaparoo_launcher_show_reboot_after_success = False
 
         self.extra_display_order = [
             self.EXTRA_3SX,
-            self.EXTRA_PICO8,
-            self.EXTRA_OPENBOR_4086,
-            self.EXTRA_OPENBOR_7533,
             self.EXTRA_SONIC_MANIA,
             self.EXTRA_ZAPAROO_LAUNCHER,
             self.EXTRA_RA_CORES,
@@ -121,9 +206,6 @@ class ExtrasTab(QWidget):
 
         self.extra_titles = {
             self.EXTRA_3SX: "3S-ARM",
-            self.EXTRA_PICO8: "MiSTer Pico-8",
-            self.EXTRA_OPENBOR_4086: "MiSTer OpenBOR 4086",
-            self.EXTRA_OPENBOR_7533: "MiSTer OpenBOR 7533",
             self.EXTRA_SONIC_MANIA: "Sonic Mania MiSTer",
             self.EXTRA_ZAPAROO_LAUNCHER: "Zaparoo Launcher/UI Beta",
             self.EXTRA_RA_CORES: "RetroAchievement Cores",
@@ -131,41 +213,27 @@ class ExtrasTab(QWidget):
 
         self.extra_descriptions = {
             self.EXTRA_3SX: (
-                "Install, update, migrate legacy 3SX installs, upload SF33RD.AFS, "
-                "and uninstall 3s-mister-arm directly from MiSTer Companion."
-            ),
-            self.EXTRA_PICO8: (
-                "Install, update, and uninstall MiSTer Pico-8 directly from MiSTer Companion."
-            ),
-            self.EXTRA_OPENBOR_4086: (
-                "Install, update, and uninstall MiSTer OpenBOR 4086 directly from "
-                "MiSTer Companion. The Paks folder is preserved when uninstalling."
-            ),
-            self.EXTRA_OPENBOR_7533: (
-                "Install, update, and uninstall MiSTer OpenBOR 7533 directly from "
-                "MiSTer Companion. The Paks folder is preserved when uninstalling."
+                "3S-ARM brings Street Fighter III: 3rd Strike support to MiSTer "
+                "through the 3S-ARM core and its required game resources."
             ),
             self.EXTRA_SONIC_MANIA: (
-                "Install, update, upload Data.rsdk, and uninstall Sonic Mania MiSTer "
-                "directly from MiSTer Companion."
+                "Sonic Mania MiSTer lets your MiSTer run Sonic Mania using the "
+                "MiSTer port, with support for the required Data.rsdk game file."
             ),
             self.EXTRA_ZAPAROO_LAUNCHER: (
-                "Install, update, and uninstall the Zaparoo Launcher/UI Beta. "
-                "This installs the beta launcher files, temporarily swaps in the "
-                "launcher dev zaparoo.sh, updates MiSTer.ini, and requires a reboot."
+                "Zaparoo Launcher/UI Beta is a MiSTer frontend that provides a "
+                "controller-friendly interface for browsing and launching your games, "
+                "media, and other MiSTer content, with artwork support."
             ),
             self.EXTRA_RA_CORES: (
-                "Install, update, migrate legacy installs, configure, and uninstall "
-                "RetroAchievement-enabled MiSTer support files and supported RA cores. "
-                "Uses MGL launchers so normal cores remain untouched."
+                "RetroAchievement Cores adds RetroAchievements-enabled MiSTer cores "
+                "and the required MiSTer_RA support files. It uses MGL launchers so "
+                "your normal cores remain untouched."
             ),
         }
 
         self.extra_status_texts = {
             self.EXTRA_3SX: "Unknown",
-            self.EXTRA_PICO8: "Unknown",
-            self.EXTRA_OPENBOR_4086: "Unknown",
-            self.EXTRA_OPENBOR_7533: "Unknown",
             self.EXTRA_SONIC_MANIA: "Unknown",
             self.EXTRA_ZAPAROO_LAUNCHER: "Unknown",
             self.EXTRA_RA_CORES: "Unknown",
@@ -198,7 +266,8 @@ class ExtrasTab(QWidget):
         self.extra_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.extra_list.setMinimumWidth(290)
         self.extra_list.setSizePolicy(
-            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding
+            QSizePolicy.Policy.Preferred,
+            QSizePolicy.Policy.Expanding,
         )
         self.extra_list.setStyleSheet(
             """
@@ -261,18 +330,12 @@ class ExtrasTab(QWidget):
         details_layout.addWidget(self.action_buttons_container)
 
         self.threesx_actions_widget = self._build_3sx_actions()
-        self.pico8_actions_widget = self._build_pico8_actions()
-        self.openbor_4086_actions_widget = self._build_openbor_4086_actions()
-        self.openbor_7533_actions_widget = self._build_openbor_7533_actions()
         self.sonic_mania_actions_widget = self._build_sonic_mania_actions()
         self.zaparoo_launcher_actions_widget = self._build_zaparoo_launcher_actions()
         self.ra_cores_actions_widget = self._build_ra_cores_actions()
 
         self.extra_action_widgets = {
             self.EXTRA_3SX: self.threesx_actions_widget,
-            self.EXTRA_PICO8: self.pico8_actions_widget,
-            self.EXTRA_OPENBOR_4086: self.openbor_4086_actions_widget,
-            self.EXTRA_OPENBOR_7533: self.openbor_7533_actions_widget,
             self.EXTRA_SONIC_MANIA: self.sonic_mania_actions_widget,
             self.EXTRA_ZAPAROO_LAUNCHER: self.zaparoo_launcher_actions_widget,
             self.EXTRA_RA_CORES: self.ra_cores_actions_widget,
@@ -287,7 +350,7 @@ class ExtrasTab(QWidget):
         details_group.setLayout(details_layout)
         top_row.addWidget(details_group, 2)
 
-        self.console_group = QGroupBox("SSH Output")
+        self.console_group = QGroupBox("Output")
         console_layout = QVBoxLayout()
         console_layout.setContentsMargins(10, 10, 10, 10)
         console_layout.setSpacing(8)
@@ -319,26 +382,6 @@ class ExtrasTab(QWidget):
         self.upload_afs_button.clicked.connect(self.upload_sf33rd_afs)
         self.uninstall_3sx_button.clicked.connect(self.uninstall_3sx)
 
-        self.install_update_pico8_button.clicked.connect(self.install_or_update_pico8)
-        self.check_updates_pico8_button.clicked.connect(self.check_pico8_updates)
-        self.uninstall_pico8_button.clicked.connect(self.uninstall_pico8)
-
-        self.install_update_openbor_4086_button.clicked.connect(
-            self.install_or_update_openbor_4086
-        )
-        self.check_updates_openbor_4086_button.clicked.connect(
-            self.check_openbor_4086_updates
-        )
-        self.uninstall_openbor_4086_button.clicked.connect(self.uninstall_openbor_4086)
-
-        self.install_update_openbor_7533_button.clicked.connect(
-            self.install_or_update_openbor_7533
-        )
-        self.check_updates_openbor_7533_button.clicked.connect(
-            self.check_openbor_7533_updates
-        )
-        self.uninstall_openbor_7533_button.clicked.connect(self.uninstall_openbor_7533)
-
         self.install_update_sonic_mania_button.clicked.connect(
             self.install_or_update_sonic_mania
         )
@@ -364,6 +407,29 @@ class ExtrasTab(QWidget):
         self.uninstall_ra_cores_button.clicked.connect(self.uninstall_ra_cores)
 
         self.hide_console_button.clicked.connect(self.toggle_console)
+
+    def is_offline_mode(self):
+        checker = getattr(self.main_window, "is_offline_mode", None)
+        return bool(checker()) if callable(checker) else False
+
+    def is_online_connected(self):
+        if self.is_offline_mode():
+            return False
+
+        try:
+            return bool(self.connection and self.connection.is_connected())
+        except Exception:
+            return False
+
+    def get_offline_sd_root(self):
+        getter = getattr(self.main_window, "get_offline_sd_root", None)
+        if callable(getter):
+            return str(getter() or "").strip()
+        return str(self.main_window.config_data.get("offline_sd_root", "") or "").strip()
+
+    def has_offline_sd_root(self):
+        root = self.get_offline_sd_root()
+        return bool(root and Path(root).exists() and Path(root).is_dir())
 
     def _build_button_row(self, *buttons):
         row = QHBoxLayout()
@@ -402,96 +468,6 @@ class ExtrasTab(QWidget):
             self._build_button_row(
                 self.upload_afs_button,
                 self.uninstall_3sx_button,
-            )
-        )
-
-        widget.setLayout(layout)
-        return widget
-
-    def _build_pico8_actions(self):
-        widget = QWidget()
-        layout = QVBoxLayout()
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(10)
-
-        self.install_update_pico8_button = QPushButton("Install")
-        self.install_update_pico8_button.setFixedWidth(170)
-
-        self.check_updates_pico8_button = QPushButton("Check for Updates")
-        self.check_updates_pico8_button.setFixedWidth(170)
-
-        self.uninstall_pico8_button = QPushButton("Uninstall")
-        self.uninstall_pico8_button.setFixedWidth(170)
-
-        layout.addLayout(
-            self._build_button_row(
-                self.install_update_pico8_button,
-                self.check_updates_pico8_button,
-            )
-        )
-        layout.addLayout(
-            self._build_button_row(
-                self.uninstall_pico8_button,
-            )
-        )
-
-        widget.setLayout(layout)
-        return widget
-
-    def _build_openbor_4086_actions(self):
-        widget = QWidget()
-        layout = QVBoxLayout()
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(10)
-
-        self.install_update_openbor_4086_button = QPushButton("Install")
-        self.install_update_openbor_4086_button.setFixedWidth(170)
-
-        self.check_updates_openbor_4086_button = QPushButton("Check for Updates")
-        self.check_updates_openbor_4086_button.setFixedWidth(170)
-
-        self.uninstall_openbor_4086_button = QPushButton("Uninstall")
-        self.uninstall_openbor_4086_button.setFixedWidth(170)
-
-        layout.addLayout(
-            self._build_button_row(
-                self.install_update_openbor_4086_button,
-                self.check_updates_openbor_4086_button,
-            )
-        )
-        layout.addLayout(
-            self._build_button_row(
-                self.uninstall_openbor_4086_button,
-            )
-        )
-
-        widget.setLayout(layout)
-        return widget
-
-    def _build_openbor_7533_actions(self):
-        widget = QWidget()
-        layout = QVBoxLayout()
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(10)
-
-        self.install_update_openbor_7533_button = QPushButton("Install")
-        self.install_update_openbor_7533_button.setFixedWidth(170)
-
-        self.check_updates_openbor_7533_button = QPushButton("Check for Updates")
-        self.check_updates_openbor_7533_button.setFixedWidth(170)
-
-        self.uninstall_openbor_7533_button = QPushButton("Uninstall")
-        self.uninstall_openbor_7533_button.setFixedWidth(170)
-
-        layout.addLayout(
-            self._build_button_row(
-                self.install_update_openbor_7533_button,
-                self.check_updates_openbor_7533_button,
-            )
-        )
-        layout.addLayout(
-            self._build_button_row(
-                self.uninstall_openbor_7533_button,
             )
         )
 
@@ -641,7 +617,9 @@ class ExtrasTab(QWidget):
         self.extra_status_label.setText(f"Status: {status_text}")
 
         lowered = status_text.lower()
-        if "update available" in lowered:
+        if "refreshing" in lowered:
+            self.extra_status_label.setStyleSheet("color: #1e88e5; font-weight: bold;")
+        elif "update available" in lowered:
             self.extra_status_label.setStyleSheet("color: #cc8400;")
         elif "legacy" in lowered or "missing" in lowered:
             self.extra_status_label.setStyleSheet("color: #cc8400;")
@@ -663,35 +641,62 @@ class ExtrasTab(QWidget):
             status = self.extra_status_texts.get(extra_key, "Unknown")
             item.setText(f"{title}    {status}")
 
-    def update_connection_state(self):
-        if self.connection.is_connected():
-            self.apply_connected_state()
+    def update_connection_state(self, lightweight=True):
+        if self.current_worker is not None and self.current_worker.isRunning():
+            return
+
+        if self.status_worker is not None and self.status_worker.isRunning():
+            return
+
+        if self.is_offline_mode():
+            if not self.has_offline_sd_root():
+                self.apply_disconnected_state()
+                return
+            self.apply_connected_state(lightweight=lightweight)
+            return
+
+        if self.is_online_connected():
+            self.apply_connected_state(lightweight=lightweight)
         else:
             self.apply_disconnected_state()
 
-    def apply_connected_state(self):
+    def apply_connected_state(self, lightweight=True):
         if self.current_worker is not None and self.current_worker.isRunning():
             return
+
+        if self.status_worker is not None and self.status_worker.isRunning():
+            return
+
+        if lightweight:
+            return
+
         self.refresh_status()
 
     def apply_disconnected_state(self):
         self.ra_cores_show_install_info_after_success = False
         self.zaparoo_launcher_show_reboot_after_success = False
+        self._clear_all_cached_update_results()
 
-        for button in [
+        for button in self._all_action_buttons():
+            button.setEnabled(False)
+
+        self.install_update_3sx_button.setText("Install")
+        self.install_update_sonic_mania_button.setText("Install")
+        self.install_update_zaparoo_launcher_button.setText("Install")
+        self.install_update_ra_cores_button.setText("Install")
+
+        for extra_key in self.extra_status_texts:
+            self.extra_status_texts[extra_key] = "Unknown"
+
+        self.update_extra_list_labels()
+        self.update_details_panel()
+
+    def _all_action_buttons(self):
+        return [
             self.install_update_3sx_button,
             self.check_updates_3sx_button,
             self.upload_afs_button,
             self.uninstall_3sx_button,
-            self.install_update_pico8_button,
-            self.check_updates_pico8_button,
-            self.uninstall_pico8_button,
-            self.install_update_openbor_4086_button,
-            self.check_updates_openbor_4086_button,
-            self.uninstall_openbor_4086_button,
-            self.install_update_openbor_7533_button,
-            self.check_updates_openbor_7533_button,
-            self.uninstall_openbor_7533_button,
             self.install_update_sonic_mania_button,
             self.check_updates_sonic_mania_button,
             self.upload_data_rsdk_button,
@@ -703,100 +708,133 @@ class ExtrasTab(QWidget):
             self.check_updates_ra_cores_button,
             self.edit_ra_cores_config_button,
             self.uninstall_ra_cores_button,
-        ]:
+        ]
+
+    def show_refreshing_state(self):
+        if self.current_worker is not None and self.current_worker.isRunning():
+            return
+
+        if self.status_worker is not None and self.status_worker.isRunning():
+            return
+
+        if self.is_offline_mode():
+            if not self.has_offline_sd_root():
+                return
+        elif not self.is_online_connected():
+            return
+
+        for extra_key in self.extra_status_texts:
+            if extra_key in self.cached_update_results:
+                continue
+            self.extra_status_texts[extra_key] = "Refreshing..."
+
+        for button in self._all_action_buttons():
             button.setEnabled(False)
 
-        self.install_update_3sx_button.setText("Install")
-        self.install_update_pico8_button.setText("Install")
-        self.install_update_openbor_4086_button.setText("Install")
-        self.install_update_openbor_7533_button.setText("Install")
-        self.install_update_sonic_mania_button.setText("Install")
-        self.install_update_zaparoo_launcher_button.setText("Install")
-        self.install_update_ra_cores_button.setText("Install")
-
-        self.extra_status_texts[self.EXTRA_3SX] = "Unknown"
-        self.extra_status_texts[self.EXTRA_PICO8] = "Unknown"
-        self.extra_status_texts[self.EXTRA_OPENBOR_4086] = "Unknown"
-        self.extra_status_texts[self.EXTRA_OPENBOR_7533] = "Unknown"
-        self.extra_status_texts[self.EXTRA_SONIC_MANIA] = "Unknown"
-        self.extra_status_texts[self.EXTRA_ZAPAROO_LAUNCHER] = "Unknown"
-        self.extra_status_texts[self.EXTRA_RA_CORES] = "Unknown"
-
+        self._reapply_cached_update_results()
         self.update_extra_list_labels()
         self.update_details_panel()
 
     def refresh_status(self):
-        if not self.connection.is_connected():
+        if self.current_worker is not None and self.current_worker.isRunning():
+            return
+
+        if self.status_worker is not None and self.status_worker.isRunning():
+            return
+
+        if self.is_offline_mode():
+            if not self.has_offline_sd_root():
+                self.apply_disconnected_state()
+                return
+        elif not self.is_online_connected():
             self.apply_disconnected_state()
             return
 
-        status_checks = [
-            (
-                self.EXTRA_3SX,
-                get_3sx_status,
+        offline = self.is_offline_mode()
+        sd_root = self.get_offline_sd_root() if offline else ""
+
+        self.show_refreshing_state()
+
+        self.status_worker = ExtrasStatusWorker(
+            self.connection,
+            offline=offline,
+            sd_root=sd_root,
+        )
+        self.status_worker.result.connect(self.on_status_worker_result)
+        self.status_worker.error.connect(self.on_status_worker_error)
+        self.status_worker.finished_status.connect(self.on_status_worker_finished)
+        self.status_worker.start()
+
+    def on_status_worker_result(self, results):
+        if not isinstance(results, dict):
+            return
+
+        error_button_map = {
+            self.EXTRA_3SX: (
                 self.install_update_3sx_button,
                 self.check_updates_3sx_button,
                 [self.upload_afs_button, self.uninstall_3sx_button],
             ),
-            (
-                self.EXTRA_PICO8,
-                get_pico8_status,
-                self.install_update_pico8_button,
-                self.check_updates_pico8_button,
-                [self.uninstall_pico8_button],
-            ),
-            (
-                self.EXTRA_OPENBOR_4086,
-                get_openbor_4086_status,
-                self.install_update_openbor_4086_button,
-                self.check_updates_openbor_4086_button,
-                [self.uninstall_openbor_4086_button],
-            ),
-            (
-                self.EXTRA_OPENBOR_7533,
-                get_openbor_7533_status,
-                self.install_update_openbor_7533_button,
-                self.check_updates_openbor_7533_button,
-                [self.uninstall_openbor_7533_button],
-            ),
-            (
-                self.EXTRA_SONIC_MANIA,
-                get_sonic_mania_status,
+            self.EXTRA_SONIC_MANIA: (
                 self.install_update_sonic_mania_button,
                 self.check_updates_sonic_mania_button,
                 [self.upload_data_rsdk_button, self.uninstall_sonic_mania_button],
             ),
-            (
-                self.EXTRA_ZAPAROO_LAUNCHER,
-                get_zaparoo_launcher_status,
+            self.EXTRA_ZAPAROO_LAUNCHER: (
                 self.install_update_zaparoo_launcher_button,
                 self.check_updates_zaparoo_launcher_button,
                 [self.uninstall_zaparoo_launcher_button],
             ),
-            (
-                self.EXTRA_RA_CORES,
-                get_ra_cores_status,
+            self.EXTRA_RA_CORES: (
                 self.install_update_ra_cores_button,
                 self.check_updates_ra_cores_button,
                 [self.edit_ra_cores_config_button, self.uninstall_ra_cores_button],
             ),
-        ]
+        }
 
-        for extra_key, status_fn, install_button, check_button, other_buttons in status_checks:
-            try:
-                status = status_fn(self.connection)
-            except Exception as e:
-                self.extra_status_texts[extra_key] = f"Unknown ({e})"
-                install_button.setText("Install")
-                install_button.setEnabled(False)
-                check_button.setEnabled(False)
-                for button in other_buttons:
-                    button.setEnabled(False)
-            else:
-                self._apply_status_result_for_extra(extra_key, status)
+        for extra_key in self.extra_display_order:
+            result = results.get(extra_key)
 
+            if not isinstance(result, dict):
+                continue
+
+            if result.get("ok"):
+                status = result.get("status")
+                if isinstance(status, dict):
+                    self._apply_status_result_for_extra(extra_key, status)
+                continue
+
+            install_button, check_button, other_buttons = error_button_map[extra_key]
+            error_text = result.get("error") or "status check failed"
+            self.extra_status_texts[extra_key] = f"Unknown ({error_text})"
+            install_button.setText("Install")
+            install_button.setEnabled(False)
+            check_button.setEnabled(False)
+            for button in other_buttons:
+                button.setEnabled(False)
+
+        self._reapply_cached_update_results()
         self.update_extra_list_labels()
         self.update_details_panel()
+
+    def on_status_worker_error(self, message):
+        for extra_key in self.extra_status_texts:
+            if extra_key in self.cached_update_results:
+                continue
+            self.extra_status_texts[extra_key] = "Unknown"
+
+        for button in self._all_action_buttons():
+            button.setEnabled(False)
+
+        self._reapply_cached_update_results()
+        self.update_extra_list_labels()
+        self.update_details_panel()
+        self.append_console_line("")
+        self.append_console_line("Status refresh error:")
+        self.append_console_line(message)
+
+    def on_status_worker_finished(self):
+        self.status_worker = None
 
     def append_console_line(self, text):
         if text.startswith("[PROGRESS] "):
@@ -837,6 +875,9 @@ class ExtrasTab(QWidget):
         if self.current_worker is not None and self.current_worker.isRunning():
             return
 
+        if self.status_worker is not None and self.status_worker.isRunning():
+            return
+
         self.show_console()
         self.console.clear()
 
@@ -852,32 +893,7 @@ class ExtrasTab(QWidget):
 
         self.extra_list.setEnabled(False)
 
-        for button in [
-            self.install_update_3sx_button,
-            self.check_updates_3sx_button,
-            self.upload_afs_button,
-            self.uninstall_3sx_button,
-            self.install_update_pico8_button,
-            self.check_updates_pico8_button,
-            self.uninstall_pico8_button,
-            self.install_update_openbor_4086_button,
-            self.check_updates_openbor_4086_button,
-            self.uninstall_openbor_4086_button,
-            self.install_update_openbor_7533_button,
-            self.check_updates_openbor_7533_button,
-            self.uninstall_openbor_7533_button,
-            self.install_update_sonic_mania_button,
-            self.check_updates_sonic_mania_button,
-            self.upload_data_rsdk_button,
-            self.uninstall_sonic_mania_button,
-            self.install_update_zaparoo_launcher_button,
-            self.check_updates_zaparoo_launcher_button,
-            self.uninstall_zaparoo_launcher_button,
-            self.install_update_ra_cores_button,
-            self.check_updates_ra_cores_button,
-            self.edit_ra_cores_config_button,
-            self.uninstall_ra_cores_button,
-        ]:
+        for button in self._all_action_buttons():
             button.setEnabled(False)
 
         self.current_worker.start()
@@ -922,6 +938,7 @@ class ExtrasTab(QWidget):
         check_result = self.current_check_result
 
         self.current_worker = None
+        self.status_worker = None
         self.current_task_kind = None
         self.current_check_result = None
         self.extra_list.setEnabled(True)
@@ -929,9 +946,8 @@ class ExtrasTab(QWidget):
         if self._is_check_updates_task(task_kind):
             extra_key = self._extra_key_for_check_task(task_kind)
 
-            self.refresh_status()
-
             if extra_key and isinstance(check_result, dict):
+                self._cache_update_check_result(extra_key, check_result)
                 self._apply_status_result_for_extra(extra_key, check_result)
                 self.update_extra_list_labels()
                 self.update_details_panel()
@@ -964,6 +980,7 @@ class ExtrasTab(QWidget):
             return
 
         self.current_check_result = result
+        self._cache_update_check_result(extra_key, result)
 
         self._apply_status_result_for_extra(extra_key, result)
         self.update_extra_list_labels()
@@ -999,9 +1016,6 @@ class ExtrasTab(QWidget):
     def _is_check_updates_task(self, task_kind):
         return task_kind in {
             self.TASK_CHECK_3SX,
-            self.TASK_CHECK_PICO8,
-            self.TASK_CHECK_OPENBOR_4086,
-            self.TASK_CHECK_OPENBOR_7533,
             self.TASK_CHECK_SONIC_MANIA,
             self.TASK_CHECK_ZAPAROO_LAUNCHER,
             self.TASK_CHECK_RA_CORES,
@@ -1010,13 +1024,42 @@ class ExtrasTab(QWidget):
     def _extra_key_for_check_task(self, task_kind):
         return {
             self.TASK_CHECK_3SX: self.EXTRA_3SX,
-            self.TASK_CHECK_PICO8: self.EXTRA_PICO8,
-            self.TASK_CHECK_OPENBOR_4086: self.EXTRA_OPENBOR_4086,
-            self.TASK_CHECK_OPENBOR_7533: self.EXTRA_OPENBOR_7533,
             self.TASK_CHECK_SONIC_MANIA: self.EXTRA_SONIC_MANIA,
             self.TASK_CHECK_ZAPAROO_LAUNCHER: self.EXTRA_ZAPAROO_LAUNCHER,
             self.TASK_CHECK_RA_CORES: self.EXTRA_RA_CORES,
         }.get(task_kind)
+
+    def _cache_update_check_result(self, extra_key, result):
+        if not extra_key:
+            return
+
+        if not isinstance(result, dict):
+            self.cached_update_results.pop(extra_key, None)
+            return
+
+        if result.get("update_available"):
+            self.cached_update_results[extra_key] = dict(result)
+        else:
+            self.cached_update_results.pop(extra_key, None)
+
+    def _clear_cached_update_result(self, extra_key):
+        if extra_key:
+            self.cached_update_results.pop(extra_key, None)
+
+    def _clear_all_cached_update_results(self):
+        self.cached_update_results.clear()
+
+    def _reapply_cached_update_results(self):
+        for extra_key, result in list(self.cached_update_results.items()):
+            if not isinstance(result, dict):
+                self.cached_update_results.pop(extra_key, None)
+                continue
+
+            if not result.get("update_available"):
+                self.cached_update_results.pop(extra_key, None)
+                continue
+
+            self._apply_status_result_for_extra(extra_key, result)
 
     def _apply_status_result_for_extra(self, extra_key, result):
         self.extra_status_texts[extra_key] = result["status_text"]
@@ -1028,60 +1071,39 @@ class ExtrasTab(QWidget):
             self.upload_afs_button.setEnabled(result.get("upload_enabled", False))
             self.uninstall_3sx_button.setEnabled(result["uninstall_enabled"])
 
-        elif extra_key == self.EXTRA_PICO8:
-            self.install_update_pico8_button.setText(result["install_label"])
-            self.install_update_pico8_button.setEnabled(result["install_enabled"])
-            self.check_updates_pico8_button.setEnabled(result.get("installed", False))
-            self.uninstall_pico8_button.setEnabled(result["uninstall_enabled"])
-
-        elif extra_key == self.EXTRA_OPENBOR_4086:
-            self.install_update_openbor_4086_button.setText(result["install_label"])
-            self.install_update_openbor_4086_button.setEnabled(result["install_enabled"])
-            self.check_updates_openbor_4086_button.setEnabled(
-                result.get("installed", False)
-            )
-            self.uninstall_openbor_4086_button.setEnabled(result["uninstall_enabled"])
-
-        elif extra_key == self.EXTRA_OPENBOR_7533:
-            self.install_update_openbor_7533_button.setText(result["install_label"])
-            self.install_update_openbor_7533_button.setEnabled(result["install_enabled"])
-            self.check_updates_openbor_7533_button.setEnabled(
-                result.get("installed", False)
-            )
-            self.uninstall_openbor_7533_button.setEnabled(result["uninstall_enabled"])
-
         elif extra_key == self.EXTRA_SONIC_MANIA:
             self.install_update_sonic_mania_button.setText(result["install_label"])
             self.install_update_sonic_mania_button.setEnabled(result["install_enabled"])
-            self.check_updates_sonic_mania_button.setEnabled(
-                result.get("installed", False)
-            )
+            self.check_updates_sonic_mania_button.setEnabled(result.get("installed", False))
             self.upload_data_rsdk_button.setEnabled(result.get("upload_enabled", False))
             self.uninstall_sonic_mania_button.setEnabled(result["uninstall_enabled"])
 
         elif extra_key == self.EXTRA_ZAPAROO_LAUNCHER:
             self.install_update_zaparoo_launcher_button.setText(result["install_label"])
-            self.install_update_zaparoo_launcher_button.setEnabled(
-                result["install_enabled"]
-            )
-            self.check_updates_zaparoo_launcher_button.setEnabled(
-                result.get("installed", False)
-            )
-            self.uninstall_zaparoo_launcher_button.setEnabled(
-                result["uninstall_enabled"]
-            )
+            self.install_update_zaparoo_launcher_button.setEnabled(result["install_enabled"])
+            self.check_updates_zaparoo_launcher_button.setEnabled(result.get("installed", False))
+            self.uninstall_zaparoo_launcher_button.setEnabled(result["uninstall_enabled"])
 
         elif extra_key == self.EXTRA_RA_CORES:
             self.install_update_ra_cores_button.setText(result["install_label"])
             self.install_update_ra_cores_button.setEnabled(result["install_enabled"])
             self.check_updates_ra_cores_button.setEnabled(result.get("installed", False))
-            self.edit_ra_cores_config_button.setEnabled(
-                result.get("edit_config_enabled", False)
-            )
+            self.edit_ra_cores_config_button.setEnabled(result.get("edit_config_enabled", False))
             self.uninstall_ra_cores_button.setEnabled(result["uninstall_enabled"])
 
     def check_3sx_updates(self):
-        if not self.connection.is_connected():
+        if self.is_offline_mode():
+            if not self.has_offline_sd_root():
+                return
+
+            def task(log):
+                log("Checking 3S-ARM updates...\n")
+                return get_3sx_status_local(self.get_offline_sd_root(), check_latest=True)
+
+            self._run_worker(task, "", task_kind=self.TASK_CHECK_3SX)
+            return
+
+        if not self.is_online_connected():
             return
 
         def task(log):
@@ -1090,38 +1112,22 @@ class ExtrasTab(QWidget):
 
         self._run_worker(task, "", task_kind=self.TASK_CHECK_3SX)
 
-    def check_pico8_updates(self):
-        if not self.connection.is_connected():
-            return
-
-        def task(log):
-            log("Checking MiSTer Pico-8 updates...\n")
-            return get_pico8_status(self.connection, check_latest=True)
-
-        self._run_worker(task, "", task_kind=self.TASK_CHECK_PICO8)
-
-    def check_openbor_4086_updates(self):
-        if not self.connection.is_connected():
-            return
-
-        def task(log):
-            log("Checking MiSTer OpenBOR 4086 updates...\n")
-            return get_openbor_4086_status(self.connection, check_latest=True)
-
-        self._run_worker(task, "", task_kind=self.TASK_CHECK_OPENBOR_4086)
-
-    def check_openbor_7533_updates(self):
-        if not self.connection.is_connected():
-            return
-
-        def task(log):
-            log("Checking MiSTer OpenBOR 7533 updates...\n")
-            return get_openbor_7533_status(self.connection, check_latest=True)
-
-        self._run_worker(task, "", task_kind=self.TASK_CHECK_OPENBOR_7533)
-
     def check_sonic_mania_updates(self):
-        if not self.connection.is_connected():
+        if self.is_offline_mode():
+            if not self.has_offline_sd_root():
+                return
+
+            def task(log):
+                log("Checking Sonic Mania MiSTer updates...\n")
+                return get_sonic_mania_status_local(
+                    self.get_offline_sd_root(),
+                    check_latest=True,
+                )
+
+            self._run_worker(task, "", task_kind=self.TASK_CHECK_SONIC_MANIA)
+            return
+
+        if not self.is_online_connected():
             return
 
         def task(log):
@@ -1131,40 +1137,54 @@ class ExtrasTab(QWidget):
         self._run_worker(task, "", task_kind=self.TASK_CHECK_SONIC_MANIA)
 
     def check_zaparoo_launcher_updates(self):
-        if not self.connection.is_connected():
+        if self.is_offline_mode():
+            if not self.has_offline_sd_root():
+                return
+
+            def task(log):
+                log("Checking Zaparoo Launcher/UI Beta updates...\n")
+                return get_zaparoo_launcher_status_local(
+                    self.get_offline_sd_root(),
+                    check_latest=True,
+                )
+
+            self._run_worker(task, "", task_kind=self.TASK_CHECK_ZAPAROO_LAUNCHER)
+            return
+
+        if not self.is_online_connected():
             return
 
         def task(log):
             log("Checking Zaparoo Launcher/UI Beta updates...\n")
             return get_zaparoo_launcher_status(self.connection, check_latest=True)
 
-        self._run_worker(
-            task,
-            "",
-            task_kind=self.TASK_CHECK_ZAPAROO_LAUNCHER,
-        )
+        self._run_worker(task, "", task_kind=self.TASK_CHECK_ZAPAROO_LAUNCHER)
 
     def check_ra_cores_updates(self):
-        if not self.connection.is_connected():
+        if self.is_offline_mode():
+            if not self.has_offline_sd_root():
+                return
+
+            def task(log):
+                log("Checking RetroAchievement Cores updates...\n")
+                return get_ra_cores_status_local(
+                    self.get_offline_sd_root(),
+                    check_latest=True,
+                )
+
+            self._run_worker(task, "", task_kind=self.TASK_CHECK_RA_CORES)
+            return
+
+        if not self.is_online_connected():
             return
 
         def task(log):
             log("Checking RetroAchievement Cores updates...\n")
-            return get_ra_cores_status(
-                self.connection,
-                check_latest=True,
-            )
+            return get_ra_cores_status(self.connection, check_latest=True)
 
-        self._run_worker(
-            task,
-            "",
-            task_kind=self.TASK_CHECK_RA_CORES,
-        )
+        self._run_worker(task, "", task_kind=self.TASK_CHECK_RA_CORES)
 
     def install_or_update_3sx(self):
-        if not self.connection.is_connected():
-            return
-
         button_text = self.install_update_3sx_button.text().strip()
         success_message = "3S-ARM installed."
 
@@ -1173,13 +1193,31 @@ class ExtrasTab(QWidget):
         elif button_text == "Migrate / Install":
             success_message = "Legacy 3SX install migrated to 3S-ARM."
 
+        if self.is_offline_mode():
+            if not self.has_offline_sd_root():
+                return
+
+            def task(log):
+                return backend_install_or_update_3sx_local(self.get_offline_sd_root(), log)
+
+            self._clear_cached_update_result(self.EXTRA_3SX)
+            self._run_worker(task, success_message)
+            return
+
+        if not self.is_online_connected():
+            return
+
         def task(log):
             return backend_install_or_update_3sx(self.connection, log)
 
+        self._clear_cached_update_result(self.EXTRA_3SX)
         self._run_worker(task, success_message)
 
     def upload_sf33rd_afs(self):
-        if not self.connection.is_connected():
+        if not self.is_offline_mode() and not self.is_online_connected():
+            return
+
+        if self.is_offline_mode() and not self.has_offline_sd_root():
             return
 
         file_path, _ = QFileDialog.getOpenFileName(
@@ -1191,6 +1229,18 @@ class ExtrasTab(QWidget):
         if not file_path:
             return
 
+        if self.is_offline_mode():
+            def task(log):
+                log(f"Selected file: {file_path}")
+                return backend_upload_3sx_afs_local(
+                    self.get_offline_sd_root(),
+                    file_path,
+                    log,
+                )
+
+            self._run_worker(task, "SF33RD.AFS copied.")
+            return
+
         def task(log):
             log(f"Selected file: {file_path}")
             return backend_upload_3sx_afs(self.connection, file_path, log)
@@ -1198,7 +1248,28 @@ class ExtrasTab(QWidget):
         self._run_worker(task, "SF33RD.AFS uploaded.")
 
     def uninstall_3sx(self):
-        if not self.connection.is_connected():
+        if self.is_offline_mode():
+            if not self.has_offline_sd_root():
+                return
+
+            reply = QMessageBox.question(
+                self,
+                "Uninstall 3S-ARM",
+                "Remove 3S-ARM, legacy 3SX files if present, SF33RD.AFS, and the MiSTer.ini entry from the Offline SD Card?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+
+            def task(log):
+                return backend_uninstall_3sx_local(self.get_offline_sd_root(), log)
+
+            self._clear_cached_update_result(self.EXTRA_3SX)
+            self._run_worker(task, "3S-ARM uninstalled.")
+            return
+
+        if not self.is_online_connected():
             return
 
         reply = QMessageBox.question(
@@ -1214,137 +1285,44 @@ class ExtrasTab(QWidget):
         def task(log):
             return backend_uninstall_3sx(self.connection, log)
 
+        self._clear_cached_update_result(self.EXTRA_3SX)
         self._run_worker(task, "3S-ARM uninstalled.")
 
-    def install_or_update_pico8(self):
-        if not self.connection.is_connected():
-            return
-
-        button_text = self.install_update_pico8_button.text().strip()
-        success_message = "MiSTer Pico-8 installed."
-
-        if button_text == "Update":
-            success_message = "MiSTer Pico-8 updated."
-        elif button_text == "Migrate / Install":
-            success_message = "Legacy MiSTer Pico-8 install migrated."
-
-        def task(log):
-            return backend_install_or_update_pico8(self.connection, log)
-
-        self._run_worker(task, success_message)
-
-    def uninstall_pico8(self):
-        if not self.connection.is_connected():
-            return
-
-        reply = QMessageBox.question(
-            self,
-            "Uninstall MiSTer Pico-8",
-            "Remove MiSTer Pico-8 files, PICO-8 input map files, and the user-startup.sh daemon entry?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-        if reply != QMessageBox.StandardButton.Yes:
-            return
-
-        def task(log):
-            return backend_uninstall_pico8(self.connection, log)
-
-        self._run_worker(task, "MiSTer Pico-8 uninstalled.")
-
-    def install_or_update_openbor_4086(self):
-        if not self.connection.is_connected():
-            return
-
-        button_text = self.install_update_openbor_4086_button.text().strip()
-        success_message = "MiSTer OpenBOR 4086 installed."
-
-        if button_text == "Update":
-            success_message = "MiSTer OpenBOR 4086 updated."
-
-        def task(log):
-            return backend_install_or_update_openbor_4086(self.connection, log)
-
-        self._run_worker(task, success_message)
-
-    def uninstall_openbor_4086(self):
-        if not self.connection.is_connected():
-            return
-
-        reply = QMessageBox.question(
-            self,
-            "Uninstall MiSTer OpenBOR 4086",
-            (
-                "Remove MiSTer OpenBOR 4086 engine files, RBF files, documentation, "
-                "install script, and the user-startup.sh daemon entry?\n\n"
-                "Your Paks folder should be left in place."
-            ),
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-        if reply != QMessageBox.StandardButton.Yes:
-            return
-
-        def task(log):
-            return backend_uninstall_openbor_4086(self.connection, log)
-
-        self._run_worker(task, "MiSTer OpenBOR 4086 uninstalled.")
-
-    def install_or_update_openbor_7533(self):
-        if not self.connection.is_connected():
-            return
-
-        button_text = self.install_update_openbor_7533_button.text().strip()
-        success_message = "MiSTer OpenBOR 7533 installed."
-
-        if button_text == "Update":
-            success_message = "MiSTer OpenBOR 7533 updated."
-
-        def task(log):
-            return backend_install_or_update_openbor_7533(self.connection, log)
-
-        self._run_worker(task, success_message)
-
-    def uninstall_openbor_7533(self):
-        if not self.connection.is_connected():
-            return
-
-        reply = QMessageBox.question(
-            self,
-            "Uninstall MiSTer OpenBOR 7533",
-            (
-                "Remove MiSTer OpenBOR 7533 engine files, RBF files, documentation, "
-                "install script, and the user-startup.sh daemon entry?\n\n"
-                "Your Paks folder should be left in place."
-            ),
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-        if reply != QMessageBox.StandardButton.Yes:
-            return
-
-        def task(log):
-            return backend_uninstall_openbor_7533(self.connection, log)
-
-        self._run_worker(task, "MiSTer OpenBOR 7533 uninstalled.")
-
     def install_or_update_sonic_mania(self):
-        if not self.connection.is_connected():
-            return
-
         button_text = self.install_update_sonic_mania_button.text().strip()
         success_message = "Sonic Mania MiSTer installed."
 
         if button_text == "Update":
             success_message = "Sonic Mania MiSTer updated."
 
+        if self.is_offline_mode():
+            if not self.has_offline_sd_root():
+                return
+
+            def task(log):
+                return backend_install_or_update_sonic_mania_local(
+                    self.get_offline_sd_root(),
+                    log,
+                )
+
+            self._clear_cached_update_result(self.EXTRA_SONIC_MANIA)
+            self._run_worker(task, success_message)
+            return
+
+        if not self.is_online_connected():
+            return
+
         def task(log):
             return backend_install_or_update_sonic_mania(self.connection, log)
 
+        self._clear_cached_update_result(self.EXTRA_SONIC_MANIA)
         self._run_worker(task, success_message)
 
     def upload_sonic_mania_data_rsdk(self):
-        if not self.connection.is_connected():
+        if not self.is_offline_mode() and not self.is_online_connected():
+            return
+
+        if self.is_offline_mode() and not self.has_offline_sd_root():
             return
 
         file_path, _ = QFileDialog.getOpenFileName(
@@ -1354,6 +1332,18 @@ class ExtrasTab(QWidget):
             "Sonic Mania Data File (Data.rsdk *.rsdk *.RSDK);;All Files (*)",
         )
         if not file_path:
+            return
+
+        if self.is_offline_mode():
+            def task(log):
+                log(f"Selected file: {file_path}")
+                return backend_upload_sonic_mania_data_rsdk_local(
+                    self.get_offline_sd_root(),
+                    file_path,
+                    log,
+                )
+
+            self._run_worker(task, "Data.rsdk copied.")
             return
 
         def task(log):
@@ -1367,7 +1357,28 @@ class ExtrasTab(QWidget):
         self._run_worker(task, "Data.rsdk uploaded.")
 
     def uninstall_sonic_mania(self):
-        if not self.connection.is_connected():
+        if self.is_offline_mode():
+            if not self.has_offline_sd_root():
+                return
+
+            reply = QMessageBox.question(
+                self,
+                "Uninstall Sonic Mania MiSTer",
+                "Remove Sonic Mania MiSTer files, Data.rsdk, and the MiSTer.ini entries from the Offline SD Card?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+
+            def task(log):
+                return backend_uninstall_sonic_mania_local(self.get_offline_sd_root(), log)
+
+            self._clear_cached_update_result(self.EXTRA_SONIC_MANIA)
+            self._run_worker(task, "Sonic Mania MiSTer uninstalled.")
+            return
+
+        if not self.is_online_connected():
             return
 
         reply = QMessageBox.question(
@@ -1383,27 +1394,76 @@ class ExtrasTab(QWidget):
         def task(log):
             return backend_uninstall_sonic_mania(self.connection, log)
 
+        self._clear_cached_update_result(self.EXTRA_SONIC_MANIA)
         self._run_worker(task, "Sonic Mania MiSTer uninstalled.")
 
     def install_or_update_zaparoo_launcher(self):
-        if not self.connection.is_connected():
-            return
-
         button_text = self.install_update_zaparoo_launcher_button.text().strip()
         success_message = "Zaparoo Launcher/UI Beta installed."
 
         if button_text == "Update":
             success_message = "Zaparoo Launcher/UI Beta updated."
 
+        if self.is_offline_mode():
+            if not self.has_offline_sd_root():
+                return
+
+            self.zaparoo_launcher_show_reboot_after_success = False
+
+            def task(log):
+                return backend_install_or_update_zaparoo_launcher_local(
+                    self.get_offline_sd_root(),
+                    log,
+                )
+
+            self._clear_cached_update_result(self.EXTRA_ZAPAROO_LAUNCHER)
+            self._run_worker(task, success_message)
+            return
+
+        if not self.is_online_connected():
+            return
+
         self.zaparoo_launcher_show_reboot_after_success = True
 
         def task(log):
             return backend_install_or_update_zaparoo_launcher(self.connection, log)
 
+        self._clear_cached_update_result(self.EXTRA_ZAPAROO_LAUNCHER)
         self._run_worker(task, success_message)
 
     def uninstall_zaparoo_launcher(self):
-        if not self.connection.is_connected():
+        if self.is_offline_mode():
+            if not self.has_offline_sd_root():
+                return
+
+            reply = QMessageBox.question(
+                self,
+                "Uninstall Zaparoo Launcher/UI Beta",
+                (
+                    "Remove Zaparoo Launcher/UI Beta files from the Offline SD Card and restore "
+                    "the previous zaparoo.sh backup if one exists?\n\n"
+                    "This will also remove the Zaparoo launcher main and alt_launcher entries "
+                    "from the [MiSTer] section in MiSTer.ini."
+                ),
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+
+            self.zaparoo_launcher_show_reboot_after_success = False
+
+            def task(log):
+                return backend_uninstall_zaparoo_launcher_local(
+                    self.get_offline_sd_root(),
+                    log,
+                )
+
+            self._clear_cached_update_result(self.EXTRA_ZAPAROO_LAUNCHER)
+            self._run_worker(task, "Zaparoo Launcher/UI Beta uninstalled.")
+            return
+
+        if not self.is_online_connected():
             return
 
         reply = QMessageBox.question(
@@ -1428,9 +1488,13 @@ class ExtrasTab(QWidget):
         def task(log):
             return backend_uninstall_zaparoo_launcher(self.connection, log)
 
+        self._clear_cached_update_result(self.EXTRA_ZAPAROO_LAUNCHER)
         self._run_worker(task, "Zaparoo Launcher/UI Beta uninstalled.")
 
     def prompt_zaparoo_launcher_reboot_required(self):
+        if self.is_offline_mode():
+            return
+
         reboot_now = QMessageBox.question(
             self,
             "Reboot Required",
@@ -1449,7 +1513,7 @@ class ExtrasTab(QWidget):
         self.reboot_mister_from_extras()
 
     def reboot_mister_from_extras(self):
-        if not self.connection.is_connected():
+        if not self.is_online_connected():
             QMessageBox.warning(self, "Not Connected", "Connect to a MiSTer first.")
             return
 
@@ -1514,9 +1578,6 @@ class ExtrasTab(QWidget):
         )
 
     def install_or_update_ra_cores(self):
-        if not self.connection.is_connected():
-            return
-
         button_text = self.install_update_ra_cores_button.text().strip()
 
         is_update = button_text == "Update"
@@ -1531,13 +1592,44 @@ class ExtrasTab(QWidget):
 
         self.ra_cores_show_install_info_after_success = not is_update
 
+        if self.is_offline_mode():
+            if not self.has_offline_sd_root():
+                return
+
+            def task(log):
+                return backend_install_or_update_ra_cores_local(
+                    self.get_offline_sd_root(),
+                    log,
+                )
+
+            self._clear_cached_update_result(self.EXTRA_RA_CORES)
+            self._run_worker(task, success_message)
+            return
+
+        if not self.is_online_connected():
+            return
+
         def task(log):
             return backend_install_or_update_ra_cores(self.connection, log)
 
+        self._clear_cached_update_result(self.EXTRA_RA_CORES)
         self._run_worker(task, success_message)
 
     def edit_ra_cores_config(self):
-        if not self.connection.is_connected():
+        if self.is_offline_mode():
+            if not self.has_offline_sd_root():
+                return
+
+            dialog = RetroAchievementsConfigDialog(
+                self,
+                connection=None,
+                sd_root=self.get_offline_sd_root(),
+            )
+            if dialog.exec() == dialog.DialogCode.Accepted:
+                self.refresh_status()
+            return
+
+        if not self.is_online_connected():
             return
 
         dialog = RetroAchievementsConfigDialog(self, self.connection)
@@ -1545,7 +1637,38 @@ class ExtrasTab(QWidget):
             self.refresh_status()
 
     def uninstall_ra_cores(self):
-        if not self.connection.is_connected():
+        if self.is_offline_mode():
+            if not self.has_offline_sd_root():
+                return
+
+            reply = QMessageBox.question(
+                self,
+                "Uninstall RetroAchievement Cores",
+                (
+                    "Remove RetroAchievement Cores, MiSTer_RA, achievement.wav, "
+                    "the _RA_Cores folder, generated .mgl launchers, and the [RA_*] "
+                    "block from MiSTer.ini on the Offline SD Card?\n\n"
+                    "Any legacy MiSTer_RA.ini or old _RA Cores folder will also be removed "
+                    "if present.\n\n"
+                    "retroachievements.cfg will be kept so your login settings are preserved."
+                ),
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+
+            def task(log):
+                return backend_uninstall_ra_cores_local(
+                    self.get_offline_sd_root(),
+                    log,
+                )
+
+            self._clear_cached_update_result(self.EXTRA_RA_CORES)
+            self._run_worker(task, "RetroAchievement Cores uninstalled.")
+            return
+
+        if not self.is_online_connected():
             return
 
         reply = QMessageBox.question(
@@ -1568,4 +1691,5 @@ class ExtrasTab(QWidget):
         def task(log):
             return backend_uninstall_ra_cores(self.connection, log)
 
+        self._clear_cached_update_result(self.EXTRA_RA_CORES)
         self._run_worker(task, "RetroAchievement Cores uninstalled.")

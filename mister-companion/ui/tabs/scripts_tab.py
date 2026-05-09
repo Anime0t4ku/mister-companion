@@ -19,43 +19,77 @@ from PyQt6.QtWidgets import (
 )
 
 from core.config import save_config
+from core.update_all_offline import run_update_all_offline
 from core.scripts_actions import (
     check_update_all_initialized,
+    check_update_all_initialized_local,
     disable_ftp_save_sync_service,
+    disable_ftp_save_sync_service_local,
     enable_ftp_save_sync_service,
+    enable_ftp_save_sync_service_local,
     enable_zaparoo_service,
+    enable_zaparoo_service_local,
     ensure_update_all_config_bootstrap,
+    ensure_update_all_config_bootstrap_local,
     get_ra_viewer_status,
+    get_ra_viewer_status_local,
     get_scripts_status,
+    get_scripts_status_local,
     get_syncthing_status,
+    get_syncthing_status_local,
     install_auto_time,
+    install_auto_time_local,
     install_cifs_mount,
+    install_cifs_mount_local,
     install_dav_browser,
+    install_dav_browser_local,
     install_ftp_save_sync,
+    install_ftp_save_sync_local,
     install_migrate_sd,
+    install_migrate_sd_local,
     install_ra_viewer,
+    install_ra_viewer_local,
     install_static_wallpaper,
+    install_static_wallpaper_local,
     install_syncthing,
+    install_syncthing_local,
     install_update_all,
+    install_update_all_local,
     install_zaparoo,
+    install_zaparoo_local,
+    open_scripts_folder_local,
     open_scripts_folder_on_host,
     remove_cifs_config,
+    remove_cifs_config_local,
     remove_dav_browser_config,
+    remove_dav_browser_config_local,
     remove_ftp_save_sync_config,
+    remove_ftp_save_sync_config_local,
     run_cifs_mount,
     run_cifs_umount,
     run_update_all_stream,
     toggle_syncthing_start_on_boot,
+    toggle_syncthing_start_on_boot_local,
     uninstall_auto_time,
+    uninstall_auto_time_local,
     uninstall_cifs_mount,
+    uninstall_cifs_mount_local,
     uninstall_dav_browser,
+    uninstall_dav_browser_local,
     uninstall_ftp_save_sync,
+    uninstall_ftp_save_sync_local,
     uninstall_migrate_sd,
+    uninstall_migrate_sd_local,
     uninstall_ra_viewer,
+    uninstall_ra_viewer_local,
     uninstall_static_wallpaper,
+    uninstall_static_wallpaper_local,
     uninstall_syncthing,
+    uninstall_syncthing_local,
     uninstall_update_all,
+    uninstall_update_all_local,
     uninstall_zaparoo,
+    uninstall_zaparoo_local,
 )
 from ui.dialogs.cifs_config_dialog import CifsConfigDialog
 from ui.dialogs.dav_browser_config_dialog import DavBrowserConfigDialog
@@ -95,6 +129,76 @@ class ScriptTaskWorker(QThread):
             self.finished_task.emit()
 
 
+class ScriptsStatusWorker(QThread):
+    result = pyqtSignal(object)
+    error = pyqtSignal(object)
+    finished_status = pyqtSignal()
+
+    def __init__(self, connection, offline_mode=False, sd_root="", generation=0):
+        super().__init__()
+        self.connection = connection
+        self.offline_mode = offline_mode
+        self.sd_root = str(sd_root or "").strip()
+        self.generation = generation
+
+    def run(self):
+        try:
+            online_mode = not self.offline_mode
+
+            if self.offline_mode:
+                if not self.sd_root:
+                    raise RuntimeError("Select an Offline SD Card first.")
+
+                status = get_scripts_status_local(self.sd_root)
+
+                try:
+                    syncthing_status = get_syncthing_status_local(self.sd_root)
+                except Exception as e:
+                    syncthing_status = {"error": str(e)}
+
+                try:
+                    ra_viewer_status = get_ra_viewer_status_local(self.sd_root)
+                except Exception as e:
+                    ra_viewer_status = {"error": str(e)}
+            else:
+                if not self.connection.is_connected():
+                    raise RuntimeError("Connect to a MiSTer first.")
+
+                status = get_scripts_status(self.connection)
+
+                try:
+                    syncthing_status = get_syncthing_status(self.connection)
+                except Exception as e:
+                    syncthing_status = {"error": str(e)}
+
+                try:
+                    ra_viewer_status = get_ra_viewer_status(self.connection)
+                except Exception as e:
+                    ra_viewer_status = {"error": str(e)}
+
+            self.result.emit(
+                {
+                    "generation": self.generation,
+                    "offline_mode": self.offline_mode,
+                    "online_mode": online_mode,
+                    "status": status,
+                    "syncthing_status": syncthing_status,
+                    "ra_viewer_status": ra_viewer_status,
+                }
+            )
+        except Exception as e:
+            self.error.emit(
+                {
+                    "generation": self.generation,
+                    "offline_mode": self.offline_mode,
+                    "message": str(e),
+                    "detail": traceback.format_exc(),
+                }
+            )
+        finally:
+            self.finished_status.emit()
+
+
 class ScriptsTab(QWidget):
     SCRIPT_UPDATE_ALL = "update_all"
     SCRIPT_ZAPAROO = "zaparoo"
@@ -114,6 +218,8 @@ class ScriptsTab(QWidget):
 
         self.console_visible = False
         self.current_worker = None
+        self.status_worker = None
+        self.status_refresh_generation = 0
         self.update_all_installed = False
         self.update_all_initialized = False
         self.waiting_for_reboot_reconnect = False
@@ -145,16 +251,48 @@ class ScriptsTab(QWidget):
         }
 
         self.script_descriptions = {
-            self.SCRIPT_UPDATE_ALL: "Install, configure, and run update_all directly from MiSTer Companion.",
-            self.SCRIPT_ZAPAROO: "Install Zaparoo and enable its boot service.",
-            self.SCRIPT_MIGRATE_SD: "Install or remove the migrate_sd script for SD card migration.",
-            self.SCRIPT_CIFS: "Install, configure, mount, and remove CIFS network share scripts.",
-            self.SCRIPT_AUTO_TIME: "Automatically set timezone and current time for your MiSTer.",
-            self.SCRIPT_DAV_BROWSER: "Browse a WebDAV server, download ROMs directly to your MiSTer, and optionally launch them after download.",
-            self.SCRIPT_FTP_SAVE_SYNC: "Sync MiSTer saves to a remote FTP or SFTP server, with optional savestate syncing and automatic boot-time service startup.",
-            self.SCRIPT_STATIC_WALLPAPER: "Install or remove static_wallpaper support. Setting or removing the active static wallpaper is now handled from the Wallpapers tab.",
-            self.SCRIPT_SYNCTHING: "Install Syncthing on your MiSTer, start it immediately, optionally enable start on boot, open the web config, or uninstall it completely.",
-            self.SCRIPT_RA_VIEWER: "Install RA Viewer on your MiSTer and configure your RetroAchievements username and Web API key.",
+            self.SCRIPT_UPDATE_ALL: (
+                "update_all keeps your MiSTer FPGA setup up to date by downloading "
+                "cores, scripts, databases, tools, and optional community content from "
+                "configured update sources."
+            ),
+            self.SCRIPT_ZAPAROO: (
+                "Zaparoo lets you launch games, media, scripts, and other MiSTer content "
+                "by scanning NFC cards, tags, barcodes, or other supported readers. It also "
+                "allows MiSTer Companion to launch games remotely from the ZapScripts tab."
+            ),
+            self.SCRIPT_MIGRATE_SD: (
+                "migrate_sd helps migrate an existing MiSTer SD card setup to another "
+                "SD card, such as when moving to a larger card."
+            ),
+            self.SCRIPT_CIFS: (
+                "cifs_mount connects your MiSTer to a shared network folder, such as a "
+                "NAS or PC share, so games and files can be accessed over your local network."
+            ),
+            self.SCRIPT_AUTO_TIME: (
+                "auto_time automatically detects your timezone and applies the correct "
+                "date and time to your MiSTer."
+            ),
+            self.SCRIPT_DAV_BROWSER: (
+                "DAV Browser lets your MiSTer browse a WebDAV server, such as a NAS or "
+                "remote file server, download ROMs or files, and optionally launch them after downloading."
+            ),
+            self.SCRIPT_FTP_SAVE_SYNC: (
+                "ftp_save_sync automatically syncs your MiSTer saves to a remote FTP or "
+                "SFTP server. It can also sync savestates and keep saves shared between multiple MiSTers."
+            ),
+            self.SCRIPT_STATIC_WALLPAPER: (
+                "static_wallpaper lets your MiSTer use a fixed menu wallpaper instead of "
+                "the default changing wallpaper behavior."
+            ),
+            self.SCRIPT_SYNCTHING: (
+                "Syncthing is a peer-to-peer file synchronization tool. On MiSTer, it can "
+                "be used to sync folders such as saves or other files with your PC, NAS, or other devices."
+            ),
+            self.SCRIPT_RA_VIEWER: (
+                "RA Viewer shows your RetroAchievements progress directly on the MiSTer, "
+                "including achievement information for your configured RetroAchievements account."
+            ),
         }
 
         self.script_status_texts = {
@@ -302,7 +440,7 @@ class ScriptsTab(QWidget):
         bottom_actions_row.addStretch()
         main_layout.addLayout(bottom_actions_row)
 
-        self.console_group = QGroupBox("SSH Output")
+        self.console_group = QGroupBox("Output")
         console_layout = QVBoxLayout()
         console_layout.setContentsMargins(10, 10, 10, 10)
         console_layout.setSpacing(8)
@@ -336,6 +474,7 @@ class ScriptsTab(QWidget):
 
         self.install_zaparoo_button.clicked.connect(self.install_zaparoo)
         self.enable_zaparoo_service_button.clicked.connect(self.enable_zaparoo_service)
+        self.open_zaparoo_web_button.clicked.connect(self.open_zaparoo_web_interface)
         self.uninstall_zaparoo_button.clicked.connect(self.uninstall_zaparoo)
 
         self.install_migrate_button.clicked.connect(self.install_migrate_sd)
@@ -430,8 +569,11 @@ class ScriptsTab(QWidget):
         self.install_zaparoo_button = QPushButton("Install")
         self.install_zaparoo_button.setFixedWidth(170)
 
-        self.enable_zaparoo_service_button = QPushButton("Enable Service")
+        self.enable_zaparoo_service_button = QPushButton("Enable Start on Boot")
         self.enable_zaparoo_service_button.setFixedWidth(190)
+
+        self.open_zaparoo_web_button = QPushButton("Open Web Interface")
+        self.open_zaparoo_web_button.setFixedWidth(190)
 
         self.uninstall_zaparoo_button = QPushButton("Uninstall")
         self.uninstall_zaparoo_button.setFixedWidth(170)
@@ -442,7 +584,12 @@ class ScriptsTab(QWidget):
                 self.enable_zaparoo_service_button,
             )
         )
-        layout.addLayout(self._build_button_row(self.uninstall_zaparoo_button))
+        layout.addLayout(
+            self._build_button_row(
+                self.open_zaparoo_web_button,
+                self.uninstall_zaparoo_button,
+            )
+        )
 
         widget.setLayout(layout)
         return widget
@@ -579,10 +726,10 @@ class ScriptsTab(QWidget):
         self.configure_ftp_save_sync_button = QPushButton("Configure")
         self.configure_ftp_save_sync_button.setFixedWidth(140)
 
-        self.enable_ftp_save_sync_service_button = QPushButton("Enable Service")
+        self.enable_ftp_save_sync_service_button = QPushButton("Enable Start on Boot")
         self.enable_ftp_save_sync_service_button.setFixedWidth(140)
 
-        self.disable_ftp_save_sync_service_button = QPushButton("Disable Service")
+        self.disable_ftp_save_sync_service_button = QPushButton("Disable Start on Boot")
         self.disable_ftp_save_sync_service_button.setFixedWidth(140)
 
         self.remove_ftp_save_sync_config_button = QPushButton("Remove Config")
@@ -713,84 +860,31 @@ class ScriptsTab(QWidget):
             return None
         return item.data(Qt.ItemDataRole.UserRole)
 
-    def on_script_selection_changed(self, current, previous):
-        del previous
-        if current is None:
-            return
+    def is_online_mode(self):
+        return not hasattr(self.main_window, "is_offline_mode") or self.main_window.is_online_mode()
 
-        script_key = current.data(Qt.ItemDataRole.UserRole)
-        self.selected_script_key = script_key
-        self.update_details_panel()
+    def is_offline_mode(self):
+        return hasattr(self.main_window, "is_offline_mode") and self.main_window.is_offline_mode()
 
-    def update_details_panel(self):
-        script_key = self.selected_script_key
-        if not script_key:
-            self.script_name_label.setText("Select a script")
-            self.script_status_label.setText("Status: Unknown")
-            self.script_status_label.setStyleSheet("color: gray;")
-            self.script_description_label.setText("")
-            for widget in self.script_action_widgets.values():
-                widget.hide()
-            return
+    def get_offline_sd_root(self):
+        if not hasattr(self.main_window, "get_offline_sd_root"):
+            return ""
+        return self.main_window.get_offline_sd_root()
 
-        self.script_name_label.setText(self.script_titles.get(script_key, script_key))
-        self.script_description_label.setText(self.script_descriptions.get(script_key, ""))
+    def has_active_context(self):
+        if self.is_offline_mode():
+            return bool(self.get_offline_sd_root())
+        return self.connection.is_connected()
 
-        status_text = self.script_status_texts.get(script_key, "Unknown")
-        self.script_status_label.setText(f"Status: {status_text}")
-
-        lowered = status_text.lower()
-        if "installed" in lowered and "not" not in lowered and "disabled" not in lowered:
-            if "configured" in lowered:
-                self.script_status_label.setStyleSheet("color: #00aa00;")
-            elif "service disabled" in lowered or "not configured" in lowered:
-                self.script_status_label.setStyleSheet("color: #cc8400;")
-            else:
-                self.script_status_label.setStyleSheet("color: #00aa00;")
-        elif "running" in lowered:
-            self.script_status_label.setStyleSheet("color: #00aa00;")
-        elif "active" in lowered:
-            self.script_status_label.setStyleSheet("color: #00aa00;")
-        elif "configured" in lowered:
-            self.script_status_label.setStyleSheet("color: #00aa00;")
-        elif "disabled" in lowered or "not configured" in lowered:
-            self.script_status_label.setStyleSheet("color: #cc8400;")
-        elif "not installed" in lowered:
-            self.script_status_label.setStyleSheet("color: #cc0000;")
-        else:
-            self.script_status_label.setStyleSheet("color: gray;")
-
-        for key, widget in self.script_action_widgets.items():
-            widget.setVisible(key == script_key)
-
-    def update_script_list_labels(self):
-        for index in range(self.script_list.count()):
-            item = self.script_list.item(index)
-            script_key = item.data(Qt.ItemDataRole.UserRole)
-            title = self.script_titles.get(script_key, script_key)
-            status = self.script_status_texts.get(script_key, "Unknown")
-            item.setText(f"{title}    {status}")
-
-    def update_connection_state(self):
-        if self.connection.is_connected():
-            self.apply_connected_state()
-        else:
-            self.apply_disconnected_state()
-
-    def apply_connected_state(self):
-        if self.current_worker is not None and self.current_worker.isRunning():
-            return
-
-        self.open_scripts_folder_button.setEnabled(True)
-
-    def apply_disconnected_state(self):
-        for button in [
+    def _all_action_buttons(self):
+        return [
             self.install_update_button,
             self.uninstall_update_button,
             self.configure_update_button,
             self.run_update_button,
             self.install_zaparoo_button,
             self.enable_zaparoo_service_button,
+            self.open_zaparoo_web_button,
             self.uninstall_zaparoo_button,
             self.install_migrate_button,
             self.uninstall_migrate_button,
@@ -821,37 +915,255 @@ class ScriptsTab(QWidget):
             self.install_ra_viewer_button,
             self.edit_ra_viewer_config_button,
             self.uninstall_ra_viewer_button,
-            self.open_scripts_folder_button,
-        ]:
-            button.setEnabled(False)
+        ]
 
+    def _clear_button_tooltips(self):
+        for button in self._all_action_buttons():
+            button.setToolTip("")
+
+    def _set_buttons_enabled(self, enabled):
+        for button in self._all_action_buttons():
+            button.setEnabled(enabled)
+
+    def _apply_offline_live_only_rules(self):
+        if self.update_all_installed:
+            self.run_update_button.setEnabled(True)
+            self.run_update_button.setText("Run Offline")
+            self.run_update_button.setToolTip(
+                "Run the offline update process on the selected SD card."
+            )
+        else:
+            self.run_update_button.setEnabled(False)
+            self.run_update_button.setText("Run Offline")
+            self.run_update_button.setToolTip("Install update_all first.")
+
+        self.open_zaparoo_web_button.setEnabled(False)
+        self.open_zaparoo_web_button.setToolTip("Opening the Zaparoo web interface requires Online / SSH Mode.")
+
+        self.mount_cifs_button.setEnabled(False)
+        self.mount_cifs_button.setToolTip("Mounting requires a running MiSTer and Online / SSH Mode.")
+
+        self.unmount_cifs_button.setEnabled(False)
+        self.unmount_cifs_button.setToolTip("Unmounting requires a running MiSTer and Online / SSH Mode.")
+
+        self.open_syncthing_web_config_button.setEnabled(False)
+        self.open_syncthing_web_config_button.setToolTip("Opening the Syncthing web config requires Online / SSH Mode.")
+
+    def on_script_selection_changed(self, current, previous):
+        del previous
+        if current is None:
+            return
+
+        script_key = current.data(Qt.ItemDataRole.UserRole)
+        self.selected_script_key = script_key
+        self.update_details_panel()
+
+    def update_details_panel(self):
+        script_key = self.selected_script_key
+        if not script_key:
+            self.script_name_label.setText("Select a script")
+            self.script_status_label.setText("Status: Unknown")
+            self.script_status_label.setStyleSheet("color: gray;")
+            self.script_description_label.setText("")
+            for widget in self.script_action_widgets.values():
+                widget.hide()
+            return
+
+        self.script_name_label.setText(self.script_titles.get(script_key, script_key))
+        self.script_description_label.setText(self.script_descriptions.get(script_key, ""))
+
+        status_text = self.script_status_texts.get(script_key, "Unknown")
+        self.script_status_label.setText(f"Status: {status_text}")
+
+        lowered = status_text.lower()
+        if "refreshing" in lowered:
+            self.script_status_label.setStyleSheet("color: #1e88e5; font-weight: bold;")
+        elif "installed" in lowered and "not" not in lowered and "disabled" not in lowered:
+            if "configured" in lowered:
+                self.script_status_label.setStyleSheet("color: #00aa00;")
+            elif "service disabled" in lowered or "not configured" in lowered:
+                self.script_status_label.setStyleSheet("color: #cc8400;")
+            else:
+                self.script_status_label.setStyleSheet("color: #00aa00;")
+        elif "running" in lowered:
+            self.script_status_label.setStyleSheet("color: #00aa00;")
+        elif "active" in lowered:
+            self.script_status_label.setStyleSheet("color: #00aa00;")
+        elif "configured" in lowered:
+            self.script_status_label.setStyleSheet("color: #00aa00;")
+        elif "disabled" in lowered or "not configured" in lowered:
+            self.script_status_label.setStyleSheet("color: #cc8400;")
+        elif "not installed" in lowered:
+            self.script_status_label.setStyleSheet("color: #cc0000;")
+        else:
+            self.script_status_label.setStyleSheet("color: gray;")
+
+        for key, widget in self.script_action_widgets.items():
+            widget.setVisible(key == script_key)
+
+    def update_script_list_labels(self):
+        for index in range(self.script_list.count()):
+            item = self.script_list.item(index)
+            script_key = item.data(Qt.ItemDataRole.UserRole)
+            title = self.script_titles.get(script_key, script_key)
+            status = self.script_status_texts.get(script_key, "Unknown")
+            item.setText(f"{title}    {status}")
+
+    def update_connection_state(self, lightweight=True):
+        if self.current_worker is not None and self.current_worker.isRunning():
+            return
+
+        if self.status_worker is not None and self.status_worker.isRunning():
+            return
+
+        if not self.has_active_context():
+            self.apply_disconnected_state()
+            return
+
+        self.apply_connected_state(lightweight=lightweight)
+
+    def apply_connected_state(self, lightweight=True):
+        if self.current_worker is not None and self.current_worker.isRunning():
+            return
+
+        if self.status_worker is not None and self.status_worker.isRunning():
+            return
+
+        self.open_scripts_folder_button.setEnabled(True)
+
+        if lightweight:
+            return
+
+        try:
+            self.refresh_status()
+        except Exception:
+            self.apply_disconnected_state()
+
+    def apply_disconnected_state(self):
+        for button in self._all_action_buttons():
+            button.setEnabled(False)
+            button.setToolTip("")
+
+        self.open_scripts_folder_button.setEnabled(False)
+        self.run_update_button.setText("Run")
         self.toggle_syncthing_boot_button.setText("Enable Start on Boot")
 
-        self.script_status_texts[self.SCRIPT_UPDATE_ALL] = "Unknown"
-        self.script_status_texts[self.SCRIPT_ZAPAROO] = "Unknown"
-        self.script_status_texts[self.SCRIPT_MIGRATE_SD] = "Unknown"
-        self.script_status_texts[self.SCRIPT_CIFS] = "Unknown"
-        self.script_status_texts[self.SCRIPT_AUTO_TIME] = "Unknown"
-        self.script_status_texts[self.SCRIPT_DAV_BROWSER] = "Unknown"
-        self.script_status_texts[self.SCRIPT_FTP_SAVE_SYNC] = "Unknown"
-        self.script_status_texts[self.SCRIPT_STATIC_WALLPAPER] = "Unknown"
-        self.script_status_texts[self.SCRIPT_SYNCTHING] = "Unknown"
-        self.script_status_texts[self.SCRIPT_RA_VIEWER] = "Unknown"
+        for script_key in self.script_status_texts:
+            self.script_status_texts[script_key] = "Unknown"
 
         self.update_script_list_labels()
         self.update_details_panel()
 
+    def show_refreshing_state(self):
+        if self.current_worker is not None and self.current_worker.isRunning():
+            return
+
+        if self.status_worker is not None and self.status_worker.isRunning():
+            return
+
+        if not self.has_active_context():
+            return
+
+        self._clear_button_tooltips()
+
+        for script_key in self.script_status_texts:
+            self.script_status_texts[script_key] = "Refreshing..."
+
+        self.update_script_list_labels()
+        self.update_details_panel()
+
+        for button in self._all_action_buttons():
+            button.setEnabled(False)
+
+        self.open_scripts_folder_button.setEnabled(True)
+
+        if self.is_offline_mode():
+            self.run_update_button.setText("Run Offline")
+        else:
+            self.run_update_button.setText("Run")
+
+        self.script_status_label.setText("Status: Refreshing...")
+        self.script_status_label.setStyleSheet("color: #1e88e5; font-weight: bold;")
+
     def refresh_status(self):
-        if not self.connection.is_connected():
+        if self.current_worker is not None and self.current_worker.isRunning():
+            return
+
+        if self.status_worker is not None and self.status_worker.isRunning():
+            return
+
+        offline_mode = self.is_offline_mode()
+
+        if offline_mode:
+            sd_root = self.get_offline_sd_root()
+            if not sd_root:
+                self.apply_disconnected_state()
+                return
+        else:
+            sd_root = ""
+            if not self.connection.is_connected():
+                self.apply_disconnected_state()
+                return
+
+        self.status_refresh_generation += 1
+        generation = self.status_refresh_generation
+
+        self.show_refreshing_state()
+
+        self.status_worker = ScriptsStatusWorker(
+            self.connection,
+            offline_mode=offline_mode,
+            sd_root=sd_root,
+            generation=generation,
+        )
+        self.status_worker.result.connect(self.on_status_worker_result)
+        self.status_worker.error.connect(self.on_status_worker_error)
+        self.status_worker.finished_status.connect(self.on_status_worker_finished)
+        self.status_worker.start()
+
+    def on_status_worker_result(self, payload):
+        if not isinstance(payload, dict):
+            return
+
+        if payload.get("generation") != self.status_refresh_generation:
+            return
+
+        self.apply_status_payload(payload)
+
+    def on_status_worker_error(self, payload):
+        if not isinstance(payload, dict):
             self.apply_disconnected_state()
             return
 
-        try:
-            status = get_scripts_status(self.connection)
-        except Exception:
-            self.connection.mark_disconnected()
+        if payload.get("generation") != self.status_refresh_generation:
+            return
+
+        if not payload.get("offline_mode"):
+            try:
+                self.connection.mark_disconnected()
+            except Exception:
+                pass
+
+        self.apply_disconnected_state()
+
+    def on_status_worker_finished(self):
+        self.status_worker = None
+
+    def apply_status_payload(self, payload):
+        self._clear_button_tooltips()
+
+        offline_mode = bool(payload.get("offline_mode"))
+        online_mode = bool(payload.get("online_mode"))
+        status = payload.get("status")
+
+        if status is None:
             self.apply_disconnected_state()
             return
+
+        if offline_mode:
+            self.run_update_button.setText("Run Offline")
+        else:
+            self.run_update_button.setText("Run")
 
         self.update_all_installed = status.update_all_installed
         self.update_all_initialized = status.update_all_initialized
@@ -862,7 +1174,6 @@ class ScriptsTab(QWidget):
             self.uninstall_update_button.setEnabled(True)
             self.run_update_button.setEnabled(True)
             self.configure_update_button.setEnabled(True)
-            self.update_all_initialized = status.update_all_initialized
         else:
             self.script_status_texts[self.SCRIPT_UPDATE_ALL] = "✗ Not installed"
             self.install_update_button.setEnabled(True)
@@ -874,16 +1185,19 @@ class ScriptsTab(QWidget):
             self.script_status_texts[self.SCRIPT_ZAPAROO] = "✗ Not installed"
             self.install_zaparoo_button.setEnabled(True)
             self.enable_zaparoo_service_button.setEnabled(False)
+            self.open_zaparoo_web_button.setEnabled(False)
             self.uninstall_zaparoo_button.setEnabled(False)
         elif status.zaparoo_installed and not status.zaparoo_service_enabled:
             self.script_status_texts[self.SCRIPT_ZAPAROO] = "⚙ Installed, service disabled"
             self.install_zaparoo_button.setEnabled(False)
             self.enable_zaparoo_service_button.setEnabled(True)
+            self.open_zaparoo_web_button.setEnabled(online_mode)
             self.uninstall_zaparoo_button.setEnabled(True)
         else:
             self.script_status_texts[self.SCRIPT_ZAPAROO] = "✓ Installed"
             self.install_zaparoo_button.setEnabled(False)
             self.enable_zaparoo_service_button.setEnabled(False)
+            self.open_zaparoo_web_button.setEnabled(online_mode)
             self.uninstall_zaparoo_button.setEnabled(True)
 
         if status.migrate_sd_installed:
@@ -918,8 +1232,8 @@ class ScriptsTab(QWidget):
             self.install_cifs_button.setEnabled(False)
             self.configure_cifs_button.setEnabled(True)
             self.configure_cifs_button.setText("Reconfigure")
-            self.mount_cifs_button.setEnabled(True)
-            self.unmount_cifs_button.setEnabled(True)
+            self.mount_cifs_button.setEnabled(online_mode)
+            self.unmount_cifs_button.setEnabled(online_mode)
             self.remove_cifs_config_button.setEnabled(True)
             self.uninstall_cifs_button.setEnabled(True)
 
@@ -1008,10 +1322,10 @@ class ScriptsTab(QWidget):
             self.install_static_wallpaper_button.setEnabled(False)
             self.uninstall_static_wallpaper_button.setEnabled(True)
 
-        try:
-            syncthing_status = get_syncthing_status(self.connection)
-        except Exception as e:
-            self.script_status_texts[self.SCRIPT_SYNCTHING] = f"Unknown ({e})"
+        syncthing_status = payload.get("syncthing_status") or {}
+
+        if syncthing_status.get("error"):
+            self.script_status_texts[self.SCRIPT_SYNCTHING] = f"Unknown ({syncthing_status['error']})"
             self.install_syncthing_button.setEnabled(False)
             self.toggle_syncthing_boot_button.setText("Enable Start on Boot")
             self.toggle_syncthing_boot_button.setEnabled(False)
@@ -1022,13 +1336,15 @@ class ScriptsTab(QWidget):
             self.install_syncthing_button.setEnabled(syncthing_status["install_enabled"])
             self.toggle_syncthing_boot_button.setText(syncthing_status["boot_label"])
             self.toggle_syncthing_boot_button.setEnabled(syncthing_status["boot_enabled"])
-            self.open_syncthing_web_config_button.setEnabled(syncthing_status["running"])
+            self.open_syncthing_web_config_button.setEnabled(
+                online_mode and syncthing_status.get("running", False)
+            )
             self.uninstall_syncthing_button.setEnabled(syncthing_status["uninstall_enabled"])
 
-        try:
-            ra_viewer_status = get_ra_viewer_status(self.connection)
-        except Exception as e:
-            self.script_status_texts[self.SCRIPT_RA_VIEWER] = f"Unknown ({e})"
+        ra_viewer_status = payload.get("ra_viewer_status") or {}
+
+        if ra_viewer_status.get("error"):
+            self.script_status_texts[self.SCRIPT_RA_VIEWER] = f"Unknown ({ra_viewer_status['error']})"
             self.install_ra_viewer_button.setEnabled(False)
             self.edit_ra_viewer_config_button.setEnabled(False)
             self.uninstall_ra_viewer_button.setEnabled(False)
@@ -1040,8 +1356,12 @@ class ScriptsTab(QWidget):
 
         self.open_scripts_folder_button.setEnabled(True)
 
+        if offline_mode:
+            self._apply_offline_live_only_rules()
+
         self.update_script_list_labels()
         self.update_details_panel()
+
 
     def show_console(self):
         if not self.console_visible:
@@ -1067,6 +1387,10 @@ class ScriptsTab(QWidget):
     def start_worker(self, task_fn, success_message=""):
         if self.current_worker is not None and self.current_worker.isRunning():
             QMessageBox.warning(self, "Busy", "Another script task is still running.")
+            return
+
+        if self.status_worker is not None and self.status_worker.isRunning():
+            QMessageBox.warning(self, "Busy", "Scripts status is still refreshing.")
             return
 
         self.show_console()
@@ -1105,15 +1429,28 @@ class ScriptsTab(QWidget):
             return
 
         try:
-            if self.connection.is_connected():
+            if self.has_active_context():
                 self.refresh_status()
             else:
                 self.apply_disconnected_state()
         except Exception:
-            self.connection.mark_disconnected()
+            if self.is_online_mode():
+                self.connection.mark_disconnected()
             self.apply_disconnected_state()
 
     def install_update_all(self):
+        if self.is_offline_mode():
+            sd_root = self.get_offline_sd_root()
+            if not sd_root:
+                QMessageBox.critical(self, "Error", "Select an Offline SD Card first.")
+                return
+
+            def task(log):
+                install_update_all_local(sd_root, log)
+
+            self.start_worker(task, "update_all installed successfully on the selected SD card.")
+            return
+
         if not self.connection.is_connected():
             return
 
@@ -1123,6 +1460,27 @@ class ScriptsTab(QWidget):
         self.start_worker(task, "update_all installed successfully.")
 
     def uninstall_update_all(self):
+        if self.is_offline_mode():
+            sd_root = self.get_offline_sd_root()
+            if not sd_root:
+                QMessageBox.critical(self, "Error", "Select an Offline SD Card first.")
+                return
+
+            confirm = QMessageBox.question(
+                self,
+                "Uninstall update_all",
+                "Are you sure you want to remove update_all from the selected SD card?",
+            )
+            if confirm != QMessageBox.StandardButton.Yes:
+                return
+
+            try:
+                uninstall_update_all_local(sd_root)
+                self.refresh_status()
+            except Exception as e:
+                QMessageBox.critical(self, "Error", str(e))
+            return
+
         if not self.connection.is_connected():
             return
 
@@ -1138,6 +1496,36 @@ class ScriptsTab(QWidget):
         self.refresh_status()
 
     def configure_update_all(self):
+        if self.is_offline_mode():
+            sd_root = self.get_offline_sd_root()
+            if not sd_root:
+                QMessageBox.critical(self, "Error", "Select an Offline SD Card first.")
+                return
+
+            if not self.update_all_installed:
+                QMessageBox.critical(
+                    self,
+                    "update_all not installed",
+                    "Install update_all first before opening the configurator.",
+                )
+                return
+
+            try:
+                ensure_update_all_config_bootstrap_local(sd_root)
+                self.update_all_initialized = check_update_all_initialized_local(sd_root)
+            except Exception as e:
+                QMessageBox.critical(
+                    self,
+                    "update_all configuration error",
+                    f"Could not prepare update_all configuration files.\n\n{e}",
+                )
+                return
+
+            dialog = UpdateAllConfigDialog(parent=self, sd_root=sd_root)
+            if dialog.exec():
+                self.refresh_status()
+            return
+
         if not self.connection.is_connected():
             QMessageBox.critical(self, "Error", "Connect to a MiSTer first.")
             return
@@ -1161,11 +1549,52 @@ class ScriptsTab(QWidget):
             )
             return
 
-        dialog = UpdateAllConfigDialog(self.connection, self)
+        dialog = UpdateAllConfigDialog(connection=self.connection, parent=self)
         if dialog.exec():
             self.refresh_status()
 
     def run_update_all(self):
+        if self.is_offline_mode():
+            sd_root = self.get_offline_sd_root()
+            if not sd_root:
+                QMessageBox.critical(self, "Error", "Select an Offline SD Card first.")
+                return
+
+            if not self.update_all_installed:
+                QMessageBox.critical(
+                    self,
+                    "update_all not installed",
+                    "Install update_all first before running the offline updater.",
+                )
+                return
+
+            def task(log):
+                log("Running update_all offline...\n\n")
+                result = run_update_all_offline(sd_root, progress=log)
+
+                log("\nOffline update finished.\n")
+                log(f"Databases found: {result.databases_found}\n")
+                log(f"Databases processed: {result.databases_processed}\n")
+                log(f"Folders created: {result.folders_created}\n")
+                log(f"Files downloaded: {result.files_downloaded}\n")
+                log(f"Files skipped: {result.files_skipped}\n")
+                log(f"Files failed: {result.files_failed}\n")
+                log(f"Archives downloaded: {result.archives_downloaded}\n")
+                log(f"Archives skipped: {result.archives_skipped}\n")
+
+                if result.errors:
+                    log("\nErrors:\n")
+                    for error in result.errors:
+                        log(f"- {error}\n")
+
+                if not result.ok:
+                    raise RuntimeError("Offline update_all finished with errors.")
+
+                return {"action": "completed"}
+
+            self.start_worker(task)
+            return
+
         if not self.connection.is_connected():
             return
 
@@ -1229,6 +1658,21 @@ class ScriptsTab(QWidget):
         self.start_worker(task)
 
     def install_zaparoo(self):
+        if self.is_offline_mode():
+            sd_root = self.get_offline_sd_root()
+            if not sd_root:
+                QMessageBox.critical(self, "Error", "Select an Offline SD Card first.")
+                return
+
+            def task(log):
+                install_zaparoo_local(sd_root, log)
+
+            self.start_worker(
+                task,
+                "Zaparoo has been installed successfully on the selected SD card.\n\nNext step:\nClick 'Enable Service' to start Zaparoo automatically at boot.",
+            )
+            return
+
         if not self.connection.is_connected():
             return
 
@@ -1237,10 +1681,36 @@ class ScriptsTab(QWidget):
 
         self.start_worker(
             task,
-            "Zaparoo has been installed successfully.\n\nNext step:\nClick 'Enable Zaparoo Service' to start Zaparoo automatically at boot.",
+            "Zaparoo has been installed successfully.\n\nNext step:\nClick 'Enable Service' to start Zaparoo automatically at boot.",
         )
 
     def enable_zaparoo_service(self):
+        if self.is_offline_mode():
+            sd_root = self.get_offline_sd_root()
+            if not sd_root:
+                QMessageBox.critical(self, "Error", "Select an Offline SD Card first.")
+                return
+
+            confirm = QMessageBox.question(
+                self,
+                "Enable Zaparoo Service",
+                "This will add the Zaparoo service entry to the selected SD card so it starts automatically when that MiSTer boots.\n\nContinue?",
+            )
+            if confirm != QMessageBox.StandardButton.Yes:
+                return
+
+            try:
+                enable_zaparoo_service_local(sd_root)
+                QMessageBox.information(
+                    self,
+                    "Zaparoo Enabled",
+                    "Zaparoo service enabled on the selected SD card.",
+                )
+                self.refresh_status()
+            except Exception as e:
+                QMessageBox.critical(self, "Error", str(e))
+            return
+
         if not self.connection.is_connected():
             return
 
@@ -1263,7 +1733,46 @@ class ScriptsTab(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Error", str(e))
 
+    def open_zaparoo_web_interface(self):
+        if self.is_offline_mode():
+            return
+
+        if not self.connection.is_connected():
+            return
+
+        host = self.connection.host
+        if not host:
+            QMessageBox.warning(
+                self,
+                "Open Zaparoo Web Interface",
+                "No MiSTer IP address is available.",
+            )
+            return
+
+        webbrowser.open(f"http://{host}:7497/app/")
+
     def uninstall_zaparoo(self):
+        if self.is_offline_mode():
+            sd_root = self.get_offline_sd_root()
+            if not sd_root:
+                QMessageBox.critical(self, "Error", "Select an Offline SD Card first.")
+                return
+
+            confirm = QMessageBox.question(
+                self,
+                "Uninstall Zaparoo",
+                "Are you sure you want to remove Zaparoo from the selected SD card?",
+            )
+            if confirm != QMessageBox.StandardButton.Yes:
+                return
+
+            try:
+                uninstall_zaparoo_local(sd_root)
+                self.refresh_status()
+            except Exception as e:
+                QMessageBox.critical(self, "Error", str(e))
+            return
+
         if not self.connection.is_connected():
             return
 
@@ -1279,6 +1788,28 @@ class ScriptsTab(QWidget):
         self.refresh_status()
 
     def install_migrate_sd(self):
+        if self.is_offline_mode():
+            sd_root = self.get_offline_sd_root()
+            if not sd_root:
+                QMessageBox.critical(self, "Error", "Select an Offline SD Card first.")
+                return
+
+            proceed = QMessageBox.question(
+                self,
+                "Install migrate_sd",
+                "This tool installs the 'migrate_sd' script on the selected SD card.\n\n"
+                "The migration process must still be started directly on the MiSTer from the Scripts menu.\n\n"
+                "Install the script now?",
+            )
+            if proceed != QMessageBox.StandardButton.Yes:
+                return
+
+            def task(log):
+                install_migrate_sd_local(sd_root, log)
+
+            self.start_worker(task, "migrate_sd installed successfully on the selected SD card.")
+            return
+
         if not self.connection.is_connected():
             return
 
@@ -1301,6 +1832,30 @@ class ScriptsTab(QWidget):
         self.start_worker(task, "migrate_sd installed successfully.")
 
     def uninstall_migrate_sd(self):
+        if self.is_offline_mode():
+            sd_root = self.get_offline_sd_root()
+            if not sd_root:
+                QMessageBox.critical(self, "Error", "Select an Offline SD Card first.")
+                return
+
+            confirm = QMessageBox.question(
+                self,
+                "Uninstall migrate_sd",
+                "Are you sure you want to remove migrate_sd from the selected SD card?",
+            )
+            if confirm != QMessageBox.StandardButton.Yes:
+                return
+
+            try:
+                uninstall_migrate_sd_local(sd_root)
+                self.show_console()
+                self.clear_console()
+                self.log("migrate_sd removed from selected SD card.\n")
+                self.refresh_status()
+            except Exception as e:
+                QMessageBox.critical(self, "Error", str(e))
+            return
+
         if not self.connection.is_connected():
             return
 
@@ -1319,6 +1874,18 @@ class ScriptsTab(QWidget):
         self.refresh_status()
 
     def install_cifs_mount(self):
+        if self.is_offline_mode():
+            sd_root = self.get_offline_sd_root()
+            if not sd_root:
+                QMessageBox.critical(self, "Error", "Select an Offline SD Card first.")
+                return
+
+            def task(log):
+                install_cifs_mount_local(sd_root, log)
+
+            self.start_worker(task, "CIFS scripts installed successfully on the selected SD card.")
+            return
+
         if not self.connection.is_connected():
             return
 
@@ -1328,14 +1895,33 @@ class ScriptsTab(QWidget):
         self.start_worker(task, "CIFS scripts installed successfully.")
 
     def configure_cifs(self):
+        if self.is_offline_mode():
+            sd_root = self.get_offline_sd_root()
+            if not sd_root:
+                QMessageBox.critical(self, "Error", "Select an Offline SD Card first.")
+                return
+
+            dialog = CifsConfigDialog(parent=self, sd_root=sd_root)
+            if dialog.exec():
+                self.refresh_status()
+            return
+
         if not self.connection.is_connected():
             return
 
-        dialog = CifsConfigDialog(self.connection, self)
+        dialog = CifsConfigDialog(connection=self.connection, parent=self)
         if dialog.exec():
             self.refresh_status()
 
     def run_cifs_mount(self):
+        if self.is_offline_mode():
+            QMessageBox.information(
+                self,
+                "Mount CIFS",
+                "Mounting requires Online / SSH Mode.",
+            )
+            return
+
         if not self.connection.is_connected():
             return
 
@@ -1343,6 +1929,14 @@ class ScriptsTab(QWidget):
         QMessageBox.information(self, "Mount", result or "Mount command sent.")
 
     def run_cifs_umount(self):
+        if self.is_offline_mode():
+            QMessageBox.information(
+                self,
+                "Unmount CIFS",
+                "Unmounting requires Online / SSH Mode.",
+            )
+            return
+
         if not self.connection.is_connected():
             return
 
@@ -1350,6 +1944,24 @@ class ScriptsTab(QWidget):
         QMessageBox.information(self, "Unmount", result or "Unmount command sent.")
 
     def remove_cifs_config(self):
+        if self.is_offline_mode():
+            sd_root = self.get_offline_sd_root()
+            if not sd_root:
+                QMessageBox.critical(self, "Error", "Select an Offline SD Card first.")
+                return
+
+            confirm = QMessageBox.question(
+                self,
+                "Remove Config",
+                "Delete CIFS configuration from the selected SD card?",
+            )
+            if confirm != QMessageBox.StandardButton.Yes:
+                return
+
+            remove_cifs_config_local(sd_root)
+            self.refresh_status()
+            return
+
         if not self.connection.is_connected():
             return
 
@@ -1365,6 +1977,24 @@ class ScriptsTab(QWidget):
         self.refresh_status()
 
     def uninstall_cifs_mount(self):
+        if self.is_offline_mode():
+            sd_root = self.get_offline_sd_root()
+            if not sd_root:
+                QMessageBox.critical(self, "Error", "Select an Offline SD Card first.")
+                return
+
+            confirm = QMessageBox.question(
+                self,
+                "Uninstall",
+                "Remove CIFS scripts from the selected SD card?",
+            )
+            if confirm != QMessageBox.StandardButton.Yes:
+                return
+
+            uninstall_cifs_mount_local(sd_root)
+            self.refresh_status()
+            return
+
         if not self.connection.is_connected():
             return
 
@@ -1376,6 +2006,21 @@ class ScriptsTab(QWidget):
         self.refresh_status()
 
     def install_auto_time(self):
+        if self.is_offline_mode():
+            sd_root = self.get_offline_sd_root()
+            if not sd_root:
+                QMessageBox.critical(self, "Error", "Select an Offline SD Card first.")
+                return
+
+            def task(log):
+                install_auto_time_local(sd_root, log)
+
+            self.start_worker(
+                task,
+                "Script installed successfully on the selected SD card.\n\nYou can run it from the MiSTer Scripts menu.",
+            )
+            return
+
         if not self.connection.is_connected():
             return
 
@@ -1388,6 +2033,24 @@ class ScriptsTab(QWidget):
         )
 
     def uninstall_auto_time(self):
+        if self.is_offline_mode():
+            sd_root = self.get_offline_sd_root()
+            if not sd_root:
+                QMessageBox.critical(self, "Error", "Select an Offline SD Card first.")
+                return
+
+            confirm = QMessageBox.question(
+                self,
+                "Uninstall Auto Time",
+                "Are you sure you want to remove Auto Time from the selected SD card?",
+            )
+            if confirm != QMessageBox.StandardButton.Yes:
+                return
+
+            uninstall_auto_time_local(sd_root)
+            self.refresh_status()
+            return
+
         if not self.connection.is_connected():
             return
 
@@ -1403,6 +2066,21 @@ class ScriptsTab(QWidget):
         self.refresh_status()
 
     def install_dav_browser(self):
+        if self.is_offline_mode():
+            sd_root = self.get_offline_sd_root()
+            if not sd_root:
+                QMessageBox.critical(self, "Error", "Select an Offline SD Card first.")
+                return
+
+            def task(log):
+                install_dav_browser_local(sd_root, log)
+
+            self.start_worker(
+                task,
+                "Script installed successfully on the selected SD card.\n\nYou can run it from the MiSTer Scripts menu.",
+            )
+            return
+
         if not self.connection.is_connected():
             return
 
@@ -1415,14 +2093,43 @@ class ScriptsTab(QWidget):
         )
 
     def configure_dav_browser(self):
+        if self.is_offline_mode():
+            sd_root = self.get_offline_sd_root()
+            if not sd_root:
+                QMessageBox.critical(self, "Error", "Select an Offline SD Card first.")
+                return
+
+            dialog = DavBrowserConfigDialog(parent=self, sd_root=sd_root)
+            if dialog.exec():
+                self.refresh_status()
+            return
+
         if not self.connection.is_connected():
             return
 
-        dialog = DavBrowserConfigDialog(self.connection, self)
+        dialog = DavBrowserConfigDialog(connection=self.connection, parent=self)
         if dialog.exec():
             self.refresh_status()
 
     def remove_dav_browser_config(self):
+        if self.is_offline_mode():
+            sd_root = self.get_offline_sd_root()
+            if not sd_root:
+                QMessageBox.critical(self, "Error", "Select an Offline SD Card first.")
+                return
+
+            confirm = QMessageBox.question(
+                self,
+                "Remove Config",
+                "Delete DAV Browser configuration from the selected SD card?",
+            )
+            if confirm != QMessageBox.StandardButton.Yes:
+                return
+
+            remove_dav_browser_config_local(sd_root)
+            self.refresh_status()
+            return
+
         if not self.connection.is_connected():
             return
 
@@ -1438,6 +2145,24 @@ class ScriptsTab(QWidget):
         self.refresh_status()
 
     def uninstall_dav_browser(self):
+        if self.is_offline_mode():
+            sd_root = self.get_offline_sd_root()
+            if not sd_root:
+                QMessageBox.critical(self, "Error", "Select an Offline SD Card first.")
+                return
+
+            confirm = QMessageBox.question(
+                self,
+                "Uninstall DAV Browser",
+                "Are you sure you want to remove DAV Browser from the selected SD card?",
+            )
+            if confirm != QMessageBox.StandardButton.Yes:
+                return
+
+            uninstall_dav_browser_local(sd_root)
+            self.refresh_status()
+            return
+
         if not self.connection.is_connected():
             return
 
@@ -1453,6 +2178,18 @@ class ScriptsTab(QWidget):
         self.refresh_status()
 
     def install_ftp_save_sync(self):
+        if self.is_offline_mode():
+            sd_root = self.get_offline_sd_root()
+            if not sd_root:
+                QMessageBox.critical(self, "Error", "Select an Offline SD Card first.")
+                return
+
+            def task(log):
+                install_ftp_save_sync_local(sd_root, log)
+
+            self.start_worker(task, "ftp_save_sync installed successfully on the selected SD card.")
+            return
+
         if not self.connection.is_connected():
             return
 
@@ -1462,14 +2199,51 @@ class ScriptsTab(QWidget):
         self.start_worker(task, "ftp_save_sync installed successfully.")
 
     def configure_ftp_save_sync(self):
+        if self.is_offline_mode():
+            sd_root = self.get_offline_sd_root()
+            if not sd_root:
+                QMessageBox.critical(self, "Error", "Select an Offline SD Card first.")
+                return
+
+            dialog = FtpSaveSyncConfigDialog(main_window=self.main_window, parent=self, sd_root=sd_root)
+            if dialog.exec():
+                self.refresh_status()
+            return
+
         if not self.connection.is_connected():
             return
 
-        dialog = FtpSaveSyncConfigDialog(self.connection, self.main_window, self)
+        dialog = FtpSaveSyncConfigDialog(connection=self.connection, main_window=self.main_window, parent=self)
         if dialog.exec():
             self.refresh_status()
 
     def enable_ftp_save_sync_service(self):
+        if self.is_offline_mode():
+            sd_root = self.get_offline_sd_root()
+            if not sd_root:
+                QMessageBox.critical(self, "Error", "Select an Offline SD Card first.")
+                return
+
+            confirm = QMessageBox.question(
+                self,
+                "Enable ftp_save_sync Service",
+                "This will add the ftp_save_sync startup entry to the selected SD card.\n\nContinue?",
+            )
+            if confirm != QMessageBox.StandardButton.Yes:
+                return
+
+            try:
+                enable_ftp_save_sync_service_local(sd_root)
+                QMessageBox.information(
+                    self,
+                    "ftp_save_sync Enabled",
+                    "ftp_save_sync service enabled on the selected SD card.",
+                )
+                self.refresh_status()
+            except Exception as e:
+                QMessageBox.critical(self, "Error", str(e))
+            return
+
         if not self.connection.is_connected():
             return
 
@@ -1493,6 +2267,32 @@ class ScriptsTab(QWidget):
             QMessageBox.critical(self, "Error", str(e))
 
     def disable_ftp_save_sync_service(self):
+        if self.is_offline_mode():
+            sd_root = self.get_offline_sd_root()
+            if not sd_root:
+                QMessageBox.critical(self, "Error", "Select an Offline SD Card first.")
+                return
+
+            confirm = QMessageBox.question(
+                self,
+                "Disable ftp_save_sync Service",
+                "This will remove the ftp_save_sync startup entry from the selected SD card.\n\nContinue?",
+            )
+            if confirm != QMessageBox.StandardButton.Yes:
+                return
+
+            try:
+                disable_ftp_save_sync_service_local(sd_root)
+                QMessageBox.information(
+                    self,
+                    "ftp_save_sync Disabled",
+                    "ftp_save_sync service disabled on the selected SD card.",
+                )
+                self.refresh_status()
+            except Exception as e:
+                QMessageBox.critical(self, "Error", str(e))
+            return
+
         if not self.connection.is_connected():
             return
 
@@ -1516,6 +2316,24 @@ class ScriptsTab(QWidget):
             QMessageBox.critical(self, "Error", str(e))
 
     def remove_ftp_save_sync_config(self):
+        if self.is_offline_mode():
+            sd_root = self.get_offline_sd_root()
+            if not sd_root:
+                QMessageBox.critical(self, "Error", "Select an Offline SD Card first.")
+                return
+
+            confirm = QMessageBox.question(
+                self,
+                "Remove Config",
+                "Delete ftp_save_sync configuration from the selected SD card?",
+            )
+            if confirm != QMessageBox.StandardButton.Yes:
+                return
+
+            remove_ftp_save_sync_config_local(sd_root)
+            self.refresh_status()
+            return
+
         if not self.connection.is_connected():
             return
 
@@ -1531,6 +2349,24 @@ class ScriptsTab(QWidget):
         self.refresh_status()
 
     def uninstall_ftp_save_sync(self):
+        if self.is_offline_mode():
+            sd_root = self.get_offline_sd_root()
+            if not sd_root:
+                QMessageBox.critical(self, "Error", "Select an Offline SD Card first.")
+                return
+
+            confirm = QMessageBox.question(
+                self,
+                "Uninstall ftp_save_sync",
+                "This will uninstall ftp_save_sync from the selected SD card, remove its config folder, and disable its startup service.\n\nContinue?",
+            )
+            if confirm != QMessageBox.StandardButton.Yes:
+                return
+
+            uninstall_ftp_save_sync_local(sd_root)
+            self.refresh_status()
+            return
+
         if not self.connection.is_connected():
             return
 
@@ -1546,6 +2382,18 @@ class ScriptsTab(QWidget):
         self.refresh_status()
 
     def install_static_wallpaper(self):
+        if self.is_offline_mode():
+            sd_root = self.get_offline_sd_root()
+            if not sd_root:
+                QMessageBox.critical(self, "Error", "Select an Offline SD Card first.")
+                return
+
+            def task(log):
+                install_static_wallpaper_local(sd_root, log)
+
+            self.start_worker(task, "static_wallpaper installed successfully on the selected SD card.")
+            return
+
         if not self.connection.is_connected():
             return
 
@@ -1555,6 +2403,32 @@ class ScriptsTab(QWidget):
         self.start_worker(task, "static_wallpaper installed successfully.")
 
     def uninstall_static_wallpaper(self):
+        if self.is_offline_mode():
+            sd_root = self.get_offline_sd_root()
+            if not sd_root:
+                QMessageBox.critical(self, "Error", "Select an Offline SD Card first.")
+                return
+
+            confirm = QMessageBox.question(
+                self,
+                "Uninstall static_wallpaper",
+                "This will uninstall static_wallpaper from the selected SD card, remove its config folder, and remove menu.jpg/menu.png.\n\nContinue?",
+            )
+            if confirm != QMessageBox.StandardButton.Yes:
+                return
+
+            try:
+                uninstall_static_wallpaper_local(sd_root)
+                QMessageBox.information(
+                    self,
+                    "static_wallpaper Removed",
+                    "static_wallpaper has been removed from the selected SD card.",
+                )
+                self.refresh_status()
+            except Exception as e:
+                QMessageBox.critical(self, "Error", str(e))
+            return
+
         if not self.connection.is_connected():
             return
 
@@ -1578,6 +2452,32 @@ class ScriptsTab(QWidget):
             QMessageBox.critical(self, "Error", str(e))
 
     def install_syncthing(self):
+        if self.is_offline_mode():
+            sd_root = self.get_offline_sd_root()
+            if not sd_root:
+                QMessageBox.critical(self, "Error", "Select an Offline SD Card first.")
+                return
+
+            proceed = QMessageBox.question(
+                self,
+                "Install Syncthing",
+                (
+                    "This will install Syncthing files on the selected SD card.\n\n"
+                    "Syncthing cannot be started in Offline Mode. It will only be available after the SD card is booted on the MiSTer.\n\n"
+                    "Continue?"
+                ),
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes,
+            )
+            if proceed != QMessageBox.StandardButton.Yes:
+                return
+
+            def task(log):
+                return install_syncthing_local(sd_root, log)
+
+            self.start_worker(task, "Syncthing installed successfully on the selected SD card.")
+            return
+
         if not self.connection.is_connected():
             return
 
@@ -1601,6 +2501,44 @@ class ScriptsTab(QWidget):
         self.start_worker(task, "Syncthing installed and started successfully.")
 
     def toggle_syncthing_start_on_boot(self):
+        if self.is_offline_mode():
+            sd_root = self.get_offline_sd_root()
+            if not sd_root:
+                QMessageBox.critical(self, "Error", "Select an Offline SD Card first.")
+                return
+
+            current_label = self.toggle_syncthing_boot_button.text().strip()
+            enabling = current_label.startswith("Enable")
+
+            if enabling:
+                title = "Enable Syncthing Start on Boot"
+                message = "This will add the Syncthing startup entry to the selected SD card.\n\nContinue?"
+                done_title = "Syncthing Enabled"
+                done_message = "Syncthing start on boot has been enabled on the selected SD card."
+            else:
+                title = "Disable Syncthing Start on Boot"
+                message = "This will remove the Syncthing startup entry from the selected SD card.\n\nContinue?"
+                done_title = "Syncthing Disabled"
+                done_message = "Syncthing start on boot has been disabled on the selected SD card."
+
+            confirm = QMessageBox.question(
+                self,
+                title,
+                message,
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes,
+            )
+            if confirm != QMessageBox.StandardButton.Yes:
+                return
+
+            try:
+                toggle_syncthing_start_on_boot_local(sd_root)
+                QMessageBox.information(self, done_title, done_message)
+                self.refresh_status()
+            except Exception as e:
+                QMessageBox.critical(self, "Error", str(e))
+            return
+
         if not self.connection.is_connected():
             return
 
@@ -1636,6 +2574,9 @@ class ScriptsTab(QWidget):
             QMessageBox.critical(self, "Error", str(e))
 
     def open_syncthing_web_config(self):
+        if self.is_offline_mode():
+            return
+
         if not self.connection.is_connected():
             return
 
@@ -1651,6 +2592,32 @@ class ScriptsTab(QWidget):
         webbrowser.open(f"http://{host}:8384")
 
     def uninstall_syncthing(self):
+        if self.is_offline_mode():
+            sd_root = self.get_offline_sd_root()
+            if not sd_root:
+                QMessageBox.critical(self, "Error", "Select an Offline SD Card first.")
+                return
+
+            confirm = QMessageBox.question(
+                self,
+                "Uninstall Syncthing",
+                (
+                    "This will remove syncthing.sh and delete the full Syncthing config folder from the selected SD card.\n\n"
+                    "This also removes the Syncthing device identity/config from that SD card.\n\n"
+                    "Continue?"
+                ),
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if confirm != QMessageBox.StandardButton.Yes:
+                return
+
+            def task(log):
+                return uninstall_syncthing_local(sd_root, log)
+
+            self.start_worker(task, "Syncthing uninstalled successfully from the selected SD card.")
+            return
+
         if not self.connection.is_connected():
             return
 
@@ -1675,6 +2642,32 @@ class ScriptsTab(QWidget):
         self.start_worker(task, "Syncthing uninstalled successfully.")
 
     def install_ra_viewer(self):
+        if self.is_offline_mode():
+            sd_root = self.get_offline_sd_root()
+            if not sd_root:
+                QMessageBox.critical(self, "Error", "Select an Offline SD Card first.")
+                return
+
+            proceed = QMessageBox.question(
+                self,
+                "Install RA Viewer",
+                (
+                    "This will install RA Viewer on the selected SD card and prepare its helper files.\n\n"
+                    "After installation, open Edit Config and enter your RetroAchievements username and Web API key.\n\n"
+                    "Continue?"
+                ),
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes,
+            )
+            if proceed != QMessageBox.StandardButton.Yes:
+                return
+
+            def task(log):
+                return install_ra_viewer_local(sd_root, log)
+
+            self.start_worker(task, "RA Viewer installed successfully on the selected SD card.")
+            return
+
         if not self.connection.is_connected():
             return
 
@@ -1699,14 +2692,51 @@ class ScriptsTab(QWidget):
         self.start_worker(task, "RA Viewer installed successfully.")
 
     def edit_ra_viewer_config(self):
+        if self.is_offline_mode():
+            sd_root = self.get_offline_sd_root()
+            if not sd_root:
+                QMessageBox.critical(self, "Error", "Select an Offline SD Card first.")
+                return
+
+            dialog = RAViewerConfigDialog(parent=self, sd_root=sd_root)
+            if dialog.exec():
+                self.refresh_status()
+            return
+
         if not self.connection.is_connected():
             return
 
-        dialog = RAViewerConfigDialog(self.connection, self)
+        dialog = RAViewerConfigDialog(connection=self.connection, parent=self)
         if dialog.exec():
             self.refresh_status()
 
     def uninstall_ra_viewer(self):
+        if self.is_offline_mode():
+            sd_root = self.get_offline_sd_root()
+            if not sd_root:
+                QMessageBox.critical(self, "Error", "Select an Offline SD Card first.")
+                return
+
+            confirm = QMessageBox.question(
+                self,
+                "Uninstall RA Viewer",
+                (
+                    "This will remove ra_viewer.sh and delete the full RA Viewer config folder from the selected SD card.\n\n"
+                    "This also removes the saved RetroAchievements username and API key from that SD card.\n\n"
+                    "Continue?"
+                ),
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if confirm != QMessageBox.StandardButton.Yes:
+                return
+
+            def task(log):
+                return uninstall_ra_viewer_local(sd_root, log)
+
+            self.start_worker(task, "RA Viewer uninstalled successfully from the selected SD card.")
+            return
+
         if not self.connection.is_connected():
             return
 
@@ -1715,7 +2745,7 @@ class ScriptsTab(QWidget):
             "Uninstall RA Viewer",
             (
                 "This will remove ra_viewer.sh and delete the full RA Viewer config folder.\n\n"
-                "This also removes the saved RetroAchievements username and API key "
+                "This also removes the saved RetroAchievements username and Web API key "
                 "from this MiSTer.\n\n"
                 "Continue?"
             ),
@@ -1731,6 +2761,22 @@ class ScriptsTab(QWidget):
         self.start_worker(task, "RA Viewer uninstalled successfully.")
 
     def open_scripts_folder(self):
+        if self.is_offline_mode():
+            sd_root = self.get_offline_sd_root()
+            if not sd_root:
+                QMessageBox.warning(
+                    self,
+                    "Open Scripts Folder",
+                    "Select an Offline SD Card first.",
+                )
+                return
+
+            try:
+                open_scripts_folder_local(sd_root)
+            except Exception as e:
+                QMessageBox.critical(self, "Error", str(e))
+            return
+
         host = self.connection.host
         if not host:
             QMessageBox.warning(

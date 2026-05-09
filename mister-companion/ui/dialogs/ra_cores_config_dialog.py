@@ -1,4 +1,5 @@
 import traceback
+from pathlib import Path
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
@@ -15,15 +16,18 @@ from PyQt6.QtWidgets import (
 
 from core.extras_ra_cores import (
     read_ra_config as backend_read_ra_config,
+    read_ra_config_local as backend_read_ra_config_local,
     write_ra_config as backend_write_ra_config,
+    write_ra_config_local as backend_write_ra_config_local,
 )
 
 
 class RetroAchievementsConfigDialog(QDialog):
-    def __init__(self, parent, connection):
+    def __init__(self, parent, connection=None, sd_root: str | Path | None = None):
         super().__init__(parent)
 
         self.connection = connection
+        self.sd_root = str(sd_root or "").strip()
         self.values = {}
 
         self.setWindowTitle("RetroAchievements Config")
@@ -32,15 +36,23 @@ class RetroAchievementsConfigDialog(QDialog):
         self.build_ui()
         self.load_config()
 
+    def is_offline_mode(self):
+        return bool(self.sd_root)
+
     def build_ui(self):
         main_layout = QVBoxLayout()
         main_layout.setContentsMargins(14, 14, 14, 14)
         main_layout.setSpacing(12)
         self.setLayout(main_layout)
 
+        if self.is_offline_mode():
+            location_text = "the selected Offline SD Card"
+        else:
+            location_text = "the connected MiSTer"
+
         intro_label = QLabel(
             "Edit the RetroAchievements settings stored in "
-            "/media/fat/retroachievements.cfg."
+            f"/media/fat/retroachievements.cfg on {location_text}."
         )
         intro_label.setWordWrap(True)
         main_layout.addWidget(intro_label)
@@ -123,7 +135,13 @@ class RetroAchievementsConfigDialog(QDialog):
 
     def load_config(self):
         try:
-            self.values = backend_read_ra_config(self.connection)
+            if self.is_offline_mode():
+                self.values = backend_read_ra_config_local(self.sd_root)
+            else:
+                if self.connection is None or not self.connection.is_connected():
+                    raise RuntimeError("Not connected to MiSTer.")
+                self.values = backend_read_ra_config(self.connection)
+
         except Exception as e:
             detail = traceback.format_exc()
             QMessageBox.warning(
@@ -161,7 +179,13 @@ class RetroAchievementsConfigDialog(QDialog):
 
     def save_config(self):
         try:
-            backend_write_ra_config(self.connection, self.get_values())
+            if self.is_offline_mode():
+                backend_write_ra_config_local(self.sd_root, self.get_values())
+            else:
+                if self.connection is None or not self.connection.is_connected():
+                    raise RuntimeError("Not connected to MiSTer.")
+                backend_write_ra_config(self.connection, self.get_values())
+
         except Exception as e:
             detail = traceback.format_exc()
             QMessageBox.warning(

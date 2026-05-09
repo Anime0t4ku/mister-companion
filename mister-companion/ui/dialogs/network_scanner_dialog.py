@@ -274,4 +274,5 @@ class NetworkScannerDialog(QDialog):
         if self.worker is not None and self.worker.isRunning():
             self.worker.stop()
             self.worker.wait(1000)
+
         super().closeEvent(event)

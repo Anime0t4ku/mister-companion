@@ -1,10 +1,16 @@
+import glob
 import html as html_lib
 import posixpath
 import re
 import shlex
+import shutil
+from pathlib import Path
 from urllib.parse import unquote, urljoin
 
 import requests
+
+
+MEDIA_FAT_PREFIX = "/media/fat"
 
 
 def _quote(value: str) -> str:
@@ -237,3 +243,152 @@ def _remove_glob(connection, pattern: str):
         f"done"
     )
     connection.run_command(command)
+
+
+def _local_path(sd_root: str, remote_path: str) -> Path:
+    root = Path(str(sd_root or "")).expanduser()
+
+    if not root.exists() or not root.is_dir():
+        raise RuntimeError("Selected Offline SD Card folder does not exist.")
+
+    if not remote_path.startswith(MEDIA_FAT_PREFIX):
+        raise RuntimeError(f"Unsupported MiSTer path: {remote_path}")
+
+    relative = remote_path[len(MEDIA_FAT_PREFIX):].lstrip("/")
+    return root / relative
+
+
+def _path_exists_local(sd_root: str, remote_path: str) -> bool:
+    try:
+        return _local_path(sd_root, remote_path).exists()
+    except Exception:
+        return False
+
+
+def _glob_exists_local(sd_root: str, remote_pattern: str) -> bool:
+    root = Path(str(sd_root or "")).expanduser()
+
+    if not root.exists() or not root.is_dir():
+        return False
+
+    if not remote_pattern.startswith(MEDIA_FAT_PREFIX):
+        return False
+
+    relative_pattern = remote_pattern[len(MEDIA_FAT_PREFIX):].lstrip("/")
+    local_pattern = str(root / relative_pattern)
+
+    return any(Path(match).exists() for match in glob.glob(local_pattern))
+
+
+def _ensure_local_dir(sd_root: str, remote_dir: str):
+    _local_path(sd_root, remote_dir).mkdir(parents=True, exist_ok=True)
+
+
+def _read_local_text(sd_root: str, remote_path: str) -> str:
+    try:
+        path = _local_path(sd_root, remote_path)
+        if not path.exists():
+            return ""
+        return path.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return ""
+
+
+def _write_local_text(sd_root: str, remote_path: str, text: str):
+    path = _local_path(sd_root, remote_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
+def _write_local_bytes(sd_root: str, remote_path: str, data: bytes):
+    path = _local_path(sd_root, remote_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(data)
+
+
+def _remove_local_path(sd_root: str, remote_path: str):
+    path = _local_path(sd_root, remote_path)
+
+    if path.is_dir():
+        shutil.rmtree(path, ignore_errors=True)
+    elif path.exists():
+        path.unlink()
+
+
+def _remove_local_glob(sd_root: str, remote_pattern: str):
+    root = Path(str(sd_root or "")).expanduser()
+
+    if not root.exists() or not root.is_dir():
+        return
+
+    if not remote_pattern.startswith(MEDIA_FAT_PREFIX):
+        return
+
+    relative_pattern = remote_pattern[len(MEDIA_FAT_PREFIX):].lstrip("/")
+    local_pattern = str(root / relative_pattern)
+
+    for match in glob.glob(local_pattern):
+        path = Path(match)
+        if path.is_dir():
+            shutil.rmtree(path, ignore_errors=True)
+        elif path.exists():
+            path.unlink()
+
+
+def _remove_if_empty_dir_local(sd_root: str, remote_path: str):
+    path = _local_path(sd_root, remote_path)
+
+    try:
+        if path.is_dir() and not any(path.iterdir()):
+            path.rmdir()
+    except Exception:
+        pass
+
+
+def _ensure_startup_line_local(sd_root: str, startup_path: str, line: str) -> bool:
+    current = _read_local_text(sd_root, startup_path)
+    normalized = current.replace("\r\n", "\n")
+
+    existing_lines = [entry.rstrip() for entry in normalized.split("\n") if entry.strip()]
+    if line in existing_lines:
+        return False
+
+    updated = normalized.rstrip("\n")
+    if updated:
+        updated += "\n"
+    updated += line + "\n"
+
+    _ensure_local_dir(sd_root, posixpath.dirname(startup_path))
+    _write_local_text(sd_root, startup_path, updated)
+    return True
+
+
+def _remove_startup_line_local(sd_root: str, startup_path: str, line: str) -> bool:
+    current = _read_local_text(sd_root, startup_path)
+    if not current:
+        return False
+
+    normalized = current.replace("\r\n", "\n")
+    original_lines = normalized.split("\n")
+    kept_lines = [entry for entry in original_lines if entry.strip() != line]
+
+    if kept_lines == original_lines:
+        return False
+
+    updated = "\n".join(kept_lines).rstrip("\n")
+    if updated:
+        updated += "\n"
+
+    _write_local_text(sd_root, startup_path, updated)
+    return True
+
+
+def _copy_local_file_to_sd(sd_root: str, local_file: str, remote_path: str):
+    source = Path(local_file)
+
+    if not source.exists() or not source.is_file():
+        raise RuntimeError(f"Selected file does not exist: {local_file}")
+
+    target = _local_path(sd_root, remote_path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, target)

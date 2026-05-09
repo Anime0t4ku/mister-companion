@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from PyQt6.QtCore import QThread, pyqtSignal
 from PyQt6.QtWidgets import (
     QCheckBox,
@@ -17,6 +19,8 @@ from PyQt6.QtWidgets import (
 from core.savemanager import (
     SYNC_ROOT,
     create_backup,
+    create_backup_local,
+    ensure_local_save_dirs,
     ensure_remote_save_dirs,
     ensure_savemanager_dirs,
     get_backup_count,
@@ -24,8 +28,10 @@ from core.savemanager import (
     list_backups_for_device,
     open_folder,
     restore_backup,
+    restore_backup_local,
     save_retention_setting,
     sync_saves,
+    sync_saves_local,
 )
 
 
@@ -131,10 +137,12 @@ class SaveManagerTab(QWidget):
         self.main_window = main_window
         self.connection = main_window.connection
         self.worker = None
+        self._save_dirs_prepared = False
+        self._prepared_mode_key = ""
 
         ensure_savemanager_dirs()
         self.build_ui()
-        self.update_connection_state()
+        self.update_connection_state(lightweight=True)
 
     def build_ui(self):
         main_layout = QVBoxLayout(self)
@@ -258,13 +266,48 @@ class SaveManagerTab(QWidget):
         self.open_sync_folder_button.clicked.connect(self.open_sync_folder)
         self.hide_log_button.clicked.connect(self.hide_log)
 
+    def is_offline_mode(self):
+        checker = getattr(self.main_window, "is_offline_mode", None)
+        return bool(checker()) if callable(checker) else False
+
+    def get_offline_sd_root(self):
+        getter = getattr(self.main_window, "get_offline_sd_root", None)
+        if callable(getter):
+            value = getter()
+        else:
+            value = self.main_window.config_data.get("offline_sd_root", "")
+
+        value = str(value or "").strip()
+        return Path(value) if value else None
+
+    def has_offline_sd_root(self):
+        root = self.get_offline_sd_root()
+        return bool(root and root.exists())
+
+    def can_use_savemanager(self):
+        if self.is_offline_mode():
+            return self.has_offline_sd_root()
+        return self.connection.is_connected()
+
     def get_current_profile_name(self):
+        if self.is_offline_mode():
+            return "Offline SD Card"
+
         if hasattr(self.main_window.connection_tab, "get_selected_profile_name"):
             return self.main_window.connection_tab.get_selected_profile_name()
+
         return ""
 
     def get_current_ip(self):
+        if self.is_offline_mode():
+            return ""
+
         return getattr(self.connection, "host", "") or ""
+
+    def _current_prepare_key(self):
+        if self.is_offline_mode():
+            return f"offline:{self.get_offline_sd_root()}"
+        return f"online:{self.get_current_ip()}"
 
     def update_backup_count(self):
         count = get_backup_count(
@@ -273,10 +316,54 @@ class SaveManagerTab(QWidget):
         )
         self.backup_count_label.setText(f"Current backups for this device: {count}")
 
-    def update_connection_state(self):
-        connected = self.connection.is_connected()
+    def _set_controls_enabled(self, available: bool):
+        self.backup_button.setEnabled(available)
+        self.restore_button.setEnabled(available)
+        self.sync_button.setEnabled(available)
+        self.retention_spin.setEnabled(available)
+        self.open_backup_folder_button.setEnabled(available)
+        self.open_sync_folder_button.setEnabled(available)
 
-        if connected and self.isVisible():
+    def update_connection_state(self, lightweight=True):
+        available = self.can_use_savemanager()
+
+        if not available:
+            self._save_dirs_prepared = False
+            self._prepared_mode_key = ""
+            self._set_controls_enabled(False)
+            self.update_backup_count()
+            return
+
+        self._set_controls_enabled(True)
+        self.update_backup_count()
+
+        if lightweight:
+            return
+
+        self.prepare_save_dirs()
+
+    def prepare_save_dirs(self):
+        if not self.can_use_savemanager():
+            return False
+
+        prepare_key = self._current_prepare_key()
+        if self._save_dirs_prepared and self._prepared_mode_key == prepare_key:
+            return True
+
+        if self.is_offline_mode():
+            try:
+                ensure_local_save_dirs(self.get_offline_sd_root())
+            except Exception as e:
+                QMessageBox.warning(
+                    self,
+                    "SaveManager",
+                    f"Could not prepare the local SD Card save folders.\n\n{e}",
+                )
+                self._save_dirs_prepared = False
+                self._prepared_mode_key = ""
+                self._set_controls_enabled(False)
+                return False
+        else:
             try:
                 ensure_remote_save_dirs(self.connection)
             except Exception as e:
@@ -285,16 +372,17 @@ class SaveManagerTab(QWidget):
                     "SaveManager",
                     f"Could not prepare the MiSTer save folders.\n\n{e}",
                 )
-                connected = False
+                self._save_dirs_prepared = False
+                self._prepared_mode_key = ""
+                self._set_controls_enabled(False)
+                return False
 
-        self.backup_button.setEnabled(connected)
-        self.restore_button.setEnabled(connected)
-        self.sync_button.setEnabled(connected)
-        self.retention_spin.setEnabled(connected)
-        self.open_backup_folder_button.setEnabled(connected)
-        self.open_sync_folder_button.setEnabled(connected)
+        self._save_dirs_prepared = True
+        self._prepared_mode_key = prepare_key
+        return True
 
-        self.update_backup_count()
+    def refresh_status(self):
+        self.update_connection_state(lightweight=False)
 
     def on_retention_changed(self, value):
         value = save_retention_setting(self.main_window.config_data, value)
@@ -317,7 +405,7 @@ class SaveManagerTab(QWidget):
         self.log_output.append(text)
 
     def set_busy(self, busy: bool):
-        enabled = not busy and self.connection.is_connected()
+        enabled = not busy and self.can_use_savemanager()
         self.backup_button.setEnabled(enabled)
         self.restore_button.setEnabled(enabled)
         self.sync_button.setEnabled(enabled)
@@ -349,28 +437,58 @@ class SaveManagerTab(QWidget):
             self.log_message(f"Operation failed: {error_message}")
             QMessageBox.warning(self, "SaveManager", error_message)
 
-    def backup_saves(self):
+    def require_available(self):
+        if self.is_offline_mode():
+            if not self.has_offline_sd_root():
+                QMessageBox.warning(self, "Error", "Select an Offline SD Card folder first.")
+                return False
+
+            if not self.prepare_save_dirs():
+                return False
+
+            return True
+
         if not self.connection.is_connected():
             QMessageBox.warning(self, "Error", "Connect to a MiSTer first.")
+            return False
+
+        if not self.prepare_save_dirs():
+            return False
+
+        return True
+
+    def backup_saves(self):
+        if not self.require_available():
             return
 
         profile_name = self.get_current_profile_name()
         ip_address = self.get_current_ip()
 
-        def task(log):
-            create_backup(
-                self.connection,
-                self.main_window.config_data,
-                profile_name=profile_name,
-                ip_address=ip_address,
-                log_callback=log,
-            )
+        if self.is_offline_mode():
+            sd_root = self.get_offline_sd_root()
+
+            def task(log):
+                create_backup_local(
+                    sd_root,
+                    self.main_window.config_data,
+                    profile_name=profile_name,
+                    ip_address=ip_address,
+                    log_callback=log,
+                )
+        else:
+            def task(log):
+                create_backup(
+                    self.connection,
+                    self.main_window.config_data,
+                    profile_name=profile_name,
+                    ip_address=ip_address,
+                    log_callback=log,
+                )
 
         self.start_worker(task)
 
     def restore_saves(self):
-        if not self.connection.is_connected():
-            QMessageBox.warning(self, "Error", "Connect to a MiSTer first.")
+        if not self.require_available():
             return
 
         profile_name = self.get_current_profile_name()
@@ -392,29 +510,49 @@ class SaveManagerTab(QWidget):
 
         backup_before_restore = dialog.backup_before_restore()
 
-        def task(log):
-            if backup_before_restore:
-                log("Creating safety backup before restore...")
-                create_backup(
-                    self.connection,
-                    self.main_window.config_data,
+        if self.is_offline_mode():
+            sd_root = self.get_offline_sd_root()
+
+            def task(log):
+                if backup_before_restore:
+                    log("Creating safety backup before restore...")
+                    create_backup_local(
+                        sd_root,
+                        self.main_window.config_data,
+                        profile_name=profile_name,
+                        ip_address=ip_address,
+                        log_callback=log,
+                    )
+                restore_backup_local(
+                    sd_root,
+                    selected_backup,
                     profile_name=profile_name,
                     ip_address=ip_address,
                     log_callback=log,
                 )
-            restore_backup(
-                self.connection,
-                selected_backup,
-                profile_name=profile_name,
-                ip_address=ip_address,
-                log_callback=log,
-            )
+        else:
+            def task(log):
+                if backup_before_restore:
+                    log("Creating safety backup before restore...")
+                    create_backup(
+                        self.connection,
+                        self.main_window.config_data,
+                        profile_name=profile_name,
+                        ip_address=ip_address,
+                        log_callback=log,
+                    )
+                restore_backup(
+                    self.connection,
+                    selected_backup,
+                    profile_name=profile_name,
+                    ip_address=ip_address,
+                    log_callback=log,
+                )
 
         self.start_worker(task)
 
     def sync_saves_action(self):
-        if not self.connection.is_connected():
-            QMessageBox.warning(self, "Error", "Connect to a MiSTer first.")
+        if not self.require_available():
             return
 
         dialog = SyncConfirmDialog(self)
@@ -425,20 +563,38 @@ class SaveManagerTab(QWidget):
         profile_name = self.get_current_profile_name()
         ip_address = self.get_current_ip()
 
-        def task(log):
-            if backup_before_sync:
-                log("Creating safety backup before sync...")
-                create_backup(
-                    self.connection,
-                    self.main_window.config_data,
-                    profile_name=profile_name,
-                    ip_address=ip_address,
+        if self.is_offline_mode():
+            sd_root = self.get_offline_sd_root()
+
+            def task(log):
+                if backup_before_sync:
+                    log("Creating safety backup before sync...")
+                    create_backup_local(
+                        sd_root,
+                        self.main_window.config_data,
+                        profile_name=profile_name,
+                        ip_address=ip_address,
+                        log_callback=log,
+                    )
+                sync_saves_local(
+                    sd_root,
                     log_callback=log,
                 )
-            sync_saves(
-                self.connection,
-                log_callback=log,
-            )
+        else:
+            def task(log):
+                if backup_before_sync:
+                    log("Creating safety backup before sync...")
+                    create_backup(
+                        self.connection,
+                        self.main_window.config_data,
+                        profile_name=profile_name,
+                        ip_address=ip_address,
+                        log_callback=log,
+                    )
+                sync_saves(
+                    self.connection,
+                    log_callback=log,
+                )
 
         self.start_worker(task)
 

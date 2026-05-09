@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from PyQt6.QtCore import QThread, Qt, pyqtSignal
 from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import (
@@ -20,20 +22,32 @@ from core.scripts_actions import (
     get_static_wallpaper_state,
     list_static_wallpapers,
 )
+from core.scripts_static_wallpaper import (
+    apply_static_wallpaper_local,
+    get_static_wallpaper_preview_bytes_local,
+    get_static_wallpaper_state_local,
+    list_static_wallpapers_local,
+)
 
 
 class _WallpaperListWorker(QThread):
     success = pyqtSignal(list, dict)
     error = pyqtSignal(str)
 
-    def __init__(self, connection):
+    def __init__(self, connection=None, sd_root=None):
         super().__init__()
         self.connection = connection
+        self.sd_root = Path(sd_root) if sd_root else None
 
     def run(self):
         try:
-            wallpapers = list_static_wallpapers(self.connection)
-            state = get_static_wallpaper_state(self.connection)
+            if self.sd_root is not None:
+                wallpapers = list_static_wallpapers_local(self.sd_root)
+                state = get_static_wallpaper_state_local(self.sd_root)
+            else:
+                wallpapers = list_static_wallpapers(self.connection)
+                state = get_static_wallpaper_state(self.connection)
+
             self.success.emit(wallpapers, state)
         except Exception as e:
             self.error.emit(str(e))
@@ -43,14 +57,19 @@ class _WallpaperPreviewWorker(QThread):
     success = pyqtSignal(bytes, str)
     error = pyqtSignal(str, str)
 
-    def __init__(self, connection, remote_path: str):
+    def __init__(self, connection=None, remote_path: str = "", sd_root=None):
         super().__init__()
         self.connection = connection
         self.remote_path = remote_path
+        self.sd_root = Path(sd_root) if sd_root else None
 
     def run(self):
         try:
-            data = get_static_wallpaper_preview_bytes(self.connection, self.remote_path)
+            if self.sd_root is not None:
+                data = get_static_wallpaper_preview_bytes_local(self.sd_root, self.remote_path)
+            else:
+                data = get_static_wallpaper_preview_bytes(self.connection, self.remote_path)
+
             self.success.emit(data, self.remote_path)
         except Exception as e:
             self.error.emit(str(e), self.remote_path)
@@ -60,23 +79,29 @@ class _WallpaperApplyWorker(QThread):
     success = pyqtSignal(str)
     error = pyqtSignal(str)
 
-    def __init__(self, connection, remote_path: str):
+    def __init__(self, connection=None, remote_path: str = "", sd_root=None):
         super().__init__()
         self.connection = connection
         self.remote_path = remote_path
+        self.sd_root = Path(sd_root) if sd_root else None
 
     def run(self):
         try:
-            apply_static_wallpaper(self.connection, self.remote_path, reload_menu=True)
+            if self.sd_root is not None:
+                apply_static_wallpaper_local(self.sd_root, self.remote_path)
+            else:
+                apply_static_wallpaper(self.connection, self.remote_path, reload_menu=True)
+
             self.success.emit(self.remote_path)
         except Exception as e:
             self.error.emit(str(e))
 
 
 class StaticWallpaperDialog(QDialog):
-    def __init__(self, connection, parent=None):
+    def __init__(self, connection=None, parent=None, sd_root=None):
         super().__init__(parent)
         self.connection = connection
+        self.sd_root = Path(sd_root) if sd_root else None
 
         self.wallpapers = []
         self.current_preview_path = ""
@@ -85,7 +110,6 @@ class StaticWallpaperDialog(QDialog):
         self.list_worker = None
         self.apply_worker = None
 
-        # Keep preview workers alive until they finish.
         self.preview_workers = set()
         self.preview_request_id = 0
 
@@ -99,6 +123,9 @@ class StaticWallpaperDialog(QDialog):
         self.build_ui()
         self.refresh_wallpapers()
 
+    def is_offline_mode(self):
+        return self.sd_root is not None
+
     def build_ui(self):
         outer = QVBoxLayout(self)
         outer.setContentsMargins(12, 12, 12, 12)
@@ -109,10 +136,18 @@ class StaticWallpaperDialog(QDialog):
         title.setStyleSheet("font-size: 16px; font-weight: bold;")
         outer.addWidget(title)
 
-        subtitle = QLabel(
-            "Choose a wallpaper from /media/fat/wallpapers. "
-            "The selected wallpaper will be applied and the MiSTer menu will reload."
-        )
+        if self.is_offline_mode():
+            subtitle_text = (
+                "Choose a wallpaper from /media/fat/wallpapers on the selected Offline SD Card. "
+                "The selected wallpaper will be copied to the SD Card menu wallpaper file."
+            )
+        else:
+            subtitle_text = (
+                "Choose a wallpaper from /media/fat/wallpapers. "
+                "The selected wallpaper will be applied and the MiSTer menu will reload."
+            )
+
+        subtitle = QLabel(subtitle_text)
         subtitle.setWordWrap(True)
         subtitle.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         outer.addWidget(subtitle)
@@ -120,7 +155,6 @@ class StaticWallpaperDialog(QDialog):
         content_row = QHBoxLayout()
         content_row.setSpacing(12)
 
-        # Left column
         left_panel = QVBoxLayout()
         left_panel.setSpacing(8)
 
@@ -149,7 +183,6 @@ class StaticWallpaperDialog(QDialog):
         left_container.setLayout(left_panel)
         content_row.addWidget(left_container, 0)
 
-        # Right column
         right_panel = QVBoxLayout()
         right_panel.setSpacing(8)
 
@@ -194,20 +227,17 @@ class StaticWallpaperDialog(QDialog):
     def closeEvent(self, event):
         self._closing = True
 
-        # Prevent more UI-triggered actions during shutdown.
         self.refresh_button.setEnabled(False)
         self.apply_button.setEnabled(False)
         self.wallpaper_list.setEnabled(False)
         self.close_button.setEnabled(False)
 
-        # Wait for list/apply workers if still active.
         if self.list_worker is not None and self.list_worker.isRunning():
             self.list_worker.wait(3000)
 
         if self.apply_worker is not None and self.apply_worker.isRunning():
             self.apply_worker.wait(3000)
 
-        # Wait for any preview workers still running.
         for worker in list(self.preview_workers):
             if worker.isRunning():
                 worker.wait(3000)
@@ -242,10 +272,12 @@ class StaticWallpaperDialog(QDialog):
         self.current_preview_path = ""
         self.current_preview_pixmap = None
 
-        # Invalidate any previous preview requests.
         self.preview_request_id += 1
 
-        self.list_worker = _WallpaperListWorker(self.connection)
+        self.list_worker = _WallpaperListWorker(
+            connection=self.connection,
+            sd_root=self.sd_root,
+        )
         self.list_worker.success.connect(self.on_wallpapers_loaded)
         self.list_worker.error.connect(self.on_wallpapers_error)
         self.list_worker.finished.connect(self.on_list_worker_finished)
@@ -332,7 +364,6 @@ class StaticWallpaperDialog(QDialog):
             self.current_preview_pixmap = None
             self.apply_button.setEnabled(False)
 
-            # Invalidate previous preview requests.
             self.preview_request_id += 1
             return
 
@@ -352,11 +383,14 @@ class StaticWallpaperDialog(QDialog):
         if self._closing or not remote_path:
             return
 
-        # Create a new request id. Older results will be ignored.
         self.preview_request_id += 1
         request_id = self.preview_request_id
 
-        worker = _WallpaperPreviewWorker(self.connection, remote_path)
+        worker = _WallpaperPreviewWorker(
+            connection=self.connection,
+            remote_path=remote_path,
+            sd_root=self.sd_root,
+        )
         self.preview_workers.add(worker)
 
         worker.success.connect(
@@ -437,10 +471,15 @@ class StaticWallpaperDialog(QDialog):
         item = self.wallpaper_list.currentItem()
         name = item.text().strip() if item else "selected wallpaper"
 
+        if self.is_offline_mode():
+            confirm_text = f"Apply '{name}' as the static wallpaper on the Offline SD Card?"
+        else:
+            confirm_text = f"Apply '{name}' as the static wallpaper?\n\nThe MiSTer menu will be reloaded."
+
         confirm = QMessageBox.question(
             self,
             "Apply Static Wallpaper",
-            f"Apply '{name}' as the static wallpaper?\n\nThe MiSTer menu will be reloaded.",
+            confirm_text,
         )
         if confirm != QMessageBox.StandardButton.Yes:
             return
@@ -451,7 +490,11 @@ class StaticWallpaperDialog(QDialog):
         self.set_busy(True)
         self.status_label.setText(f"Applying {name}...")
 
-        self.apply_worker = _WallpaperApplyWorker(self.connection, remote_path)
+        self.apply_worker = _WallpaperApplyWorker(
+            connection=self.connection,
+            remote_path=remote_path,
+            sd_root=self.sd_root,
+        )
         self.apply_worker.success.connect(self.on_apply_success)
         self.apply_worker.error.connect(self.on_apply_error)
         self.apply_worker.finished.connect(self.on_apply_finished)
@@ -473,10 +516,16 @@ class StaticWallpaperDialog(QDialog):
                 break
 
         self.status_label.setText(f"Applied: {name or remote_path}")
+
+        if self.is_offline_mode():
+            message = f"{name or 'Wallpaper'} has been applied to the Offline SD Card."
+        else:
+            message = f"{name or 'Wallpaper'} has been applied.\n\nThe MiSTer menu has been reloaded."
+
         QMessageBox.information(
             self,
             "Static Wallpaper Applied",
-            f"{name or 'Wallpaper'} has been applied.\n\nThe MiSTer menu has been reloaded.",
+            message,
         )
         self.accept()
 

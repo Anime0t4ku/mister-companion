@@ -2,13 +2,13 @@
   "version": 1,
   "items": [
     {
-      "id": "v3-stable",
-      "date": "2026-05-06",
+      "id": "v4-stable",
+      "date": "2026-05-08",
       "type": "update",
-      "headline": "MiSTer Companion v3.9.4 Released",
-      "message": "MiSTer Companion v3.9.4 is now available.\n\nThis update improves the RetroAchievement Cores installer.\n\nRetroAchievement Cores now use the MGL launcher method instead of the old separate MiSTer_RA.ini setup. RA cores are launched from the new _RA_Cores folder using dedicated .mgl launchers.\n\nExisting installs using the old MiSTer_RA.ini method can be migrated automatically from the Extras tab.\n\nSpecial thanks to sage2050, whose MiSTer_RA script served as the basis for this new install method.\n\nThe stable MiSTer main binary and stable cores remain untouched.\n\nYou can download the latest stable release below.",
-      "url": "https://github.com/Anime0t4ku/mister-companion/releases/tag/v3.9.4",
-      "url_label": "Download v3.9.4"
+      "headline": "MiSTer Companion v4.0.0 Released",
+      "message": "MiSTer Companion v4.0.0 is now available.\n\nThis is a major update with a complete UI overhaul, Offline Mode, improved performance, an update checker, a RetroAchievements viewer, expanded MiSTer Settings features, and many more improvements than can reasonably fit in this news update.\n\nImportant: Pico-8 and OpenBOR have been removed from the Extras tab in v4.0.0 because they have moved to MiSTer Frontier and their installation behavior has changed. If you currently installed Pico-8 or OpenBOR through the Extras tab, please remove them before upgrading to MiSTer Companion v4.0.0.\n\nAfter upgrading, Pico-8 and OpenBOR can be installed again by enabling the MiSTer Frontier source in the update_all configuration.\n\nYou can download the latest stable release below.",
+      "url": "https://github.com/Anime0t4ku/mister-companion/releases/tag/v4.0.0",
+      "url_label": "Download v4.0.0"
     },
     {
       "id": "macos-support",
