@@ -1,3 +1,4 @@
+import sys
 import webbrowser
 from pathlib import Path
 
@@ -60,6 +61,9 @@ APP_MODE_ONLINE = "online"
 APP_MODE_OFFLINE = "offline"
 
 FEEDBACK_URL = "https://github.com/Anime0t4ku/mister-companion/issues/new/choose"
+
+UI_SCALE_OPTIONS = [75, 80, 85, 90, 95, 100, 105, 110, 115, 120, 125]
+DEFAULT_UI_SCALE_PERCENT = 100
 
 
 class UpdateCheckWorker(QThread):
@@ -198,8 +202,51 @@ class CustomTitleBar(QWidget):
         super().resizeEvent(event)
         self.update_logo_pixmap()
 
+    def start_native_window_drag(self) -> bool:
+        if sys.platform.startswith("win"):
+            try:
+                import ctypes
+
+                hwnd = int(self.main_window.winId())
+
+                WM_NCLBUTTONDOWN = 0x00A1
+                HTCAPTION = 2
+
+                ctypes.windll.user32.ReleaseCapture()
+                ctypes.windll.user32.SendMessageW(hwnd, WM_NCLBUTTONDOWN, HTCAPTION, 0)
+                return True
+            except Exception:
+                return False
+
+        window_handle = self.main_window.windowHandle()
+
+        if window_handle is not None:
+            try:
+                return bool(window_handle.startSystemMove())
+            except Exception:
+                return False
+
+        return False
+
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
+            clicked_widget = self.childAt(event.position().toPoint())
+
+            if clicked_widget in {
+                self.minimize_button,
+                self.maximize_button,
+                self.close_button,
+            }:
+                super().mousePressEvent(event)
+                return
+
+            self.dragging = False
+            self.drag_position = QPoint()
+
+            if self.start_native_window_drag():
+                event.accept()
+                return
+
             self.dragging = True
             self.drag_position = (
                 event.globalPosition().toPoint()
@@ -212,20 +259,6 @@ class CustomTitleBar(QWidget):
 
     def mouseMoveEvent(self, event):
         if self.dragging and event.buttons() & Qt.MouseButton.LeftButton:
-            if self.main_window.isMaximized():
-                global_pos = event.globalPosition().toPoint()
-                old_width = self.main_window.width()
-
-                self.main_window.showNormal()
-                self.main_window.update_maximize_button()
-                self.main_window.apply_window_corner_radius()
-
-                new_x = global_pos.x() - int(old_width * 0.5)
-                new_y = global_pos.y() - 22
-
-                self.main_window.move(new_x, new_y)
-                self.drag_position = QPoint(int(old_width * 0.5), 22)
-
             self.main_window.move(event.globalPosition().toPoint() - self.drag_position)
             event.accept()
             return
@@ -234,10 +267,21 @@ class CustomTitleBar(QWidget):
 
     def mouseReleaseEvent(self, event):
         self.dragging = False
+        self.drag_position = QPoint()
         super().mouseReleaseEvent(event)
 
     def mouseDoubleClickEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
+            clicked_widget = self.childAt(event.position().toPoint())
+
+            if clicked_widget in {
+                self.minimize_button,
+                self.maximize_button,
+                self.close_button,
+            }:
+                super().mouseDoubleClickEvent(event)
+                return
+
             self.main_window.toggle_maximize_restore()
             event.accept()
             return
@@ -282,13 +326,20 @@ class MainWindow(QMainWindow):
         self._resize_start_pos = QPoint()
         self._resize_start_geometry = QRect()
 
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Window)
+        self.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.Window
+            | Qt.WindowType.WindowSystemMenuHint
+            | Qt.WindowType.WindowMinimizeButtonHint
+            | Qt.WindowType.WindowMaximizeButtonHint
+        )
         self.setMouseTracking(True)
-        self.setMinimumSize(900, 650)
+        self.setMinimumSize(1100, 830)
 
         self.setWindowTitle(APP_NAME)
-        self.resize(1100, 980)
+        self.apply_default_window_size()
         self.restore_window_geometry()
+        QTimer.singleShot(0, self.enable_windows_snap_styles)
 
         if ICON_PATH.exists():
             self.setWindowIcon(QIcon(str(ICON_PATH)))
@@ -336,6 +387,12 @@ class MainWindow(QMainWindow):
         self.retroachievements_button.clicked.connect(self.open_retroachievements)
         bottom_bar.addWidget(self.retroachievements_button)
 
+        self.scale_combo = QComboBox()
+        self.scale_combo.setToolTip("UI Scale")
+        self.scale_combo.addItems([f"{value}%" for value in UI_SCALE_OPTIONS])
+        self.scale_combo.setMinimumWidth(78)
+        bottom_bar.addWidget(self.scale_combo)
+
         self.theme_combo = QComboBox()
         self.theme_combo.addItems(["Auto", "Light", "Dark"])
         bottom_bar.addWidget(self.theme_combo)
@@ -359,10 +416,25 @@ class MainWindow(QMainWindow):
             self.config_data["theme_mode"] = saved_theme
             save_config(self.config_data)
 
+        saved_scale_percent = self.normalize_ui_scale_percent(
+            self.config_data.get("ui_scale_percent", DEFAULT_UI_SCALE_PERCENT)
+        )
+
+        if self.config_data.get("ui_scale_percent") != saved_scale_percent:
+            self.config_data["ui_scale_percent"] = saved_scale_percent
+            save_config(self.config_data)
+
+        scale_text = f"{saved_scale_percent}%"
+        scale_index = self.scale_combo.findText(scale_text)
+        if scale_index < 0:
+            scale_index = self.scale_combo.findText(f"{DEFAULT_UI_SCALE_PERCENT}%")
+        self.scale_combo.setCurrentIndex(max(0, scale_index))
+
         theme_index_map = {"auto": 0, "light": 1, "dark": 2}
         self.theme_combo.setCurrentIndex(theme_index_map.get(saved_theme, 0))
+        self.scale_combo.currentIndexChanged.connect(self.on_ui_scale_changed)
         self.theme_combo.currentIndexChanged.connect(self.on_theme_changed)
-        self.update_title_bar_logo(saved_theme)
+        self.refresh_theme()
 
         self.flash_tab = FlashTab(self)
         self.tabs.addTab(self.flash_tab, self.tab_icon("flash_sd"), "Flash SD")
@@ -443,6 +515,69 @@ class MainWindow(QMainWindow):
 
         webbrowser.open(FEEDBACK_URL)
 
+    def apply_default_window_size(self):
+        preferred_width = 1100
+        preferred_height = 980
+        screen_margin = 80
+
+        screen = QApplication.primaryScreen()
+        if screen is None:
+            self.resize(preferred_width, preferred_height)
+            return
+
+        available = screen.availableGeometry()
+
+        width = min(
+            preferred_width,
+            max(self.minimumWidth(), available.width() - screen_margin),
+        )
+        height = min(
+            preferred_height,
+            max(self.minimumHeight(), available.height() - screen_margin),
+        )
+
+        self.resize(width, height)
+        self._center_on_primary_screen()
+
+    def enable_windows_snap_styles(self):
+        if not sys.platform.startswith("win"):
+            return
+
+        try:
+            import ctypes
+
+            hwnd = int(self.winId())
+
+            GWL_STYLE = -16
+            WS_THICKFRAME = 0x00040000
+            WS_SYSMENU = 0x00080000
+            WS_MINIMIZEBOX = 0x00020000
+            WS_MAXIMIZEBOX = 0x00010000
+
+            SWP_NOMOVE = 0x0002
+            SWP_NOSIZE = 0x0001
+            SWP_NOZORDER = 0x0004
+            SWP_NOACTIVATE = 0x0010
+            SWP_FRAMECHANGED = 0x0020
+
+            user32 = ctypes.windll.user32
+            style = user32.GetWindowLongW(hwnd, GWL_STYLE)
+            style |= WS_THICKFRAME | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX
+            user32.SetWindowLongW(hwnd, GWL_STYLE, style)
+            user32.SetWindowPos(
+                hwnd,
+                0,
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
+            )
+
+            self.apply_windows_native_corner_radius()
+        except Exception:
+            pass
+
     def update_title_bar_logo(self, mode: str = ""):
         if not hasattr(self, "title_bar"):
             return
@@ -453,7 +588,39 @@ class MainWindow(QMainWindow):
         resolved_mode = resolve_theme_mode(mode)
         self.title_bar.set_logo_mode(resolved_mode)
 
+    def apply_windows_native_corner_radius(self):
+        if not sys.platform.startswith("win"):
+            return
+
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            hwnd = int(self.winId())
+
+            DWMWA_WINDOW_CORNER_PREFERENCE = 33
+            DWMWCP_DEFAULT = 0
+            DWMWCP_DONOTROUND = 1
+            DWMWCP_ROUND = 2
+            DWMWCP_ROUNDSMALL = 3
+
+            preference = ctypes.c_int(DWMWCP_ROUND)
+
+            ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                wintypes.HWND(hwnd),
+                wintypes.DWORD(DWMWA_WINDOW_CORNER_PREFERENCE),
+                ctypes.byref(preference),
+                ctypes.sizeof(preference),
+            )
+        except Exception:
+            pass
+
     def apply_window_corner_radius(self):
+        if sys.platform.startswith("win"):
+            self.clearMask()
+            self.apply_windows_native_corner_radius()
+            return
+
         if self.isMaximized() or self.isFullScreen():
             self.clearMask()
             return
@@ -941,10 +1108,44 @@ class MainWindow(QMainWindow):
         if hasattr(self, "connection_tab"):
             self.connection_tab.sync_status_from_main_window()
 
+    def normalize_ui_scale_percent(self, value) -> int:
+        try:
+            if isinstance(value, str):
+                value = value.strip().replace("%", "")
+            percent = int(value)
+        except Exception:
+            percent = DEFAULT_UI_SCALE_PERCENT
+
+        if percent not in UI_SCALE_OPTIONS:
+            percent = min(UI_SCALE_OPTIONS, key=lambda option: abs(option - percent))
+
+        return percent
+
+    def get_ui_scale_percent(self) -> int:
+        return self.normalize_ui_scale_percent(
+            self.config_data.get("ui_scale_percent", DEFAULT_UI_SCALE_PERCENT)
+        )
+
     def refresh_theme(self):
         mode = self.config_data.get("theme_mode", "auto")
-        apply_theme(self.app, mode)
+        ui_scale_percent = self.get_ui_scale_percent()
+        apply_theme(self.app, mode, ui_scale_percent)
         self.update_title_bar_logo(mode)
+
+    def on_ui_scale_changed(self, *_):
+        if self._closing:
+            return
+
+        percent = self.normalize_ui_scale_percent(self.scale_combo.currentText())
+
+        if self.config_data.get("ui_scale_percent") == percent:
+            self.refresh_theme()
+            return
+
+        self.config_data["ui_scale_percent"] = percent
+        save_config(self.config_data)
+
+        self.refresh_theme()
 
     def on_theme_changed(self, *_):
         if self._closing:
