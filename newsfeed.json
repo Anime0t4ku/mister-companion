@@ -9,6 +9,15 @@
       "message": "Welcome to the new and improved MiSTer Companion.\n\nVersion 4 brings a refreshed interface, Offline Mode, improved performance, expanded MiSTer Settings features, a RetroAchievements viewer, and many other improvements throughout the app.\n\nIf you run into any issues or have suggestions, please use the Feedback button in MiSTer Companion to report them.\n\nIf you enjoy the app and would like to support its continued development, the Support button is there for anyone who wants to help out. Thank you for using MiSTer Companion.",
       "url": "",
       "url_label": ""
+    },
+    {
+      "id": "ra-viewer-update",
+      "date": "2026-05-09",
+      "type": "update",
+      "headline": "ra_viewer Updated",
+      "message": "The ra_viewer script has been updated.\n\nIt is advised to remove the current ra_viewer install and reinstall it from the Scripts tab.\n\nThis fixes an issue where, due to an error in the code, only Hardcore Mode achievements were shown instead of all achievements.\n\nThe install behavior has also been improved and should now be faster.",
+      "url": "",
+      "url_label": ""
     }
   ]
 }
