@@ -234,6 +234,7 @@ def _patch_mister_ini_for_zaparoo_launcher(text: str) -> str:
     if start == -1:
         patched_lines = [
             "[MiSTer]",
+            "",
             *ZAPAROO_LAUNCHER_INI_BLOCK.splitlines(),
             "",
         ]
@@ -252,6 +253,7 @@ def _patch_mister_ini_for_zaparoo_launcher(text: str) -> str:
     if cleaned_body:
         cleaned_body.append("")
 
+    cleaned_body.append("")
     cleaned_body.extend(ZAPAROO_LAUNCHER_INI_BLOCK.splitlines())
 
     if after and after[0].strip():
@@ -280,6 +282,12 @@ def _remove_zaparoo_launcher_from_mister_ini(text: str) -> str:
 
     while cleaned_body and not cleaned_body[-1].strip():
         cleaned_body.pop()
+
+    while cleaned_body and len(cleaned_body) >= 2:
+        if cleaned_body[-1].strip() == "" and cleaned_body[-2].strip() == "":
+            cleaned_body.pop()
+        else:
+            break
 
     if cleaned_body and after and after[0].strip():
         cleaned_body.append("")
