@@ -357,24 +357,73 @@ def easy_mode_values_from_ini_settings(settings):
     composite_sync = settings.get("composite_sync", "1").strip()
     vga_sog = settings.get("vga_sog", "0").strip()
     vga_scaler = settings.get("vga_scaler", "0").strip()
+    forced_scandoubler = settings.get("forced_scandoubler", "0").strip()
 
-    if vga_mode == "ypbpr":
-        values["analogue"] = "Component (YPbPr)"
-    elif vga_mode == "svideo":
+    if (
+        vga_mode == "rgb"
+        and composite_sync == "1"
+        and vga_sog == "0"
+        and vga_scaler == "0"
+        and forced_scandoubler == "0"
+    ):
+        values["analogue"] = "RGBS (SCART)"
+
+    elif (
+        vga_mode == "rgb"
+        and composite_sync == "0"
+        and vga_sog == "0"
+        and vga_scaler == "0"
+        and forced_scandoubler == "0"
+    ):
+        values["analogue"] = "RGBHV (VGA 15 kHz)"
+
+    elif (
+        vga_mode == "rgb"
+        and composite_sync == "1"
+        and vga_sog == "1"
+        and vga_scaler == "0"
+        and forced_scandoubler == "0"
+    ):
+        values["analogue"] = "RGsB (Sync-on-Green)"
+
+    elif (
+        vga_mode == "ypbpr"
+        and composite_sync == "0"
+        and vga_sog == "1"
+        and vga_scaler == "0"
+        and forced_scandoubler == "0"
+    ):
+        values["analogue"] = "YPbPr (Component)"
+
+    elif (
+        vga_mode == "svideo"
+        and composite_sync == "1"
+        and vga_sog == "0"
+        and vga_scaler == "0"
+        and forced_scandoubler == "0"
+    ):
         values["analogue"] = "S-Video"
-    elif vga_mode == "rgb":
-        if vga_scaler == "1" and composite_sync == "0" and vga_sog == "0":
-            values["analogue"] = "VGA Monitor"
-        elif composite_sync == "1" and vga_sog == "1":
-            values["analogue"] = "RGB (PVM/BVM SoG Alt)"
-        elif composite_sync == "1" and vga_sog == "0":
-            values["analogue"] = "RGB (PVM/BVM)"
-        elif composite_sync == "0" and vga_sog == "0":
-            values["analogue"] = "VGA Monitor"
-        else:
-            values["analogue"] = "RGB (Consumer TV)"
+
+    elif (
+        vga_mode == "cvbs"
+        and composite_sync == "1"
+        and vga_sog == "0"
+        and vga_scaler == "0"
+        and forced_scandoubler == "0"
+    ):
+        values["analogue"] = "Composite (CVBS)"
+
+    elif (
+        vga_mode == "rgb"
+        and composite_sync == "0"
+        and vga_sog == "0"
+        and vga_scaler == "1"
+        and forced_scandoubler == "0"
+    ):
+        values["analogue"] = "VGA Scaler (31 kHz+)"
+
     else:
-        values["analogue"] = "RGB (Consumer TV)"
+        values["analogue"] = "Custom"
 
     logo = settings.get("logo", "1").strip()
     values["logo"] = "Disabled" if logo == "0" else "Enabled"
@@ -415,41 +464,54 @@ def build_easy_mode_settings(easy_values):
 
     analogue = easy_values.get("analogue", "").strip()
 
-    if analogue == "RGB (Consumer TV)":
+    if analogue == "RGBS (SCART)":
         settings["vga_mode"] = "rgb"
         settings["composite_sync"] = "1"
         settings["vga_sog"] = "0"
         settings["vga_scaler"] = "0"
+        settings["forced_scandoubler"] = "0"
 
-    elif analogue == "RGB (PVM/BVM)":
+    elif analogue == "RGBHV (VGA 15 kHz)":
         settings["vga_mode"] = "rgb"
-        settings["composite_sync"] = "1"
+        settings["composite_sync"] = "0"
         settings["vga_sog"] = "0"
         settings["vga_scaler"] = "0"
+        settings["forced_scandoubler"] = "0"
 
-    elif analogue == "RGB (PVM/BVM SoG Alt)":
+    elif analogue == "RGsB (Sync-on-Green)":
         settings["vga_mode"] = "rgb"
         settings["composite_sync"] = "1"
         settings["vga_sog"] = "1"
         settings["vga_scaler"] = "0"
+        settings["forced_scandoubler"] = "0"
 
-    elif analogue == "Component (YPbPr)":
+    elif analogue == "YPbPr (Component)":
         settings["vga_mode"] = "ypbpr"
         settings["composite_sync"] = "0"
-        settings["vga_sog"] = "0"
+        settings["vga_sog"] = "1"
         settings["vga_scaler"] = "0"
+        settings["forced_scandoubler"] = "0"
 
     elif analogue == "S-Video":
         settings["vga_mode"] = "svideo"
-        settings["composite_sync"] = "0"
+        settings["composite_sync"] = "1"
         settings["vga_sog"] = "0"
         settings["vga_scaler"] = "0"
+        settings["forced_scandoubler"] = "0"
 
-    elif analogue == "VGA Monitor":
+    elif analogue == "Composite (CVBS)":
+        settings["vga_mode"] = "cvbs"
+        settings["composite_sync"] = "1"
+        settings["vga_sog"] = "0"
+        settings["vga_scaler"] = "0"
+        settings["forced_scandoubler"] = "0"
+
+    elif analogue == "VGA Scaler (31 kHz+)":
         settings["vga_mode"] = "rgb"
         settings["composite_sync"] = "0"
         settings["vga_sog"] = "0"
         settings["vga_scaler"] = "1"
+        settings["forced_scandoubler"] = "0"
 
     logo = easy_values.get("logo", "").strip()
     settings["logo"] = "1" if logo == "Enabled" else "0"

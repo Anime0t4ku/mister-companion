@@ -54,7 +54,6 @@ class SoftRebootWorker(QThread):
             self.failed.emit(str(e))
 
 
-
 class MiSTerSettingsRefreshWorker(QThread):
     result = pyqtSignal(object)
     failed = pyqtSignal(str)
@@ -125,44 +124,6 @@ class MiSTerSettingsRefreshWorker(QThread):
         result = self.connection.run_command(command) or ""
         return self.sort_ini_files(result.splitlines())
 
-    def scan_offline_fonts(self):
-        root = self.offline_root_path()
-        if not root:
-            return []
-
-        font_dir = root / "font"
-        if not font_dir.exists() or not font_dir.is_dir():
-            return []
-
-        fonts = []
-        for item in font_dir.iterdir():
-            if item.is_file() and item.name.lower().endswith(".pf"):
-                fonts.append(item.name)
-
-        fonts.sort(key=str.lower)
-        return fonts
-
-    def scan_remote_fonts(self):
-        if not self.connection or not self.connection.is_connected():
-            return []
-
-        result = self.connection.run_command(
-            r'if [ -d /media/fat/font ]; then for f in /media/fat/font/*.pf /media/fat/font/*.PF; do [ -e "$f" ] || continue; basename "$f"; done; fi'
-        ) or ""
-
-        fonts = []
-        for line in result.splitlines():
-            name = line.strip()
-            if not name:
-                continue
-            if not name.lower().endswith(".pf"):
-                continue
-            if name not in fonts:
-                fonts.append(name)
-
-        fonts.sort(key=str.lower)
-        return fonts
-
     def normalize_ini_text(self, text, ensure_trailing_newline=True):
         text = (text or "").replace("\r\n", "\n").replace("\r", "\n")
         lines = [line.rstrip() for line in text.split("\n")]
@@ -231,11 +192,11 @@ class MiSTerSettingsRefreshWorker(QThread):
         if not files:
             return ""
 
-        if "MiSTer.ini" in files:
-            return "MiSTer.ini"
-
         if self.preferred_filename in files:
             return self.preferred_filename
+
+        if "MiSTer.ini" in files:
+            return "MiSTer.ini"
 
         return files[0]
 
@@ -390,6 +351,18 @@ class MiSTerSettingsFontWorker(QThread):
 class MiSTerSettingsTab(QWidget):
     DEFAULT_FONT_LINE = ";font=font/myfont.pf"
 
+    ANALOGUE_PRESETS = [
+        "RGBS (SCART)",
+        "RGBHV (VGA 15 kHz)",
+        "RGsB (Sync-on-Green)",
+        "YPbPr (Component)",
+        "S-Video",
+        "Composite (CVBS)",
+        "VGA Scaler (31 kHz+)",
+    ]
+
+    CUSTOM_ANALOGUE_VALUE = "Custom"
+
     def __init__(self, main_window):
         super().__init__()
         self.main_window = main_window
@@ -531,14 +504,7 @@ class MiSTerSettingsTab(QWidget):
         ])
 
         self.easy_analogue_combo = QComboBox()
-        self.easy_analogue_combo.addItems([
-            "RGB (Consumer TV)",
-            "RGB (PVM/BVM)",
-            "RGB (PVM/BVM SoG Alt)",
-            "Component (YPbPr)",
-            "S-Video",
-            "VGA Monitor"
-        ])
+        self.easy_analogue_combo.addItems(self.ANALOGUE_PRESETS)
 
         self.easy_logo_combo = QComboBox()
         self.easy_logo_combo.addItems([
@@ -680,7 +646,7 @@ class MiSTerSettingsTab(QWidget):
         self.easy_hdmi_audio_combo.setCurrentText("Enabled")
         self.easy_hdr_combo.setCurrentText("Disabled")
         self.easy_hdmi_limited_combo.setCurrentText("Full Range")
-        self.easy_analogue_combo.setCurrentText("RGB (Consumer TV)")
+        self.set_analogue_combo_value("RGBS (SCART)")
         self.easy_logo_combo.setCurrentText("Enabled")
         self.easy_font_combo.setCurrentText("Default")
         self.easy_amigavision_preset_combo.setCurrentText("Disabled")
@@ -703,6 +669,42 @@ class MiSTerSettingsTab(QWidget):
             self.easy_amigavision_preset_combo,
             self.easy_menu_crt_preset_combo,
         ]
+
+    def remove_custom_analogue_item(self):
+        index = self.easy_analogue_combo.findText(self.CUSTOM_ANALOGUE_VALUE)
+        if index >= 0:
+            self.easy_analogue_combo.removeItem(index)
+
+    def add_custom_analogue_item(self):
+        index = self.easy_analogue_combo.findText(self.CUSTOM_ANALOGUE_VALUE)
+
+        if index < 0:
+            self.easy_analogue_combo.addItem(self.CUSTOM_ANALOGUE_VALUE)
+            index = self.easy_analogue_combo.findText(self.CUSTOM_ANALOGUE_VALUE)
+
+        item = self.easy_analogue_combo.model().item(index)
+        if item is not None:
+            item.setEnabled(False)
+
+        return index
+
+    def set_analogue_combo_value(self, value):
+        value = (value or "RGBS (SCART)").strip()
+
+        self.easy_analogue_combo.blockSignals(True)
+
+        if value == self.CUSTOM_ANALOGUE_VALUE:
+            index = self.add_custom_analogue_item()
+            self.easy_analogue_combo.setCurrentIndex(index)
+        else:
+            self.remove_custom_analogue_item()
+
+            if self.easy_analogue_combo.findText(value) < 0:
+                value = "RGBS (SCART)"
+
+            self.easy_analogue_combo.setCurrentText(value)
+
+        self.easy_analogue_combo.blockSignals(False)
 
     def on_easy_setting_changed(self, *_):
         if self.loading_settings or self.syncing_modes:
@@ -1007,22 +1009,6 @@ class MiSTerSettingsTab(QWidget):
 
         self.update_settings_mode()
 
-    def offline_example_ini_path(self):
-        root = self.offline_root_path()
-        if not root:
-            return None
-
-        candidates = [
-            root / "MiSTer_example.ini",
-            root / "MiSTer_Example.ini",
-        ]
-
-        for candidate in candidates:
-            if candidate.exists():
-                return candidate
-
-        return None
-
     def download_default_mister_ini(self):
         response = requests.get(
             DEFAULT_MISTER_INI_URL,
@@ -1102,11 +1088,6 @@ class MiSTerSettingsTab(QWidget):
             return False, str(e)
         finally:
             sftp.close()
-
-    def clear_refreshing_notice(self):
-        if self.notice_label.text().strip() == "Refreshing MiSTer Settings...":
-            self.set_notice("")
-            self.notice_label.setStyleSheet("color: orange;")
 
     def set_notice(self, text=""):
         text = (text or "").strip()
@@ -1424,44 +1405,6 @@ class MiSTerSettingsTab(QWidget):
     def open_mister_settings_folder(self):
         open_mister_settings_folder(self.get_mister_settings_device_path())
 
-    def scan_remote_fonts(self):
-        if not self.connection.is_connected():
-            return []
-
-        result = self.connection.run_command(
-            r'if [ -d /media/fat/font ]; then for f in /media/fat/font/*.pf /media/fat/font/*.PF; do [ -e "$f" ] || continue; basename "$f"; done; fi'
-        ) or ""
-
-        fonts = []
-        for line in result.splitlines():
-            name = line.strip()
-            if not name:
-                continue
-            if not name.lower().endswith(".pf"):
-                continue
-            if name not in fonts:
-                fonts.append(name)
-
-        fonts.sort(key=str.lower)
-        return fonts
-
-    def scan_offline_fonts(self):
-        root = self.offline_root_path()
-        if not root:
-            return []
-
-        font_dir = root / "font"
-        if not font_dir.exists() or not font_dir.is_dir():
-            return []
-
-        fonts = []
-        for item in font_dir.iterdir():
-            if item.is_file() and item.name.lower().endswith(".pf"):
-                fonts.append(item.name)
-
-        fonts.sort(key=str.lower)
-        return fonts
-
     def set_font_combo_loading(self):
         self.easy_font_combo.blockSignals(True)
         self.easy_font_combo.clear()
@@ -1557,9 +1500,6 @@ class MiSTerSettingsTab(QWidget):
             self.font_worker.deleteLater()
             self.font_worker = None
 
-    def _finish_font_scan_after_render(self):
-        self.start_font_scan()
-
     def extract_font_selection_from_ini_text(self, ini_text):
         if not ini_text:
             return "Default"
@@ -1640,7 +1580,7 @@ class MiSTerSettingsTab(QWidget):
         self.easy_hdmi_audio_combo.setCurrentText(values.get("hdmi_audio", "Enabled"))
         self.easy_hdr_combo.setCurrentText(values.get("hdr", "Disabled"))
         self.easy_hdmi_limited_combo.setCurrentText(values.get("hdmi_limited", "Full Range"))
-        self.easy_analogue_combo.setCurrentText(values.get("analogue", "RGB (Consumer TV)"))
+        self.set_analogue_combo_value(values.get("analogue", "RGBS (SCART)"))
         self.easy_logo_combo.setCurrentText(values.get("logo", "Enabled"))
         self.easy_amigavision_preset_combo.setCurrentText(
             values.get("amigavision_preset", "Disabled")
