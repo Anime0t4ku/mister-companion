@@ -32,7 +32,12 @@ from core.device_profiles import (
 )
 from core.profile_folder_sync import profile_assigned_to_ip, profile_removed, profile_renamed
 from core.theme import apply_theme, resolve_theme_mode
-from core.updater import check_for_update, open_release_page
+from core.updater import (
+    check_for_update,
+    launch_mc_updater,
+    mc_updater_available,
+    open_release_page,
+)
 from core.zaplauncher_db import rename_db
 from ui.dialogs.device_dialog import DeviceDialog
 from ui.dialogs.network_scanner_dialog import NetworkScannerDialog
@@ -1206,6 +1211,32 @@ class MainWindow(QMainWindow):
         show_no_update = getattr(self.update_check_worker, "show_no_update", True)
 
         if info.update_available:
+            if mc_updater_available():
+                reply = QMessageBox.question(
+                    self,
+                    "Update Available",
+                    (
+                        f"A new version of MiSTer Companion is available.\n\n"
+                        f"Current version: {info.current_version}\n"
+                        f"Latest version: {info.latest_version}\n\n"
+                        "Do you want to run MC-Updater now?"
+                    ),
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+                    QMessageBox.StandardButton.Yes,
+                )
+
+                if reply == QMessageBox.StandardButton.Yes:
+                    if launch_mc_updater():
+                        self.close()
+                    else:
+                        QMessageBox.warning(
+                            self,
+                            "Updater Failed",
+                            "MC-Updater.exe could not be started.",
+                        )
+
+                return
+
             reply = QMessageBox.question(
                 self,
                 "Update Available",

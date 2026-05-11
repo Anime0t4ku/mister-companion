@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+from core.app_info import APP_VERSION
+
 CONFIG_PATH = Path("config.json")
 
 VALID_THEME_MODES = {"auto", "light", "dark"}
@@ -10,6 +12,7 @@ THEME_MODE_MIGRATIONS = {
 }
 
 DEFAULT_CONFIG = {
+    "app_version": APP_VERSION,
     "devices": [],
     "last_connected": None,
     "theme_mode": "auto",
@@ -40,6 +43,7 @@ def normalize_config(data):
         if key not in merged:
             merged[key] = value
 
+    merged["app_version"] = APP_VERSION
     merged["theme_mode"] = normalize_theme_mode(merged.get("theme_mode"))
 
     merged.pop("offline_sd_root", None)
@@ -49,16 +53,22 @@ def normalize_config(data):
 
 def load_config():
     if not CONFIG_PATH.exists():
-        return normalize_config(DEFAULT_CONFIG)
+        config = normalize_config(DEFAULT_CONFIG)
+        save_config(config)
+        return config
 
     try:
         with open(CONFIG_PATH, "r", encoding="utf-8") as f:
             data = json.load(f)
 
-        return normalize_config(data)
+        config = normalize_config(data)
+        save_config(config)
+        return config
 
     except Exception:
-        return normalize_config(DEFAULT_CONFIG)
+        config = normalize_config(DEFAULT_CONFIG)
+        save_config(config)
+        return config
 
 
 def save_config(data):
