@@ -41,6 +41,7 @@ from core.updater import (
 from core.zaplauncher_db import rename_db
 from ui.dialogs.device_dialog import DeviceDialog
 from ui.dialogs.network_scanner_dialog import NetworkScannerDialog
+from ui.dialogs.manuals_dialog import ManualsDialog
 from ui.dialogs.retroachievements_dialog import RetroAchievementsDialog
 from ui.dialogs.setup_notice_dialog import SetupNoticeDialog
 from ui.dialogs.support_dialog import SupportDialog
@@ -388,6 +389,10 @@ class MainWindow(QMainWindow):
         self.feedback_button.clicked.connect(self.open_feedback)
         bottom_bar.addWidget(self.feedback_button)
 
+        self.manuals_button = QPushButton("Manuals")
+        self.manuals_button.clicked.connect(self.open_manuals)
+        bottom_bar.addWidget(self.manuals_button)
+
         self.retroachievements_button = QPushButton("RetroAchievements")
         self.retroachievements_button.clicked.connect(self.open_retroachievements)
         bottom_bar.addWidget(self.retroachievements_button)
@@ -499,6 +504,21 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(0, self.apply_window_corner_radius)
         QTimer.singleShot(300, self.show_setup_notice)
         QTimer.singleShot(1500, self.check_for_updates_on_startup)
+
+    def open_manuals(self):
+        if self._closing:
+            return
+
+        if self.is_offline_mode():
+            QMessageBox.information(
+                self,
+                "Manuals",
+                "Manuals is only available in Online Mode.",
+            )
+            return
+
+        dialog = ManualsDialog(self)
+        dialog.exec()
 
     def open_retroachievements(self):
         if self._closing:
@@ -900,6 +920,9 @@ class MainWindow(QMainWindow):
         else:
             if not self.connection.is_connected():
                 self.set_connection_status("Status: Disconnected")
+
+        if hasattr(self, "manuals_button"):
+            self.manuals_button.setEnabled(self.is_online_mode())
 
         if hasattr(self, "connection_tab") and hasattr(self.connection_tab, "update_mode_state"):
             self.connection_tab.update_mode_state()
