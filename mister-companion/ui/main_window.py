@@ -42,6 +42,7 @@ from core.zaplauncher_db import rename_db
 from ui.dialogs.device_dialog import DeviceDialog
 from ui.dialogs.network_scanner_dialog import NetworkScannerDialog
 from ui.dialogs.manuals_dialog import ManualsDialog
+from ui.dialogs.remote_dialog import RemoteDialog
 from ui.dialogs.retroachievements_dialog import RetroAchievementsDialog
 from ui.dialogs.setup_notice_dialog import SetupNoticeDialog
 from ui.dialogs.support_dialog import SupportDialog
@@ -389,6 +390,10 @@ class MainWindow(QMainWindow):
         self.feedback_button.clicked.connect(self.open_feedback)
         bottom_bar.addWidget(self.feedback_button)
 
+        self.remote_button = QPushButton("Remote")
+        self.remote_button.clicked.connect(self.open_remote)
+        bottom_bar.addWidget(self.remote_button)
+
         self.manuals_button = QPushButton("Manuals")
         self.manuals_button.clicked.connect(self.open_manuals)
         bottom_bar.addWidget(self.manuals_button)
@@ -504,6 +509,29 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(0, self.apply_window_corner_radius)
         QTimer.singleShot(300, self.show_setup_notice)
         QTimer.singleShot(1500, self.check_for_updates_on_startup)
+
+    def open_remote(self):
+        if self._closing:
+            return
+
+        if self.is_offline_mode():
+            QMessageBox.information(
+                self,
+                "Remote",
+                "Remote is only available in Online Mode.",
+            )
+            return
+
+        if not self.connection.is_connected():
+            QMessageBox.information(
+                self,
+                "Remote",
+                "Connect to a MiSTer first before using Remote.",
+            )
+            return
+
+        dialog = RemoteDialog(self)
+        dialog.exec()
 
     def open_manuals(self):
         if self._closing:
@@ -920,6 +948,11 @@ class MainWindow(QMainWindow):
         else:
             if not self.connection.is_connected():
                 self.set_connection_status("Status: Disconnected")
+
+        if hasattr(self, "remote_button"):
+            self.remote_button.setEnabled(
+                self.is_online_mode() and self.connection.is_connected()
+            )
 
         if hasattr(self, "manuals_button"):
             self.manuals_button.setEnabled(self.is_online_mode())
@@ -1506,6 +1539,7 @@ class MainWindow(QMainWindow):
 
         self.set_connection_status("Status: Connection Lost")
         self.connection_tab.apply_disconnected_state()
+        self.apply_app_mode_state()
         self.update_all_tab_states(lightweight=True)
 
         QMessageBox.warning(
@@ -1629,6 +1663,7 @@ class MainWindow(QMainWindow):
 
             self.set_connection_status(f"Status: Connected to {host}")
             self.connection_tab.apply_connected_state()
+            self.apply_app_mode_state()
             self.update_all_tab_states(lightweight=True)
             self.refresh_current_tab(force=True)
         else:
@@ -1699,6 +1734,7 @@ class MainWindow(QMainWindow):
 
         self.set_connection_status(f"Status: Connected to {host}")
         self.connection_tab.apply_connected_state()
+        self.apply_app_mode_state()
         self.update_all_tab_states(lightweight=True)
         self.refresh_current_tab(force=True)
 
@@ -1726,6 +1762,7 @@ class MainWindow(QMainWindow):
         else:
             self.set_connection_status("Status: Disconnected")
 
+        self.apply_app_mode_state()
         self.connection_tab.apply_disconnected_state()
         self.update_all_tab_states(lightweight=True)
 
