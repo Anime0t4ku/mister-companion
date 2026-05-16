@@ -1288,7 +1288,7 @@ class MainWindow(QMainWindow):
                         QMessageBox.warning(
                             self,
                             "Updater Failed",
-                            "MC-Updater.exe could not be started.",
+                            "MC-Updater could not be started.",
                         )
 
                 return

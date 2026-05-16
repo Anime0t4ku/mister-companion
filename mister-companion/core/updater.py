@@ -1,3 +1,4 @@
+import os
 import platform
 import re
 import subprocess
@@ -62,8 +63,20 @@ def check_for_update(timeout: int = 10) -> UpdateInfo:
     )
 
 
+def current_platform_name() -> str:
+    return platform.system().lower()
+
+
 def is_windows() -> bool:
-    return platform.system().lower() == "windows"
+    return current_platform_name() == "windows"
+
+
+def is_linux() -> bool:
+    return current_platform_name() == "linux"
+
+
+def updater_supported() -> bool:
+    return is_windows() or is_linux()
 
 
 def get_app_folder() -> Path:
@@ -73,29 +86,67 @@ def get_app_folder() -> Path:
     return Path(__file__).resolve().parent.parent
 
 
+def get_mc_updater_filename() -> str:
+    if is_windows():
+        return "MC-Updater.exe"
+
+    if is_linux():
+        return "MC-Updater"
+
+    return "MC-Updater"
+
+
 def get_mc_updater_path() -> Path:
-    return get_app_folder() / "MC-Updater.exe"
+    return get_app_folder() / get_mc_updater_filename()
 
 
 def get_update_now_path() -> Path:
     return get_app_folder() / "updatenow.txt"
 
 
+def make_executable(path: Path):
+    if not path.exists():
+        return
+
+    if not is_linux():
+        return
+
+    current_mode = os.stat(path).st_mode
+    os.chmod(
+        path,
+        current_mode
+        | 0o100
+        | 0o010
+        | 0o001,
+    )
+
+
 def mc_updater_available() -> bool:
-    if not is_windows():
-        return False
-
-    return get_mc_updater_path().exists()
-
-
-def launch_mc_updater() -> bool:
-    if not is_windows():
+    if not updater_supported():
         return False
 
     updater_path = get_mc_updater_path()
 
     if not updater_path.exists():
         return False
+
+    if is_linux():
+        make_executable(updater_path)
+
+    return True
+
+
+def launch_mc_updater() -> bool:
+    if not updater_supported():
+        return False
+
+    updater_path = get_mc_updater_path()
+
+    if not updater_path.exists():
+        return False
+
+    if is_linux():
+        make_executable(updater_path)
 
     update_now_path = get_update_now_path()
     update_now_path.write_text("", encoding="utf-8")
