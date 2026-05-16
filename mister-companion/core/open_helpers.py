@@ -20,7 +20,18 @@ def clean_subprocess_env() -> dict[str, str]:
         else:
             env.pop("LD_LIBRARY_PATH", None)
 
-        env.pop("LD_PRELOAD", None)
+        for key in (
+            "LD_PRELOAD",
+            "QT_PLUGIN_PATH",
+            "QML2_IMPORT_PATH",
+            "QT_QPA_PLATFORM_PLUGIN_PATH",
+            "QTWEBENGINEPROCESS_PATH",
+            "QTWEBENGINE_RESOURCES_PATH",
+            "QTWEBENGINE_LOCALES_PATH",
+            "PYTHONHOME",
+            "PYTHONPATH",
+        ):
+            env.pop(key, None)
 
     return env
 
@@ -38,6 +49,7 @@ def _run_open_command(command: list[str], timeout: int = 8) -> tuple[bool, str]:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            start_new_session=True,
         )
 
         try:
@@ -77,9 +89,12 @@ def open_local_folder(path):
         commands = [
             ["xdg-open", folder_path],
             ["gio", "open", folder_path],
+            ["kde-open", folder_path],
+            ["kde-open6", folder_path],
             ["kde-open5", folder_path],
-            ["kioclient5", "exec", folder_path],
+            ["kioclient", "exec", folder_path],
             ["kioclient6", "exec", folder_path],
+            ["kioclient5", "exec", folder_path],
         ]
 
         errors = []
@@ -121,9 +136,12 @@ def open_uri(uri: str):
         commands = [
             ["xdg-open", uri],
             ["gio", "open", uri],
+            ["kde-open", uri],
+            ["kde-open6", uri],
             ["kde-open5", uri],
-            ["kioclient5", "exec", uri],
+            ["kioclient", "exec", uri],
             ["kioclient6", "exec", uri],
+            ["kioclient5", "exec", uri],
         ]
 
         errors = []

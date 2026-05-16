@@ -1,5 +1,5 @@
-from PyQt6.QtCore import QTimer, Qt, QUrl
-from PyQt6.QtGui import QGuiApplication, QDesktopServices
+from PyQt6.QtCore import QTimer, Qt
+from PyQt6.QtGui import QGuiApplication
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from core.open_helpers import open_uri
 from core.retroaccount import (
     get_retroaccount_status,
     poll_retroaccount_login,
@@ -452,7 +453,7 @@ class UpdateAllConfigDialog(QDialog):
             self.retro_url_value_label.setText(result["url"])
             self._set_retro_ui_state("pending")
 
-            QDesktopServices.openUrl(QUrl(result["url"]))
+            open_uri(result["url"])
 
             if not self.retro_poll_timer.isActive():
                 self.retro_poll_timer.start()

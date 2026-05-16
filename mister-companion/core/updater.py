@@ -3,11 +3,11 @@ import platform
 import re
 import subprocess
 import sys
-import webbrowser
 from dataclasses import dataclass
 from pathlib import Path
 
 import requests
+from core.open_helpers import open_uri
 
 from core.app_info import APP_VERSION, GITHUB_OWNER, GITHUB_REPO
 
@@ -162,4 +162,4 @@ def launch_mc_updater() -> bool:
 
 def open_release_page(url: str):
     if url:
-        webbrowser.open(url)
+        open_uri(url)

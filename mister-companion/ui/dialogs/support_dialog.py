@@ -1,4 +1,4 @@
-import webbrowser
+from core.open_helpers import open_uri
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
@@ -64,7 +64,7 @@ class SupportDialog(QDialog):
         self.buymeacoffee_button.clicked.connect(self.open_buymeacoffee)
 
     def open_kofi(self):
-        webbrowser.open(KOFI_URL)
+        open_uri(KOFI_URL)
 
     def open_buymeacoffee(self):
-        webbrowser.open(BUYMEACOFFEE_URL)
+        open_uri(BUYMEACOFFEE_URL)

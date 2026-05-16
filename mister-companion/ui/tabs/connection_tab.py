@@ -1,8 +1,8 @@
 import time
-import webbrowser
 from pathlib import Path
 
 import requests
+from core.open_helpers import open_uri, open_local_folder
 from PyQt6.QtCore import QEvent, QTimer, Qt
 from PyQt6.QtWidgets import (
     QFileDialog,
@@ -648,7 +648,7 @@ class ConnectionTab(QWidget):
 
     def open_news_link(self):
         if self.news_url:
-            webbrowser.open(self.news_url)
+            open_uri(self.news_url)
 
     def handle_mode_changed(self):
         if self.mode_switch_in_progress:
@@ -888,7 +888,7 @@ class ConnectionTab(QWidget):
             )
             return
 
-        webbrowser.open(str(path))
+        open_local_folder(path)
 
     def handle_clear_sd_card(self):
         self.offline_sd_input.clear()

@@ -1,4 +1,4 @@
-import webbrowser
+from core.open_helpers import open_uri
 
 from PyQt6.QtWidgets import (
     QDialog,
@@ -107,7 +107,7 @@ class RAViewerConfigDialog(QDialog):
         self.cancel_button.clicked.connect(self.reject)
 
     def open_ra_settings(self):
-        webbrowser.open(RA_SETTINGS_URL)
+        open_uri(RA_SETTINGS_URL)
 
     def get_stored_ra_credentials(self):
         config_data = {}

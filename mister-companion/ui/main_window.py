@@ -1,6 +1,6 @@
 import sys
-import webbrowser
 from pathlib import Path
+from core.open_helpers import open_uri
 
 from PyQt6.QtCore import QEvent, QPoint, QRect, QSize, QThread, QTimer, Qt, pyqtSignal
 from PyQt6.QtGui import QIcon, QPixmap, QRegion
@@ -566,7 +566,7 @@ class MainWindow(QMainWindow):
         if self._closing:
             return
 
-        webbrowser.open(FEEDBACK_URL)
+        open_uri(FEEDBACK_URL)
 
     def apply_default_window_size(self):
         preferred_width = 1100

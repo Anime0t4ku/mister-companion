@@ -1,6 +1,6 @@
-import webbrowser
 
 import requests
+from core.open_helpers import open_uri
 from PyQt6.QtCore import QThread, QTimer, Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QImage, QPixmap
 from PyQt6.QtWidgets import (
@@ -785,7 +785,7 @@ class RetroAchievementsDialog(QDialog):
             self.show_key_button.setText("Show")
 
     def open_api_key_page(self):
-        webbrowser.open(RA_SETTINGS_URL)
+        open_uri(RA_SETTINGS_URL)
 
     def refresh_data(self):
         username = self.username_input.text().strip()

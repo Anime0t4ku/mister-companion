@@ -1,5 +1,5 @@
 import traceback
-import webbrowser
+from core.open_helpers import open_uri
 
 from PyQt6.QtCore import QThread, Qt, pyqtSignal
 from PyQt6.QtWidgets import (
@@ -1724,7 +1724,7 @@ class ScriptsTab(QWidget):
             )
             return
 
-        webbrowser.open(f"http://{host}:7497/app/")
+        open_uri(f"http://{host}:7497/app/")
 
     def uninstall_zaparoo(self):
         if self.is_offline_mode():
@@ -2564,7 +2564,7 @@ class ScriptsTab(QWidget):
             )
             return
 
-        webbrowser.open(f"http://{host}:8384")
+        open_uri(f"http://{host}:8384")
 
     def uninstall_syncthing(self):
         if self.is_offline_mode():
