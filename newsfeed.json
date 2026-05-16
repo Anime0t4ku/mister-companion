@@ -6,9 +6,9 @@
       "date": "2026-05-15",
       "type": "info",
       "headline": "MC-Updater Is Now Available",
-      "message": "MC-Updater is now available as a separate tool for MiSTer Companion.\n\nIt is designed to make future MiSTer Companion updates easier by handling the update process for you.\n\nOnce MC-Updater is installed, MiSTer Companion will recognize the updater tool and use it for supported future updates.\n\nAt the moment, MC-Updater only works on Windows. A Linux version is currently being worked on.",
-      "url": "https://github.com/Anime0t4ku/MC-Updater/releases",
-      "url_label": "Download MC-Updater"
+      "message": "MC-Updater is now available for both Windows and Linux.\n\nMC-Updater is a small companion tool for MiSTer Companion that makes future updates easier by handling the update process for you.\n\nOnce MC-Updater is installed, MiSTer Companion will recognize the updater tool. When a supported update is available, MiSTer Companion can launch MC-Updater to download and replace the old MiSTer Companion executable automatically.",
+      "url": "https://github.com/Anime0t4ku/MC-Updater/releases/tag/v1.1.1",
+      "url_label": "Download MC-Updater v1.1.1"
     }
   ]
 }
