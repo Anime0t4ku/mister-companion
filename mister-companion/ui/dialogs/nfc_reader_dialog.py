@@ -169,13 +169,6 @@ class NFCReaderDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.setSpacing(10)
 
-        info = QLabel(
-            "Read NFC tokens with a PN532 reader and send the raw payload directly to Zaparoo. "
-            "Read mode supports any payload that Zaparoo supports."
-        )
-        info.setWordWrap(True)
-        layout.addWidget(info)
-
         mode_row = QHBoxLayout()
         mode_row.setSpacing(12)
 
@@ -189,13 +182,6 @@ class NFCReaderDialog(QDialog):
         mode_row.addStretch(1)
 
         layout.addLayout(mode_row)
-
-        mode_help = QLabel(
-            "Hold: launch when a token is present, send stop when it is removed. "
-            "Tap: launch scanned tokens without sending stop when removed."
-        )
-        mode_help.setWordWrap(True)
-        layout.addWidget(mode_help)
 
         reader_row = QHBoxLayout()
         reader_row.setSpacing(8)

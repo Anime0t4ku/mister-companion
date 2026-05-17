@@ -81,13 +81,12 @@ class NFCWriterDialog(QDialog):
         layout.setSpacing(10)
 
         info = QLabel(
-            "Enter or edit the Zaparoo payload, place an NTAG213, NTAG215, or NTAG216 "
-            "token on your PN532 reader, then write it to the token."
+            "Enter a Zaparoo payload, place a token on the PN532 reader, then write it."
         )
         info.setWordWrap(True)
         layout.addWidget(info)
 
-        payload_label = QLabel("Payload, you can edit this before writing:")
+        payload_label = QLabel("Payload:")
         layout.addWidget(payload_label)
 
         self.payload_box = QTextEdit()
@@ -162,9 +161,7 @@ class NFCWriterDialog(QDialog):
             )
         elif len(likely_readers) == 1:
             self.reader_combo.setCurrentIndex(1)
-            self.status.setText(
-                "PN532 reader detected. Enter or check the payload, place an NFC token on the reader, and press Write Token."
-            )
+            self.status.setText("PN532 reader detected.")
         else:
             self.status.setText(
                 "Select your PN532 reader, or leave Auto-detect enabled."
