@@ -32,6 +32,57 @@ jobs:
           pip install pyinstaller
           pip install -r requirements.txt
 
+      - name: Generate ScreenScraper private credentials
+        working-directory: mister-companion
+        shell: python
+        env:
+          SCREENSCRAPER: ${{ secrets.SCREENSCRAPER }}
+        run: |
+          import json
+          import os
+          from pathlib import Path
+
+          secret = os.environ.get("SCREENSCRAPER", "").strip()
+          target = Path("core/screenscraper_private.py")
+
+          dev_id = ""
+          dev_password = ""
+          softname = "mister-companion"
+
+          if secret:
+              data = json.loads(secret)
+              dev_id = data.get("dev_id", "")
+              dev_password = data.get("dev_password", "")
+              softname = data.get("softname", "mister-companion")
+
+              if not dev_id or not dev_password or not softname:
+                  raise SystemExit("SCREENSCRAPER secret is missing dev_id, dev_password, or softname")
+          else:
+              print("SCREENSCRAPER secret not available, building without ScreenScraper developer credentials.")
+
+          target.write_text(
+              f'''SS_DEV_ID = {dev_id!r}
+          SS_DEV_PASSWORD = {dev_password!r}
+          SS_SOFTNAME = {softname!r}
+
+
+          def has_dev_credentials():
+              return bool(SS_DEV_ID and SS_DEV_PASSWORD and SS_SOFTNAME)
+
+
+          def get_dev_credentials():
+              if not has_dev_credentials():
+                  return None
+
+              return {{
+                  "devid": SS_DEV_ID,
+                  "devpassword": SS_DEV_PASSWORD,
+                  "softname": SS_SOFTNAME,
+              }}
+          ''',
+              encoding="utf-8",
+          )
+
       - name: List Files
         working-directory: mister-companion
         run: |
@@ -72,6 +123,57 @@ jobs:
           python -m pip install --upgrade pip
           pip install pyinstaller
           pip install -r requirements.txt
+
+      - name: Generate ScreenScraper private credentials
+        working-directory: mister-companion
+        shell: python
+        env:
+          SCREENSCRAPER: ${{ secrets.SCREENSCRAPER }}
+        run: |
+          import json
+          import os
+          from pathlib import Path
+
+          secret = os.environ.get("SCREENSCRAPER", "").strip()
+          target = Path("core/screenscraper_private.py")
+
+          dev_id = ""
+          dev_password = ""
+          softname = "mister-companion"
+
+          if secret:
+              data = json.loads(secret)
+              dev_id = data.get("dev_id", "")
+              dev_password = data.get("dev_password", "")
+              softname = data.get("softname", "mister-companion")
+
+              if not dev_id or not dev_password or not softname:
+                  raise SystemExit("SCREENSCRAPER secret is missing dev_id, dev_password, or softname")
+          else:
+              print("SCREENSCRAPER secret not available, building without ScreenScraper developer credentials.")
+
+          target.write_text(
+              f'''SS_DEV_ID = {dev_id!r}
+          SS_DEV_PASSWORD = {dev_password!r}
+          SS_SOFTNAME = {softname!r}
+
+
+          def has_dev_credentials():
+              return bool(SS_DEV_ID and SS_DEV_PASSWORD and SS_SOFTNAME)
+
+
+          def get_dev_credentials():
+              if not has_dev_credentials():
+                  return None
+
+              return {{
+                  "devid": SS_DEV_ID,
+                  "devpassword": SS_DEV_PASSWORD,
+                  "softname": SS_SOFTNAME,
+              }}
+          ''',
+              encoding="utf-8",
+          )
 
       - name: List Files
         working-directory: mister-companion

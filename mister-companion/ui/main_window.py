@@ -12,6 +12,7 @@ from PyQt6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
+    QStackedWidget,
     QTabWidget,
     QVBoxLayout,
     QWidget,
@@ -54,6 +55,7 @@ from ui.tabs.mister_settings_tab import MiSTerSettingsTab
 from ui.tabs.savemanager_tab import SaveManagerTab
 from ui.tabs.scripts_tab import ScriptsTab
 from ui.tabs.wallpapers_tab import WallpapersTab
+from ui.tabs.zapscraper_tab import ZapScraperTab
 from ui.tabs.zapscripts_tab import ZapScriptsTab
 
 
@@ -470,8 +472,16 @@ class MainWindow(QMainWindow):
         self.scripts_tab = ScriptsTab(self)
         self.tabs.addTab(self.scripts_tab, self.tab_icon("scripts"), "Scripts")
 
+        self.zaparoo_tab_stack = QStackedWidget()
         self.zapscripts_tab = ZapScriptsTab(self)
-        self.tabs.addTab(self.zapscripts_tab, self.tab_icon("zapscripts"), "ZapScripts")
+        self.zapscraper_tab = ZapScraperTab(self)
+        self.zaparoo_tab_stack.addWidget(self.zapscripts_tab)
+        self.zaparoo_tab_stack.addWidget(self.zapscraper_tab)
+        self.zaparoo_tab_index = self.tabs.addTab(
+            self.zaparoo_tab_stack,
+            self.tab_icon("zapscripts"),
+            "ZapScripts",
+        )
 
         self.savemanager_tab = SaveManagerTab(self)
         self.tabs.addTab(
@@ -957,8 +967,36 @@ class MainWindow(QMainWindow):
         if hasattr(self, "manuals_button"):
             self.manuals_button.setEnabled(self.is_online_mode())
 
+        self.update_zaparoo_tab_for_mode()
+
         if hasattr(self, "connection_tab") and hasattr(self.connection_tab, "update_mode_state"):
             self.connection_tab.update_mode_state()
+
+    def current_content_widget(self):
+        current_widget = self.tabs.currentWidget()
+
+        if (
+            hasattr(self, "zaparoo_tab_stack")
+            and current_widget is self.zaparoo_tab_stack
+        ):
+            return self.zaparoo_tab_stack.currentWidget()
+
+        return current_widget
+
+    def update_zaparoo_tab_for_mode(self):
+        if not hasattr(self, "zaparoo_tab_stack"):
+            return
+
+        index = self.tabs.indexOf(self.zaparoo_tab_stack)
+
+        if self.is_offline_mode():
+            self.zaparoo_tab_stack.setCurrentWidget(self.zapscraper_tab)
+            if index >= 0:
+                self.tabs.setTabText(index, "ZapScraper")
+        else:
+            self.zaparoo_tab_stack.setCurrentWidget(self.zapscripts_tab)
+            if index >= 0:
+                self.tabs.setTabText(index, "ZapScripts")
 
     def _stop_worker(self, worker, wait_ms: int = 3000):
         if worker is None:
@@ -1064,7 +1102,9 @@ class MainWindow(QMainWindow):
             if geometry.width() <= 0 or geometry.height() <= 0:
                 return
 
-            self.config_data["window_geometry"] = {
+            current_config = load_config()
+
+            current_config["window_geometry"] = {
                 "x": geometry.x(),
                 "y": geometry.y(),
                 "width": geometry.width(),
@@ -1072,7 +1112,8 @@ class MainWindow(QMainWindow):
                 "maximized": maximized,
             }
 
-            save_config(self.config_data)
+            self.config_data = current_config
+            save_config(current_config)
         except Exception:
             pass
 
@@ -1348,6 +1389,7 @@ class MainWindow(QMainWindow):
             "scripts_tab",
             "extras_tab",
             "zapscripts_tab",
+            "zapscraper_tab",
             "savemanager_tab",
             "wallpapers_tab",
             "flash_tab",
@@ -1380,7 +1422,7 @@ class MainWindow(QMainWindow):
         if self._closing:
             return
 
-        current_widget = self.tabs.currentWidget()
+        current_widget = self.current_content_widget()
 
         self._update_tab_connection_state(current_widget, lightweight=True)
 
@@ -1408,6 +1450,10 @@ class MainWindow(QMainWindow):
 
                 if hasattr(self, "wallpapers_tab") and current_widget is self.wallpapers_tab:
                     self.wallpapers_tab.refresh_status()
+                    return
+
+                if hasattr(self, "zapscraper_tab") and current_widget is self.zapscraper_tab:
+                    self.zapscraper_tab.refresh_status()
                     return
 
             return
@@ -1447,6 +1493,15 @@ class MainWindow(QMainWindow):
         if current_widget is None:
             return
 
+        if (
+            hasattr(self, "zaparoo_tab_stack")
+            and current_widget is self.zaparoo_tab_stack
+        ):
+            current_widget = self.zaparoo_tab_stack.currentWidget()
+
+        if current_widget is None:
+            return
+
         self._tab_refresh_generation += 1
         generation = self._tab_refresh_generation
 
@@ -1467,7 +1522,7 @@ class MainWindow(QMainWindow):
         if generation != self._tab_refresh_generation:
             return
 
-        if self.tabs.currentWidget() is not expected_widget:
+        if self.current_content_widget() is not expected_widget:
             return
 
         self.refresh_current_tab(force=True)
