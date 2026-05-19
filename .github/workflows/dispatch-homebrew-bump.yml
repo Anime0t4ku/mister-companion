@@ -1,0 +1,25 @@
+name: Dispatch Homebrew Cask Bump
+
+on:
+  release:
+    types: [published]   # Only fires when you manually create/publish a full Release
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Send repository_dispatch to Homebrew tap
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.HOMEBREW_DISPATCH_PAT }}
+          # Choose one:
+          repository: Anime0t4ku/homebrew-mister-companion   # Recommended (if moving to org)
+          # repository: raishey/homebrew-mister-companion     # If keeping under your account
+          event-type: mister-companion-released
+          client-payload: |
+            {
+              "version": "${{ github.event.release.tag_name }}",
+              "release_url": "${{ github.event.release.html_url }}",
+              "is_prerelease": ${{ github.event.release.prerelease }}
+            }
