@@ -13,9 +13,7 @@ jobs:
         uses: peter-evans/repository-dispatch@v3
         with:
           token: ${{ secrets.HOMEBREW_DISPATCH_PAT }}
-          # Choose one:
-          repository: Anime0t4ku/homebrew-mister-companion   # Recommended (if moving to org)
-          # repository: raishey/homebrew-mister-companion     # If keeping under your account
+          repository: Anime0t4ku/homebrew-mister-companion
           event-type: mister-companion-released
           client-payload: |
             {
