@@ -5,6 +5,7 @@ import re
 import sys
 import time
 import xml.etree.ElementTree as ET
+import zipfile
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -18,6 +19,7 @@ from core.zapscraper_systems import (
     DISC_HELPER_EXTENSIONS,
     OUTPUT_FORMAT_RECALBOX,
     OUTPUT_FORMAT_ZAPAROO_COMPANION,
+    OUTPUT_FORMAT_ZAPAROO_COMPANION_LITE,
     REGION_TAGS,
     SUPPORTED_SYSTEMS,
     get_default_zaparoo_companion_media_names,
@@ -39,13 +41,23 @@ GAMELIST_FILENAME = "gamelist.xml"
 SCREENSCRAPER_API_BASE = "https://api.screenscraper.fr/api2"
 
 REQUEST_TIMEOUT = 30
-REQUEST_DELAY_SECONDS = 1.5
+REQUEST_DELAY_SECONDS = 0.3
 
 
 SCAN_CACHE_VERSION = 1
 
 
 _last_screenscraper_request_at = 0.0
+
+_ZAPAROO_FORMATS = {OUTPUT_FORMAT_ZAPAROO_COMPANION, OUTPUT_FORMAT_ZAPAROO_COMPANION_LITE}
+
+
+def _is_zaparoo_format(output_format: str) -> bool:
+    return output_format in _ZAPAROO_FORMATS
+
+
+def _is_zaparoo_lite(output_format: str) -> bool:
+    return output_format == OUTPUT_FORMAT_ZAPAROO_COMPANION_LITE
 
 
 class ScreenScraperQuotaError(RuntimeError):
@@ -465,7 +477,7 @@ def clear_scan_cache(source_mode: str, source_path: str | Path) -> bool:
 def normalize_output_format(output_format: str = "") -> str:
     value = str(output_format or "").strip()
 
-    if value in {OUTPUT_FORMAT_RECALBOX, OUTPUT_FORMAT_ZAPAROO_COMPANION}:
+    if value in {OUTPUT_FORMAT_RECALBOX, OUTPUT_FORMAT_ZAPAROO_COMPANION, OUTPUT_FORMAT_ZAPAROO_COMPANION_LITE}:
         return value
 
     return get_output_format_id(value)
@@ -494,6 +506,7 @@ class ZapScraperRom:
     filename: str
     stem: str
     size: int
+    zip_inner_path: str = ""
 
 
 @dataclass
@@ -522,6 +535,7 @@ class ZapScraperSystem:
                     "filename": rom.filename,
                     "stem": rom.stem,
                     "size": rom.size,
+                    "zip_inner_path": rom.zip_inner_path,
                 }
                 for rom in self.roms
             ],
@@ -637,6 +651,40 @@ def scan_games_folder(
     return [system.to_dict() for system in systems]
 
 
+def _scan_zip_contents(
+    zip_path: Path,
+    system_path: Path,
+    system_folder: str,
+) -> list[ZapScraperRom]:
+    results: list[ZapScraperRom] = []
+    try:
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            names = zf.namelist()
+            name_set = set(n.lower() for n in names)
+            for inner_name in names:
+                inner_path = Path(inner_name)
+                if not is_supported_rom(system_folder, inner_path):
+                    continue
+                if inner_path.suffix.lower() in DISC_HELPER_EXTENSIONS:
+                    cue_name = inner_path.with_suffix(".cue").name.lower()
+                    if any(Path(n).name.lower() == cue_name for n in names):
+                        continue
+                info = zf.getinfo(inner_name)
+                results.append(
+                    ZapScraperRom(
+                        path=zip_path,
+                        relative_path=to_recalbox_relative_path(zip_path, system_path),
+                        filename=inner_path.name,
+                        stem=inner_path.stem,
+                        size=info.file_size,
+                        zip_inner_path=inner_name,
+                    )
+                )
+    except Exception:
+        pass
+    return results
+
+
 def scan_system_folder(
     system_path: Path,
     system_folder: str,
@@ -681,6 +729,12 @@ def scan_system_folder(
 
         if _is_inside_media_folder(path):
             continue
+
+        if path.suffix.lower() == ".zip":
+            zip_roms = _scan_zip_contents(path, system_path, system_folder)
+            if zip_roms:
+                roms.extend(zip_roms)
+                continue
 
         if not is_supported_rom(system_folder, path):
             continue
@@ -815,8 +869,33 @@ def load_gamelist(system_path: str | Path) -> ET.ElementTree:
     return ET.ElementTree(root)
 
 
+def _sort_gamelist_entries(root: ET.Element):
+    games = root.findall("game")
+    for g in games:
+        root.remove(g)
+
+    parents = [g for g in games if g.get("id") and not g.get("parentid")]
+    children = [g for g in games if g.get("parentid")]
+    orphans = [g for g in games if not g.get("id") and not g.get("parentid")]
+
+    parents.sort(key=lambda g: (g.get("id") or "").lower())
+
+    for parent in parents:
+        root.append(parent)
+        pid = parent.get("id")
+        for child in sorted(
+            (c for c in children if c.get("parentid") == pid),
+            key=lambda c: (_child_text(c, "path") or "").lower(),
+        ):
+            root.append(child)
+
+    for orphan in orphans:
+        root.append(orphan)
+
+
 def save_gamelist(system_path: str | Path, tree: ET.ElementTree):
     gamelist_path = Path(system_path) / GAMELIST_FILENAME
+    _sort_gamelist_entries(tree.getroot())
     indent_xml(tree.getroot())
 
     tree.write(
@@ -833,14 +912,13 @@ def indent_xml(element: ET.Element, level: int = 0):
         if not element.text or not element.text.strip():
             element.text = indent + "  "
 
-        last_child = None
-
-        for child in element:
+        children = list(element)
+        for i, child in enumerate(children):
             indent_xml(child, level + 1)
-            last_child = child
-
-        if last_child is not None and (not last_child.tail or not last_child.tail.strip()):
-            last_child.tail = indent
+            is_last = i == len(children) - 1
+            expected_tail = indent if is_last else indent + "  "
+            if not child.tail or not child.tail.strip():
+                child.tail = expected_tail
     else:
         if level and (not element.tail or not element.tail.strip()):
             element.tail = indent
@@ -1325,23 +1403,32 @@ def build_user_info_message(user_info: dict[str, Any], quota: dict[str, Any] | N
     return " | ".join(parts)
 
 
-def calculate_rom_hashes(path: str | Path) -> dict[str, str]:
+def calculate_rom_hashes(path: str | Path, zip_inner_path: str = "") -> dict[str, str]:
     path = Path(path)
 
     crc = 0
     md5 = hashlib.md5()
     sha1 = hashlib.sha1()
 
-    with path.open("rb") as handle:
-        while True:
-            chunk = handle.read(1024 * 1024)
-
-            if not chunk:
-                break
-
-            crc = binascii.crc32(chunk, crc)
-            md5.update(chunk)
-            sha1.update(chunk)
+    if zip_inner_path:
+        with zipfile.ZipFile(path, "r") as zf:
+            with zf.open(zip_inner_path) as handle:
+                while True:
+                    chunk = handle.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    crc = binascii.crc32(chunk, crc)
+                    md5.update(chunk)
+                    sha1.update(chunk)
+    else:
+        with path.open("rb") as handle:
+            while True:
+                chunk = handle.read(1024 * 1024)
+                if not chunk:
+                    break
+                crc = binascii.crc32(chunk, crc)
+                md5.update(chunk)
+                sha1.update(chunk)
 
     return {
         "crc": f"{crc & 0xFFFFFFFF:08X}",
@@ -1358,23 +1445,30 @@ def fetch_game_info(
     rom_filename: str,
     rom_size: int,
     system_id: int,
+    zip_inner_path: str = "",
+    skip_hashes: bool = False,
     quota_callback=None,
 ) -> dict[str, Any]:
     params = _common_screenscraper_params(username, password)
-
-    hashes = calculate_rom_hashes(rom_path)
 
     params.update(
         {
             "systemeid": str(system_id),
             "romtype": "rom",
             "romnom": rom_filename,
-            "romtaille": str(rom_size),
-            "crc": hashes["crc"],
-            "md5": hashes["md5"],
-            "sha1": hashes["sha1"],
         }
     )
+
+    if not skip_hashes:
+        hashes = calculate_rom_hashes(rom_path, zip_inner_path)
+        params.update(
+            {
+                "romtaille": str(rom_size),
+                "crc": hashes["crc"],
+                "md5": hashes["md5"],
+                "sha1": hashes["sha1"],
+            }
+        )
 
     return _screenscraper_get_json("jeuInfos.php", params, quota_callback=quota_callback)
 
@@ -2044,6 +2138,18 @@ def apply_zaparoo_companion_scrape_result(
     }
 
 
+def _slugify_rom_filename(filename: str) -> str:
+    name = Path(str(filename or "")).stem
+    cut = len(name)
+    for char in "([":
+        idx = name.find(char)
+        if idx != -1:
+            cut = min(cut, idx)
+    name = name[:cut].strip()
+    name = re.sub(r"\s+", "_", name)
+    return name.lower()
+
+
 def process_scrape_action(
     action: dict[str, Any],
     *,
@@ -2054,6 +2160,7 @@ def process_scrape_action(
     skip_existing_metadata: bool = True,
     output_format: str = OUTPUT_FORMAT_RECALBOX,
     zaparoo_media_source_names=None,
+    zaparoo_slug_map: dict[tuple[str, str], str] | None = None,
     quota_callback=None,
 ) -> dict[str, Any]:
     rom = action.get("rom") or {}
@@ -2069,12 +2176,36 @@ def process_scrape_action(
     if not system_id:
         raise RuntimeError(f"Missing ScreenScraper system ID for {rom_filename}")
 
-    if output_format == OUTPUT_FORMAT_ZAPAROO_COMPANION:
+    if _is_zaparoo_format(output_format):
         region_code = get_region_code(selected_region)
         if region_code == "auto":
             region_code = "us"
     else:
         region_code = detect_region_from_filename(rom_filename, selected_region)
+
+    zaparoo_slug_key: tuple[str, str] | None = None
+    if _is_zaparoo_lite(output_format) and zaparoo_slug_map is not None:
+        slug = _slugify_rom_filename(rom_filename)
+        zaparoo_slug_key = (action.get("system_folder", ""), slug)
+        cached_id = zaparoo_slug_map.get(zaparoo_slug_key)
+        if cached_id:
+            zaparoo_result = apply_zaparoo_companion_scrape_result(
+                system_path=action.get("system_path"),
+                relative_path=f"./{rom_filename}",
+                rom=rom,
+                game={},
+                metadata={"id": cached_id},
+                region=region_code,
+                media_source_names=zaparoo_media_source_names,
+            )
+            return {
+                "metadata": {"id": cached_id},
+                "image_relative_path": "",
+                "region": region_code,
+                "output_format": output_format,
+                "zaparoo": zaparoo_result,
+                "slug_hit": True,
+            }
 
     data = fetch_game_info(
         username=username,
@@ -2083,6 +2214,8 @@ def process_scrape_action(
         rom_filename=rom_filename,
         rom_size=rom_size,
         system_id=system_id,
+        zip_inner_path=rom.get("zip_inner_path", ""),
+        skip_hashes=_is_zaparoo_lite(output_format),
         quota_callback=quota_callback,
     )
 
@@ -2092,16 +2225,21 @@ def process_scrape_action(
     if not metadata:
         metadata = create_placeholder_metadata_from_rom(rom, region_code)
 
-    if output_format == OUTPUT_FORMAT_ZAPAROO_COMPANION:
+    if _is_zaparoo_format(output_format):
         zaparoo_result = apply_zaparoo_companion_scrape_result(
             system_path=action.get("system_path"),
-            relative_path=action.get("relative_path"),
+            relative_path=f"./{rom_filename}" if _is_zaparoo_lite(output_format) else action.get("relative_path"),
             rom=rom,
             game=game,
             metadata=metadata,
             region=region_code,
             media_source_names=zaparoo_media_source_names,
         )
+
+        if zaparoo_slug_key is not None:
+            result_id = zaparoo_result.get("screenscraper_id", "")
+            if result_id:
+                zaparoo_slug_map[zaparoo_slug_key] = result_id
 
         return {
             "metadata": metadata,
@@ -2167,14 +2305,30 @@ def run_scrape_actions(
     quota_callback=None,
     stop_checker=None,
 ):
-    total = len(actions)
     output_format = normalize_output_format(output_format)
 
+    slug_map: dict[tuple[str, str], str] = {}
+
+    if _is_zaparoo_lite(output_format):
+        seen_keys: set[tuple[str, str]] = set()
+        deduped: list[dict[str, Any]] = []
+        for action in actions:
+            rom = action.get("rom") or {}
+            filename = rom.get("filename") or Path(rom.get("path", "")).name
+            key = (action.get("system_folder", ""), filename)
+            if filename and key not in seen_keys:
+                seen_keys.add(key)
+                deduped.append(action)
+        actions = deduped
+
+    total = len(actions)
+
     if callable(log_callback):
-        if output_format == OUTPUT_FORMAT_ZAPAROO_COMPANION:
+        if _is_zaparoo_format(output_format):
             media_names = normalize_zaparoo_media_source_names(zaparoo_media_source_names)
+            label = "Zaparoo Companion Lite" if _is_zaparoo_lite(output_format) else "Zaparoo Companion Experimental"
             log_callback(
-                "Output format: Zaparoo Companion Experimental. "
+                f"Output format: {label}. "
                 f"Media: {', '.join(media_names)}. Requests are single-threaded and rate-limited."
             )
         else:
@@ -2193,8 +2347,9 @@ def run_scrape_actions(
         if callable(log_callback):
             log_callback(f"[{index}/{total}] {system_label}: {rom_filename}")
 
+        result = {}
         try:
-            process_scrape_action(
+            result = process_scrape_action(
                 action,
                 username=username,
                 password=password,
@@ -2203,11 +2358,15 @@ def run_scrape_actions(
                 skip_existing_metadata=skip_existing_metadata,
                 output_format=output_format,
                 zaparoo_media_source_names=zaparoo_media_source_names,
+                zaparoo_slug_map=slug_map if _is_zaparoo_lite(output_format) else None,
                 quota_callback=quota_callback,
             )
 
             if callable(log_callback):
-                log_callback(f"Done: {rom_filename}")
+                if result.get("slug_hit"):
+                    log_callback(f"Done (API skipped — matched existing title): {rom_filename}")
+                else:
+                    log_callback(f"Done: {rom_filename}")
         except ScreenScraperQuotaError as e:
             if callable(log_callback):
                 log_callback(f"ScreenScraper quota/rate limit reached: {e}")
@@ -2219,8 +2378,6 @@ def run_scrape_actions(
 
         if callable(progress_callback):
             progress_callback(index, total, rom_filename)
-
-        time.sleep(REQUEST_DELAY_SECONDS)
 
 
 def get_zaparoo_parent_entries_by_id(tree: ET.ElementTree) -> dict[str, ET.Element]:
