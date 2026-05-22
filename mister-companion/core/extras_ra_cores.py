@@ -46,21 +46,12 @@ RA_SOURCES = [
     {"key": "gba", "title": "GBA", "repo": "odelot/GBA_MiSTer", "kind": "rbf"},
     {"key": "n64", "title": "N64", "repo": "odelot/N64_MiSTer", "kind": "rbf"},
     {"key": "psx", "title": "PSX", "repo": "odelot/PSX_MiSTer", "kind": "rbf"},
-    {
-        "key": "megadrive",
-        "title": "MegaDrive",
-        "repo": "odelot/MegaDrive_MiSTer",
-        "kind": "rbf",
-    },
+    {"key": "megadrive", "title": "MegaDrive", "repo": "odelot/MegaDrive_MiSTer", "kind": "rbf"},
     {"key": "megacd", "title": "MegaCD", "repo": "odelot/MegaCD_MiSTer", "kind": "rbf"},
     {"key": "sms", "title": "SMS", "repo": "odelot/SMS_MiSTer", "kind": "rbf"},
     {"key": "neogeo", "title": "NeoGeo", "repo": "odelot/NeoGeo_MiSTer", "kind": "rbf"},
-    {
-        "key": "turbografx16",
-        "title": "TurboGrafx16",
-        "repo": "odelot/TurboGrafx16_MiSTer",
-        "kind": "rbf",
-    },
+    {"key": "turbografx16", "title": "TurboGrafx16", "repo": "odelot/TurboGrafx16_MiSTer", "kind": "rbf"},
+    {"key": "atari7800", "title": "Atari7800", "repo": "odelot/Atari7800_MiSTer", "kind": "rbf"},
     {"key": "s32x", "title": "S32X", "repo": "odelot/S32X_MiSTer", "kind": "rbf"},
 ]
 
