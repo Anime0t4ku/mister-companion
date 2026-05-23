@@ -3,6 +3,8 @@ config.json
 scrapecache/
 MiSTERSettings/
 SaveManager/
+ra_cache/
+Manuals/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

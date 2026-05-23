@@ -200,6 +200,45 @@ class ScriptsStatusWorker(QThread):
             self.finished_status.emit()
 
 
+class LargeConsoleWindow(QWidget):
+    closed = pyqtSignal()
+
+    def __init__(self, console_document, parent=None):
+        super().__init__(parent, Qt.WindowType.Window)
+        self.setWindowTitle("Scripts Output")
+        self.resize(900, 600)
+
+        layout = QVBoxLayout()
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(8)
+
+        self.console = QTextEdit()
+        self.console.setReadOnly(True)
+        self.console.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
+        self.console.setDocument(console_document)
+        layout.addWidget(self.console)
+
+        button_row = QHBoxLayout()
+        button_row.addStretch()
+
+        self.close_button = QPushButton("Close")
+        set_text_button_min_width(self.close_button, 90)
+        self.close_button.clicked.connect(self.close)
+        button_row.addWidget(self.close_button)
+
+        layout.addLayout(button_row)
+        self.setLayout(layout)
+        self.scroll_to_bottom()
+
+    def scroll_to_bottom(self):
+        scrollbar = self.console.verticalScrollBar()
+        scrollbar.setValue(scrollbar.maximum())
+
+    def closeEvent(self, event):
+        self.closed.emit()
+        super().closeEvent(event)
+
+
 class ScriptsTab(QWidget):
     SCRIPT_UPDATE_ALL = "update_all"
     SCRIPT_ZAPAROO = "zaparoo"
@@ -218,6 +257,7 @@ class ScriptsTab(QWidget):
         self.connection = main_window.connection
 
         self.console_visible = False
+        self.large_console_window = None
         self.current_worker = None
         self.status_worker = None
         self.status_refresh_generation = 0
@@ -449,6 +489,10 @@ class ScriptsTab(QWidget):
         header_row = QHBoxLayout()
         header_row.addStretch()
 
+        self.large_console_button = QPushButton("Large View")
+        set_text_button_min_width(self.large_console_button, 110)
+        header_row.addWidget(self.large_console_button)
+
         self.hide_console_button = QPushButton("Hide")
         set_text_button_min_width(self.hide_console_button, 70)
         header_row.addWidget(self.hide_console_button)
@@ -516,6 +560,7 @@ class ScriptsTab(QWidget):
         self.uninstall_ra_viewer_button.clicked.connect(self.uninstall_ra_viewer)
 
         self.open_scripts_folder_button.clicked.connect(self.open_scripts_folder)
+        self.large_console_button.clicked.connect(self.open_large_console)
         self.hide_console_button.clicked.connect(self.toggle_console)
 
     def _build_button_row(self, *buttons):
@@ -1327,6 +1372,23 @@ class ScriptsTab(QWidget):
         self.update_details_panel()
 
 
+    def open_large_console(self):
+        if self.large_console_window is not None:
+            self.large_console_window.show()
+            self.large_console_window.raise_()
+            self.large_console_window.activateWindow()
+            self.large_console_window.scroll_to_bottom()
+            return
+
+        self.large_console_window = LargeConsoleWindow(self.console.document(), self)
+        self.large_console_window.closed.connect(self.on_large_console_closed)
+        self.large_console_window.show()
+        self.large_console_window.raise_()
+        self.large_console_window.activateWindow()
+
+    def on_large_console_closed(self):
+        self.large_console_window = None
+
     def show_console(self):
         if not self.console_visible:
             self.console_group.show()
@@ -1347,6 +1409,9 @@ class ScriptsTab(QWidget):
         self.console.moveCursor(self.console.textCursor().MoveOperation.End)
         self.console.insertPlainText(text)
         self.console.ensureCursorVisible()
+
+        if self.large_console_window is not None:
+            self.large_console_window.scroll_to_bottom()
 
     def start_worker(self, task_fn, success_message=""):
         if self.current_worker is not None and self.current_worker.isRunning():
