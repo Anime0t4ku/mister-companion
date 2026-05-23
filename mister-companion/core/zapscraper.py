@@ -20,7 +20,6 @@ from core.zapscraper_systems import (
     DISC_HELPER_EXTENSIONS,
     OUTPUT_FORMAT_RECALBOX,
     OUTPUT_FORMAT_ZAPAROO_COMPANION,
-    OUTPUT_FORMAT_ZAPAROO_COMPANION_LITE,
     REGION_TAGS,
     SUPPORTED_SYSTEMS,
     get_default_zaparoo_companion_media_names,
@@ -50,15 +49,8 @@ SCAN_CACHE_VERSION = 1
 
 _last_screenscraper_request_at = 0.0
 
-_ZAPAROO_FORMATS = {OUTPUT_FORMAT_ZAPAROO_COMPANION, OUTPUT_FORMAT_ZAPAROO_COMPANION_LITE}
-
-
 def _is_zaparoo_format(output_format: str) -> bool:
-    return output_format in _ZAPAROO_FORMATS
-
-
-def _is_zaparoo_lite(output_format: str) -> bool:
-    return output_format == OUTPUT_FORMAT_ZAPAROO_COMPANION_LITE
+    return output_format == OUTPUT_FORMAT_ZAPAROO_COMPANION
 
 
 class ScreenScraperQuotaError(RuntimeError):
@@ -478,7 +470,7 @@ def clear_scan_cache(source_mode: str, source_path: str | Path) -> bool:
 def normalize_output_format(output_format: str = "") -> str:
     value = str(output_format or "").strip()
 
-    if value in {OUTPUT_FORMAT_RECALBOX, OUTPUT_FORMAT_ZAPAROO_COMPANION, OUTPUT_FORMAT_ZAPAROO_COMPANION_LITE}:
+    if value in {OUTPUT_FORMAT_RECALBOX, OUTPUT_FORMAT_ZAPAROO_COMPANION}:
         return value
 
     return get_output_format_id(value)
@@ -2256,7 +2248,7 @@ def process_scrape_action(
         region_code = detect_region_from_filename(rom_filename, selected_region)
 
     zaparoo_slug_key: tuple[str, str] | None = None
-    if _is_zaparoo_lite(output_format) and zaparoo_slug_map is not None:
+    if _is_zaparoo_format(output_format) and zaparoo_slug_map is not None:
         slug = _slugify_rom_filename(rom_filename)
         zaparoo_slug_key = (action.get("system_folder", ""), slug)
         cached_id = zaparoo_slug_map.get(zaparoo_slug_key)
@@ -2287,7 +2279,7 @@ def process_scrape_action(
         rom_size=rom_size,
         system_id=system_id,
         zip_inner_path=rom.get("zip_inner_path", ""),
-        skip_hashes=_is_zaparoo_lite(output_format),
+        skip_hashes=_is_zaparoo_format(output_format),
         quota_callback=quota_callback,
     )
 
@@ -2300,7 +2292,7 @@ def process_scrape_action(
     if _is_zaparoo_format(output_format):
         zaparoo_result = apply_zaparoo_companion_scrape_result(
             system_path=action.get("system_path"),
-            relative_path=f"./{rom_filename}" if _is_zaparoo_lite(output_format) else action.get("relative_path"),
+            relative_path=f"./{rom_filename}",
             rom=rom,
             game=game,
             metadata=metadata,
@@ -2381,7 +2373,7 @@ def run_scrape_actions(
 
     slug_map: dict[tuple[str, str], str] = {}
 
-    if _is_zaparoo_lite(output_format):
+    if _is_zaparoo_format(output_format):
         seen_keys: set[tuple[str, str]] = set()
         deduped: list[dict[str, Any]] = []
         for action in actions:
@@ -2398,7 +2390,7 @@ def run_scrape_actions(
     if callable(log_callback):
         if _is_zaparoo_format(output_format):
             media_names = normalize_zaparoo_media_source_names(zaparoo_media_source_names)
-            label = "Zaparoo Companion Lite" if _is_zaparoo_lite(output_format) else "Zaparoo Companion Experimental"
+            label = "Zaparoo Companion"
             log_callback(
                 f"Output format: {label}. "
                 f"Media: {', '.join(media_names)}. Requests are single-threaded and rate-limited."
@@ -2430,7 +2422,7 @@ def run_scrape_actions(
                 skip_existing_metadata=skip_existing_metadata,
                 output_format=output_format,
                 zaparoo_media_source_names=zaparoo_media_source_names,
-                zaparoo_slug_map=slug_map if _is_zaparoo_lite(output_format) else None,
+                zaparoo_slug_map=slug_map if _is_zaparoo_format(output_format) else None,
                 quota_callback=quota_callback,
             )
 
