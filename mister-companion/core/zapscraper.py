@@ -1,5 +1,6 @@
 import binascii
 import hashlib
+import html
 import json
 import re
 import sys
@@ -19,7 +20,6 @@ from core.zapscraper_systems import (
     DISC_HELPER_EXTENSIONS,
     OUTPUT_FORMAT_RECALBOX,
     OUTPUT_FORMAT_ZAPAROO_COMPANION,
-    OUTPUT_FORMAT_ZAPAROO_COMPANION_LITE,
     REGION_TAGS,
     SUPPORTED_SYSTEMS,
     get_default_zaparoo_companion_media_names,
@@ -49,15 +49,8 @@ SCAN_CACHE_VERSION = 1
 
 _last_screenscraper_request_at = 0.0
 
-_ZAPAROO_FORMATS = {OUTPUT_FORMAT_ZAPAROO_COMPANION, OUTPUT_FORMAT_ZAPAROO_COMPANION_LITE}
-
-
 def _is_zaparoo_format(output_format: str) -> bool:
-    return output_format in _ZAPAROO_FORMATS
-
-
-def _is_zaparoo_lite(output_format: str) -> bool:
-    return output_format == OUTPUT_FORMAT_ZAPAROO_COMPANION_LITE
+    return output_format == OUTPUT_FORMAT_ZAPAROO_COMPANION
 
 
 class ScreenScraperQuotaError(RuntimeError):
@@ -477,7 +470,7 @@ def clear_scan_cache(source_mode: str, source_path: str | Path) -> bool:
 def normalize_output_format(output_format: str = "") -> str:
     value = str(output_format or "").strip()
 
-    if value in {OUTPUT_FORMAT_RECALBOX, OUTPUT_FORMAT_ZAPAROO_COMPANION, OUTPUT_FORMAT_ZAPAROO_COMPANION_LITE}:
+    if value in {OUTPUT_FORMAT_RECALBOX, OUTPUT_FORMAT_ZAPAROO_COMPANION}:
         return value
 
     return get_output_format_id(value)
@@ -1050,6 +1043,18 @@ def safe_media_filename(name: str) -> str:
         name = "unknown"
 
     return name
+
+
+def safe_game_name_for_filename(name: str) -> str:
+    name = str(name or "").strip()
+    name = html.unescape(name)
+    name = re.sub(r"[\t\n\r]", "", name)
+    name = re.sub(r"[\x00-\x1f\x7f]", "", name)
+    name = name.replace(":", "-")
+    name = re.sub(r'[<>"/\\|?*]', "", name)
+    name = re.sub(r"\s+", " ", name)
+    name = name.strip(" .")
+    return name or "unknown"
 
 
 def update_game_image(game: ET.Element, image_relative_path: str):
@@ -1920,7 +1925,7 @@ def select_media_url_by_media_type(
 
 def build_zaparoo_companion_media_path(
     system_path: str | Path,
-    screenscraper_id: str | int,
+    game_name: str,
     media_source_name: str,
     extension: str = ".png",
 ) -> tuple[Path, str]:
@@ -1930,11 +1935,32 @@ def build_zaparoo_companion_media_path(
     if not media_folder:
         media_folder = "media/zaparoo"
 
-    safe_id = safe_media_filename(str(screenscraper_id or "unknown"))
+    safe_name = safe_game_name_for_filename(game_name)
     media_dir = system_path / media_folder
-    media_path = media_dir / f"{safe_id}{extension}"
+    media_path = media_dir / f"{safe_name}{extension}"
 
     return media_path, f"./{media_folder}/{media_path.name}"
+
+
+_MEDIA_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp")
+
+
+def find_existing_zaparoo_media(
+    system_path: str | Path,
+    game_name: str,
+    media_source_name: str,
+) -> tuple[Path, str] | None:
+    system_path = Path(system_path)
+    media_folder = get_zaparoo_companion_media_folder(media_source_name) or "media/zaparoo"
+    safe_name = safe_game_name_for_filename(game_name)
+    media_dir = system_path / media_folder
+
+    for ext in _MEDIA_EXTENSIONS:
+        candidate = media_dir / f"{safe_name}{ext}"
+        if candidate.exists():
+            return candidate, f"./{media_folder}/{candidate.name}"
+
+    return None
 
 
 def find_zaparoo_parent_entry(root: ET.Element, screenscraper_id: str | int) -> ET.Element | None:
@@ -1987,6 +2013,8 @@ def get_or_create_zaparoo_child_entry(
         "publisher",
         "genre",
         "players",
+        "region",
+        "lang",
         "image",
         "thumbnail",
         "marquee",
@@ -2033,7 +2061,7 @@ def download_zaparoo_companion_media_assets(
     system_path: str | Path,
     parent: ET.Element,
     game: dict[str, Any],
-    screenscraper_id: str | int,
+    game_name: str,
     region_code: str,
     media_source_names=None,
 ) -> dict[str, str]:
@@ -2045,6 +2073,13 @@ def download_zaparoo_companion_media_assets(
         xml_node = get_zaparoo_companion_media_node(media_source_name)
 
         if not media_type or not xml_node:
+            continue
+
+        existing = find_existing_zaparoo_media(system_path, game_name, media_source_name)
+        if existing:
+            media_path, media_relative_path = existing
+            set_child_text(parent, xml_node, media_relative_path)
+            downloaded[xml_node] = media_relative_path
             continue
 
         media_url = select_media_url_by_media_type(
@@ -2059,7 +2094,7 @@ def download_zaparoo_companion_media_assets(
         extension = guess_image_extension(media_url)
         media_path, media_relative_path = build_zaparoo_companion_media_path(
             system_path,
-            screenscraper_id,
+            game_name,
             media_source_name,
             extension=extension,
         )
@@ -2101,22 +2136,19 @@ def apply_zaparoo_companion_scrape_result(
         system_path=system_path,
         parent=parent,
         game=game,
-        screenscraper_id=screenscraper_id,
+        game_name=str(metadata.get("name") or ""),
         region_code=region,
         media_source_names=media_source_names,
     )
 
     child = get_or_create_zaparoo_child_entry(tree, relative_path, screenscraper_id)
 
-    if region and region != "auto":
-        set_child_text(child, "region", region)
-
-        if region == "jp":
-            set_child_text(child, "lang", "jp")
-        elif region == "us":
-            set_child_text(child, "lang", "en")
-        elif region == "eu":
-            set_child_text(child, "lang", "en")
+    rom_filename = rom.get("filename") or ""
+    api_region, api_lang = _match_rom_region_lang(game, rom_filename)
+    if api_region:
+        set_child_text(child, "region", api_region)
+    if api_lang:
+        set_child_text(child, "lang", api_lang)
 
     update_cache_entry(
         cache,
@@ -2136,6 +2168,38 @@ def apply_zaparoo_companion_scrape_result(
         "media_paths": media_paths,
         "region": region,
     }
+
+
+def _match_rom_region_lang(game: dict[str, Any], rom_filename: str) -> tuple[str, str]:
+    roms = game.get("roms")
+    if not isinstance(roms, list) or not rom_filename:
+        return "", ""
+
+    stem = Path(rom_filename).stem.lower()
+
+    for entry in roms:
+        if not isinstance(entry, dict):
+            continue
+
+        api_filename = str(entry.get("romfilename") or "").strip()
+        if not api_filename:
+            continue
+
+        if Path(api_filename).stem.lower() != stem:
+            continue
+
+        regions = entry.get("regions") or {}
+        langues = entry.get("langues") or {}
+
+        region_names = regions.get("regions_shortname") if isinstance(regions, dict) else None
+        lang_names = langues.get("langues_shortname") if isinstance(langues, dict) else None
+
+        region = str(region_names[0]).strip() if isinstance(region_names, list) and region_names else ""
+        lang = str(lang_names[0]).strip() if isinstance(lang_names, list) and lang_names else ""
+
+        return region, lang
+
+    return "", ""
 
 
 def _slugify_rom_filename(filename: str) -> str:
@@ -2184,7 +2248,7 @@ def process_scrape_action(
         region_code = detect_region_from_filename(rom_filename, selected_region)
 
     zaparoo_slug_key: tuple[str, str] | None = None
-    if _is_zaparoo_lite(output_format) and zaparoo_slug_map is not None:
+    if _is_zaparoo_format(output_format) and zaparoo_slug_map is not None:
         slug = _slugify_rom_filename(rom_filename)
         zaparoo_slug_key = (action.get("system_folder", ""), slug)
         cached_id = zaparoo_slug_map.get(zaparoo_slug_key)
@@ -2215,7 +2279,7 @@ def process_scrape_action(
         rom_size=rom_size,
         system_id=system_id,
         zip_inner_path=rom.get("zip_inner_path", ""),
-        skip_hashes=_is_zaparoo_lite(output_format),
+        skip_hashes=_is_zaparoo_format(output_format),
         quota_callback=quota_callback,
     )
 
@@ -2228,7 +2292,7 @@ def process_scrape_action(
     if _is_zaparoo_format(output_format):
         zaparoo_result = apply_zaparoo_companion_scrape_result(
             system_path=action.get("system_path"),
-            relative_path=f"./{rom_filename}" if _is_zaparoo_lite(output_format) else action.get("relative_path"),
+            relative_path=f"./{rom_filename}",
             rom=rom,
             game=game,
             metadata=metadata,
@@ -2309,7 +2373,7 @@ def run_scrape_actions(
 
     slug_map: dict[tuple[str, str], str] = {}
 
-    if _is_zaparoo_lite(output_format):
+    if _is_zaparoo_format(output_format):
         seen_keys: set[tuple[str, str]] = set()
         deduped: list[dict[str, Any]] = []
         for action in actions:
@@ -2326,7 +2390,7 @@ def run_scrape_actions(
     if callable(log_callback):
         if _is_zaparoo_format(output_format):
             media_names = normalize_zaparoo_media_source_names(zaparoo_media_source_names)
-            label = "Zaparoo Companion Lite" if _is_zaparoo_lite(output_format) else "Zaparoo Companion Experimental"
+            label = "Zaparoo Companion"
             log_callback(
                 f"Output format: {label}. "
                 f"Media: {', '.join(media_names)}. Requests are single-threaded and rate-limited."
@@ -2358,7 +2422,7 @@ def run_scrape_actions(
                 skip_existing_metadata=skip_existing_metadata,
                 output_format=output_format,
                 zaparoo_media_source_names=zaparoo_media_source_names,
-                zaparoo_slug_map=slug_map if _is_zaparoo_lite(output_format) else None,
+                zaparoo_slug_map=slug_map if _is_zaparoo_format(output_format) else None,
                 quota_callback=quota_callback,
             )
 

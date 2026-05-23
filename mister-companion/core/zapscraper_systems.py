@@ -32,13 +32,11 @@ IMAGE_SOURCES = {
 
 OUTPUT_FORMAT_RECALBOX = "recalbox"
 OUTPUT_FORMAT_ZAPAROO_COMPANION = "zaparoo_companion"
-OUTPUT_FORMAT_ZAPAROO_COMPANION_LITE = "zaparoo_companion_lite"
 
 
 OUTPUT_FORMATS = {
     "Recalbox Compatible": OUTPUT_FORMAT_RECALBOX,
-    "Zaparoo Companion Experimental": OUTPUT_FORMAT_ZAPAROO_COMPANION,
-    "Zaparoo Companion Lite": OUTPUT_FORMAT_ZAPAROO_COMPANION_LITE,
+    "Zaparoo Companion": OUTPUT_FORMAT_ZAPAROO_COMPANION,
 }
 
 
