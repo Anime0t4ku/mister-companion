@@ -71,6 +71,13 @@ from core.scripts_auto_time import (
     uninstall_auto_time_local,
 )
 
+from core.scripts_cd_game_organizer import (
+    install_cd_game_organizer,
+    install_cd_game_organizer_local,
+    uninstall_cd_game_organizer,
+    uninstall_cd_game_organizer_local,
+)
+
 from core.scripts_dav_browser import (
     install_dav_browser,
     install_dav_browser_local,
@@ -203,6 +210,11 @@ __all__ = [
     "install_auto_time_local",
     "uninstall_auto_time",
     "uninstall_auto_time_local",
+
+    "install_cd_game_organizer",
+    "install_cd_game_organizer_local",
+    "uninstall_cd_game_organizer",
+    "uninstall_cd_game_organizer_local",
 
     "install_dav_browser",
     "install_dav_browser_local",

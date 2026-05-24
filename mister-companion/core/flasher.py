@@ -687,6 +687,179 @@ def _run_subprocess(
     )
 
 
+def _run_eject_command(
+    cmd: list[str],
+    log_callback: LogCallback | None = None,
+) -> subprocess.CompletedProcess[str]:
+    startupinfo = None
+    if platform.system() == "Windows":
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+
+    result = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        startupinfo=startupinfo,
+        env=_clean_subprocess_env(),
+    )
+
+    if result.stdout:
+        for line in result.stdout.splitlines():
+            cleaned_line = clean_output(line).strip()
+            if cleaned_line:
+                _log(log_callback, cleaned_line)
+
+    if result.stderr:
+        for line in result.stderr.splitlines():
+            cleaned_line = clean_output(line).strip()
+            if cleaned_line:
+                _log(log_callback, cleaned_line)
+
+    return result
+
+
+def _eject_windows_drive(
+    drive: str,
+    log_callback: LogCallback | None = None,
+) -> bool:
+    match = re.match(r"^\\\\\.\\PhysicalDrive(\d+)$", drive, re.IGNORECASE)
+    if not match:
+        _log(log_callback, f"Automatic eject skipped: unsupported Windows drive path: {drive}")
+        return False
+
+    disk_number = match.group(1)
+    script = f"""
+$ErrorActionPreference = 'Stop'
+$diskNumber = {disk_number}
+$partitions = Get-Partition -DiskNumber $diskNumber | Where-Object {{ $_.DriveLetter }}
+if (-not $partitions) {{
+    Write-Output "No mounted drive letters found for PhysicalDrive$diskNumber."
+    exit 2
+}}
+$shell = New-Object -ComObject Shell.Application
+$success = $false
+foreach ($partition in $partitions) {{
+    $driveLetter = $partition.DriveLetter + ':'
+    Write-Output "Ejecting $driveLetter..."
+    $item = $shell.Namespace(17).ParseName($driveLetter)
+    if ($item -ne $null) {{
+        $item.InvokeVerb('Eject')
+        Start-Sleep -Seconds 2
+        $success = $true
+    }} else {{
+        Write-Output "Unable to find shell item for $driveLetter."
+    }}
+}}
+if ($success) {{ exit 0 }}
+exit 3
+"""
+
+    result = _run_eject_command(
+        [
+            "powershell",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            script,
+        ],
+        log_callback,
+    )
+
+    if result.returncode == 0:
+        return True
+
+    _log(log_callback, "Windows automatic eject did not complete.")
+    return False
+
+
+def _linux_child_block_devices(device: str) -> list[str]:
+    result = _run_subprocess(["lsblk", "-nrpo", "NAME,TYPE", device])
+    if result.returncode != 0:
+        return []
+
+    children: list[str] = []
+    for raw_line in (result.stdout or "").splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+
+        parts = line.split(None, 1)
+        if len(parts) != 2:
+            continue
+
+        name, block_type = parts
+        if block_type in {"part", "crypt", "lvm"} and name != device:
+            children.append(name)
+
+    return children
+
+
+def _eject_linux_drive(
+    drive: str,
+    log_callback: LogCallback | None = None,
+) -> bool:
+    if not shutil.which("lsblk"):
+        _log(log_callback, "Automatic eject skipped: lsblk is not available.")
+        return False
+
+    partitions = _linux_child_block_devices(drive)
+
+    if shutil.which("udisksctl"):
+        for partition in partitions:
+            _log(log_callback, f"Unmounting {partition}...")
+            _run_eject_command(["udisksctl", "unmount", "-b", partition], log_callback)
+
+        _log(log_callback, f"Powering off {drive}...")
+        result = _run_eject_command(["udisksctl", "power-off", "-b", drive], log_callback)
+        if result.returncode == 0:
+            return True
+
+        _log(log_callback, "udisksctl power-off did not complete.")
+
+    for partition in partitions:
+        _log(log_callback, f"Unmounting {partition}...")
+        _run_eject_command(["umount", partition], log_callback)
+
+    if shutil.which("eject"):
+        _log(log_callback, f"Ejecting {drive}...")
+        result = _run_eject_command(["eject", drive], log_callback)
+        if result.returncode == 0:
+            return True
+
+    _log(log_callback, "Linux automatic eject did not complete.")
+    return False
+
+
+def _eject_macos_drive(
+    drive: str,
+    log_callback: LogCallback | None = None,
+) -> bool:
+    _log(log_callback, "Ejecting drive...")
+    result = _run_eject_command(["diskutil", "eject", drive], log_callback)
+    return result.returncode == 0
+
+
+def eject_drive_after_flash(
+    drive: str,
+    log_callback: LogCallback | None = None,
+) -> bool:
+    system = platform.system()
+
+    if system == "Windows":
+        return _eject_windows_drive(drive, log_callback)
+
+    if system == "Linux":
+        return _eject_linux_drive(drive, log_callback)
+
+    if system == "Darwin":
+        return _eject_macos_drive(drive, log_callback)
+
+    _log(log_callback, "Automatic eject is not supported on this platform.")
+    return False
+
+
 def _get_windows_drive_letter_map() -> dict[str, list[str]]:
     if platform.system() != "Windows":
         return {}
@@ -1020,15 +1193,15 @@ def flash_image(
 
         _log(log_callback, "Flash completed successfully.")
 
-        if platform.system() == "Darwin":
-            _log(log_callback, "Ejecting drive...")
-            subprocess.run(
-                ["diskutil", "eject", drive],
-                capture_output=True,
-                text=True,
-                env=clean_env,
+        _log(log_callback, "Safely ejecting drive...")
+        if eject_drive_after_flash(drive, log_callback):
+            _log(log_callback, "Drive safely ejected.")
+        else:
+            _log(
+                log_callback,
+                "Flash completed, but the drive could not be ejected automatically. "
+                "Please eject it safely using your operating system before removing it.",
             )
-            _log(log_callback, "Drive ejected.")
 
     finally:
         if process.stdout is not None:

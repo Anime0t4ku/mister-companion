@@ -728,6 +728,8 @@ class FlashTab(QWidget):
             "Flash Complete",
             (
                 "Flash complete.\n\n"
+                "MiSTer Companion has attempted to safely eject the SD card. "
+                "Check the log before removing the card if you want to confirm the eject result.\n\n"
                 "Please continue the automated installation process by inserting the SD card "
                 "into your MiSTer before using any other MiSTer Companion features for this SD card."
             ),

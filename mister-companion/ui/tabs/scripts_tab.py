@@ -40,6 +40,8 @@ from core.scripts_actions import (
     get_syncthing_status_local,
     install_auto_time,
     install_auto_time_local,
+    install_cd_game_organizer,
+    install_cd_game_organizer_local,
     install_cifs_mount,
     install_cifs_mount_local,
     install_dav_browser,
@@ -73,6 +75,8 @@ from core.scripts_actions import (
     toggle_syncthing_start_on_boot_local,
     uninstall_auto_time,
     uninstall_auto_time_local,
+    uninstall_cd_game_organizer,
+    uninstall_cd_game_organizer_local,
     uninstall_cifs_mount,
     uninstall_cifs_mount_local,
     uninstall_dav_browser,
@@ -245,6 +249,7 @@ class ScriptsTab(QWidget):
     SCRIPT_MIGRATE_SD = "migrate_sd"
     SCRIPT_CIFS = "cifs_mount"
     SCRIPT_AUTO_TIME = "auto_time"
+    SCRIPT_CD_GAME_ORGANIZER = "cd_game_organizer"
     SCRIPT_DAV_BROWSER = "dav_browser"
     SCRIPT_FTP_SAVE_SYNC = "ftp_save_sync"
     SCRIPT_STATIC_WALLPAPER = "static_wallpaper"
@@ -271,6 +276,7 @@ class ScriptsTab(QWidget):
             self.SCRIPT_MIGRATE_SD,
             self.SCRIPT_CIFS,
             self.SCRIPT_AUTO_TIME,
+            self.SCRIPT_CD_GAME_ORGANIZER,
             self.SCRIPT_DAV_BROWSER,
             self.SCRIPT_FTP_SAVE_SYNC,
             self.SCRIPT_STATIC_WALLPAPER,
@@ -284,6 +290,7 @@ class ScriptsTab(QWidget):
             self.SCRIPT_MIGRATE_SD: "migrate_sd",
             self.SCRIPT_CIFS: "cifs_mount",
             self.SCRIPT_AUTO_TIME: "auto_time",
+            self.SCRIPT_CD_GAME_ORGANIZER: "cd_game_organizer",
             self.SCRIPT_DAV_BROWSER: "dav_browser",
             self.SCRIPT_FTP_SAVE_SYNC: "ftp_save_sync",
             self.SCRIPT_STATIC_WALLPAPER: "static_wallpaper",
@@ -314,6 +321,10 @@ class ScriptsTab(QWidget):
                 "auto_time automatically detects your timezone and applies the correct "
                 "date and time to your MiSTer."
             ),
+            self.SCRIPT_CD_GAME_ORGANIZER: (
+                "cd_game_organizer organizes CD-based games into their own folders, "
+                "helping keep virtual memory cards separated per game."
+            ),
             self.SCRIPT_DAV_BROWSER: (
                 "DAV Browser lets your MiSTer browse a WebDAV server, such as a NAS or "
                 "remote file server, download ROMs or files, and optionally launch them after downloading."
@@ -342,6 +353,7 @@ class ScriptsTab(QWidget):
             self.SCRIPT_MIGRATE_SD: "Unknown",
             self.SCRIPT_CIFS: "Unknown",
             self.SCRIPT_AUTO_TIME: "Unknown",
+            self.SCRIPT_CD_GAME_ORGANIZER: "Unknown",
             self.SCRIPT_DAV_BROWSER: "Unknown",
             self.SCRIPT_FTP_SAVE_SYNC: "Unknown",
             self.SCRIPT_STATIC_WALLPAPER: "Unknown",
@@ -443,6 +455,7 @@ class ScriptsTab(QWidget):
         self.migrate_actions_widget = self._build_migrate_sd_actions()
         self.cifs_actions_widget = self._build_cifs_actions()
         self.auto_time_actions_widget = self._build_auto_time_actions()
+        self.cd_game_organizer_actions_widget = self._build_cd_game_organizer_actions()
         self.dav_browser_actions_widget = self._build_dav_browser_actions()
         self.ftp_save_sync_actions_widget = self._build_ftp_save_sync_actions()
         self.static_wallpaper_actions_widget = self._build_static_wallpaper_actions()
@@ -455,6 +468,7 @@ class ScriptsTab(QWidget):
             self.SCRIPT_MIGRATE_SD: self.migrate_actions_widget,
             self.SCRIPT_CIFS: self.cifs_actions_widget,
             self.SCRIPT_AUTO_TIME: self.auto_time_actions_widget,
+            self.SCRIPT_CD_GAME_ORGANIZER: self.cd_game_organizer_actions_widget,
             self.SCRIPT_DAV_BROWSER: self.dav_browser_actions_widget,
             self.SCRIPT_FTP_SAVE_SYNC: self.ftp_save_sync_actions_widget,
             self.SCRIPT_STATIC_WALLPAPER: self.static_wallpaper_actions_widget,
@@ -534,6 +548,9 @@ class ScriptsTab(QWidget):
 
         self.install_auto_time_button.clicked.connect(self.install_auto_time)
         self.uninstall_auto_time_button.clicked.connect(self.uninstall_auto_time)
+
+        self.install_cd_game_organizer_button.clicked.connect(self.install_cd_game_organizer)
+        self.uninstall_cd_game_organizer_button.clicked.connect(self.uninstall_cd_game_organizer)
 
         self.install_dav_browser_button.clicked.connect(self.install_dav_browser)
         self.configure_dav_browser_button.clicked.connect(self.configure_dav_browser)
@@ -702,6 +719,26 @@ class ScriptsTab(QWidget):
             self._build_button_row(
                 self.install_auto_time_button,
                 self.uninstall_auto_time_button,
+            )
+        )
+
+        widget.setLayout(layout)
+        return widget
+
+    def _build_cd_game_organizer_actions(self):
+        widget = QWidget()
+        layout = QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+
+        self.install_cd_game_organizer_button = QPushButton("Install")
+        set_text_button_min_width(self.install_cd_game_organizer_button, 140)
+        self.uninstall_cd_game_organizer_button = QPushButton("Uninstall")
+        set_text_button_min_width(self.uninstall_cd_game_organizer_button, 140)
+        layout.addLayout(
+            self._build_button_row(
+                self.install_cd_game_organizer_button,
+                self.uninstall_cd_game_organizer_button,
             )
         )
 
@@ -905,6 +942,8 @@ class ScriptsTab(QWidget):
             self.uninstall_cifs_button,
             self.install_auto_time_button,
             self.uninstall_auto_time_button,
+            self.install_cd_game_organizer_button,
+            self.uninstall_cd_game_organizer_button,
             self.install_dav_browser_button,
             self.configure_dav_browser_button,
             self.remove_dav_browser_config_button,
@@ -1254,6 +1293,15 @@ class ScriptsTab(QWidget):
             self.script_status_texts[self.SCRIPT_AUTO_TIME] = "✗ Not installed"
             self.install_auto_time_button.setEnabled(True)
             self.uninstall_auto_time_button.setEnabled(False)
+
+        if status.cd_game_organizer_installed:
+            self.script_status_texts[self.SCRIPT_CD_GAME_ORGANIZER] = "✓ Installed"
+            self.install_cd_game_organizer_button.setEnabled(False)
+            self.uninstall_cd_game_organizer_button.setEnabled(True)
+        else:
+            self.script_status_texts[self.SCRIPT_CD_GAME_ORGANIZER] = "✗ Not installed"
+            self.install_cd_game_organizer_button.setEnabled(True)
+            self.uninstall_cd_game_organizer_button.setEnabled(False)
 
         if not status.dav_browser_installed:
             self.script_status_texts[self.SCRIPT_DAV_BROWSER] = "✗ Not installed"
@@ -2103,6 +2151,66 @@ class ScriptsTab(QWidget):
             return
 
         uninstall_auto_time(self.connection)
+        self.refresh_status()
+
+    def install_cd_game_organizer(self):
+        if self.is_offline_mode():
+            sd_root = self.get_offline_sd_root()
+            if not sd_root:
+                QMessageBox.critical(self, "Error", "Select an Offline SD Card first.")
+                return
+
+            def task(log):
+                install_cd_game_organizer_local(sd_root, log)
+
+            self.start_worker(
+                task,
+                "Script installed successfully on the selected SD card.\n\nYou can run it from the MiSTer Scripts menu.",
+            )
+            return
+
+        if not self.connection.is_connected():
+            return
+
+        def task(log):
+            install_cd_game_organizer(self.connection, log)
+
+        self.start_worker(
+            task,
+            "Script installed successfully.\n\nYou can run it from the MiSTer Scripts menu or from the ZapScripts tab in MiSTer Companion.",
+        )
+
+    def uninstall_cd_game_organizer(self):
+        if self.is_offline_mode():
+            sd_root = self.get_offline_sd_root()
+            if not sd_root:
+                QMessageBox.critical(self, "Error", "Select an Offline SD Card first.")
+                return
+
+            confirm = QMessageBox.question(
+                self,
+                "Uninstall cd_game_organizer",
+                "Are you sure you want to remove cd_game_organizer from the selected SD card?",
+            )
+            if confirm != QMessageBox.StandardButton.Yes:
+                return
+
+            uninstall_cd_game_organizer_local(sd_root)
+            self.refresh_status()
+            return
+
+        if not self.connection.is_connected():
+            return
+
+        confirm = QMessageBox.question(
+            self,
+            "Uninstall cd_game_organizer",
+            "Are you sure you want to remove cd_game_organizer?",
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+
+        uninstall_cd_game_organizer(self.connection)
         self.refresh_status()
 
     def install_dav_browser(self):

@@ -24,6 +24,7 @@ from PyQt6.QtWidgets import (
 
 from ui.scaling import set_text_button_min_width
 from core.config import save_config
+from core.sd_eject import eject_sd_card_path
 
 NEWSWIDGET_URL = "https://raw.githubusercontent.com/Anime0t4ku/mister-companion/main/newsfeed.json"
 NEWS_ROTATION_INTERVAL_MS = 10000
@@ -341,11 +342,15 @@ class ConnectionTab(QWidget):
         self.open_sd_btn = QPushButton("Open SD Card")
         self.open_sd_btn.setMinimumWidth(120)
 
+        self.eject_sd_btn = QPushButton("Eject SD Card")
+        self.eject_sd_btn.setMinimumWidth(120)
+
         self.clear_sd_btn = QPushButton("Clear Selection")
         self.clear_sd_btn.setMinimumWidth(120)
 
         offline_actions_row.addStretch()
         offline_actions_row.addWidget(self.open_sd_btn)
+        offline_actions_row.addWidget(self.eject_sd_btn)
         offline_actions_row.addWidget(self.clear_sd_btn)
         offline_actions_row.addStretch()
 
@@ -445,6 +450,7 @@ class ConnectionTab(QWidget):
 
         self.browse_sd_btn.clicked.connect(self.handle_browse_sd_card)
         self.open_sd_btn.clicked.connect(self.handle_open_sd_card)
+        self.eject_sd_btn.clicked.connect(self.handle_eject_sd_card)
         self.clear_sd_btn.clicked.connect(self.handle_clear_sd_card)
 
         self.connect_btn.clicked.connect(self.handle_connect_toggle)
@@ -719,6 +725,7 @@ class ConnectionTab(QWidget):
                 "color: #1e88e5; font-weight: bold;"
             )
             self.open_sd_btn.setEnabled(False)
+            self.eject_sd_btn.setEnabled(False)
             self.clear_sd_btn.setEnabled(False)
         else:
             self.mode_hint_label.setText("Switching to Online Mode...")
@@ -776,6 +783,7 @@ class ConnectionTab(QWidget):
                 "color: #8b5cf6; font-weight: bold;"
             )
             self.open_sd_btn.setEnabled(True)
+            self.eject_sd_btn.setEnabled(True)
             self.clear_sd_btn.setEnabled(True)
         else:
             self.offline_sd_status_label.setText("No SD card selected.")
@@ -783,6 +791,7 @@ class ConnectionTab(QWidget):
                 "color: #f39c12; font-weight: bold;"
             )
             self.open_sd_btn.setEnabled(False)
+            self.eject_sd_btn.setEnabled(False)
             self.clear_sd_btn.setEnabled(False)
 
         self.online_mode_radio.setEnabled(True)
@@ -889,6 +898,70 @@ class ConnectionTab(QWidget):
             return
 
         open_local_folder(path)
+
+    def handle_eject_sd_card(self):
+        sd_root = self.main_window.get_offline_sd_root()
+        if not sd_root:
+            QMessageBox.warning(
+                self,
+                "No SD Card Selected",
+                "Select an Offline Mode SD card first.",
+            )
+            return
+
+        reply = QMessageBox.question(
+            self,
+            "Eject SD Card",
+            (
+                "This will safely eject the selected Offline Mode SD card.\n\n"
+                "Make sure no other MiSTer Companion action is currently writing to it.\n\n"
+                "Continue?"
+            ),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        self.eject_sd_btn.setEnabled(False)
+        self.open_sd_btn.setEnabled(False)
+        self.clear_sd_btn.setEnabled(False)
+        self.offline_sd_status_label.setText("Ejecting SD card...")
+        self.offline_sd_status_label.setStyleSheet(
+            "color: #1e88e5; font-weight: bold;"
+        )
+
+        messages = []
+
+        def collect_message(message: str):
+            text = str(message or "").strip()
+            if text:
+                messages.append(text)
+
+        success = eject_sd_card_path(sd_root, collect_message)
+
+        if success:
+            self.offline_sd_input.clear()
+            self.main_window.set_offline_sd_root("")
+            self.main_window.apply_app_mode_state()
+            self.update_mode_state()
+            QMessageBox.information(
+                self,
+                "SD Card Ejected",
+                "The selected SD card was safely ejected.",
+            )
+        else:
+            details = "\n".join(messages[-6:]).strip()
+            message = "MiSTer Companion could not eject the selected SD card automatically."
+            if details:
+                message += f"\n\nDetails:\n{details}"
+            QMessageBox.warning(
+                self,
+                "Eject Failed",
+                message,
+            )
+            self.update_mode_state()
 
     def handle_clear_sd_card(self):
         self.offline_sd_input.clear()

@@ -58,6 +58,7 @@ class ScriptsStatus:
     cifs_installed: bool
     cifs_configured: bool
     auto_time_installed: bool
+    cd_game_organizer_installed: bool
     dav_browser_installed: bool
     dav_browser_configured: bool
     ftp_save_sync_installed: bool
@@ -71,7 +72,7 @@ class ScriptsStatus:
 def empty_scripts_status() -> ScriptsStatus:
     return ScriptsStatus(
         False, False, False, False, False, False, False,
-        False, False, False, False, False, False,
+        False, False, False, False, False, False, False,
         False, False, False,
     )
 
@@ -462,6 +463,11 @@ def get_scripts_status(connection) -> ScriptsStatus:
     )
     auto_time_installed = "EXISTS" in (auto_time_check or "")
 
+    cd_game_organizer_check = connection.run_command(
+        "test -f /media/fat/Scripts/cd_game_organizer.sh && echo EXISTS"
+    )
+    cd_game_organizer_installed = "EXISTS" in (cd_game_organizer_check or "")
+
     dav_browser_script_check = connection.run_command(
         "test -f /media/fat/Scripts/dav_browser.sh && echo EXISTS"
     )
@@ -499,6 +505,7 @@ def get_scripts_status(connection) -> ScriptsStatus:
         cifs_installed=cifs_installed,
         cifs_configured=cifs_configured,
         auto_time_installed=auto_time_installed,
+        cd_game_organizer_installed=cd_game_organizer_installed,
         dav_browser_installed=dav_browser_installed,
         dav_browser_configured=dav_browser_configured,
         ftp_save_sync_installed=ftp_save_sync_installed,
@@ -521,6 +528,7 @@ def get_scripts_status_local(sd_root) -> ScriptsStatus:
         cifs_installed = _local_file_exists(sd_root, "/media/fat/Scripts/cifs_mount.sh")
         cifs_configured = _local_file_exists(sd_root, "/media/fat/Scripts/cifs_mount.ini")
         auto_time_installed = _local_file_exists(sd_root, "/media/fat/Scripts/auto_time.sh")
+        cd_game_organizer_installed = _local_file_exists(sd_root, "/media/fat/Scripts/cd_game_organizer.sh")
         dav_browser_installed = _local_file_exists(sd_root, "/media/fat/Scripts/dav_browser.sh")
         dav_browser_configured = _local_file_exists(sd_root, DAV_BROWSER_CONFIG_PATH)
         ftp_save_sync_installed = _local_file_exists(sd_root, "/media/fat/Scripts/ftp_save_sync.sh")
@@ -550,6 +558,7 @@ def get_scripts_status_local(sd_root) -> ScriptsStatus:
             cifs_installed=cifs_installed,
             cifs_configured=cifs_configured,
             auto_time_installed=auto_time_installed,
+            cd_game_organizer_installed=cd_game_organizer_installed,
             dav_browser_installed=dav_browser_installed,
             dav_browser_configured=dav_browser_configured,
             ftp_save_sync_installed=ftp_save_sync_installed,
