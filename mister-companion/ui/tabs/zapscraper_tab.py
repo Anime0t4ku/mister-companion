@@ -593,7 +593,7 @@ class ZapScraperTab(QWidget):
             if source_index >= 0:
                 self.source_combo.setCurrentIndex(source_index)
 
-            output_format = str(scraper_config.get("output_format", "Zaparoo Companion"))
+            output_format = str(scraper_config.get("output_format", "Recalbox Compatible"))
             output_format_index = self.output_format_combo.findText(output_format)
             if output_format_index >= 0:
                 self.output_format_combo.setCurrentIndex(output_format_index)

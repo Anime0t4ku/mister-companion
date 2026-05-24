@@ -104,7 +104,7 @@ class ExtrasStatusWorker(QThread):
 
     EXTRA_3SX = "3sx_mister"
     EXTRA_SONIC_MANIA = "sonic_mania_mister"
-    EXTRA_ZAPAROO_LAUNCHER = "zaparoo_launcher_ui_beta"
+    EXTRA_ZAPAROO_LAUNCHER = "zaparoo_frontend"
     EXTRA_RA_CORES = "retroachievement_cores"
 
     def __init__(self, connection, offline=False, sd_root=""):
@@ -170,7 +170,7 @@ class ExtrasStatusWorker(QThread):
 class ExtrasTab(QWidget):
     EXTRA_3SX = "3sx_mister"
     EXTRA_SONIC_MANIA = "sonic_mania_mister"
-    EXTRA_ZAPAROO_LAUNCHER = "zaparoo_launcher_ui_beta"
+    EXTRA_ZAPAROO_LAUNCHER = "zaparoo_frontend"
     EXTRA_RA_CORES = "retroachievement_cores"
 
     TASK_CHECK_3SX = "check_updates_3sx"
@@ -210,7 +210,7 @@ class ExtrasTab(QWidget):
         self.extra_titles = {
             self.EXTRA_3SX: "3S-ARM",
             self.EXTRA_SONIC_MANIA: "Sonic Mania MiSTer",
-            self.EXTRA_ZAPAROO_LAUNCHER: "Zaparoo Launcher/UI Beta",
+            self.EXTRA_ZAPAROO_LAUNCHER: "Zaparoo Frontend",
             self.EXTRA_RA_CORES: "RetroAchievement Cores",
         }
 
@@ -224,11 +224,11 @@ class ExtrasTab(QWidget):
                 "MiSTer port, with support for the required Data.rsdk game file."
             ),
             self.EXTRA_ZAPAROO_LAUNCHER: (
-                "Zaparoo Launcher/UI Beta is a MiSTer frontend that provides a "
+                "Zaparoo Frontend is a MiSTer frontend that provides a "
                 "controller-friendly interface for browsing and launching your games, "
                 "media, and other MiSTer content, with artwork support.\n\n"
                 "Make sure you are using the latest version of Zaparoo before installing "
-                "or updating Zaparoo Launcher/UI Beta."
+                "or updating Zaparoo Frontend."
             ),
             self.EXTRA_RA_CORES: (
                 "RetroAchievement Cores adds RetroAchievements-enabled MiSTer cores "
@@ -1170,7 +1170,7 @@ class ExtrasTab(QWidget):
                 return
 
             def task(log):
-                log("Checking Zaparoo Launcher/UI Beta updates...\n")
+                log("Checking Zaparoo Frontend updates...\n")
                 return get_zaparoo_launcher_status_local(
                     self.get_offline_sd_root(),
                     check_latest=True,
@@ -1183,7 +1183,7 @@ class ExtrasTab(QWidget):
             return
 
         def task(log):
-            log("Checking Zaparoo Launcher/UI Beta updates...\n")
+            log("Checking Zaparoo Frontend updates...\n")
             return get_zaparoo_launcher_status(self.connection, check_latest=True)
 
         self._run_worker(task, "", task_kind=self.TASK_CHECK_ZAPAROO_LAUNCHER)
@@ -1427,10 +1427,10 @@ class ExtrasTab(QWidget):
 
     def install_or_update_zaparoo_launcher(self):
         button_text = self.install_update_zaparoo_launcher_button.text().strip()
-        success_message = "Zaparoo Launcher/UI Beta installed."
+        success_message = "Zaparoo Frontend installed."
 
         if button_text == "Update":
-            success_message = "Zaparoo Launcher/UI Beta updated."
+            success_message = "Zaparoo Frontend updated."
 
         if self.is_offline_mode():
             if not self.has_offline_sd_root():
@@ -1466,10 +1466,10 @@ class ExtrasTab(QWidget):
 
             reply = QMessageBox.question(
                 self,
-                "Uninstall Zaparoo Launcher/UI Beta",
+                "Uninstall Zaparoo Frontend",
                 (
-                    "Remove Zaparoo Launcher/UI Beta files from the Offline SD Card?\n\n"
-                    "This will also remove the Zaparoo launcher main and alt_launcher entries "
+                    "Remove Zaparoo Frontend files from the Offline SD Card?\n\n"
+                    "This will also remove the Zaparoo Frontend main entry "
                     "from the [MiSTer] section in MiSTer.ini.\n\n"
                     "Your existing Zaparoo installation and zaparoo.sh script will be left untouched."
                 ),
@@ -1488,7 +1488,7 @@ class ExtrasTab(QWidget):
                 )
 
             self._clear_cached_update_result(self.EXTRA_ZAPAROO_LAUNCHER)
-            self._run_worker(task, "Zaparoo Launcher/UI Beta uninstalled.")
+            self._run_worker(task, "Zaparoo Frontend uninstalled.")
             return
 
         if not self.is_online_connected():
@@ -1496,10 +1496,10 @@ class ExtrasTab(QWidget):
 
         reply = QMessageBox.question(
             self,
-            "Uninstall Zaparoo Launcher/UI Beta",
+            "Uninstall Zaparoo Frontend",
             (
-                "Remove Zaparoo Launcher/UI Beta files?\n\n"
-                "This will also remove the Zaparoo launcher main and alt_launcher "
+                "Remove Zaparoo Frontend files?\n\n"
+                "This will also remove the Zaparoo Frontend main "
                 "entries from the [MiSTer] section in MiSTer.ini.\n\n"
                 "Your existing Zaparoo installation and zaparoo.sh script will be left untouched.\n\n"
                 "A soft reboot will be required after uninstall."
@@ -1517,7 +1517,7 @@ class ExtrasTab(QWidget):
             return backend_uninstall_zaparoo_launcher(self.connection, log)
 
         self._clear_cached_update_result(self.EXTRA_ZAPAROO_LAUNCHER)
-        self._run_worker(task, "Zaparoo Launcher/UI Beta uninstalled.")
+        self._run_worker(task, "Zaparoo Frontend uninstalled.")
 
     def prompt_zaparoo_launcher_soft_reboot_required(self):
         if self.is_offline_mode():
@@ -1527,7 +1527,7 @@ class ExtrasTab(QWidget):
             self,
             "Soft Reboot Required",
             (
-                "A soft reboot is required to apply the Zaparoo Launcher/UI Beta changes.\n\n"
+                "A soft reboot is required to apply the Zaparoo Frontend changes.\n\n"
                 "Do you want to soft reboot MiSTer now?"
             ),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,

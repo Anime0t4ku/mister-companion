@@ -22,17 +22,21 @@ from core.extras_common import (
 )
 
 
-ZAPAROO_LAUNCHER_GITHUB_REPO = "ZaparooProject/zaparoo-launcher"
+ZAPAROO_LAUNCHER_GITHUB_REPO = "ZaparooProject/zaparoo-frontend"
 
 ZAPAROO_LAUNCHER_REMOTE_DIR = "/media/fat/zaparoo"
 ZAPAROO_LAUNCHER_MAIN_PATH = "/media/fat/zaparoo/MiSTer_Zaparoo"
-ZAPAROO_LAUNCHER_UI_PATH = "/media/fat/zaparoo/launcher"
+ZAPAROO_LAUNCHER_UI_PATH = "/media/fat/zaparoo/frontend"
+ZAPAROO_LAUNCHER_OLD_UI_PATH = "/media/fat/zaparoo/launcher"
+ZAPAROO_LAUNCHER_MENU_CORE_PATH = "/media/fat/zaparoo/menu_zaparoo.rbf"
 
 ZAPAROO_LAUNCHER_SCRIPT_PATH = "/media/fat/Scripts/zaparoo.sh"
 ZAPAROO_LAUNCHER_BACKUP_SCRIPT_PATH = "/media/fat/Scripts/zaparoo.sh.companion"
 
-ZAPAROO_LAUNCHER_CONFIG_DIR = "/media/fat/Scripts/.config/zaparoo_launcher"
-ZAPAROO_LAUNCHER_VERSION_FILE = "/media/fat/Scripts/.config/zaparoo_launcher/version.txt"
+ZAPAROO_LAUNCHER_CONFIG_DIR = "/media/fat/Scripts/.config/zaparoo_frontend"
+ZAPAROO_LAUNCHER_OLD_CONFIG_DIR = "/media/fat/Scripts/.config/zaparoo_launcher"
+ZAPAROO_LAUNCHER_VERSION_FILE = "/media/fat/Scripts/.config/zaparoo_frontend/version.txt"
+ZAPAROO_LAUNCHER_OLD_VERSION_FILE = "/media/fat/Scripts/.config/zaparoo_launcher/version.txt"
 ZAPAROO_LAUNCHER_SCRIPT_MARKER = (
     "/media/fat/Scripts/.config/zaparoo_launcher/installed_by_mister_companion"
 )
@@ -45,8 +49,7 @@ FALLBACK_MISTER_INI_URL = (
 MISTER_MAIN_VALUE = "zaparoo/MiSTer_Zaparoo"
 MISTER_ALT_LAUNCHER_VALUE = "zaparoo/launcher"
 
-ZAPAROO_LAUNCHER_INI_BLOCK = """main=zaparoo/MiSTer_Zaparoo
-alt_launcher=zaparoo/launcher"""
+ZAPAROO_LAUNCHER_INI_BLOCK = "main=zaparoo/MiSTer_Zaparoo"
 
 
 def _local_target_path(sd_root: str, remote_path: str) -> str:
@@ -62,7 +65,7 @@ def _local_target_path(sd_root: str, remote_path: str) -> str:
 def _fetch_latest_zaparoo_launcher_release():
     return _fetch_latest_zip_release(
         ZAPAROO_LAUNCHER_GITHUB_REPO,
-        "Zaparoo Launcher/UI Beta",
+        "Zaparoo Frontend",
     )
 
 
@@ -200,7 +203,7 @@ def _strip_zaparoo_launcher_entries_from_section_body(section_body: list[str]) -
 
             if (
                 "main=zaparoo/MiSTer_Zaparoo" in block_normalized
-                and "alt_launcher=zaparoo/launcher" in block_normalized
+                or "alt_launcher=zaparoo/launcher" in block_normalized
             ):
                 continue
 
@@ -237,7 +240,6 @@ def _patch_mister_ini_for_zaparoo_launcher(text: str) -> str:
             "[MiSTer]",
             "",
             "main=zaparoo/MiSTer_Zaparoo",
-            "alt_launcher=zaparoo/launcher",
             "",
         ]
         patched_lines.extend(lines)
@@ -258,7 +260,6 @@ def _patch_mister_ini_for_zaparoo_launcher(text: str) -> str:
 
     patched_lines.append("")
     patched_lines.append("main=zaparoo/MiSTer_Zaparoo")
-    patched_lines.append("alt_launcher=zaparoo/launcher")
 
     if after:
         patched_lines.append("")
@@ -310,25 +311,18 @@ def _mister_ini_text_has_zaparoo_launcher_entries(text: str) -> bool:
     fenced_block_present = (
         "```" in section_text
         and "main=zaparoo/MiSTer_Zaparoo" in section_text
-        and "alt_launcher=zaparoo/launcher" in section_text
     )
 
     if fenced_block_present:
         return True
 
-    has_main = False
-    has_alt_launcher = False
-
     for line in lines[start + 1:end]:
         key, value = _line_key_value(line)
 
         if key == "main" and value == MISTER_MAIN_VALUE:
-            has_main = True
+            return True
 
-        if key == "alt_launcher" and value == MISTER_ALT_LAUNCHER_VALUE:
-            has_alt_launcher = True
-
-    return has_main and has_alt_launcher
+    return False
 
 
 def _mister_ini_has_zaparoo_launcher_entries(connection) -> bool:
@@ -350,9 +344,9 @@ def _patch_remote_mister_ini(connection, log):
 
     if patched != current_normalized:
         _write_remote_text(connection, MISTER_INI_PATH, patched)
-        log("Updated [MiSTer] section in MiSTer.ini for Zaparoo Launcher/UI Beta.\n")
+        log("Updated [MiSTer] section in MiSTer.ini for Zaparoo Frontend.\n")
     else:
-        log("MiSTer.ini already contains the Zaparoo Launcher/UI Beta entries.\n")
+        log("MiSTer.ini already contains the Zaparoo Frontend entries.\n")
 
 
 def _patch_local_mister_ini(sd_root: str, log):
@@ -364,9 +358,9 @@ def _patch_local_mister_ini(sd_root: str, log):
 
     if patched != current_normalized:
         _write_local_text(sd_root, MISTER_INI_PATH, patched)
-        log("Updated [MiSTer] section in MiSTer.ini for Zaparoo Launcher/UI Beta.\n")
+        log("Updated [MiSTer] section in MiSTer.ini for Zaparoo Frontend.\n")
     else:
-        log("MiSTer.ini already contains the Zaparoo Launcher/UI Beta entries.\n")
+        log("MiSTer.ini already contains the Zaparoo Frontend entries.\n")
 
 
 def _remove_remote_mister_ini_entries(connection, log):
@@ -380,9 +374,9 @@ def _remove_remote_mister_ini_entries(connection, log):
 
     if patched != current_normalized:
         _write_remote_text(connection, MISTER_INI_PATH, patched)
-        log("Removed Zaparoo Launcher/UI Beta entries from MiSTer.ini.\n")
+        log("Removed Zaparoo Frontend entries from MiSTer.ini.\n")
     else:
-        log("No Zaparoo Launcher/UI Beta entries found in MiSTer.ini.\n")
+        log("No Zaparoo Frontend entries found in MiSTer.ini.\n")
 
 
 def _remove_local_mister_ini_entries(sd_root: str, log):
@@ -396,15 +390,16 @@ def _remove_local_mister_ini_entries(sd_root: str, log):
 
     if patched != current_normalized:
         _write_local_text(sd_root, MISTER_INI_PATH, patched)
-        log("Removed Zaparoo Launcher/UI Beta entries from MiSTer.ini.\n")
+        log("Removed Zaparoo Frontend entries from MiSTer.ini.\n")
     else:
-        log("No Zaparoo Launcher/UI Beta entries found in MiSTer.ini.\n")
+        log("No Zaparoo Frontend entries found in MiSTer.ini.\n")
 
 
 def _is_zaparoo_launcher_installed(connection) -> bool:
     return (
         _path_exists(connection, ZAPAROO_LAUNCHER_MAIN_PATH)
         and _path_exists(connection, ZAPAROO_LAUNCHER_UI_PATH)
+        and _path_exists(connection, ZAPAROO_LAUNCHER_MENU_CORE_PATH)
         and _mister_ini_has_zaparoo_launcher_entries(connection)
     )
 
@@ -413,6 +408,7 @@ def _is_zaparoo_launcher_installed_local(sd_root: str) -> bool:
     return (
         _path_exists_local(sd_root, ZAPAROO_LAUNCHER_MAIN_PATH)
         and _path_exists_local(sd_root, ZAPAROO_LAUNCHER_UI_PATH)
+        and _path_exists_local(sd_root, ZAPAROO_LAUNCHER_MENU_CORE_PATH)
         and _mister_ini_has_zaparoo_launcher_entries_local(sd_root)
     )
 
@@ -562,7 +558,8 @@ def install_or_update_zaparoo_launcher(connection, log):
 
     with zipfile.ZipFile(io.BytesIO(archive_data)) as zf:
         mister_zaparoo = _extract_required_file(zf, "zaparoo/MiSTer_Zaparoo")
-        launcher = _extract_required_file(zf, "zaparoo/launcher")
+        frontend = _extract_required_file(zf, "zaparoo/frontend")
+        menu_zaparoo = _extract_required_file(zf, "zaparoo/menu_zaparoo.rbf")
 
     connection.run_command(
         f"if [ -e {_quote(ZAPAROO_LAUNCHER_REMOTE_DIR)} ] "
@@ -576,9 +573,11 @@ def install_or_update_zaparoo_launcher(connection, log):
     _ensure_remote_dir(connection, ZAPAROO_LAUNCHER_REMOTE_DIR)
     _ensure_remote_dir(connection, ZAPAROO_LAUNCHER_CONFIG_DIR)
 
-    log("Removing old Zaparoo Launcher/UI Beta files before upload...\n")
+    log("Removing old Zaparoo Frontend files before upload...\n")
     _remove_remote_file(connection, ZAPAROO_LAUNCHER_MAIN_PATH)
     _remove_remote_file(connection, ZAPAROO_LAUNCHER_UI_PATH)
+    _remove_remote_file(connection, ZAPAROO_LAUNCHER_OLD_UI_PATH)
+    _remove_remote_file(connection, ZAPAROO_LAUNCHER_MENU_CORE_PATH)
 
     log("Leaving existing Zaparoo script untouched.\n")
 
@@ -586,7 +585,10 @@ def install_or_update_zaparoo_launcher(connection, log):
     _write_remote_bytes(connection, ZAPAROO_LAUNCHER_MAIN_PATH, mister_zaparoo)
 
     log(f"Uploading: {ZAPAROO_LAUNCHER_UI_PATH}\n")
-    _write_remote_bytes(connection, ZAPAROO_LAUNCHER_UI_PATH, launcher)
+    _write_remote_bytes(connection, ZAPAROO_LAUNCHER_UI_PATH, frontend)
+
+    log(f"Uploading: {ZAPAROO_LAUNCHER_MENU_CORE_PATH}\n")
+    _write_remote_bytes(connection, ZAPAROO_LAUNCHER_MENU_CORE_PATH, menu_zaparoo)
 
     connection.run_command(f"chmod +x {_quote(ZAPAROO_LAUNCHER_MAIN_PATH)}")
     connection.run_command(f"chmod +x {_quote(ZAPAROO_LAUNCHER_UI_PATH)}")
@@ -616,7 +618,8 @@ def install_or_update_zaparoo_launcher_local(sd_root: str, log):
 
     with zipfile.ZipFile(io.BytesIO(archive_data)) as zf:
         mister_zaparoo = _extract_required_file(zf, "zaparoo/MiSTer_Zaparoo")
-        launcher = _extract_required_file(zf, "zaparoo/launcher")
+        frontend = _extract_required_file(zf, "zaparoo/frontend")
+        menu_zaparoo = _extract_required_file(zf, "zaparoo/menu_zaparoo.rbf")
 
     zaparoo_dir = _local_target_path(sd_root, ZAPAROO_LAUNCHER_REMOTE_DIR)
     if os.path.exists(zaparoo_dir) and not os.path.isdir(zaparoo_dir):
@@ -626,9 +629,11 @@ def install_or_update_zaparoo_launcher_local(sd_root: str, log):
     _ensure_local_dir(sd_root, ZAPAROO_LAUNCHER_REMOTE_DIR)
     _ensure_local_dir(sd_root, ZAPAROO_LAUNCHER_CONFIG_DIR)
 
-    log("Removing old Zaparoo Launcher/UI Beta files before writing...\n")
+    log("Removing old Zaparoo Frontend files before writing...\n")
     _remove_local_path(sd_root, ZAPAROO_LAUNCHER_MAIN_PATH)
     _remove_local_path(sd_root, ZAPAROO_LAUNCHER_UI_PATH)
+    _remove_local_path(sd_root, ZAPAROO_LAUNCHER_OLD_UI_PATH)
+    _remove_local_path(sd_root, ZAPAROO_LAUNCHER_MENU_CORE_PATH)
 
     log("Leaving existing Zaparoo script untouched.\n")
 
@@ -636,7 +641,10 @@ def install_or_update_zaparoo_launcher_local(sd_root: str, log):
     _write_local_bytes(sd_root, ZAPAROO_LAUNCHER_MAIN_PATH, mister_zaparoo)
 
     log(f"Writing: {ZAPAROO_LAUNCHER_UI_PATH}\n")
-    _write_local_bytes(sd_root, ZAPAROO_LAUNCHER_UI_PATH, launcher)
+    _write_local_bytes(sd_root, ZAPAROO_LAUNCHER_UI_PATH, frontend)
+
+    log(f"Writing: {ZAPAROO_LAUNCHER_MENU_CORE_PATH}\n")
+    _write_local_bytes(sd_root, ZAPAROO_LAUNCHER_MENU_CORE_PATH, menu_zaparoo)
 
     _patch_local_mister_ini(sd_root, log)
 
@@ -653,11 +661,14 @@ def uninstall_zaparoo_launcher(connection, log):
     if not connection.is_connected():
         raise RuntimeError("Not connected to MiSTer.")
 
-    log("Removing Zaparoo Launcher/UI Beta files...\n")
+    log("Removing Zaparoo Frontend files...\n")
 
     _remove_remote_file(connection, ZAPAROO_LAUNCHER_MAIN_PATH)
     _remove_remote_file(connection, ZAPAROO_LAUNCHER_UI_PATH)
+    _remove_remote_file(connection, ZAPAROO_LAUNCHER_OLD_UI_PATH)
+    _remove_remote_file(connection, ZAPAROO_LAUNCHER_MENU_CORE_PATH)
     _remove_remote_file(connection, ZAPAROO_LAUNCHER_VERSION_FILE)
+    _remove_remote_file(connection, ZAPAROO_LAUNCHER_OLD_VERSION_FILE)
 
     _remove_remote_mister_ini_entries(connection, log)
 
@@ -673,8 +684,11 @@ def uninstall_zaparoo_launcher(connection, log):
     connection.run_command(
         f"rmdir {_quote(ZAPAROO_LAUNCHER_CONFIG_DIR)} 2>/dev/null || true"
     )
+    connection.run_command(
+        f"rmdir {_quote(ZAPAROO_LAUNCHER_OLD_CONFIG_DIR)} 2>/dev/null || true"
+    )
 
-    log("Zaparoo Launcher/UI Beta uninstalled.\n")
+    log("Zaparoo Frontend uninstalled.\n")
 
     return {
         "uninstalled": True,
@@ -684,11 +698,14 @@ def uninstall_zaparoo_launcher(connection, log):
 
 
 def uninstall_zaparoo_launcher_local(sd_root: str, log):
-    log("Removing Zaparoo Launcher/UI Beta files...\n")
+    log("Removing Zaparoo Frontend files...\n")
 
     _remove_local_path(sd_root, ZAPAROO_LAUNCHER_MAIN_PATH)
     _remove_local_path(sd_root, ZAPAROO_LAUNCHER_UI_PATH)
+    _remove_local_path(sd_root, ZAPAROO_LAUNCHER_OLD_UI_PATH)
+    _remove_local_path(sd_root, ZAPAROO_LAUNCHER_MENU_CORE_PATH)
     _remove_local_path(sd_root, ZAPAROO_LAUNCHER_VERSION_FILE)
+    _remove_local_path(sd_root, ZAPAROO_LAUNCHER_OLD_VERSION_FILE)
 
     _remove_local_mister_ini_entries(sd_root, log)
 
@@ -701,14 +718,17 @@ def uninstall_zaparoo_launcher_local(sd_root: str, log):
 
     log("Leaving existing Zaparoo script untouched.\n")
 
-    config_dir = _local_target_path(sd_root, ZAPAROO_LAUNCHER_CONFIG_DIR)
-    try:
-        if os.path.isdir(config_dir) and not os.listdir(config_dir):
-            os.rmdir(config_dir)
-    except Exception:
-        pass
+    for config_dir in (
+        _local_target_path(sd_root, ZAPAROO_LAUNCHER_CONFIG_DIR),
+        _local_target_path(sd_root, ZAPAROO_LAUNCHER_OLD_CONFIG_DIR),
+    ):
+        try:
+            if os.path.isdir(config_dir) and not os.listdir(config_dir):
+                os.rmdir(config_dir)
+        except Exception:
+            pass
 
-    log("Zaparoo Launcher/UI Beta uninstalled.\n")
+    log("Zaparoo Frontend uninstalled.\n")
 
     return {
         "uninstalled": True,
