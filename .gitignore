@@ -6,6 +6,7 @@ SaveManager/
 ra_cache/
 Manuals/
 tools/
+zaplauncher/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
