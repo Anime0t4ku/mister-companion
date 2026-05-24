@@ -5,6 +5,7 @@ MiSTERSettings/
 SaveManager/
 ra_cache/
 Manuals/
+tools/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
