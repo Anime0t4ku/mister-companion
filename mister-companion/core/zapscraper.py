@@ -2,6 +2,7 @@ import binascii
 import hashlib
 import html
 import json
+from io import BytesIO
 import re
 import sys
 import time
@@ -14,6 +15,13 @@ from typing import Any
 from urllib.parse import urlparse
 
 import requests
+
+try:
+    from PIL import Image, ImageOps, UnidentifiedImageError
+except Exception:
+    Image = None
+    ImageOps = None
+    UnidentifiedImageError = Exception
 
 from core.screenscraper_private import get_dev_credentials
 from core.zapscraper_systems import (
@@ -42,6 +50,14 @@ SCREENSCRAPER_API_BASE = "https://api.screenscraper.fr/api2"
 
 REQUEST_TIMEOUT = 30
 REQUEST_DELAY_SECONDS = 0.3
+
+MAX_IMAGE_SIZE_BYTES = 1_500_000
+TARGET_IMAGE_SIZE_BYTES = 1_000_000
+IMAGE_COMPRESSION_START_QUALITY = 90
+IMAGE_COMPRESSION_MIN_QUALITY = 55
+IMAGE_COMPRESSION_QUALITY_STEP = 5
+IMAGE_COMPRESSION_RESIZE_STEP = 0.90
+IMAGE_COMPRESSION_MIN_DIMENSION = 320
 
 
 SCAN_CACHE_VERSION = 1
@@ -1061,6 +1077,19 @@ def update_game_image(game: ET.Element, image_relative_path: str):
     set_child_text(game, "image", image_relative_path)
 
 
+def media_relative_path(image_folder: str, image_path: str | Path) -> str:
+    return f"./{image_folder}/{Path(image_path).name}"
+
+
+def recalbox_image_relative_path(image_source_name: str, image_path: str | Path) -> str:
+    return media_relative_path(get_image_source_folder(image_source_name), image_path)
+
+
+def zaparoo_companion_image_relative_path(media_source_name: str, image_path: str | Path) -> str:
+    media_folder = get_zaparoo_companion_media_folder(media_source_name) or "media/zaparoo"
+    return media_relative_path(media_folder, image_path)
+
+
 def cache_entry_needs_image_update(
     cache: dict[str, Any],
     relative_path: str,
@@ -1819,14 +1848,111 @@ def guess_image_extension(url: str, content_type: str = "") -> str:
     return ".png"
 
 
-def download_image(url: str, target_path: str | Path):
+def _prepare_image_for_jpeg(image: Image.Image) -> Image.Image:
+    if ImageOps is not None:
+        image = ImageOps.exif_transpose(image)
+
+    if image.mode in {"RGBA", "LA"} or (image.mode == "P" and "transparency" in image.info):
+        image = image.convert("RGBA")
+        background = Image.new("RGB", image.size, (255, 255, 255))
+        background.paste(image, mask=image.getchannel("A"))
+        return background
+
+    if image.mode != "RGB":
+        image = image.convert("RGB")
+
+    return image
+
+
+def _encode_jpeg(image: Image.Image, quality: int) -> bytes:
+    buffer = BytesIO()
+    image.save(
+        buffer,
+        format="JPEG",
+        quality=quality,
+        optimize=True,
+        progressive=True,
+    )
+    return buffer.getvalue()
+
+
+def _compressed_image_path(target_path: Path) -> Path:
+    if target_path.suffix.lower() in {".jpg", ".jpeg"}:
+        return target_path.with_suffix(".jpg")
+
+    return target_path.with_suffix(".jpg")
+
+
+def _compress_image_bytes(content: bytes, target_path: Path) -> tuple[Path, bytes] | None:
+    if Image is None:
+        return None
+
+    try:
+        with Image.open(BytesIO(content)) as source_image:
+            image = _prepare_image_for_jpeg(source_image)
+    except (UnidentifiedImageError, OSError, ValueError):
+        return None
+
+    final_path = _compressed_image_path(target_path)
+    best_data = b""
+
+    while True:
+        for quality in range(
+            IMAGE_COMPRESSION_START_QUALITY,
+            IMAGE_COMPRESSION_MIN_QUALITY - 1,
+            -IMAGE_COMPRESSION_QUALITY_STEP,
+        ):
+            data = _encode_jpeg(image, quality)
+            best_data = data
+
+            if len(data) <= TARGET_IMAGE_SIZE_BYTES:
+                return final_path, data
+
+        width, height = image.size
+        next_width = int(width * IMAGE_COMPRESSION_RESIZE_STEP)
+        next_height = int(height * IMAGE_COMPRESSION_RESIZE_STEP)
+
+        if (
+            next_width < IMAGE_COMPRESSION_MIN_DIMENSION
+            or next_height < IMAGE_COMPRESSION_MIN_DIMENSION
+            or (next_width, next_height) == image.size
+        ):
+            break
+
+        image = image.resize((next_width, next_height), Image.Resampling.LANCZOS)
+
+    if best_data:
+        return final_path, best_data
+
+    return None
+
+
+def download_image(url: str, target_path: str | Path) -> Path:
     target_path = Path(target_path)
     target_path.parent.mkdir(parents=True, exist_ok=True)
 
     response = requests.get(url, timeout=REQUEST_TIMEOUT)
     response.raise_for_status()
 
-    target_path.write_bytes(response.content)
+    content = response.content
+    final_path = target_path
+    final_content = content
+
+    if len(content) > MAX_IMAGE_SIZE_BYTES:
+        compressed = _compress_image_bytes(content, target_path)
+
+        if compressed is not None:
+            final_path, final_content = compressed
+            final_path.parent.mkdir(parents=True, exist_ok=True)
+
+            if final_path != target_path and target_path.exists():
+                try:
+                    target_path.unlink()
+                except OSError:
+                    pass
+
+    final_path.write_bytes(final_content)
+    return final_path
 
 
 def _media_type_candidates(media_type: str) -> set[str]:
@@ -2100,7 +2226,8 @@ def download_zaparoo_companion_media_assets(
         )
 
         if not media_path.exists():
-            download_image(media_url, media_path)
+            media_path = download_image(media_url, media_path)
+            media_relative_path = zaparoo_companion_image_relative_path(media_source_name, media_path)
 
         set_child_text(parent, xml_node, media_relative_path)
         downloaded[xml_node] = media_relative_path
@@ -2330,7 +2457,8 @@ def process_scrape_action(
                 image_source_name,
                 extension=extension,
             )
-            download_image(image_url, image_path)
+            image_path = download_image(image_url, image_path)
+            image_relative_path = recalbox_image_relative_path(image_source_name, image_path)
         else:
             existing_image_relative = action.get("image_relative_path", "")
             image_relative_path = existing_image_relative if Path(action.get("image_path", "")).exists() else ""
@@ -3111,7 +3239,8 @@ def apply_manual_scrape_result(
             image_source_name,
             extension=extension,
         )
-        download_image(image_url, image_path)
+        image_path = download_image(image_url, image_path)
+        image_relative_path = recalbox_image_relative_path(image_source_name, image_path)
 
     apply_scrape_result(
         system_path,

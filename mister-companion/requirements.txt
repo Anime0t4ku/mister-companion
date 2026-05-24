@@ -4,3 +4,4 @@ requests
 websocket-client
 psutil
 pyserial
+Pillow
