@@ -2,6 +2,15 @@
   "version": 1,
   "items": [
     {
+      "id": "mister-companion-v4-4-0",
+      "date": "2026-05-25",
+      "type": "info",
+      "headline": "MiSTer Companion v4.4.0 Released",
+      "message": "MiSTer Companion v4.4.0 is now available.\n\nThis release adds ZapScraper, a new Offline Mode tool for scraping artwork for the Zaparoo Frontend directly to a MiSTer SD card or a custom local/network location.\n\nThis update also adds safer SD card eject handling, a new CD Game Organizer script, improved update_all output readability, RetroAchievements Cores updates, and more.",
+      "url": "https://github.com/Anime0t4ku/mister-companion/releases/tag/v4.4.0",
+      "url_label": "View Full Release Notes"
+    },
+    {
       "id": "mc-updater",
       "date": "2026-05-15",
       "type": "info",
