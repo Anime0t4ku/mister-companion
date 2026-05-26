@@ -49,6 +49,10 @@ GAMELIST_FILENAME = "gamelist.xml"
 SCREENSCRAPER_API_BASE = "https://api.screenscraper.fr/api2"
 
 REQUEST_TIMEOUT = 30
+REQUEST_CONNECT_TIMEOUT = 10
+REQUEST_READ_TIMEOUT = 30
+REQUEST_STREAM_CHUNK_SIZE = 1024 * 128
+REQUEST_MAX_IMAGE_BYTES = 35_000_000
 REQUEST_DELAY_SECONDS = 0.3
 
 MAX_IMAGE_SIZE_BYTES = 1_500_000
@@ -1292,17 +1296,35 @@ def _common_screenscraper_params(username: str, password: str) -> dict[str, str]
     }
 
 
+def _request_timeout(timeout: int | float | tuple | None = None):
+    if isinstance(timeout, tuple):
+        return timeout
+
+    if timeout is None:
+        return (REQUEST_CONNECT_TIMEOUT, REQUEST_READ_TIMEOUT)
+
+    return (REQUEST_CONNECT_TIMEOUT, timeout)
+
+
+def _check_stopped(stop_checker=None):
+    if callable(stop_checker) and stop_checker():
+        raise InterruptedError("Scrape stopped by user.")
+
+
 def _screenscraper_get_json(
     endpoint: str,
     params: dict[str, Any],
     timeout: int = REQUEST_TIMEOUT,
     quota_callback=None,
+    stop_checker=None,
 ) -> dict[str, Any]:
     url = f"{SCREENSCRAPER_API_BASE}/{endpoint}"
 
+    _check_stopped(stop_checker)
     _wait_for_screenscraper_rate_limit()
+    _check_stopped(stop_checker)
 
-    response = requests.get(url, params=params, timeout=timeout)
+    response = requests.get(url, params=params, timeout=_request_timeout(timeout))
 
     if response.status_code in {403, 429}:
         raise ScreenScraperQuotaError(
@@ -1310,6 +1332,8 @@ def _screenscraper_get_json(
         )
 
     response.raise_for_status()
+
+    _check_stopped(stop_checker)
 
     try:
         data = response.json()
@@ -1482,6 +1506,7 @@ def fetch_game_info(
     zip_inner_path: str = "",
     skip_hashes: bool = False,
     quota_callback=None,
+    stop_checker=None,
 ) -> dict[str, Any]:
     params = _common_screenscraper_params(username, password)
 
@@ -1504,7 +1529,12 @@ def fetch_game_info(
             }
         )
 
-    return _screenscraper_get_json("jeuInfos.php", params, quota_callback=quota_callback)
+    return _screenscraper_get_json(
+        "jeuInfos.php",
+        params,
+        quota_callback=quota_callback,
+        stop_checker=stop_checker,
+    )
 
 
 def extract_game_from_response(data: dict[str, Any]) -> dict[str, Any]:
@@ -1883,26 +1913,47 @@ def _compressed_image_path(target_path: Path) -> Path:
     return target_path.with_suffix(".jpg")
 
 
-def _compress_image_bytes(content: bytes, target_path: Path) -> tuple[Path, bytes] | None:
+def _compress_image_bytes(
+    content: bytes,
+    target_path: Path,
+    stop_checker=None,
+) -> tuple[Path, bytes] | None:
     if Image is None:
         return None
 
+    _check_stopped(stop_checker)
+
     try:
         with Image.open(BytesIO(content)) as source_image:
+            source_image.load()
+            _check_stopped(stop_checker)
             image = _prepare_image_for_jpeg(source_image)
-    except (UnidentifiedImageError, OSError, ValueError):
+            image.load()
+    except InterruptedError:
+        raise
+    except Exception:
         return None
 
     final_path = _compressed_image_path(target_path)
     best_data = b""
+    resize_passes = 0
+    max_resize_passes = 12
 
-    while True:
+    while resize_passes <= max_resize_passes:
+        _check_stopped(stop_checker)
+
         for quality in range(
             IMAGE_COMPRESSION_START_QUALITY,
             IMAGE_COMPRESSION_MIN_QUALITY - 1,
             -IMAGE_COMPRESSION_QUALITY_STEP,
         ):
-            data = _encode_jpeg(image, quality)
+            _check_stopped(stop_checker)
+
+            try:
+                data = _encode_jpeg(image, quality)
+            except Exception:
+                return None
+
             best_data = data
 
             if len(data) <= TARGET_IMAGE_SIZE_BYTES:
@@ -1919,7 +1970,14 @@ def _compress_image_bytes(content: bytes, target_path: Path) -> tuple[Path, byte
         ):
             break
 
-        image = image.resize((next_width, next_height), Image.Resampling.LANCZOS)
+        _check_stopped(stop_checker)
+
+        try:
+            image = image.resize((next_width, next_height), Image.Resampling.LANCZOS)
+        except Exception:
+            return None
+
+        resize_passes += 1
 
     if best_data:
         return final_path, best_data
@@ -1927,19 +1985,44 @@ def _compress_image_bytes(content: bytes, target_path: Path) -> tuple[Path, byte
     return None
 
 
-def download_image(url: str, target_path: str | Path) -> Path:
+def _download_bytes(url: str, stop_checker=None) -> bytes:
+    _check_stopped(stop_checker)
+
+    with requests.get(
+        url,
+        stream=True,
+        timeout=(REQUEST_CONNECT_TIMEOUT, REQUEST_READ_TIMEOUT),
+    ) as response:
+        response.raise_for_status()
+        chunks = []
+        total = 0
+
+        for chunk in response.iter_content(chunk_size=REQUEST_STREAM_CHUNK_SIZE):
+            _check_stopped(stop_checker)
+
+            if not chunk:
+                continue
+
+            chunks.append(chunk)
+            total += len(chunk)
+
+            if total > REQUEST_MAX_IMAGE_BYTES:
+                raise RuntimeError("Downloaded image is too large and was skipped.")
+
+    _check_stopped(stop_checker)
+    return b"".join(chunks)
+
+
+def download_image(url: str, target_path: str | Path, stop_checker=None) -> Path:
     target_path = Path(target_path)
     target_path.parent.mkdir(parents=True, exist_ok=True)
 
-    response = requests.get(url, timeout=REQUEST_TIMEOUT)
-    response.raise_for_status()
-
-    content = response.content
+    content = _download_bytes(url, stop_checker=stop_checker)
     final_path = target_path
     final_content = content
 
     if len(content) > MAX_IMAGE_SIZE_BYTES:
-        compressed = _compress_image_bytes(content, target_path)
+        compressed = _compress_image_bytes(content, target_path, stop_checker=stop_checker)
 
         if compressed is not None:
             final_path, final_content = compressed
@@ -1951,6 +2034,7 @@ def download_image(url: str, target_path: str | Path) -> Path:
                 except OSError:
                     pass
 
+    _check_stopped(stop_checker)
     final_path.write_bytes(final_content)
     return final_path
 
@@ -2190,6 +2274,7 @@ def download_zaparoo_companion_media_assets(
     game_name: str,
     region_code: str,
     media_source_names=None,
+    stop_checker=None,
 ) -> dict[str, str]:
     media_source_names = normalize_zaparoo_media_source_names(media_source_names)
     downloaded: dict[str, str] = {}
@@ -2226,7 +2311,7 @@ def download_zaparoo_companion_media_assets(
         )
 
         if not media_path.exists():
-            media_path = download_image(media_url, media_path)
+            media_path = download_image(media_url, media_path, stop_checker=stop_checker)
             media_relative_path = zaparoo_companion_image_relative_path(media_source_name, media_path)
 
         set_child_text(parent, xml_node, media_relative_path)
@@ -2245,6 +2330,7 @@ def apply_zaparoo_companion_scrape_result(
     region: str = "",
     media_source_names=None,
     quota_callback=None,
+    stop_checker=None,
 ) -> dict[str, Any]:
     system_path = Path(system_path)
     tree = load_gamelist(system_path)
@@ -2266,6 +2352,7 @@ def apply_zaparoo_companion_scrape_result(
         game_name=str(metadata.get("name") or ""),
         region_code=region,
         media_source_names=media_source_names,
+        stop_checker=stop_checker,
     )
 
     child = get_or_create_zaparoo_child_entry(tree, relative_path, screenscraper_id)
@@ -2353,6 +2440,7 @@ def process_scrape_action(
     zaparoo_media_source_names=None,
     zaparoo_slug_map: dict[tuple[str, str], str] | None = None,
     quota_callback=None,
+    stop_checker=None,
 ) -> dict[str, Any]:
     rom = action.get("rom") or {}
     rom_path = Path(rom.get("path", ""))
@@ -2388,6 +2476,7 @@ def process_scrape_action(
                 metadata={"id": cached_id},
                 region=region_code,
                 media_source_names=zaparoo_media_source_names,
+                stop_checker=stop_checker,
             )
             return {
                 "metadata": {"id": cached_id},
@@ -2408,6 +2497,7 @@ def process_scrape_action(
         zip_inner_path=rom.get("zip_inner_path", ""),
         skip_hashes=_is_zaparoo_format(output_format),
         quota_callback=quota_callback,
+        stop_checker=stop_checker,
     )
 
     game = extract_game_from_response(data)
@@ -2425,6 +2515,7 @@ def process_scrape_action(
             metadata=metadata,
             region=region_code,
             media_source_names=zaparoo_media_source_names,
+            stop_checker=stop_checker,
         )
 
         if zaparoo_slug_key is not None:
@@ -2457,7 +2548,7 @@ def process_scrape_action(
                 image_source_name,
                 extension=extension,
             )
-            image_path = download_image(image_url, image_path)
+            image_path = download_image(image_url, image_path, stop_checker=stop_checker)
             image_relative_path = recalbox_image_relative_path(image_source_name, image_path)
         else:
             existing_image_relative = action.get("image_relative_path", "")
@@ -2552,6 +2643,7 @@ def run_scrape_actions(
                 zaparoo_media_source_names=zaparoo_media_source_names,
                 zaparoo_slug_map=slug_map if _is_zaparoo_format(output_format) else None,
                 quota_callback=quota_callback,
+                stop_checker=stop_checker,
             )
 
             if callable(log_callback):
@@ -2559,6 +2651,10 @@ def run_scrape_actions(
                     log_callback(f"Done (API skipped — matched existing title): {rom_filename}")
                 else:
                     log_callback(f"Done: {rom_filename}")
+        except InterruptedError:
+            if callable(log_callback):
+                log_callback("Scrape stopped by user.")
+            break
         except ScreenScraperQuotaError as e:
             if callable(log_callback):
                 log_callback(f"ScreenScraper quota/rate limit reached: {e}")
@@ -3154,6 +3250,7 @@ def fetch_game_info_by_id(
     game_id: str | int,
     system_id: int,
     quota_callback=None,
+    stop_checker=None,
 ) -> dict[str, Any]:
     game_id = str(game_id or "").strip()
 
@@ -3168,7 +3265,12 @@ def fetch_game_info_by_id(
         }
     )
 
-    return _screenscraper_get_json("jeuInfos.php", params, quota_callback=quota_callback)
+    return _screenscraper_get_json(
+        "jeuInfos.php",
+        params,
+        quota_callback=quota_callback,
+        stop_checker=stop_checker,
+    )
 
 
 def apply_manual_scrape_result(
