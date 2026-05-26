@@ -4,6 +4,7 @@ import html
 import json
 from io import BytesIO
 import re
+import shutil
 import sys
 import time
 import xml.etree.ElementTree as ET
@@ -863,6 +864,53 @@ def save_zapscraper_cache(system_path: str | Path, cache: dict[str, Any]):
         pass
 
 
+
+def _remove_path_safely(path: str | Path, log_callback=None):
+    path = Path(path)
+
+    if not path.exists():
+        return
+
+    try:
+        if path.is_dir():
+            shutil.rmtree(path)
+        else:
+            path.unlink()
+        _log(log_callback, f"Removed: {path}")
+    except Exception as e:
+        _log(log_callback, f"Could not remove {path}: {e}")
+
+
+def clear_scrape_output_for_system(
+    system_path: str | Path,
+    *,
+    output_format: str = OUTPUT_FORMAT_RECALBOX,
+    image_source_name: str = "",
+    zaparoo_media_source_names=None,
+    log_callback=None,
+):
+    system_path = Path(system_path)
+    output_format = normalize_output_format(output_format)
+
+    _remove_path_safely(system_path / GAMELIST_FILENAME, log_callback=log_callback)
+    _remove_path_safely(system_path / CACHE_FILENAME, log_callback=log_callback)
+
+    media_folders: set[str] = set()
+
+    if _is_zaparoo_format(output_format):
+        for media_source_name in normalize_zaparoo_media_source_names(zaparoo_media_source_names):
+            media_folder = get_zaparoo_companion_media_folder(media_source_name)
+            if media_folder:
+                media_folders.add(media_folder)
+    else:
+        image_folder = get_image_source_folder(image_source_name)
+        if image_folder:
+            media_folders.add(image_folder)
+
+    for media_folder in sorted(media_folders):
+        _remove_path_safely(system_path / media_folder, log_callback=log_callback)
+
+
 def load_gamelist(system_path: str | Path) -> ET.ElementTree:
     gamelist_path = Path(system_path) / GAMELIST_FILENAME
 
@@ -883,39 +931,74 @@ def load_gamelist(system_path: str | Path) -> ET.ElementTree:
 
 
 def _sort_gamelist_entries(root: ET.Element):
-    games = root.findall("game")
-    for g in games:
-        root.remove(g)
+    games = list(root.findall("game"))
 
-    parents = [g for g in games if g.get("id") and not g.get("parentid")]
-    children = [g for g in games if g.get("parentid")]
-    orphans = [g for g in games if not g.get("id") and not g.get("parentid")]
+    if not games:
+        return
 
-    parents.sort(key=lambda g: (g.get("id") or "").lower())
+    for game in games:
+        root.remove(game)
+
+    parents: list[ET.Element] = []
+    orphans: list[ET.Element] = []
+    children_by_parent: dict[str, list[ET.Element]] = {}
+
+    for game in games:
+        parent_id = str(game.get("parentid") or "").strip()
+        game_id = str(game.get("id") or "").strip()
+
+        if parent_id:
+            children_by_parent.setdefault(parent_id, []).append(game)
+        elif game_id:
+            parents.append(game)
+        else:
+            orphans.append(game)
+
+    parents.sort(key=lambda item: (str(item.get("id") or "").lower(), _child_text(item, "name").lower()))
+
+    used_child_ids: set[int] = set()
 
     for parent in parents:
         root.append(parent)
-        pid = parent.get("id")
-        for child in sorted(
-            (c for c in children if c.get("parentid") == pid),
-            key=lambda c: (_child_text(c, "path") or "").lower(),
-        ):
-            root.append(child)
+        parent_id = str(parent.get("id") or "").strip()
+        children = children_by_parent.get(parent_id, [])
 
-    for orphan in orphans:
+        for child in sorted(children, key=lambda item: (_child_text(item, "path") or "").lower()):
+            root.append(child)
+            used_child_ids.add(id(child))
+
+    unmatched_children = [
+        child
+        for children in children_by_parent.values()
+        for child in children
+        if id(child) not in used_child_ids
+    ]
+
+    for child in sorted(unmatched_children, key=lambda item: (_child_text(item, "path") or "").lower()):
+        root.append(child)
+
+    for orphan in sorted(orphans, key=lambda item: (_child_text(item, "path") or _child_text(item, "name") or "").lower()):
         root.append(orphan)
 
 
-def save_gamelist(system_path: str | Path, tree: ET.ElementTree):
+def save_gamelist(system_path: str | Path, tree: ET.ElementTree, log_callback=None):
     gamelist_path = Path(system_path) / GAMELIST_FILENAME
-    _sort_gamelist_entries(tree.getroot())
-    indent_xml(tree.getroot())
+    root = tree.getroot()
+    game_count = len(root.findall("game"))
 
+    _log(log_callback, f"Sorting gamelist entries ({game_count} entries)...")
+    _sort_gamelist_entries(root)
+
+    _log(log_callback, "Indenting gamelist XML...")
+    indent_xml(root)
+
+    _log(log_callback, "Writing gamelist.xml...")
     tree.write(
         gamelist_path,
         encoding="utf-8",
         xml_declaration=True,
     )
+    _log(log_callback, "gamelist.xml saved.")
 
 
 def indent_xml(element: ET.Element, level: int = 0):
@@ -1408,8 +1491,10 @@ def apply_scrape_result(
     )
 
     _log(log_callback, "Writing gamelist entry...")
-    save_gamelist(system_path, tree)
+    save_gamelist(system_path, tree, log_callback=log_callback)
+    _log(log_callback, "Saving scraper cache...")
     save_zapscraper_cache(system_path, cache)
+    _log(log_callback, "Scraper cache saved.")
 
 
 def create_placeholder_metadata_from_rom(rom: dict[str, Any], region: str = "") -> dict[str, Any]:
@@ -2574,8 +2659,10 @@ def apply_zaparoo_companion_scrape_result(
     )
 
     _log(log_callback, "Writing gamelist entry...")
-    save_gamelist(system_path, tree)
+    save_gamelist(system_path, tree, log_callback=log_callback)
+    _log(log_callback, "Saving scraper cache...")
     save_zapscraper_cache(system_path, cache)
+    _log(log_callback, "Scraper cache saved.")
 
     return {
         "screenscraper_id": str(screenscraper_id),

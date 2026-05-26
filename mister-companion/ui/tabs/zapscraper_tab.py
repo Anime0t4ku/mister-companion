@@ -1,4 +1,5 @@
 from pathlib import Path
+import shutil
 
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtWidgets import (
@@ -37,10 +38,12 @@ from core.zapscraper import (
 from core.zapscraper_systems import (
     OUTPUT_FORMAT_ZAPAROO_COMPANION,
     get_default_zaparoo_companion_media_names,
+    get_image_source_folder,
     get_image_source_names,
     get_output_format_id,
     get_output_format_names,
     get_region_names,
+    get_zaparoo_companion_media_folder,
     get_zaparoo_companion_media_names,
 )
 from ui.dialogs.zapscraper_gamelist_dialog import ZapScraperGamelistDialog
@@ -50,6 +53,59 @@ from ui.scaling import set_text_button_min_width
 
 SOURCE_SELECTED_SD = "Selected SD Card"
 SOURCE_CUSTOM_GAMES_FOLDER = "Custom Games Folder"
+
+
+GAMELIST_FILENAME = "gamelist.xml"
+ZAPSCRAPER_CACHE_FILENAME = ".zapscraper_cache.json"
+
+
+def _remove_file_if_exists(path: Path):
+    try:
+        if path.exists() and path.is_file():
+            path.unlink()
+    except Exception:
+        pass
+
+
+def _remove_folder_if_exists(path: Path):
+    try:
+        if path.exists() and path.is_dir():
+            shutil.rmtree(path)
+    except Exception:
+        pass
+
+
+def _clear_system_rebuild_output(
+    system,
+    *,
+    output_format,
+    image_source,
+    zaparoo_media_source_names=None,
+):
+    system_path = Path(system.get("path", ""))
+
+    if not system_path.exists() or not system_path.is_dir():
+        return
+
+    _remove_file_if_exists(system_path / GAMELIST_FILENAME)
+    _remove_file_if_exists(system_path / ZAPSCRAPER_CACHE_FILENAME)
+
+    if get_output_format_id(output_format) == OUTPUT_FORMAT_ZAPAROO_COMPANION:
+        folders = set()
+
+        for media_name in zaparoo_media_source_names or []:
+            folder = get_zaparoo_companion_media_folder(media_name)
+            if folder:
+                folders.add(folder)
+
+        for folder in folders:
+            _remove_folder_if_exists(system_path / folder)
+
+        return
+
+    image_folder = get_image_source_folder(image_source)
+    if image_folder:
+        _remove_folder_if_exists(system_path / image_folder)
 
 
 class ZapScraperScanWorker(QThread):
@@ -100,6 +156,7 @@ class ZapScraperScanWorker(QThread):
 
 
 class ZapScraperPlanWorker(QThread):
+    log = pyqtSignal(str)
     result = pyqtSignal(list, int)
     error = pyqtSignal(str)
 
@@ -110,6 +167,9 @@ class ZapScraperPlanWorker(QThread):
         skip_existing_metadata=True,
         skip_existing_images=True,
         update_changed_images=True,
+        output_format="",
+        zaparoo_media_source_names=None,
+        rebuild_from_scratch=False,
     ):
         super().__init__()
         self.systems = systems or []
@@ -117,11 +177,17 @@ class ZapScraperPlanWorker(QThread):
         self.skip_existing_metadata = bool(skip_existing_metadata)
         self.skip_existing_images = bool(skip_existing_images)
         self.update_changed_images = bool(update_changed_images)
+        self.output_format = str(output_format or "")
+        self.zaparoo_media_source_names = list(zaparoo_media_source_names or [])
+        self.rebuild_from_scratch = bool(rebuild_from_scratch)
 
     def run(self):
         try:
             actions = []
             total_games = 0
+
+            if self.rebuild_from_scratch:
+                self.log.emit("Rebuild from scratch enabled. Existing gamelist, cache, and selected media output will be cleared before planning.")
 
             for system in self.systems:
                 if self.isInterruptionRequested():
@@ -129,12 +195,24 @@ class ZapScraperPlanWorker(QThread):
 
                 total_games += int(system.get("count", 0))
 
+                if self.rebuild_from_scratch:
+                    label = system.get("label") or system.get("folder") or "Unknown"
+                    self.log.emit(f"Clearing existing scrape output for {label}...")
+                    _clear_system_rebuild_output(
+                        system,
+                        output_format=self.output_format,
+                        image_source=self.image_source,
+                        zaparoo_media_source_names=self.zaparoo_media_source_names,
+                    )
+
                 system_actions = plan_scrape_actions(
                     system,
                     self.image_source,
                     skip_existing_metadata=self.skip_existing_metadata,
                     skip_existing_images=self.skip_existing_images,
                     update_changed_images=self.update_changed_images,
+                    output_format=self.output_format,
+                    zaparoo_media_source_names=self.zaparoo_media_source_names,
                 )
                 actions.extend(system_actions)
 
@@ -1182,19 +1260,32 @@ class ZapScraperTab(QWidget):
 
         self.save_settings()
 
+        skip_existing_metadata = self.skip_metadata_checkbox.isChecked()
+        skip_existing_images = self.skip_images_checkbox.isChecked()
+        rebuild_from_scratch = not skip_existing_metadata and not skip_existing_images
+        output_format = self._active_output_format()
+        zaparoo_media_sources = self._active_zaparoo_media_sources()
+
         self.planned_actions = []
         self.progress_bar.setRange(0, 0)
         self.current_task_label.setText("Preparing scrape plan...")
         self.set_busy_state(True)
         self.append_output("Checking existing gamelist.xml files and local artwork...")
 
+        if rebuild_from_scratch:
+            self.append_output("Rebuild from scratch selected. Existing gamelist/cache and selected media output will be cleared for selected systems.")
+
         self.plan_worker = ZapScraperPlanWorker(
             selected,
             self.image_source_combo.currentText(),
-            skip_existing_metadata=self.skip_metadata_checkbox.isChecked(),
-            skip_existing_images=self.skip_images_checkbox.isChecked(),
+            skip_existing_metadata=skip_existing_metadata,
+            skip_existing_images=skip_existing_images,
             update_changed_images=True,
+            output_format=output_format,
+            zaparoo_media_source_names=zaparoo_media_sources,
+            rebuild_from_scratch=rebuild_from_scratch,
         )
+        self.plan_worker.log.connect(self.append_output)
         self.plan_worker.result.connect(self.on_plan_finished)
         self.plan_worker.error.connect(self.on_plan_error)
         self.plan_worker.finished.connect(self.on_plan_worker_finished)
