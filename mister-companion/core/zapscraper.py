@@ -1141,17 +1141,144 @@ def update_cache_entry(
     cache[relative_path] = entry
 
 
+def _child_text(element: ET.Element | None, tag: str) -> str:
+    if element is None:
+        return ""
+
+    child = element.find(tag)
+    if child is None or child.text is None:
+        return ""
+
+    return str(child.text).strip()
+
+
+def _media_relative_file_exists(system_path: str | Path, relative_path: str) -> bool:
+    relative_path = str(relative_path or "").strip()
+
+    if not relative_path:
+        return False
+
+    if relative_path.startswith("./"):
+        relative_path = relative_path[2:]
+
+    try:
+        return (Path(system_path) / relative_path).exists()
+    except Exception:
+        return False
+
+
+def _zaparoo_selected_media_complete(
+    system_path: str | Path,
+    parent: ET.Element | None,
+    media_source_names=None,
+) -> bool:
+    if parent is None:
+        return False
+
+    selected_media = normalize_zaparoo_media_source_names(media_source_names)
+
+    for media_source_name in selected_media:
+        xml_node = get_zaparoo_companion_media_node(media_source_name)
+        if not xml_node:
+            return False
+
+        media_relative_path = _child_text(parent, xml_node)
+        if not _media_relative_file_exists(system_path, media_relative_path):
+            return False
+
+    return True
+
+
+def _zaparoo_parent_from_child(
+    child: ET.Element | None,
+    parents_by_id: dict[str, ET.Element],
+) -> ET.Element | None:
+    if child is None:
+        return None
+
+    parent_id = str(child.get("parentid") or "").strip()
+    if not parent_id:
+        return None
+
+    return parents_by_id.get(parent_id)
+
+
+def _zaparoo_parent_maps(tree: ET.ElementTree) -> tuple[dict[str, ET.Element], dict[str, ET.Element]]:
+    root = tree.getroot()
+    children_by_path: dict[str, ET.Element] = {}
+    parents_by_id: dict[str, ET.Element] = {}
+
+    for game in root.findall("game"):
+        game_id = str(game.get("id") or "").strip()
+        if game_id and not game.get("parentid"):
+            parents_by_id[game_id] = game
+
+        path_text = _child_text(game, "path")
+        if path_text:
+            children_by_path[path_text] = game
+
+    return children_by_path, parents_by_id
+
+
+def _zaparoo_action_already_complete(
+    action: dict[str, Any],
+    *,
+    children_by_path: dict[str, ET.Element],
+    parents_by_id: dict[str, ET.Element],
+    media_source_names=None,
+    skip_existing_metadata: bool = True,
+) -> bool:
+    system_path = action.get("system_path")
+    rom = action.get("rom") or {}
+    rom_filename = rom.get("filename") or Path(rom.get("path", "")).name
+    possible_paths = [
+        str(action.get("relative_path") or "").strip(),
+        f"./{rom_filename}",
+    ]
+
+    for relative_path in possible_paths:
+        if not relative_path:
+            continue
+
+        child = children_by_path.get(relative_path)
+        parent = _zaparoo_parent_from_child(child, parents_by_id)
+
+        if parent is None:
+            continue
+
+        metadata_ok = game_has_metadata(parent) if skip_existing_metadata else False
+        media_ok = _zaparoo_selected_media_complete(
+            system_path,
+            parent,
+            media_source_names=media_source_names,
+        )
+
+        if metadata_ok and media_ok:
+            return True
+
+    return False
+
+
+
 def plan_scrape_actions(
     system: dict[str, Any],
     image_source_name: str,
     skip_existing_metadata: bool = True,
     skip_existing_images: bool = True,
     update_changed_images: bool = True,
+    output_format: str = OUTPUT_FORMAT_RECALBOX,
+    zaparoo_media_source_names=None,
 ) -> list[dict[str, Any]]:
+    output_format = normalize_output_format(output_format)
     system_path = Path(system["path"])
     tree = load_gamelist(system_path)
     entries = get_game_entries_by_path(tree)
     cache = load_zapscraper_cache(system_path)
+    zaparoo_children_by_path: dict[str, ET.Element] = {}
+    zaparoo_parents_by_id: dict[str, ET.Element] = {}
+
+    if _is_zaparoo_format(output_format):
+        zaparoo_children_by_path, zaparoo_parents_by_id = _zaparoo_parent_maps(tree)
 
     actions = []
 
@@ -1160,6 +1287,42 @@ def plan_scrape_actions(
             Path(rom["path"]),
             system_path,
         )
+
+        if _is_zaparoo_format(output_format):
+            action_preview = {
+                "system_folder": system.get("folder"),
+                "system_label": system.get("label"),
+                "system_path": str(system_path),
+                "screenscraper_system_id": system.get("screenscraper_id"),
+                "rom": rom,
+                "relative_path": relative_path,
+            }
+
+            if _zaparoo_action_already_complete(
+                action_preview,
+                children_by_path=zaparoo_children_by_path,
+                parents_by_id=zaparoo_parents_by_id,
+                media_source_names=zaparoo_media_source_names,
+                skip_existing_metadata=skip_existing_metadata,
+            ):
+                continue
+
+            actions.append(
+                {
+                    "system_folder": system.get("folder"),
+                    "system_label": system.get("label"),
+                    "system_path": str(system_path),
+                    "screenscraper_system_id": system.get("screenscraper_id"),
+                    "rom": rom,
+                    "relative_path": relative_path,
+                    "needs_metadata": True,
+                    "needs_image": True,
+                    "image_path": "",
+                    "image_relative_path": "",
+                    "image_source_changed": False,
+                }
+            )
+            continue
 
         game = entries.get(relative_path)
         has_metadata = game_has_metadata(game)
@@ -2781,6 +2944,7 @@ def run_scrape_actions(
         actions = deduped
 
     total = len(actions)
+    zaparoo_existing_cache: dict[str, tuple[dict[str, ET.Element], dict[str, ET.Element]]] = {}
 
     if callable(log_callback):
         if _is_zaparoo_format(output_format):
@@ -2806,6 +2970,29 @@ def run_scrape_actions(
         if callable(log_callback):
             log_callback(f"[{index}/{total}] {system_label}: {rom_filename}")
 
+        if _is_zaparoo_format(output_format):
+            system_path = str(action.get("system_path") or "")
+            if system_path not in zaparoo_existing_cache:
+                try:
+                    tree = load_gamelist(system_path)
+                    zaparoo_existing_cache[system_path] = _zaparoo_parent_maps(tree)
+                except Exception:
+                    zaparoo_existing_cache[system_path] = ({}, {})
+
+            children_by_path, parents_by_id = zaparoo_existing_cache.get(system_path, ({}, {}))
+            if _zaparoo_action_already_complete(
+                action,
+                children_by_path=children_by_path,
+                parents_by_id=parents_by_id,
+                media_source_names=zaparoo_media_source_names,
+                skip_existing_metadata=skip_existing_metadata,
+            ):
+                if callable(log_callback):
+                    log_callback(f"Skipped: {rom_filename} - metadata and selected media already exist.")
+                if callable(progress_callback):
+                    progress_callback(index, total, rom_filename)
+                continue
+
         result = {}
         try:
             result = process_scrape_action(
@@ -2822,6 +3009,15 @@ def run_scrape_actions(
                 stop_checker=stop_checker,
                 log_callback=log_callback,
             )
+
+            if _is_zaparoo_format(output_format):
+                system_path = str(action.get("system_path") or "")
+                if system_path in zaparoo_existing_cache:
+                    try:
+                        tree = load_gamelist(system_path)
+                        zaparoo_existing_cache[system_path] = _zaparoo_parent_maps(tree)
+                    except Exception:
+                        pass
 
             if callable(log_callback):
                 if result.get("slug_hit"):
