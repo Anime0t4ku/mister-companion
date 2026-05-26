@@ -1217,6 +1217,7 @@ def apply_scrape_result(
     image_source_name: str = "",
     region: str = "",
     skip_existing_metadata: bool = True,
+    log_callback=None,
 ):
     system_path = Path(system_path)
     tree = load_gamelist(system_path)
@@ -1243,6 +1244,7 @@ def apply_scrape_result(
         region=region,
     )
 
+    _log(log_callback, "Writing gamelist entry...")
     save_gamelist(system_path, tree)
     save_zapscraper_cache(system_path, cache)
 
@@ -2408,6 +2410,7 @@ def apply_zaparoo_companion_scrape_result(
         region=region,
     )
 
+    _log(log_callback, "Writing gamelist entry...")
     save_gamelist(system_path, tree)
     save_zapscraper_cache(system_path, cache)
 
@@ -2460,6 +2463,69 @@ def _slugify_rom_filename(filename: str) -> str:
     name = name[:cut].strip()
     name = re.sub(r"\s+", "_", name)
     return name.lower()
+
+
+def _apply_placeholder_after_request_failure(
+    action: dict[str, Any],
+    *,
+    rom: dict[str, Any],
+    rom_filename: str,
+    region_code: str,
+    image_source_name: str,
+    output_format: str,
+    zaparoo_media_source_names=None,
+    skip_existing_metadata: bool = True,
+    stop_checker=None,
+    log_callback=None,
+    reason: str = "",
+) -> dict[str, Any]:
+    metadata = create_placeholder_metadata_from_rom(rom, region_code)
+
+    if reason:
+        _log(log_callback, f"Skipping ScreenScraper result for {rom_filename}: {reason}")
+
+    if _is_zaparoo_format(output_format):
+        zaparoo_result = apply_zaparoo_companion_scrape_result(
+            system_path=action.get("system_path"),
+            relative_path=f"./{rom_filename}",
+            rom=rom,
+            game={},
+            metadata=metadata,
+            region=region_code,
+            media_source_names=zaparoo_media_source_names,
+            stop_checker=stop_checker,
+            log_callback=log_callback,
+        )
+
+        return {
+            "metadata": metadata,
+            "image_relative_path": "",
+            "region": region_code,
+            "output_format": output_format,
+            "zaparoo": zaparoo_result,
+            "request_skipped": True,
+        }
+
+    _log(log_callback, "Writing gamelist entry...")
+
+    apply_scrape_result(
+        action.get("system_path"),
+        action.get("relative_path"),
+        metadata,
+        image_relative_path="",
+        image_source_name=image_source_name,
+        region=region_code,
+        skip_existing_metadata=skip_existing_metadata,
+        log_callback=log_callback,
+    )
+
+    return {
+        "metadata": metadata,
+        "image_relative_path": "",
+        "region": region_code,
+        "output_format": output_format,
+        "request_skipped": True,
+    }
 
 
 def process_scrape_action(
@@ -2526,64 +2592,66 @@ def process_scrape_action(
 
     _log(log_callback, "Searching ScreenScraper...")
 
-    data = fetch_game_info(
-        username=username,
-        password=password,
-        rom_path=rom_path,
-        rom_filename=rom_filename,
-        rom_size=rom_size,
-        system_id=system_id,
-        zip_inner_path=rom.get("zip_inner_path", ""),
-        skip_hashes=_is_zaparoo_format(output_format),
-        quota_callback=quota_callback,
-        stop_checker=stop_checker,
-    )
-
-    if not data:
-        _log(log_callback, "No ScreenScraper match found, using ROM filename.")
-        metadata = create_placeholder_metadata_from_rom(rom, region_code)
-
-        if _is_zaparoo_format(output_format):
-            zaparoo_result = apply_zaparoo_companion_scrape_result(
-                system_path=action.get("system_path"),
-                relative_path=f"./{rom_filename}",
-                rom=rom,
-                game={},
-                metadata=metadata,
-                region=region_code,
-                media_source_names=zaparoo_media_source_names,
-                stop_checker=stop_checker,
-                log_callback=log_callback,
-            )
-
-            return {
-                "metadata": metadata,
-                "image_relative_path": "",
-                "region": region_code,
-                "output_format": output_format,
-                "zaparoo": zaparoo_result,
-                "not_found": True,
-            }
-
-        _log(log_callback, "Writing gamelist entry...")
-
-        apply_scrape_result(
-            action.get("system_path"),
-            action.get("relative_path"),
-            metadata,
-            image_relative_path="",
+    try:
+        data = fetch_game_info(
+            username=username,
+            password=password,
+            rom_path=rom_path,
+            rom_filename=rom_filename,
+            rom_size=rom_size,
+            system_id=system_id,
+            zip_inner_path=rom.get("zip_inner_path", ""),
+            skip_hashes=_is_zaparoo_format(output_format),
+            quota_callback=quota_callback,
+            stop_checker=stop_checker,
+        )
+    except InterruptedError:
+        raise
+    except ScreenScraperQuotaError:
+        raise
+    except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+        return _apply_placeholder_after_request_failure(
+            action,
+            rom=rom,
+            rom_filename=rom_filename,
+            region_code=region_code,
             image_source_name=image_source_name,
-            region=region_code,
+            output_format=output_format,
+            zaparoo_media_source_names=zaparoo_media_source_names,
             skip_existing_metadata=skip_existing_metadata,
+            stop_checker=stop_checker,
+            log_callback=log_callback,
+            reason=f"ScreenScraper request timed out or connection stalled ({e})",
+        )
+    except requests.exceptions.RequestException as e:
+        return _apply_placeholder_after_request_failure(
+            action,
+            rom=rom,
+            rom_filename=rom_filename,
+            region_code=region_code,
+            image_source_name=image_source_name,
+            output_format=output_format,
+            zaparoo_media_source_names=zaparoo_media_source_names,
+            skip_existing_metadata=skip_existing_metadata,
+            stop_checker=stop_checker,
+            log_callback=log_callback,
+            reason=f"ScreenScraper request failed ({e})",
         )
 
-        return {
-            "metadata": metadata,
-            "image_relative_path": "",
-            "region": region_code,
-            "output_format": output_format,
-            "not_found": True,
-        }
+    if not data:
+        return _apply_placeholder_after_request_failure(
+            action,
+            rom=rom,
+            rom_filename=rom_filename,
+            region_code=region_code,
+            image_source_name=image_source_name,
+            output_format=output_format,
+            zaparoo_media_source_names=zaparoo_media_source_names,
+            skip_existing_metadata=skip_existing_metadata,
+            stop_checker=stop_checker,
+            log_callback=log_callback,
+            reason="game not found on ScreenScraper",
+        )
 
     game = extract_game_from_response(data)
     metadata = extract_metadata_from_game(game, region_code=region_code)
@@ -2669,6 +2737,7 @@ def process_scrape_action(
         image_source_name=image_source_name,
         region=region_code,
         skip_existing_metadata=skip_existing_metadata,
+        log_callback=log_callback,
     )
 
     return {
@@ -2757,8 +2826,8 @@ def run_scrape_actions(
             if callable(log_callback):
                 if result.get("slug_hit"):
                     log_callback(f"Done (API skipped — matched existing title): {rom_filename}")
-                elif result.get("not_found"):
-                    log_callback(f"Done (not found — placeholder entry written): {rom_filename}")
+                elif result.get("request_skipped"):
+                    log_callback(f"Done (ScreenScraper skipped): {rom_filename}")
                 else:
                     log_callback(f"Done: {rom_filename}")
         except InterruptedError:
