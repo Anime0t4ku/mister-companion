@@ -1311,6 +1311,11 @@ def _check_stopped(stop_checker=None):
         raise InterruptedError("Scrape stopped by user.")
 
 
+def _log(log_callback=None, message: str = ""):
+    if callable(log_callback) and message:
+        log_callback(message)
+
+
 def _screenscraper_get_json(
     endpoint: str,
     params: dict[str, Any],
@@ -1325,6 +1330,9 @@ def _screenscraper_get_json(
     _check_stopped(stop_checker)
 
     response = requests.get(url, params=params, timeout=_request_timeout(timeout))
+
+    if response.status_code == 404:
+        return {}
 
     if response.status_code in {403, 429}:
         raise ScreenScraperQuotaError(
@@ -2013,7 +2021,13 @@ def _download_bytes(url: str, stop_checker=None) -> bytes:
     return b"".join(chunks)
 
 
-def download_image(url: str, target_path: str | Path, stop_checker=None) -> Path:
+def download_image(
+    url: str,
+    target_path: str | Path,
+    stop_checker=None,
+    log_callback=None,
+    media_label: str = "media",
+) -> Path:
     target_path = Path(target_path)
     target_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -2022,6 +2036,7 @@ def download_image(url: str, target_path: str | Path, stop_checker=None) -> Path
     final_content = content
 
     if len(content) > MAX_IMAGE_SIZE_BYTES:
+        _log(log_callback, f"Compressing media: {media_label}")
         compressed = _compress_image_bytes(content, target_path, stop_checker=stop_checker)
 
         if compressed is not None:
@@ -2035,6 +2050,7 @@ def download_image(url: str, target_path: str | Path, stop_checker=None) -> Path
                     pass
 
     _check_stopped(stop_checker)
+    _log(log_callback, f"Saving media: {media_label}")
     final_path.write_bytes(final_content)
     return final_path
 
@@ -2275,6 +2291,7 @@ def download_zaparoo_companion_media_assets(
     region_code: str,
     media_source_names=None,
     stop_checker=None,
+    log_callback=None,
 ) -> dict[str, str]:
     media_source_names = normalize_zaparoo_media_source_names(media_source_names)
     downloaded: dict[str, str] = {}
@@ -2289,6 +2306,7 @@ def download_zaparoo_companion_media_assets(
         existing = find_existing_zaparoo_media(system_path, game_name, media_source_name)
         if existing:
             media_path, media_relative_path = existing
+            _log(log_callback, f"Using existing media: {media_source_name}")
             set_child_text(parent, xml_node, media_relative_path)
             downloaded[xml_node] = media_relative_path
             continue
@@ -2300,6 +2318,7 @@ def download_zaparoo_companion_media_assets(
         )
 
         if not media_url:
+            _log(log_callback, f"No media found: {media_source_name}")
             continue
 
         extension = guess_image_extension(media_url)
@@ -2311,8 +2330,21 @@ def download_zaparoo_companion_media_assets(
         )
 
         if not media_path.exists():
-            media_path = download_image(media_url, media_path, stop_checker=stop_checker)
-            media_relative_path = zaparoo_companion_image_relative_path(media_source_name, media_path)
+            try:
+                _log(log_callback, f"Downloading media: {media_source_name}")
+                media_path = download_image(
+                    media_url,
+                    media_path,
+                    stop_checker=stop_checker,
+                    log_callback=log_callback,
+                    media_label=media_source_name,
+                )
+                media_relative_path = zaparoo_companion_image_relative_path(media_source_name, media_path)
+            except InterruptedError:
+                raise
+            except Exception as e:
+                _log(log_callback, f"Skipped media: {media_source_name} - {e}")
+                continue
 
         set_child_text(parent, xml_node, media_relative_path)
         downloaded[xml_node] = media_relative_path
@@ -2331,6 +2363,7 @@ def apply_zaparoo_companion_scrape_result(
     media_source_names=None,
     quota_callback=None,
     stop_checker=None,
+    log_callback=None,
 ) -> dict[str, Any]:
     system_path = Path(system_path)
     tree = load_gamelist(system_path)
@@ -2353,6 +2386,7 @@ def apply_zaparoo_companion_scrape_result(
         region_code=region,
         media_source_names=media_source_names,
         stop_checker=stop_checker,
+        log_callback=log_callback,
     )
 
     child = get_or_create_zaparoo_child_entry(tree, relative_path, screenscraper_id)
@@ -2441,6 +2475,7 @@ def process_scrape_action(
     zaparoo_slug_map: dict[tuple[str, str], str] | None = None,
     quota_callback=None,
     stop_checker=None,
+    log_callback=None,
 ) -> dict[str, Any]:
     rom = action.get("rom") or {}
     rom_path = Path(rom.get("path", ""))
@@ -2468,6 +2503,7 @@ def process_scrape_action(
         zaparoo_slug_key = (action.get("system_folder", ""), slug)
         cached_id = zaparoo_slug_map.get(zaparoo_slug_key)
         if cached_id:
+            _log(log_callback, f"Using existing ScreenScraper match: {cached_id}")
             zaparoo_result = apply_zaparoo_companion_scrape_result(
                 system_path=action.get("system_path"),
                 relative_path=f"./{rom_filename}",
@@ -2477,6 +2513,7 @@ def process_scrape_action(
                 region=region_code,
                 media_source_names=zaparoo_media_source_names,
                 stop_checker=stop_checker,
+                log_callback=log_callback,
             )
             return {
                 "metadata": {"id": cached_id},
@@ -2486,6 +2523,8 @@ def process_scrape_action(
                 "zaparoo": zaparoo_result,
                 "slug_hit": True,
             }
+
+    _log(log_callback, "Searching ScreenScraper...")
 
     data = fetch_game_info(
         username=username,
@@ -2500,10 +2539,60 @@ def process_scrape_action(
         stop_checker=stop_checker,
     )
 
+    if not data:
+        _log(log_callback, "No ScreenScraper match found, using ROM filename.")
+        metadata = create_placeholder_metadata_from_rom(rom, region_code)
+
+        if _is_zaparoo_format(output_format):
+            zaparoo_result = apply_zaparoo_companion_scrape_result(
+                system_path=action.get("system_path"),
+                relative_path=f"./{rom_filename}",
+                rom=rom,
+                game={},
+                metadata=metadata,
+                region=region_code,
+                media_source_names=zaparoo_media_source_names,
+                stop_checker=stop_checker,
+                log_callback=log_callback,
+            )
+
+            return {
+                "metadata": metadata,
+                "image_relative_path": "",
+                "region": region_code,
+                "output_format": output_format,
+                "zaparoo": zaparoo_result,
+                "not_found": True,
+            }
+
+        _log(log_callback, "Writing gamelist entry...")
+
+        apply_scrape_result(
+            action.get("system_path"),
+            action.get("relative_path"),
+            metadata,
+            image_relative_path="",
+            image_source_name=image_source_name,
+            region=region_code,
+            skip_existing_metadata=skip_existing_metadata,
+        )
+
+        return {
+            "metadata": metadata,
+            "image_relative_path": "",
+            "region": region_code,
+            "output_format": output_format,
+            "not_found": True,
+        }
+
     game = extract_game_from_response(data)
     metadata = extract_metadata_from_game(game, region_code=region_code)
 
+    if metadata.get("name"):
+        _log(log_callback, f"Match found: {metadata.get('name')}")
+
     if not metadata:
+        _log(log_callback, "No ScreenScraper metadata found, using ROM filename.")
         metadata = create_placeholder_metadata_from_rom(rom, region_code)
 
     if _is_zaparoo_format(output_format):
@@ -2516,6 +2605,7 @@ def process_scrape_action(
             region=region_code,
             media_source_names=zaparoo_media_source_names,
             stop_checker=stop_checker,
+            log_callback=log_callback,
         )
 
         if zaparoo_slug_key is not None:
@@ -2548,11 +2638,28 @@ def process_scrape_action(
                 image_source_name,
                 extension=extension,
             )
-            image_path = download_image(image_url, image_path, stop_checker=stop_checker)
-            image_relative_path = recalbox_image_relative_path(image_source_name, image_path)
+            try:
+                _log(log_callback, f"Downloading media: {image_source_name}")
+                image_path = download_image(
+                    image_url,
+                    image_path,
+                    stop_checker=stop_checker,
+                    log_callback=log_callback,
+                    media_label=image_source_name,
+                )
+                image_relative_path = recalbox_image_relative_path(image_source_name, image_path)
+            except InterruptedError:
+                raise
+            except Exception as e:
+                _log(log_callback, f"Skipped media: {image_source_name} - {e}")
+                existing_image_relative = action.get("image_relative_path", "")
+                image_relative_path = existing_image_relative if Path(action.get("image_path", "")).exists() else ""
         else:
+            _log(log_callback, f"No media found: {image_source_name}")
             existing_image_relative = action.get("image_relative_path", "")
             image_relative_path = existing_image_relative if Path(action.get("image_path", "")).exists() else ""
+
+    _log(log_callback, "Writing gamelist entry...")
 
     apply_scrape_result(
         action.get("system_path"),
@@ -2644,11 +2751,14 @@ def run_scrape_actions(
                 zaparoo_slug_map=slug_map if _is_zaparoo_format(output_format) else None,
                 quota_callback=quota_callback,
                 stop_checker=stop_checker,
+                log_callback=log_callback,
             )
 
             if callable(log_callback):
                 if result.get("slug_hit"):
                     log_callback(f"Done (API skipped — matched existing title): {rom_filename}")
+                elif result.get("not_found"):
+                    log_callback(f"Done (not found — placeholder entry written): {rom_filename}")
                 else:
                     log_callback(f"Done: {rom_filename}")
         except InterruptedError:
