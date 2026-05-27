@@ -66,6 +66,7 @@ IMAGE_COMPRESSION_MIN_DIMENSION = 320
 
 
 SCAN_CACHE_VERSION = 1
+DEFAULT_OUTPUT_FORMAT = OUTPUT_FORMAT_RECALBOX
 
 
 _last_screenscraper_request_at = 0.0
@@ -76,6 +77,23 @@ def _is_zaparoo_format(output_format: str) -> bool:
 
 class ScreenScraperQuotaError(RuntimeError):
     pass
+
+
+class ScreenScraperDailyQuotaError(ScreenScraperQuotaError):
+    pass
+
+
+def build_screenscraper_daily_quota_message(details: str = "") -> str:
+    message = (
+        "ScreenScraper daily quota has been reached. "
+        "Scraping has been stopped. The daily quota normally refreshes at midnight."
+    )
+
+    details = str(details or "").strip()
+    if details:
+        message = f"{message} Details: {details}"
+
+    return message
 
 
 def _wait_for_screenscraper_rate_limit():
@@ -325,6 +343,53 @@ def _looks_like_quota_error(message: str) -> bool:
     return any(term in text for term in quota_terms)
 
 
+def _looks_like_daily_quota_error(message: str) -> bool:
+    text = str(message or "").lower()
+
+    daily_terms = (
+        "daily",
+        "per day",
+        "day quota",
+        "daily quota",
+        "quota journali",
+        "quota journalier",
+        "quotidien",
+        "today",
+        "aujourd",
+        "requeststoday",
+        "requests today",
+        "nbscrapetoday",
+        "nbscrapeursjour",
+        "maxrequestsperday",
+        "maxrequetesjour",
+    )
+
+    return any(term in text for term in daily_terms)
+
+
+def _quota_info_indicates_daily_limit(quota: dict[str, Any]) -> bool:
+    if not isinstance(quota, dict):
+        return False
+
+    remaining = quota.get("daily_remaining")
+    used = quota.get("daily_used")
+    limit = quota.get("daily_limit")
+
+    try:
+        if remaining is not None and int(remaining) <= 0:
+            return True
+    except Exception:
+        pass
+
+    try:
+        if used is not None and limit is not None and int(used) >= int(limit):
+            return True
+    except Exception:
+        pass
+
+    return False
+
+
 
 def get_application_base_dir() -> Path:
     if getattr(sys, "frozen", False):
@@ -494,8 +559,15 @@ def normalize_output_format(output_format: str = "") -> str:
     if value in {OUTPUT_FORMAT_RECALBOX, OUTPUT_FORMAT_ZAPAROO_COMPANION}:
         return value
 
-    return get_output_format_id(value)
+    if not value:
+        return DEFAULT_OUTPUT_FORMAT
 
+    resolved = get_output_format_id(value)
+
+    if resolved in {OUTPUT_FORMAT_RECALBOX, OUTPUT_FORMAT_ZAPAROO_COMPANION}:
+        return resolved
+
+    return DEFAULT_OUTPUT_FORMAT
 
 def normalize_zaparoo_media_source_names(media_source_names=None) -> list[str]:
     available = set(get_zaparoo_companion_media_names())
@@ -560,6 +632,13 @@ def scan_sd_card(
     sd_root: str | Path,
     progress_callback=None,
     stop_checker=None,
+    image_source_name: str = "",
+    skip_existing_metadata: bool = False,
+    skip_existing_images: bool = False,
+    update_changed_images: bool = True,
+    output_format: str = DEFAULT_OUTPUT_FORMAT,
+    zaparoo_media_source_names=None,
+    fast_skip_completed: bool = False,
 ) -> list[dict[str, Any]]:
     sd_root = Path(sd_root)
 
@@ -571,6 +650,13 @@ def scan_sd_card(
         games_root,
         progress_callback=progress_callback,
         stop_checker=stop_checker,
+        image_source_name=image_source_name,
+        skip_existing_metadata=skip_existing_metadata,
+        skip_existing_images=skip_existing_images,
+        update_changed_images=update_changed_images,
+        output_format=output_format,
+        zaparoo_media_source_names=zaparoo_media_source_names,
+        fast_skip_completed=fast_skip_completed,
     )
 
 
@@ -578,6 +664,13 @@ def scan_games_folder(
     games_root: str | Path,
     progress_callback=None,
     stop_checker=None,
+    image_source_name: str = "",
+    skip_existing_metadata: bool = False,
+    skip_existing_images: bool = False,
+    update_changed_images: bool = True,
+    output_format: str = DEFAULT_OUTPUT_FORMAT,
+    zaparoo_media_source_names=None,
+    fast_skip_completed: bool = False,
 ) -> list[dict[str, Any]]:
     games_root = Path(games_root)
 
@@ -617,6 +710,22 @@ def scan_games_folder(
         if not system_path.exists() or not system_path.is_dir():
             continue
 
+        completed_checker = None
+
+        if fast_skip_completed:
+            completed_checker = _make_completed_scrape_checker(
+                system_path=system_path,
+                system_folder=folder_name,
+                system_label=label,
+                screenscraper_system_id=int(info.get("screenscraper_id", 0)),
+                image_source_name=image_source_name,
+                skip_existing_metadata=skip_existing_metadata,
+                skip_existing_images=skip_existing_images,
+                update_changed_images=update_changed_images,
+                output_format=output_format,
+                zaparoo_media_source_names=zaparoo_media_source_names,
+            )
+
         roms = scan_system_folder(
             system_path,
             folder_name,
@@ -626,6 +735,7 @@ def scan_games_folder(
             system_total=len(supported_items),
             games_found_before=total_games_found,
             system_label=label,
+            completed_checker=completed_checker,
         )
 
         if callable(stop_checker) and stop_checker():
@@ -708,6 +818,7 @@ def scan_system_folder(
     system_total: int = 0,
     games_found_before: int = 0,
     system_label: str = "",
+    completed_checker=None,
 ) -> list[ZapScraperRom]:
     roms: list[ZapScraperRom] = []
     checked_files = 0
@@ -747,13 +858,36 @@ def scan_system_folder(
         if path.suffix.lower() == ".zip":
             zip_roms = _scan_zip_contents(path, system_path, system_folder)
             if zip_roms:
-                roms.extend(zip_roms)
+                if callable(completed_checker):
+                    zip_roms = [
+                        rom
+                        for rom in zip_roms
+                        if not completed_checker(
+                            rom.relative_path,
+                            rom.filename,
+                            rom.path,
+                            rom.zip_inner_path,
+                        )
+                    ]
+
+                if zip_roms:
+                    roms.extend(zip_roms)
                 continue
 
         if not is_supported_rom(system_folder, path):
             continue
 
         if path.suffix.lower() in DISC_HELPER_EXTENSIONS and _has_matching_cue(path):
+            continue
+
+        relative_path = to_recalbox_relative_path(path, system_path)
+
+        if callable(completed_checker) and completed_checker(
+            relative_path,
+            path.name,
+            path,
+            "",
+        ):
             continue
 
         try:
@@ -764,7 +898,7 @@ def scan_system_folder(
         roms.append(
             ZapScraperRom(
                 path=path,
-                relative_path=to_recalbox_relative_path(path, system_path),
+                relative_path=relative_path,
                 filename=path.name,
                 stem=path.stem,
                 size=size,
@@ -894,7 +1028,7 @@ def _remove_path_safely(path: str | Path, log_callback=None):
 def clear_scrape_output_for_system(
     system_path: str | Path,
     *,
-    output_format: str = OUTPUT_FORMAT_RECALBOX,
+    output_format: str = DEFAULT_OUTPUT_FORMAT,
     image_source_name: str = "",
     zaparoo_media_source_names=None,
     log_callback=None,
@@ -1353,13 +1487,218 @@ def _zaparoo_action_already_complete(
 
 
 
+
+def _recalbox_action_already_complete(
+    *,
+    system_path: str | Path,
+    relative_path: str,
+    rom_filename: str,
+    entries: dict[str, ET.Element],
+    cache: dict[str, Any],
+    image_source_name: str,
+    skip_existing_metadata: bool = True,
+    skip_existing_images: bool = True,
+    update_changed_images: bool = True,
+) -> bool:
+    game = entries.get(relative_path)
+    has_metadata = game_has_metadata(game)
+
+    needs_metadata = not has_metadata or not skip_existing_metadata
+
+    image_path, _image_relative_path = build_local_image_path(
+        system_path,
+        rom_filename,
+        image_source_name,
+    )
+
+    image_exists = image_path.exists()
+    image_source_changed = cache_entry_needs_image_update(
+        cache,
+        relative_path,
+        image_source_name,
+    )
+
+    needs_image = True
+
+    if skip_existing_images and image_exists and not image_source_changed:
+        needs_image = False
+
+    if image_source_changed and update_changed_images:
+        needs_image = True
+
+    return not needs_metadata and not needs_image
+
+
+def _make_completed_scrape_checker(
+    *,
+    system_path: str | Path,
+    system_folder: str,
+    system_label: str = "",
+    screenscraper_system_id: int = 0,
+    image_source_name: str = "",
+    skip_existing_metadata: bool = True,
+    skip_existing_images: bool = True,
+    update_changed_images: bool = True,
+    output_format: str = DEFAULT_OUTPUT_FORMAT,
+    zaparoo_media_source_names=None,
+):
+    output_format = normalize_output_format(output_format)
+    system_path = Path(system_path)
+
+    if not skip_existing_metadata and not skip_existing_images:
+        return None
+
+    try:
+        tree = load_gamelist(system_path)
+    except Exception:
+        return None
+
+    if _is_zaparoo_format(output_format):
+        children_by_path, parents_by_id = _zaparoo_parent_maps(tree)
+
+        def zaparoo_checker(
+            relative_path: str,
+            rom_filename: str,
+            path: str | Path,
+            zip_inner_path: str = "",
+        ) -> bool:
+            action_preview = {
+                "system_folder": system_folder,
+                "system_label": system_label or system_folder,
+                "system_path": str(system_path),
+                "screenscraper_system_id": screenscraper_system_id,
+                "rom": {
+                    "path": str(path),
+                    "relative_path": relative_path,
+                    "filename": rom_filename,
+                    "stem": Path(rom_filename).stem,
+                    "size": 0,
+                    "zip_inner_path": zip_inner_path,
+                },
+                "relative_path": relative_path,
+            }
+
+            return _zaparoo_action_already_complete(
+                action_preview,
+                children_by_path=children_by_path,
+                parents_by_id=parents_by_id,
+                media_source_names=zaparoo_media_source_names,
+                skip_existing_metadata=skip_existing_metadata,
+            )
+
+        return zaparoo_checker
+
+    entries = get_game_entries_by_path(tree)
+    cache = load_zapscraper_cache(system_path)
+
+    def recalbox_checker(
+        relative_path: str,
+        rom_filename: str,
+        path: str | Path,
+        zip_inner_path: str = "",
+    ) -> bool:
+        return _recalbox_action_already_complete(
+            system_path=system_path,
+            relative_path=relative_path,
+            rom_filename=rom_filename,
+            entries=entries,
+            cache=cache,
+            image_source_name=image_source_name,
+            skip_existing_metadata=skip_existing_metadata,
+            skip_existing_images=skip_existing_images,
+            update_changed_images=update_changed_images,
+        )
+
+    return recalbox_checker
+
+
+def filter_systems_for_pending_scrape(
+    systems: list[dict[str, Any]],
+    image_source_name: str,
+    skip_existing_metadata: bool = True,
+    skip_existing_images: bool = True,
+    update_changed_images: bool = True,
+    output_format: str = DEFAULT_OUTPUT_FORMAT,
+    zaparoo_media_source_names=None,
+) -> list[dict[str, Any]]:
+    output_format = normalize_output_format(output_format)
+
+    if not systems:
+        return []
+
+    filtered_systems: list[dict[str, Any]] = []
+
+    for system in systems:
+        actions = plan_scrape_actions(
+            system,
+            image_source_name,
+            skip_existing_metadata=skip_existing_metadata,
+            skip_existing_images=skip_existing_images,
+            update_changed_images=update_changed_images,
+            output_format=output_format,
+            zaparoo_media_source_names=zaparoo_media_source_names,
+        )
+
+        if not actions:
+            continue
+
+        roms = []
+        seen_paths: set[str] = set()
+
+        for action in actions:
+            rom = action.get("rom")
+            relative_path = str(action.get("relative_path") or "").strip()
+
+            if not isinstance(rom, dict) or not relative_path:
+                continue
+
+            if relative_path in seen_paths:
+                continue
+
+            seen_paths.add(relative_path)
+            roms.append(rom)
+
+        if not roms:
+            continue
+
+        filtered = dict(system)
+        filtered["roms"] = roms
+        filtered["count"] = len(roms)
+        filtered_systems.append(filtered)
+
+    return filtered_systems
+
+
+def load_pending_scan_cache_systems(
+    source_mode: str,
+    source_path: str | Path,
+    image_source_name: str,
+    skip_existing_metadata: bool = True,
+    skip_existing_images: bool = True,
+    update_changed_images: bool = True,
+    output_format: str = DEFAULT_OUTPUT_FORMAT,
+    zaparoo_media_source_names=None,
+) -> list[dict[str, Any]]:
+    systems = load_scan_cache_systems(source_mode, source_path)
+
+    return filter_systems_for_pending_scrape(
+        systems,
+        image_source_name,
+        skip_existing_metadata=skip_existing_metadata,
+        skip_existing_images=skip_existing_images,
+        update_changed_images=update_changed_images,
+        output_format=output_format,
+        zaparoo_media_source_names=zaparoo_media_source_names,
+    )
+
+
 def plan_scrape_actions(
     system: dict[str, Any],
     image_source_name: str,
     skip_existing_metadata: bool = True,
     skip_existing_images: bool = True,
     update_changed_images: bool = True,
-    output_format: str = OUTPUT_FORMAT_RECALBOX,
+    output_format: str = DEFAULT_OUTPUT_FORMAT,
     zaparoo_media_source_names=None,
 ) -> list[dict[str, Any]]:
     output_format = normalize_output_format(output_format)
@@ -1595,6 +1934,10 @@ def _screenscraper_get_json(
         return {}
 
     if response.status_code in {403, 429}:
+        detail = response.text.strip()[:500] if response.text else ""
+        if _looks_like_daily_quota_error(detail):
+            raise ScreenScraperDailyQuotaError(build_screenscraper_daily_quota_message(detail))
+
         raise ScreenScraperQuotaError(
             "ScreenScraper quota or rate limit reached. Please wait before scraping again."
         )
@@ -1611,13 +1954,18 @@ def _screenscraper_get_json(
     if not isinstance(data, dict):
         raise RuntimeError("ScreenScraper returned an unexpected response.")
 
-    _raise_for_screenscraper_error(data)
-
     quota = extract_screenscraper_quota_info(data)
     if quota:
         data["_zapscraper_quota"] = quota
         if callable(quota_callback):
             quota_callback(quota)
+
+        if _quota_info_indicates_daily_limit(quota):
+            raise ScreenScraperDailyQuotaError(
+                build_screenscraper_daily_quota_message(format_screenscraper_quota_info(quota))
+            )
+
+    _raise_for_screenscraper_error(data)
 
     return data
 
@@ -1632,6 +1980,8 @@ def _raise_for_screenscraper_error(data: dict[str, Any]):
         if success in {"false", "0", "ko"}:
             message = str(error or "ScreenScraper request failed.")
             if _looks_like_quota_error(message):
+                if _looks_like_daily_quota_error(message):
+                    raise ScreenScraperDailyQuotaError(build_screenscraper_daily_quota_message(message))
                 raise ScreenScraperQuotaError(message)
             raise RuntimeError(message)
 
@@ -1643,6 +1993,8 @@ def _raise_for_screenscraper_error(data: dict[str, Any]):
         if error:
             message = str(error)
             if _looks_like_quota_error(message):
+                if _looks_like_daily_quota_error(message):
+                    raise ScreenScraperDailyQuotaError(build_screenscraper_daily_quota_message(message))
                 raise ScreenScraperQuotaError(message)
             raise RuntimeError(message)
 
@@ -2796,7 +3148,7 @@ def process_scrape_action(
     image_source_name: str,
     selected_region: str,
     skip_existing_metadata: bool = True,
-    output_format: str = OUTPUT_FORMAT_RECALBOX,
+    output_format: str = DEFAULT_OUTPUT_FORMAT,
     zaparoo_media_source_names=None,
     zaparoo_slug_map: dict[tuple[str, str], str] | None = None,
     quota_callback=None,
@@ -3017,7 +3369,7 @@ def run_scrape_actions(
     image_source_name: str,
     selected_region: str,
     skip_existing_metadata: bool = True,
-    output_format: str = OUTPUT_FORMAT_RECALBOX,
+    output_format: str = DEFAULT_OUTPUT_FORMAT,
     zaparoo_media_source_names=None,
     progress_callback=None,
     log_callback=None,
@@ -3127,10 +3479,41 @@ def run_scrape_actions(
             if callable(log_callback):
                 log_callback("Scrape stopped by user.")
             break
+        except ScreenScraperDailyQuotaError as e:
+            message = str(e).strip() or build_screenscraper_daily_quota_message()
+            if callable(log_callback):
+                log_callback(message)
+
+            if callable(quota_callback):
+                try:
+                    quota_callback(
+                        {
+                            "quota_reached": True,
+                            "quota_type": "daily",
+                            "message": message,
+                        }
+                    )
+                except TypeError:
+                    quota_callback({})
+
+            break
         except ScreenScraperQuotaError as e:
             if callable(log_callback):
                 log_callback(f"ScreenScraper quota/rate limit reached: {e}")
                 log_callback("Scrape stopped to avoid exceeding ScreenScraper limits.")
+
+            if callable(quota_callback):
+                try:
+                    quota_callback(
+                        {
+                            "quota_reached": True,
+                            "quota_type": "rate_limit",
+                            "message": str(e).strip(),
+                        }
+                    )
+                except TypeError:
+                    quota_callback({})
+
             break
         except Exception as e:
             if callable(log_callback):
