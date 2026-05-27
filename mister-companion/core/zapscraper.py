@@ -741,7 +741,7 @@ def scan_system_folder(
         if path.name == GAMELIST_FILENAME:
             continue
 
-        if _is_inside_media_folder(path):
+        if _is_inside_media_folder(path, system_path):
             continue
 
         if path.suffix.lower() == ".zip":
@@ -785,8 +785,18 @@ def scan_system_folder(
     return roms
 
 
-def _is_inside_media_folder(path: Path) -> bool:
-    return any(part.lower() == "media" for part in path.parts)
+def _is_inside_media_folder(path: Path, system_path: Path | None = None) -> bool:
+    path = Path(path)
+
+    if system_path is not None:
+        try:
+            parts = path.relative_to(system_path).parts
+        except Exception:
+            parts = path.parts
+    else:
+        parts = path.parts
+
+    return any(part.lower() == "media" for part in parts)
 
 
 def _has_matching_cue(path: Path) -> bool:
