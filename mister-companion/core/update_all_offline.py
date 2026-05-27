@@ -9,6 +9,7 @@ import shutil
 import signal
 import sys
 import time
+import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
@@ -258,13 +259,46 @@ class UpdateAllOfflineRunner:
     def _fetch_downloader_zip(self) -> Path:
         target = self.cache_dir / "downloader.zip"
 
+        if target.exists():
+            if self._is_valid_zip(target):
+                self._log(f"Using cached official Downloader: {target}")
+                return target
+
+            self._log("Cached official Downloader ZIP is invalid. Removing it...")
+            try:
+                target.unlink()
+            except FileNotFoundError:
+                pass
+            except Exception as exc:
+                raise RuntimeError(f"Could not remove invalid cached Downloader ZIP: {exc}") from exc
+
         self._log(f"Downloading official Downloader: {_DOWNLOADER_URL}")
         self._download_to_file(_DOWNLOADER_URL, target)
 
-        if not target.exists() or target.stat().st_size <= 0:
-            raise RuntimeError("Downloaded official Downloader is empty")
+        if not self._is_valid_zip(target):
+            try:
+                target.unlink()
+            except FileNotFoundError:
+                pass
+            except Exception:
+                pass
+
+            raise RuntimeError("Downloaded official Downloader ZIP is invalid or incomplete.")
 
         return target
+
+    def _is_valid_zip(self, path: Path) -> bool:
+        try:
+            if not path.exists() or not path.is_file() or path.stat().st_size <= 0:
+                return False
+
+            if not zipfile.is_zipfile(path):
+                return False
+
+            with zipfile.ZipFile(path, "r") as archive:
+                return archive.testzip() is None
+        except Exception:
+            return False
 
     def _ensure_pc_launcher_marker(self) -> Path:
         launcher_path = self.sd_root / "MiSTer_Companion_Offline_PC_Launcher.py"
@@ -494,18 +528,30 @@ class UpdateAllOfflineRunner:
         temp_path = target.with_name(target.name + ".tmp")
 
         try:
+            if temp_path.exists():
+                temp_path.unlink()
+
             with urlopen(request, timeout=180) as response:
                 with temp_path.open("wb") as handle:
                     shutil.copyfileobj(response, handle)
 
+            if not temp_path.exists() or temp_path.stat().st_size <= 0:
+                raise RuntimeError("download produced an empty file")
+
             temp_path.replace(target)
-        except (HTTPError, URLError, TimeoutError) as exc:
+        except (HTTPError, URLError, TimeoutError, RuntimeError) as exc:
             try:
                 temp_path.unlink()
             except FileNotFoundError:
                 pass
 
             raise RuntimeError(f"Download failed: {url} ({exc})") from exc
+        except Exception:
+            try:
+                temp_path.unlink()
+            except FileNotFoundError:
+                pass
+            raise
 
     def _int_or_zero(self, value: Any) -> int:
         try:
