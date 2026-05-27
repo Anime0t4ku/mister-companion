@@ -2,22 +2,13 @@
   "version": 1,
   "items": [
     {
-      "id": "mister-companion-v4-4-0",
-      "date": "2026-05-25",
+      "id": "mister-companion-android-google-play",
+      "date": "2026-05-27",
       "type": "info",
-      "headline": "MiSTer Companion v4.4.0 Released",
-      "message": "MiSTer Companion v4.4.0 is now available.\n\nThis release adds ZapScraper, a new Offline Mode tool for scraping artwork for the Zaparoo Frontend directly to a MiSTer SD card or a custom local/network location.\n\nThis update also adds safer SD card eject handling, a new CD Game Organizer script, improved update_all output readability, RetroAchievements Cores updates, and more.",
-      "url": "https://github.com/Anime0t4ku/mister-companion/releases/tag/v4.4.0",
-      "url_label": "View Full Release Notes"
-    },
-    {
-      "id": "mc-updater",
-      "date": "2026-05-15",
-      "type": "info",
-      "headline": "MC-Updater Is Now Available",
-      "message": "MC-Updater is now available for both Windows and Linux.\n\nMC-Updater is a small companion tool for MiSTer Companion that makes future updates easier by handling the update process for you.\n\nOnce MC-Updater is installed, MiSTer Companion will recognize the updater tool. When a supported update is available, MiSTer Companion can launch MC-Updater to download and replace the old MiSTer Companion executable automatically.",
-      "url": "https://github.com/Anime0t4ku/MC-Updater/releases/tag/v1.1.1",
-      "url_label": "Download MC-Updater v1.1.1"
+      "headline": "MiSTer Companion for Android Is Now on Google Play",
+      "message": "MiSTer Companion for Android is now available on Google Play.\n\nThe Android app is a great way to support my work and use MiSTer Companion on the go. Think of it as MiSTer Companion Lite: a more focused Android version of the desktop app. Some desktop features are not possible on mobile because of platform limitations, while others may be added in future updates.\n\nA huge thank you to everyone who helped beta test the Android app. If you were part of the beta and want to receive the latest regular updates, please opt out of the beta program by going to the app page on Google Play and scrolling all the way down.",
+      "url": "https://play.google.com/store/apps/details?id=com.anime0t4ku.mister_companion_mobile&pcampaignid=web_share",
+      "url_label": "Get MiSTer Companion for Android"
     }
   ]
 }
