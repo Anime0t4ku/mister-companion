@@ -1977,7 +1977,12 @@ def _screenscraper_get_json(
     _check_stopped(stop_checker)
 
     try:
-        data = response.json()
+        response_text = response.content.decode("utf-8-sig")
+        data = json.loads(response_text)
+    except UnicodeDecodeError as e:
+        raise RuntimeError(f"ScreenScraper returned a response that could not be decoded as UTF-8: {e}")
+    except json.JSONDecodeError as e:
+        raise RuntimeError(f"ScreenScraper returned an invalid response: {e}")
     except Exception as e:
         raise RuntimeError(f"ScreenScraper returned an invalid response: {e}")
 
