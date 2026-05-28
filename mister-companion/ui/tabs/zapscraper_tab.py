@@ -166,6 +166,7 @@ class ZapScraperPlanWorker(QThread):
         image_source,
         skip_existing_metadata=True,
         skip_existing_images=True,
+        skip_games_with_metadata_ignore_incomplete_media=False,
         update_changed_images=True,
         output_format="",
         zaparoo_media_source_names=None,
@@ -176,6 +177,7 @@ class ZapScraperPlanWorker(QThread):
         self.image_source = image_source
         self.skip_existing_metadata = bool(skip_existing_metadata)
         self.skip_existing_images = bool(skip_existing_images)
+        self.skip_games_with_metadata_ignore_incomplete_media = bool(skip_games_with_metadata_ignore_incomplete_media)
         self.update_changed_images = bool(update_changed_images)
         self.output_format = str(output_format or "")
         self.zaparoo_media_source_names = list(zaparoo_media_source_names or [])
@@ -210,6 +212,7 @@ class ZapScraperPlanWorker(QThread):
                     self.image_source,
                     skip_existing_metadata=self.skip_existing_metadata,
                     skip_existing_images=self.skip_existing_images,
+                    skip_games_with_metadata_ignore_incomplete_media=self.skip_games_with_metadata_ignore_incomplete_media,
                     update_changed_images=self.update_changed_images,
                     output_format=self.output_format,
                     zaparoo_media_source_names=self.zaparoo_media_source_names,
@@ -587,8 +590,20 @@ class ZapScraperTab(QWidget):
         self.skip_metadata_checkbox.setChecked(True)
         self.skip_images_checkbox = QCheckBox("Skip existing images")
         self.skip_images_checkbox.setChecked(True)
+        self.skip_metadata_incomplete_media_checkbox = QCheckBox("Skip games with metadata, ignore incomplete media")
+        self.skip_metadata_incomplete_media_checkbox.setChecked(False)
+        self.skip_metadata_incomplete_media_checkbox.setToolTip(
+            "When enabled, games that already have metadata in gamelist.xml are skipped completely, "
+            "even if images or other media are missing."
+        )
         advanced_row.addWidget(self.skip_metadata_checkbox)
         advanced_row.addWidget(self.skip_images_checkbox)
+        advanced_row.addWidget(self.skip_metadata_incomplete_media_checkbox)
+        self.skip_metadata_checkbox.stateChanged.connect(lambda *_: self.save_settings())
+        self.skip_images_checkbox.stateChanged.connect(lambda *_: self.save_settings())
+        self.skip_metadata_incomplete_media_checkbox.stateChanged.connect(
+            self.on_skip_metadata_incomplete_media_changed
+        )
         advanced_row.addStretch()
         options_layout.addLayout(advanced_row)
 
@@ -721,10 +736,14 @@ class ZapScraperTab(QWidget):
             self.skip_images_checkbox.setChecked(
                 bool(scraper_config.get("skip_existing_images", True))
             )
+            self.skip_metadata_incomplete_media_checkbox.setChecked(
+                bool(scraper_config.get("skip_games_with_metadata_ignore_incomplete_media", False))
+            )
         finally:
             self._loading_settings = False
 
         self.update_output_format_ui()
+        self.update_skip_option_ui()
 
     def save_settings(self):
         if getattr(self, "_loading_settings", False):
@@ -745,9 +764,39 @@ class ZapScraperTab(QWidget):
             "zaparoo_media_sources": self._active_zaparoo_media_sources(),
             "skip_existing_metadata": self.skip_metadata_checkbox.isChecked(),
             "skip_existing_images": self.skip_images_checkbox.isChecked(),
+            "skip_games_with_metadata_ignore_incomplete_media": self.skip_metadata_incomplete_media_checkbox.isChecked(),
         }
         save_config(config)
         self.update_account_status()
+
+    def on_skip_metadata_incomplete_media_changed(self, *_):
+        self.update_skip_option_ui()
+        self.save_settings()
+
+    def update_skip_option_ui(self):
+        if not all(
+            hasattr(self, attr)
+            for attr in (
+                "skip_metadata_checkbox",
+                "skip_images_checkbox",
+                "skip_metadata_incomplete_media_checkbox",
+            )
+        ):
+            return
+
+        ignore_incomplete_media = self.skip_metadata_incomplete_media_checkbox.isChecked()
+        base_enabled = self.skip_metadata_incomplete_media_checkbox.isEnabled()
+
+        if ignore_incomplete_media:
+            for checkbox in (self.skip_metadata_checkbox, self.skip_images_checkbox):
+                was_blocked = checkbox.blockSignals(True)
+                checkbox.setChecked(False)
+                checkbox.blockSignals(was_blocked)
+                checkbox.setEnabled(False)
+            return
+
+        self.skip_metadata_checkbox.setEnabled(base_enabled)
+        self.skip_images_checkbox.setEnabled(base_enabled)
 
     def update_quota_info(self, quota_info):
         if not isinstance(quota_info, dict) or not quota_info:
@@ -1262,6 +1311,7 @@ class ZapScraperTab(QWidget):
 
         skip_existing_metadata = self.skip_metadata_checkbox.isChecked()
         skip_existing_images = self.skip_images_checkbox.isChecked()
+        skip_games_with_metadata_ignore_incomplete_media = self.skip_metadata_incomplete_media_checkbox.isChecked()
         rebuild_from_scratch = not skip_existing_metadata and not skip_existing_images
         output_format = self._active_output_format()
         zaparoo_media_sources = self._active_zaparoo_media_sources()
@@ -1280,6 +1330,7 @@ class ZapScraperTab(QWidget):
             self.image_source_combo.currentText(),
             skip_existing_metadata=skip_existing_metadata,
             skip_existing_images=skip_existing_images,
+            skip_games_with_metadata_ignore_incomplete_media=skip_games_with_metadata_ignore_incomplete_media,
             update_changed_images=True,
             output_format=output_format,
             zaparoo_media_source_names=zaparoo_media_sources,
@@ -1524,8 +1575,8 @@ class ZapScraperTab(QWidget):
         for checkbox in self.zaparoo_media_checkboxes.values():
             checkbox.setEnabled(enabled and self._is_zaparoo_companion_mode())
 
-        self.skip_metadata_checkbox.setEnabled(enabled)
-        self.skip_images_checkbox.setEnabled(enabled)
+        self.skip_metadata_incomplete_media_checkbox.setEnabled(enabled)
+        self.update_skip_option_ui()
 
         self.stop_button.setEnabled(bool(busy))
         self.update_output_format_ui()
@@ -1577,8 +1628,8 @@ class ZapScraperTab(QWidget):
         for checkbox in self.zaparoo_media_checkboxes.values():
             checkbox.setEnabled(enabled and self._is_zaparoo_companion_mode())
 
-        self.skip_metadata_checkbox.setEnabled(enabled)
-        self.skip_images_checkbox.setEnabled(enabled)
+        self.skip_metadata_incomplete_media_checkbox.setEnabled(enabled)
+        self.update_skip_option_ui()
 
         self.stop_button.setEnabled(busy)
 

@@ -635,6 +635,7 @@ def scan_sd_card(
     image_source_name: str = "",
     skip_existing_metadata: bool = False,
     skip_existing_images: bool = False,
+    skip_games_with_metadata_ignore_incomplete_media: bool = False,
     update_changed_images: bool = True,
     output_format: str = DEFAULT_OUTPUT_FORMAT,
     zaparoo_media_source_names=None,
@@ -653,6 +654,7 @@ def scan_sd_card(
         image_source_name=image_source_name,
         skip_existing_metadata=skip_existing_metadata,
         skip_existing_images=skip_existing_images,
+        skip_games_with_metadata_ignore_incomplete_media=skip_games_with_metadata_ignore_incomplete_media,
         update_changed_images=update_changed_images,
         output_format=output_format,
         zaparoo_media_source_names=zaparoo_media_source_names,
@@ -667,6 +669,7 @@ def scan_games_folder(
     image_source_name: str = "",
     skip_existing_metadata: bool = False,
     skip_existing_images: bool = False,
+    skip_games_with_metadata_ignore_incomplete_media: bool = False,
     update_changed_images: bool = True,
     output_format: str = DEFAULT_OUTPUT_FORMAT,
     zaparoo_media_source_names=None,
@@ -721,6 +724,7 @@ def scan_games_folder(
                 image_source_name=image_source_name,
                 skip_existing_metadata=skip_existing_metadata,
                 skip_existing_images=skip_existing_images,
+                skip_games_with_metadata_ignore_incomplete_media=skip_games_with_metadata_ignore_incomplete_media,
                 update_changed_images=update_changed_images,
                 output_format=output_format,
                 zaparoo_media_source_names=zaparoo_media_source_names,
@@ -1454,6 +1458,7 @@ def _zaparoo_action_already_complete(
     parents_by_id: dict[str, ET.Element],
     media_source_names=None,
     skip_existing_metadata: bool = True,
+    skip_games_with_metadata_ignore_incomplete_media: bool = False,
 ) -> bool:
     system_path = action.get("system_path")
     rom = action.get("rom") or {}
@@ -1473,7 +1478,12 @@ def _zaparoo_action_already_complete(
         if parent is None:
             continue
 
-        metadata_ok = game_has_metadata(parent) if skip_existing_metadata else False
+        has_metadata = game_has_metadata(parent)
+
+        if skip_games_with_metadata_ignore_incomplete_media and has_metadata:
+            return True
+
+        metadata_ok = has_metadata if skip_existing_metadata else False
         media_ok = _zaparoo_selected_media_complete(
             system_path,
             parent,
@@ -1498,10 +1508,14 @@ def _recalbox_action_already_complete(
     image_source_name: str,
     skip_existing_metadata: bool = True,
     skip_existing_images: bool = True,
+    skip_games_with_metadata_ignore_incomplete_media: bool = False,
     update_changed_images: bool = True,
 ) -> bool:
     game = entries.get(relative_path)
     has_metadata = game_has_metadata(game)
+
+    if skip_games_with_metadata_ignore_incomplete_media and has_metadata:
+        return True
 
     needs_metadata = not has_metadata or not skip_existing_metadata
 
@@ -1538,6 +1552,7 @@ def _make_completed_scrape_checker(
     image_source_name: str = "",
     skip_existing_metadata: bool = True,
     skip_existing_images: bool = True,
+    skip_games_with_metadata_ignore_incomplete_media: bool = False,
     update_changed_images: bool = True,
     output_format: str = DEFAULT_OUTPUT_FORMAT,
     zaparoo_media_source_names=None,
@@ -1545,7 +1560,11 @@ def _make_completed_scrape_checker(
     output_format = normalize_output_format(output_format)
     system_path = Path(system_path)
 
-    if not skip_existing_metadata and not skip_existing_images:
+    if (
+        not skip_existing_metadata
+        and not skip_existing_images
+        and not skip_games_with_metadata_ignore_incomplete_media
+    ):
         return None
 
     try:
@@ -1584,6 +1603,7 @@ def _make_completed_scrape_checker(
                 parents_by_id=parents_by_id,
                 media_source_names=zaparoo_media_source_names,
                 skip_existing_metadata=skip_existing_metadata,
+                skip_games_with_metadata_ignore_incomplete_media=skip_games_with_metadata_ignore_incomplete_media,
             )
 
         return zaparoo_checker
@@ -1606,6 +1626,7 @@ def _make_completed_scrape_checker(
             image_source_name=image_source_name,
             skip_existing_metadata=skip_existing_metadata,
             skip_existing_images=skip_existing_images,
+            skip_games_with_metadata_ignore_incomplete_media=skip_games_with_metadata_ignore_incomplete_media,
             update_changed_images=update_changed_images,
         )
 
@@ -1617,6 +1638,7 @@ def filter_systems_for_pending_scrape(
     image_source_name: str,
     skip_existing_metadata: bool = True,
     skip_existing_images: bool = True,
+    skip_games_with_metadata_ignore_incomplete_media: bool = False,
     update_changed_images: bool = True,
     output_format: str = DEFAULT_OUTPUT_FORMAT,
     zaparoo_media_source_names=None,
@@ -1634,6 +1656,7 @@ def filter_systems_for_pending_scrape(
             image_source_name,
             skip_existing_metadata=skip_existing_metadata,
             skip_existing_images=skip_existing_images,
+            skip_games_with_metadata_ignore_incomplete_media=skip_games_with_metadata_ignore_incomplete_media,
             update_changed_images=update_changed_images,
             output_format=output_format,
             zaparoo_media_source_names=zaparoo_media_source_names,
@@ -1675,6 +1698,7 @@ def load_pending_scan_cache_systems(
     image_source_name: str,
     skip_existing_metadata: bool = True,
     skip_existing_images: bool = True,
+    skip_games_with_metadata_ignore_incomplete_media: bool = False,
     update_changed_images: bool = True,
     output_format: str = DEFAULT_OUTPUT_FORMAT,
     zaparoo_media_source_names=None,
@@ -1686,6 +1710,7 @@ def load_pending_scan_cache_systems(
         image_source_name,
         skip_existing_metadata=skip_existing_metadata,
         skip_existing_images=skip_existing_images,
+        skip_games_with_metadata_ignore_incomplete_media=skip_games_with_metadata_ignore_incomplete_media,
         update_changed_images=update_changed_images,
         output_format=output_format,
         zaparoo_media_source_names=zaparoo_media_source_names,
@@ -1697,6 +1722,7 @@ def plan_scrape_actions(
     image_source_name: str,
     skip_existing_metadata: bool = True,
     skip_existing_images: bool = True,
+    skip_games_with_metadata_ignore_incomplete_media: bool = False,
     update_changed_images: bool = True,
     output_format: str = DEFAULT_OUTPUT_FORMAT,
     zaparoo_media_source_names=None,
@@ -1736,6 +1762,7 @@ def plan_scrape_actions(
                 parents_by_id=zaparoo_parents_by_id,
                 media_source_names=zaparoo_media_source_names,
                 skip_existing_metadata=skip_existing_metadata,
+                skip_games_with_metadata_ignore_incomplete_media=skip_games_with_metadata_ignore_incomplete_media,
             ):
                 continue
 
@@ -1758,6 +1785,9 @@ def plan_scrape_actions(
 
         game = entries.get(relative_path)
         has_metadata = game_has_metadata(game)
+
+        if skip_games_with_metadata_ignore_incomplete_media and has_metadata:
+            continue
 
         needs_metadata = not has_metadata or not skip_existing_metadata
 

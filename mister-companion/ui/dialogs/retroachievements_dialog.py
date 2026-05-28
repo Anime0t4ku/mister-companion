@@ -251,6 +251,13 @@ def get_game_extended_info(api_key, game_id):
     return {}
 
 
+def safe_int_value(value):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
 def normalize_game_from_recent(game, awarded=None):
     game_id = (
         game.get("GameID")
@@ -317,13 +324,17 @@ def normalize_game_from_recent(game, awarded=None):
         or 0
     )
 
+    achieved = safe_int_value(achieved)
+    hardcore_achieved = safe_int_value(hardcore_achieved)
+    general_achieved = max(achieved, hardcore_achieved)
+
     return {
         "id": str(game_id),
         "title": game.get("Title") or game.get("title") or "Unknown Game",
         "console": game.get("ConsoleName") or game.get("consoleName") or "",
         "image": make_game_icon_url(game, allow_boxart=False),
-        "achieved": achieved,
-        "softcore_achieved": achieved,
+        "achieved": general_achieved,
+        "softcore_achieved": general_achieved,
         "hardcore_achieved": hardcore_achieved,
         "total": total,
         "source": "recent",
@@ -386,13 +397,17 @@ def normalize_game_from_completion(game):
         or 0
     )
 
+    achieved = safe_int_value(achieved)
+    hardcore_achieved = safe_int_value(hardcore_achieved)
+    general_achieved = max(achieved, hardcore_achieved)
+
     return {
         "id": str(game_id),
         "title": title,
         "console": console,
         "image": make_game_icon_url(game, allow_boxart=True),
-        "achieved": achieved,
-        "softcore_achieved": achieved,
+        "achieved": general_achieved,
+        "softcore_achieved": general_achieved,
         "hardcore_achieved": hardcore_achieved,
         "total": total,
         "source": "all",
@@ -425,8 +440,8 @@ def normalize_achievement(game_id, game_title, console, achievement_id, achievem
 
     date_awarded = date_awarded_hardcore or date_awarded_softcore
     hardcore_unlocked = bool(date_awarded_hardcore)
-    softcore_unlocked = bool(date_awarded_softcore) and not hardcore_unlocked
-    unlocked = bool(date_awarded)
+    softcore_unlocked = bool(date_awarded_softcore) or hardcore_unlocked
+    unlocked = softcore_unlocked or hardcore_unlocked
 
     return {
         "id": str(
