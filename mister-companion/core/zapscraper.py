@@ -1002,12 +1002,17 @@ def load_zapscraper_cache(system_path: str | Path) -> dict[str, Any]:
     return data
 
 
-def save_zapscraper_cache(system_path: str | Path, cache: dict[str, Any]):
+def save_zapscraper_cache(system_path: str | Path, cache: dict[str, Any], stop_checker=None):
+    _check_stopped(stop_checker)
     cache_path = Path(system_path) / CACHE_FILENAME
 
     try:
+        _check_stopped(stop_checker)
         with cache_path.open("w", encoding="utf-8") as handle:
             json.dump(cache, handle, indent=2, ensure_ascii=False)
+        _check_stopped(stop_checker)
+    except InterruptedError:
+        raise
     except Exception:
         pass
 
@@ -1129,23 +1134,28 @@ def _sort_gamelist_entries(root: ET.Element):
         root.append(orphan)
 
 
-def save_gamelist(system_path: str | Path, tree: ET.ElementTree, log_callback=None):
+def save_gamelist(system_path: str | Path, tree: ET.ElementTree, log_callback=None, stop_checker=None):
+    _check_stopped(stop_checker)
     gamelist_path = Path(system_path) / GAMELIST_FILENAME
     root = tree.getroot()
     game_count = len(root.findall("game"))
 
     _log(log_callback, f"Sorting gamelist entries ({game_count} entries)...")
+    _check_stopped(stop_checker)
     _sort_gamelist_entries(root)
 
     _log(log_callback, "Indenting gamelist XML...")
+    _check_stopped(stop_checker)
     indent_xml(root)
 
     _log(log_callback, "Writing gamelist.xml...")
+    _check_stopped(stop_checker)
     tree.write(
         gamelist_path,
         encoding="utf-8",
         xml_declaration=True,
     )
+    _check_stopped(stop_checker)
     _log(log_callback, "gamelist.xml saved.")
 
 
@@ -1843,11 +1853,15 @@ def apply_scrape_result(
     region: str = "",
     skip_existing_metadata: bool = True,
     log_callback=None,
+    stop_checker=None,
 ):
+    _check_stopped(stop_checker)
     system_path = Path(system_path)
     tree = load_gamelist(system_path)
+    _check_stopped(stop_checker)
     cache = load_zapscraper_cache(system_path)
 
+    _check_stopped(stop_checker)
     game = get_or_create_game_entry(tree, relative_path)
 
     update_game_metadata(
@@ -1870,9 +1884,11 @@ def apply_scrape_result(
     )
 
     _log(log_callback, "Writing gamelist entry...")
-    save_gamelist(system_path, tree, log_callback=log_callback)
+    _check_stopped(stop_checker)
+    save_gamelist(system_path, tree, log_callback=log_callback, stop_checker=stop_checker)
     _log(log_callback, "Saving scraper cache...")
-    save_zapscraper_cache(system_path, cache)
+    _check_stopped(stop_checker)
+    save_zapscraper_cache(system_path, cache, stop_checker=stop_checker)
     _log(log_callback, "Scraper cache saved.")
 
 
@@ -2116,7 +2132,8 @@ def build_user_info_message(user_info: dict[str, Any], quota: dict[str, Any] | N
     return " | ".join(parts)
 
 
-def calculate_rom_hashes(path: str | Path, zip_inner_path: str = "") -> dict[str, str]:
+def calculate_rom_hashes(path: str | Path, zip_inner_path: str = "", stop_checker=None) -> dict[str, str]:
+    _check_stopped(stop_checker)
     path = Path(path)
 
     crc = 0
@@ -2127,6 +2144,7 @@ def calculate_rom_hashes(path: str | Path, zip_inner_path: str = "") -> dict[str
         with zipfile.ZipFile(path, "r") as zf:
             with zf.open(zip_inner_path) as handle:
                 while True:
+                    _check_stopped(stop_checker)
                     chunk = handle.read(1024 * 1024)
                     if not chunk:
                         break
@@ -2136,6 +2154,7 @@ def calculate_rom_hashes(path: str | Path, zip_inner_path: str = "") -> dict[str
     else:
         with path.open("rb") as handle:
             while True:
+                _check_stopped(stop_checker)
                 chunk = handle.read(1024 * 1024)
                 if not chunk:
                     break
@@ -2174,7 +2193,9 @@ def fetch_game_info(
     )
 
     if not skip_hashes:
-        hashes = calculate_rom_hashes(rom_path, zip_inner_path)
+        _check_stopped(stop_checker)
+        hashes = calculate_rom_hashes(rom_path, zip_inner_path, stop_checker=stop_checker)
+        _check_stopped(stop_checker)
         params.update(
             {
                 "romtaille": str(rom_size),
@@ -3025,6 +3046,7 @@ def apply_zaparoo_companion_scrape_result(
     parent = get_or_create_zaparoo_parent_entry(tree, screenscraper_id)
     update_zaparoo_parent_metadata(parent, metadata)
 
+    _check_stopped(stop_checker)
     media_paths = download_zaparoo_companion_media_assets(
         system_path=system_path,
         parent=parent,
@@ -3036,6 +3058,7 @@ def apply_zaparoo_companion_scrape_result(
         log_callback=log_callback,
     )
 
+    _check_stopped(stop_checker)
     child = get_or_create_zaparoo_child_entry(tree, relative_path, screenscraper_id)
 
     rom_filename = rom.get("filename") or ""
@@ -3056,9 +3079,11 @@ def apply_zaparoo_companion_scrape_result(
     )
 
     _log(log_callback, "Writing gamelist entry...")
-    save_gamelist(system_path, tree, log_callback=log_callback)
+    _check_stopped(stop_checker)
+    save_gamelist(system_path, tree, log_callback=log_callback, stop_checker=stop_checker)
     _log(log_callback, "Saving scraper cache...")
-    save_zapscraper_cache(system_path, cache)
+    _check_stopped(stop_checker)
+    save_zapscraper_cache(system_path, cache, stop_checker=stop_checker)
     _log(log_callback, "Scraper cache saved.")
 
     return {
@@ -3154,6 +3179,7 @@ def _apply_placeholder_after_request_failure(
         }
 
     _log(log_callback, "Writing gamelist entry...")
+    _check_stopped(stop_checker)
 
     apply_scrape_result(
         action.get("system_path"),
@@ -3164,6 +3190,7 @@ def _apply_placeholder_after_request_failure(
         region=region_code,
         skip_existing_metadata=skip_existing_metadata,
         log_callback=log_callback,
+        stop_checker=stop_checker,
     )
 
     return {
@@ -3375,6 +3402,7 @@ def process_scrape_action(
             image_relative_path = existing_image_relative if Path(action.get("image_path", "")).exists() else ""
 
     _log(log_callback, "Writing gamelist entry...")
+    _check_stopped(stop_checker)
 
     apply_scrape_result(
         action.get("system_path"),
@@ -3385,6 +3413,7 @@ def process_scrape_action(
         region=region_code,
         skip_existing_metadata=skip_existing_metadata,
         log_callback=log_callback,
+        stop_checker=stop_checker,
     )
 
     return {

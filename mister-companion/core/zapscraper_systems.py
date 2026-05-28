@@ -227,11 +227,6 @@ SUPPORTED_SYSTEMS = {
         "screenscraper_id": 0,
         "extensions": [".bin", ".rom", ".zip", ".7z"],
     },
-    "Lynx48": {
-        "label": "Camputers Lynx",
-        "screenscraper_id": 88,
-        "extensions": [".tap", ".wav", ".bin", ".rom", ".zip", ".7z"],
-    },
     "MegaCD": {
         "label": "Mega CD / Sega CD",
         "screenscraper_id": 20,
@@ -245,21 +240,6 @@ SUPPORTED_SYSTEMS = {
     "MegaDuck": {
         "label": "Mega Duck",
         "screenscraper_id": 90,
-        "extensions": [".bin", ".rom", ".zip", ".7z"],
-    },
-    "MSX": {
-        "label": "MSX",
-        "screenscraper_id": 113,
-        "extensions": [".rom", ".mx1", ".mx2", ".dsk", ".cas", ".zip", ".7z"],
-    },
-    "MSX1": {
-        "label": "MSX1",
-        "screenscraper_id": 113,
-        "extensions": [".rom", ".mx1", ".dsk", ".cas", ".zip", ".7z"],
-    },
-    "MultiComp": {
-        "label": "MultiComp",
-        "screenscraper_id": 0,
         "extensions": [".bin", ".rom", ".zip", ".7z"],
     },
     "MyVision": {
@@ -344,11 +324,6 @@ SUPPORTED_SYSTEMS = {
     },
     "SuperVision8000": {
         "label": "Super Vision 8000",
-        "screenscraper_id": 0,
-        "extensions": [".bin", ".rom", ".zip", ".7z"],
-    },
-    "Sord M5": {
-        "label": "Sord M5",
         "screenscraper_id": 0,
         "extensions": [".bin", ".rom", ".zip", ".7z"],
     },

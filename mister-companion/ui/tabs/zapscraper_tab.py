@@ -343,6 +343,7 @@ class ZapScraperTab(QWidget):
         self.scrape_worker = None
         self.systems = []
         self.planned_actions = []
+        self._stop_requested = False
         self.logged_in = False
         self.account_name = ""
         self.quota_info = {}
@@ -350,6 +351,7 @@ class ZapScraperTab(QWidget):
         self.last_scan_log_message = ""
         self._last_cache_source_identity = None
         self._loading_settings = False
+        self._stop_requested = False
         self._build_ui()
         self.load_settings()
         self.update_source_ui()
@@ -929,7 +931,14 @@ class ZapScraperTab(QWidget):
         QMessageBox.warning(self, "ZapScraper", f"ScreenScraper login failed.\n\n{message}")
 
     def on_login_worker_finished(self):
+        stopped = bool(getattr(self, "_stop_requested", False))
         self.login_worker = None
+
+        if stopped:
+            self.current_task_label.setText("Login test stopped.")
+            self.append_output("Login test stopped.")
+            self._stop_requested = False
+
         self.set_busy_state(False)
         self.update_connection_state(lightweight=True)
 
@@ -1185,6 +1194,7 @@ class ZapScraperTab(QWidget):
                 )
             return
 
+        self._stop_requested = False
         self.save_settings()
 
         self.systems_list.clear()
@@ -1264,9 +1274,16 @@ class ZapScraperTab(QWidget):
         QMessageBox.warning(self, "ZapScraper", message)
 
     def on_scan_worker_finished(self):
+        stopped = bool(getattr(self, "_stop_requested", False))
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
         self.scan_worker = None
+
+        if stopped:
+            self.current_task_label.setText("Scan stopped.")
+            self.append_output("Scan stopped.")
+            self._stop_requested = False
+
         self.update_scan_button_text()
         self.set_busy_state(False)
         self.update_connection_state(lightweight=True)
@@ -1307,6 +1324,7 @@ class ZapScraperTab(QWidget):
             self.logout()
             return
 
+        self._stop_requested = False
         self.save_settings()
 
         skip_existing_metadata = self.skip_metadata_checkbox.isChecked()
@@ -1376,9 +1394,15 @@ class ZapScraperTab(QWidget):
         QMessageBox.warning(self, "ZapScraper", message)
 
     def on_plan_worker_finished(self):
+        stopped = bool(getattr(self, "_stop_requested", False))
         self.plan_worker = None
 
         if self.scrape_worker is None:
+            if stopped:
+                self.current_task_label.setText("Scrape planning stopped.")
+                self.append_output("Scrape planning stopped.")
+                self._stop_requested = False
+
             self.set_busy_state(False)
             self.update_connection_state(lightweight=True)
 
@@ -1435,16 +1459,37 @@ class ZapScraperTab(QWidget):
     def on_scrape_finished(self, completed, total):
         self.progress_bar.setRange(0, max(1, int(total)))
         self.progress_bar.setValue(int(completed))
+
+        if getattr(self, "_stop_requested", False):
+            self.current_task_label.setText(f"Scrape stopped. Processed {completed} / {total} games.")
+            self.append_output(f"Scrape stopped. Processed {completed} / {total} games.")
+            return
+
         self.current_task_label.setText(f"Scrape complete. Processed {completed} / {total} games.")
         self.append_output(f"Scrape complete. Processed {completed} / {total} games.")
 
     def on_scrape_error(self, message):
+        if self._is_stop_error_message(message):
+            self.current_task_label.setText("Scrape stopped.")
+            self.append_output("Scrape stopped.")
+            return
+
         self.current_task_label.setText("Scrape failed.")
         self.append_output(f"Scrape failed: {message}")
         QMessageBox.warning(self, "ZapScraper", message)
 
     def on_scrape_worker_finished(self):
+        stopped = bool(getattr(self, "_stop_requested", False))
         self.scrape_worker = None
+
+        if stopped:
+            current_text = self.current_task_label.text().strip().lower()
+            if current_text.startswith("stopping") or current_text.startswith("scraping"):
+                self.current_task_label.setText("Scrape stopped.")
+                self.append_output("Scrape stopped.")
+
+            self._stop_requested = False
+
         self.set_busy_state(False)
         self.update_connection_state(lightweight=True)
 
@@ -1468,8 +1513,28 @@ class ZapScraperTab(QWidget):
             stopped = True
 
         if stopped:
-            self.current_task_label.setText("Stopping... waiting for the current operation to finish safely.")
-            self.append_output("Stopping current task...")
+            already_stopping = bool(getattr(self, "_stop_requested", False))
+            self._stop_requested = True
+            self.current_task_label.setText("Stopping... finishing the current safe step.")
+
+            if not already_stopping:
+                self.append_output("Stopping current task...")
+
+    def _is_stop_error_message(self, message):
+        text = str(message or "").strip().lower()
+
+        if not text:
+            return bool(getattr(self, "_stop_requested", False))
+
+        return (
+            bool(getattr(self, "_stop_requested", False))
+            and (
+                "stopped by user" in text
+                or "scrape stopped" in text
+                or "operation stopped" in text
+                or "interrupted" in text
+            )
+        )
 
     def selected_system_for_review(self):
         item = self.systems_list.currentItem()
