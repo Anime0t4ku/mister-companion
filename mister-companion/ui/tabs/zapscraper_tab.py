@@ -1,5 +1,6 @@
 from pathlib import Path
 import shutil
+import xml.etree.ElementTree as ET
 
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtWidgets import (
@@ -74,6 +75,147 @@ def _remove_folder_if_exists(path: Path):
     except Exception:
         pass
 
+
+
+
+def _read_gamelist_metadata_state(system):
+    system_path = Path(system.get("path", ""))
+    gamelist_path = system_path / GAMELIST_FILENAME
+    cache_path = system_path / ZAPSCRAPER_CACHE_FILENAME
+
+    state = {
+        "system": system,
+        "label": system.get("label") or system.get("folder") or system_path.name or "Unknown",
+        "has_gamelist": gamelist_path.exists() and gamelist_path.is_file(),
+        "has_cache": cache_path.exists() and cache_path.is_file(),
+        "has_zaparoo_entries": False,
+        "entry_count": 0,
+        "type": "none",
+        "conflict": "",
+    }
+
+    if not state["has_gamelist"]:
+        return state
+
+    try:
+        tree = ET.parse(gamelist_path)
+        root = tree.getroot()
+        games = root.findall("game") if root.tag == "gameList" else []
+        state["entry_count"] = len(games)
+        state["has_zaparoo_entries"] = any(game.get("source") == "ZaparooCompanion" for game in games)
+    except Exception:
+        state["type"] = "unreadable"
+        state["conflict"] = "unreadable"
+        return state
+
+    if state["has_zaparoo_entries"]:
+        state["type"] = "zaparoo"
+    elif state["has_cache"]:
+        state["type"] = "recalbox"
+    else:
+        state["type"] = "third_party"
+        state["conflict"] = "third_party"
+
+    return state
+
+
+def _metadata_conflicts_for_systems(systems, current_output_format):
+    current_is_zaparoo = get_output_format_id(current_output_format) == OUTPUT_FORMAT_ZAPAROO_COMPANION
+    conflicts = {
+        "third_party": [],
+        "mode_mismatch_recalbox": [],
+        "mode_mismatch_zaparoo": [],
+        "unreadable": [],
+    }
+
+    for system in systems or []:
+        state = _read_gamelist_metadata_state(system)
+
+        if not state["has_gamelist"]:
+            continue
+
+        if state["conflict"] == "third_party":
+            conflicts["third_party"].append(state)
+            continue
+
+        if state["conflict"] == "unreadable":
+            conflicts["unreadable"].append(state)
+            continue
+
+        if current_is_zaparoo and state["type"] == "recalbox":
+            conflicts["mode_mismatch_recalbox"].append(state)
+        elif not current_is_zaparoo and state["type"] == "zaparoo":
+            conflicts["mode_mismatch_zaparoo"].append(state)
+
+    return conflicts
+
+
+def _metadata_conflict_count(conflicts):
+    return sum(len(items) for items in conflicts.values())
+
+
+def _format_metadata_conflict_group(title, states):
+    if not states:
+        return ""
+
+    lines = [title]
+
+    for state in states:
+        entry_count = state.get("entry_count", 0)
+        suffix = f" ({entry_count} entries)" if entry_count else ""
+        lines.append(f"- {state.get('label')}{suffix}")
+
+    return "\n".join(lines)
+
+
+def _metadata_conflict_message(conflicts, current_output_format):
+    parts = [
+        "Some selected systems contain existing metadata that may conflict with the current scrape.",
+        "",
+    ]
+
+    third_party = _format_metadata_conflict_group(
+        "Likely third-party or legacy metadata:",
+        conflicts.get("third_party"),
+    )
+    recalbox_mismatch = _format_metadata_conflict_group(
+        "MiSTer Companion Recalbox metadata, but current mode is Zaparoo Companion:",
+        conflicts.get("mode_mismatch_recalbox"),
+    )
+    zaparoo_mismatch = _format_metadata_conflict_group(
+        "MiSTer Companion Zaparoo Companion metadata, but current mode is Recalbox:",
+        conflicts.get("mode_mismatch_zaparoo"),
+    )
+    unreadable = _format_metadata_conflict_group(
+        "Unreadable gamelist.xml files:",
+        conflicts.get("unreadable"),
+    )
+
+    for group in (third_party, recalbox_mismatch, zaparoo_mismatch, unreadable):
+        if group:
+            parts.append(group)
+            parts.append("")
+
+    parts.append("Clean and Continue will only clean the systems listed above. Systems that already match the current mode will not be touched.")
+    return "\n".join(parts)
+
+
+def _systems_from_metadata_conflicts(conflicts):
+    systems = []
+    seen = set()
+
+    for states in conflicts.values():
+        for state in states:
+            system = state.get("system")
+            path = str(system.get("path", "")) if isinstance(system, dict) else ""
+
+            if not system or path in seen:
+                continue
+
+            seen.add(path)
+            systems.append(system)
+
+    return systems
 
 def _clear_system_rebuild_output(
     system,
@@ -1330,9 +1472,39 @@ class ZapScraperTab(QWidget):
         skip_existing_metadata = self.skip_metadata_checkbox.isChecked()
         skip_existing_images = self.skip_images_checkbox.isChecked()
         skip_games_with_metadata_ignore_incomplete_media = self.skip_metadata_incomplete_media_checkbox.isChecked()
-        rebuild_from_scratch = not skip_existing_metadata and not skip_existing_images
+        rebuild_from_scratch = (
+            not skip_existing_metadata
+            and not skip_existing_images
+            and not skip_games_with_metadata_ignore_incomplete_media
+        )
         output_format = self._active_output_format()
         zaparoo_media_sources = self._active_zaparoo_media_sources()
+
+        if not rebuild_from_scratch:
+            conflicts = _metadata_conflicts_for_systems(selected, output_format)
+
+            if _metadata_conflict_count(conflicts):
+                choice = self.confirm_metadata_conflict_cleanup(conflicts, output_format)
+
+                if choice == "cancel":
+                    return
+
+                if choice == "clean":
+                    conflicted_systems = _systems_from_metadata_conflicts(conflicts)
+
+                    for system in conflicted_systems:
+                        _clear_system_rebuild_output(
+                            system,
+                            output_format=output_format,
+                            image_source=self.image_source_combo.currentText(),
+                            zaparoo_media_source_names=zaparoo_media_sources,
+                        )
+
+                    names = ", ".join(
+                        system.get("label") or system.get("folder") or Path(system.get("path", "")).name
+                        for system in conflicted_systems
+                    )
+                    self.append_output(f"Cleaned conflicting metadata for: {names}")
 
         self.planned_actions = []
         self.progress_bar.setRange(0, 0)
@@ -1359,6 +1531,29 @@ class ZapScraperTab(QWidget):
         self.plan_worker.error.connect(self.on_plan_error)
         self.plan_worker.finished.connect(self.on_plan_worker_finished)
         self.plan_worker.start()
+
+    def confirm_metadata_conflict_cleanup(self, conflicts, output_format):
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setWindowTitle("Existing Metadata Detected")
+        box.setText("Existing metadata needs attention.")
+        box.setInformativeText(_metadata_conflict_message(conflicts, output_format))
+
+        clean_button = box.addButton("Clean and Continue", QMessageBox.ButtonRole.AcceptRole)
+        continue_button = box.addButton("Continue Anyway", QMessageBox.ButtonRole.DestructiveRole)
+        cancel_button = box.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+        box.setDefaultButton(clean_button)
+        box.exec()
+
+        clicked = box.clickedButton()
+
+        if clicked == clean_button:
+            return "clean"
+
+        if clicked == continue_button:
+            return "continue"
+
+        return "cancel"
 
     def on_plan_finished(self, actions, total_games):
         self.planned_actions = actions or []
