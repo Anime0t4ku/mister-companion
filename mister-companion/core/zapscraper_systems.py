@@ -304,7 +304,7 @@ SUPPORTED_SYSTEMS = {
     },
     "SGB": {
         "label": "Super Game Boy",
-        "screenscraper_id": 0,
+        "screenscraper_id": 273,
         "extensions": [".gb", ".gbc", ".zip", ".7z"],
     },
     "SMS": {

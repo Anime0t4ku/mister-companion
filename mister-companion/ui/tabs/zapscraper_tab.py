@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 import shutil
 import xml.etree.ElementTree as ET
 
@@ -40,6 +41,7 @@ from core.zapscraper_systems import (
     OUTPUT_FORMAT_ZAPAROO_COMPANION,
     get_default_zaparoo_companion_media_names,
     get_image_source_folder,
+    get_image_source_id,
     get_image_source_names,
     get_output_format_id,
     get_output_format_names,
@@ -58,6 +60,9 @@ SOURCE_CUSTOM_GAMES_FOLDER = "Custom Games Folder"
 
 GAMELIST_FILENAME = "gamelist.xml"
 ZAPSCRAPER_CACHE_FILENAME = ".zapscraper_cache.json"
+
+IMAGE_SIZE_HDTV = "HDTV Mode"
+IMAGE_SIZE_CRT = "CRT Mode"
 
 
 def _remove_file_if_exists(path: Path):
@@ -154,6 +159,179 @@ def _metadata_conflict_count(conflicts):
     return sum(len(items) for items in conflicts.values())
 
 
+def _read_zapscraper_cache(system_path: str | Path) -> dict:
+    cache_path = Path(system_path) / ZAPSCRAPER_CACHE_FILENAME
+
+    if not cache_path.exists() or not cache_path.is_file():
+        return {}
+
+    try:
+        with cache_path.open("r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except Exception:
+        return {}
+
+    return data if isinstance(data, dict) else {}
+
+
+def _relative_media_exists(system_path: str | Path, relative_path: str) -> bool:
+    relative_path = str(relative_path or "").strip()
+
+    if not relative_path:
+        return False
+
+    if relative_path.startswith("./"):
+        relative_path = relative_path[2:]
+
+    try:
+        return (Path(system_path) / relative_path).exists()
+    except Exception:
+        return False
+
+
+def _count_recalbox_crt_mismatches(system, image_source_name, current_crt_mode):
+    system_path = Path(system.get("path", ""))
+    cache = _read_zapscraper_cache(system_path)
+
+    if not cache:
+        return 0
+
+    selected_image_source_id = get_image_source_id(image_source_name)
+    count = 0
+
+    for entry in cache.values():
+        if not isinstance(entry, dict):
+            continue
+
+        if selected_image_source_id and entry.get("image_source") != selected_image_source_id:
+            continue
+
+        image_path = str(entry.get("image_path") or "").strip()
+        if not _relative_media_exists(system_path, image_path):
+            continue
+
+        cached_crt_mode = bool(entry.get("crt_mode", False))
+        if cached_crt_mode != bool(current_crt_mode):
+            count += 1
+
+    return count
+
+
+def _count_zaparoo_crt_mismatches(system, media_source_names, current_crt_mode):
+    system_path = Path(system.get("path", ""))
+    cache = _read_zapscraper_cache(system_path)
+
+    if not cache:
+        return 0
+
+    selected_media = {
+        str(media_name or "").strip()
+        for media_name in media_source_names or []
+        if str(media_name or "").strip()
+    }
+
+    if not selected_media:
+        selected_media = set(get_default_zaparoo_companion_media_names())
+
+    count = 0
+
+    for entry in cache.values():
+        if not isinstance(entry, dict):
+            continue
+
+        zaparoo_media = entry.get("zaparoo_media")
+        if isinstance(zaparoo_media, dict):
+            for media_name in selected_media:
+                media_entry = zaparoo_media.get(media_name)
+                if not isinstance(media_entry, dict):
+                    continue
+
+                media_path = str(media_entry.get("path") or "").strip()
+                if not _relative_media_exists(system_path, media_path):
+                    continue
+
+                cached_crt_mode = bool(media_entry.get("crt_mode", False))
+                if cached_crt_mode != bool(current_crt_mode):
+                    count += 1
+            continue
+
+        image_path = str(entry.get("image_path") or "").strip()
+        if not image_path or not _relative_media_exists(system_path, image_path):
+            continue
+
+        cached_crt_mode = bool(entry.get("crt_mode", False))
+        if cached_crt_mode != bool(current_crt_mode):
+            count += 1
+
+    return count
+
+
+def _media_mode_mismatches_for_systems(
+    systems,
+    *,
+    output_format,
+    image_source,
+    zaparoo_media_source_names=None,
+    crt_mode=False,
+):
+    current_is_zaparoo = get_output_format_id(output_format) == OUTPUT_FORMAT_ZAPAROO_COMPANION
+    mismatches = {
+        "normal_to_crt": [],
+        "crt_to_normal": [],
+    }
+
+    for system in systems or []:
+        system_path = Path(system.get("path", ""))
+        label = system.get("label") or system.get("folder") or system_path.name or "Unknown"
+
+        if current_is_zaparoo:
+            count = _count_zaparoo_crt_mismatches(
+                system,
+                zaparoo_media_source_names,
+                crt_mode,
+            )
+        else:
+            count = _count_recalbox_crt_mismatches(
+                system,
+                image_source,
+                crt_mode,
+            )
+
+        if count <= 0:
+            continue
+
+        state = {
+            "system": system,
+            "label": label,
+            "image_count": count,
+        }
+
+        if crt_mode:
+            mismatches["normal_to_crt"].append(state)
+        else:
+            mismatches["crt_to_normal"].append(state)
+
+    return mismatches
+
+
+def _media_mode_mismatch_count(mismatches):
+    return sum(len(items) for items in mismatches.values())
+
+
+def _format_media_mode_mismatch_group(title, states):
+    if not states:
+        return ""
+
+    lines = [title]
+
+    for state in states:
+        image_count = int(state.get("image_count", 0) or 0)
+        suffix = f" ({image_count} media files)" if image_count else ""
+        lines.append(f"- {state.get('label')}{suffix}")
+
+    return "\n".join(lines)
+
+
 def _format_metadata_conflict_group(title, states):
     if not states:
         return ""
@@ -168,11 +346,25 @@ def _format_metadata_conflict_group(title, states):
     return "\n".join(lines)
 
 
-def _metadata_conflict_message(conflicts, current_output_format):
-    parts = [
-        "Some selected systems contain existing metadata that may conflict with the current scrape.",
-        "",
-    ]
+def _metadata_conflict_message(conflicts, current_output_format, media_mismatches=None):
+    has_metadata_conflicts = _metadata_conflict_count(conflicts) > 0
+    has_media_mismatches = _media_mode_mismatch_count(media_mismatches or {}) > 0
+
+    if has_metadata_conflicts and has_media_mismatches:
+        parts = [
+            "Some selected systems contain existing metadata or media that may conflict with the current scrape.",
+            "",
+        ]
+    elif has_media_mismatches:
+        parts = [
+            "Some selected systems contain existing media that does not match the selected CRT Mode.",
+            "",
+        ]
+    else:
+        parts = [
+            "Some selected systems contain existing metadata that may conflict with the current scrape.",
+            "",
+        ]
 
     third_party = _format_metadata_conflict_group(
         "Likely third-party or legacy metadata:",
@@ -196,9 +388,27 @@ def _metadata_conflict_message(conflicts, current_output_format):
             parts.append(group)
             parts.append("")
 
-    parts.append("Clean and Continue will only clean the systems listed above. Systems that already match the current mode will not be touched.")
-    return "\n".join(parts)
+    normal_to_crt = _format_media_mode_mismatch_group(
+        "Normal media found, but CRT Mode is currently enabled:",
+        (media_mismatches or {}).get("normal_to_crt"),
+    )
+    crt_to_normal = _format_media_mode_mismatch_group(
+        "CRT media found, but CRT Mode is currently disabled:",
+        (media_mismatches or {}).get("crt_to_normal"),
+    )
 
+    for group in (normal_to_crt, crt_to_normal):
+        if group:
+            parts.append(group)
+            parts.append("")
+
+    if has_metadata_conflicts:
+        parts.append("Clean and Continue will only clean the metadata conflicts listed above. Systems that already match the current metadata mode will not be touched.")
+
+    if has_media_mismatches:
+        parts.append("Media with a CRT Mode mismatch will be replaced automatically during scraping, even when Skip Existing Images/Media is enabled.")
+
+    return "\n".join(parts)
 
 def _systems_from_metadata_conflicts(conflicts):
     systems = []
@@ -313,6 +523,7 @@ class ZapScraperPlanWorker(QThread):
         output_format="",
         zaparoo_media_source_names=None,
         rebuild_from_scratch=False,
+        crt_mode=False,
     ):
         super().__init__()
         self.systems = systems or []
@@ -324,6 +535,7 @@ class ZapScraperPlanWorker(QThread):
         self.output_format = str(output_format or "")
         self.zaparoo_media_source_names = list(zaparoo_media_source_names or [])
         self.rebuild_from_scratch = bool(rebuild_from_scratch)
+        self.crt_mode = bool(crt_mode)
 
     def run(self):
         try:
@@ -358,6 +570,7 @@ class ZapScraperPlanWorker(QThread):
                     update_changed_images=self.update_changed_images,
                     output_format=self.output_format,
                     zaparoo_media_source_names=self.zaparoo_media_source_names,
+                    crt_mode=self.crt_mode,
                 )
                 actions.extend(system_actions)
 
@@ -422,6 +635,7 @@ class ZapScraperScrapeWorker(QThread):
         selected_region,
         skip_existing_metadata=True,
         zaparoo_media_source_names=None,
+        crt_mode=False,
     ):
         super().__init__()
         self.actions = actions or []
@@ -432,6 +646,7 @@ class ZapScraperScrapeWorker(QThread):
         self.selected_region = str(selected_region or "Auto")
         self.skip_existing_metadata = bool(skip_existing_metadata)
         self.zaparoo_media_source_names = list(zaparoo_media_source_names or [])
+        self.crt_mode = bool(crt_mode)
         self.completed = 0
 
     def run(self):
@@ -468,6 +683,7 @@ class ZapScraperScrapeWorker(QThread):
                 log_callback=log_callback,
                 quota_callback=quota_callback,
                 stop_checker=stop_checker,
+                crt_mode=self.crt_mode,
             )
 
             self.result.emit(int(self.completed), int(total))
@@ -656,6 +872,18 @@ class ZapScraperTab(QWidget):
         self.output_format_combo.currentIndexChanged.connect(self.on_output_format_changed)
         output_format_col.addWidget(self.output_format_combo)
         top_options_row.addLayout(output_format_col, 2)
+
+        image_size_col = QVBoxLayout()
+        image_size_col.setSpacing(3)
+        image_size_col.addWidget(QLabel("Image Size"))
+        self.image_size_combo = QComboBox()
+        self.image_size_combo.addItems([IMAGE_SIZE_HDTV, IMAGE_SIZE_CRT])
+        self.image_size_combo.setToolTip(
+            "HDTV Mode keeps the current image behavior. CRT Mode saves optimized media at a maximum of 125x125."
+        )
+        self.image_size_combo.currentIndexChanged.connect(lambda *_: self.save_settings())
+        image_size_col.addWidget(self.image_size_combo)
+        top_options_row.addLayout(image_size_col, 1)
 
         self.mode1_region_widget = QWidget()
         mode1_region_layout = QVBoxLayout(self.mode1_region_widget)
@@ -880,6 +1108,13 @@ class ZapScraperTab(QWidget):
             self.skip_images_checkbox.setChecked(
                 bool(scraper_config.get("skip_existing_images", True))
             )
+            image_size = str(scraper_config.get("image_size") or "").strip()
+            if image_size not in {IMAGE_SIZE_HDTV, IMAGE_SIZE_CRT}:
+                image_size = IMAGE_SIZE_CRT if bool(scraper_config.get("crt_mode", False)) else IMAGE_SIZE_HDTV
+
+            image_size_index = self.image_size_combo.findText(image_size)
+            if image_size_index >= 0:
+                self.image_size_combo.setCurrentIndex(image_size_index)
             self.skip_metadata_incomplete_media_checkbox.setChecked(
                 bool(scraper_config.get("skip_games_with_metadata_ignore_incomplete_media", False))
             )
@@ -908,6 +1143,8 @@ class ZapScraperTab(QWidget):
             "zaparoo_media_sources": self._active_zaparoo_media_sources(),
             "skip_existing_metadata": self.skip_metadata_checkbox.isChecked(),
             "skip_existing_images": self.skip_images_checkbox.isChecked(),
+            "image_size": self.image_size_combo.currentText(),
+            "crt_mode": self._active_crt_mode(),
             "skip_games_with_metadata_ignore_incomplete_media": self.skip_metadata_incomplete_media_checkbox.isChecked(),
         }
         save_config(config)
@@ -923,6 +1160,7 @@ class ZapScraperTab(QWidget):
             for attr in (
                 "skip_metadata_checkbox",
                 "skip_images_checkbox",
+                "image_size_combo",
                 "skip_metadata_incomplete_media_checkbox",
             )
         ):
@@ -1162,6 +1400,16 @@ class ZapScraperTab(QWidget):
 
     def _active_output_format(self) -> str:
         return self.output_format_combo.currentText()
+
+    def _active_image_size(self) -> str:
+        if not hasattr(self, "image_size_combo"):
+            return IMAGE_SIZE_HDTV
+
+        value = self.image_size_combo.currentText()
+        return value if value in {IMAGE_SIZE_HDTV, IMAGE_SIZE_CRT} else IMAGE_SIZE_HDTV
+
+    def _active_crt_mode(self) -> bool:
+        return self._active_image_size() == IMAGE_SIZE_CRT
 
     def _is_zaparoo_companion_mode(self) -> bool:
         return get_output_format_id(self._active_output_format()) == OUTPUT_FORMAT_ZAPAROO_COMPANION
@@ -1479,12 +1727,27 @@ class ZapScraperTab(QWidget):
         )
         output_format = self._active_output_format()
         zaparoo_media_sources = self._active_zaparoo_media_sources()
+        crt_mode = self._active_crt_mode()
 
         if not rebuild_from_scratch:
             conflicts = _metadata_conflicts_for_systems(selected, output_format)
+            media_mismatches = {}
 
-            if _metadata_conflict_count(conflicts):
-                choice = self.confirm_metadata_conflict_cleanup(conflicts, output_format)
+            if skip_existing_images:
+                media_mismatches = _media_mode_mismatches_for_systems(
+                    selected,
+                    output_format=output_format,
+                    image_source=self.image_source_combo.currentText(),
+                    zaparoo_media_source_names=zaparoo_media_sources,
+                    crt_mode=crt_mode,
+                )
+
+            if _metadata_conflict_count(conflicts) or _media_mode_mismatch_count(media_mismatches):
+                choice = self.confirm_metadata_conflict_cleanup(
+                    conflicts,
+                    output_format,
+                    media_mismatches=media_mismatches,
+                )
 
                 if choice == "cancel":
                     return
@@ -1504,7 +1767,8 @@ class ZapScraperTab(QWidget):
                         system.get("label") or system.get("folder") or Path(system.get("path", "")).name
                         for system in conflicted_systems
                     )
-                    self.append_output(f"Cleaned conflicting metadata for: {names}")
+                    if names:
+                        self.append_output(f"Cleaned conflicting metadata for: {names}")
 
         self.planned_actions = []
         self.progress_bar.setRange(0, 0)
@@ -1525,6 +1789,7 @@ class ZapScraperTab(QWidget):
             output_format=output_format,
             zaparoo_media_source_names=zaparoo_media_sources,
             rebuild_from_scratch=rebuild_from_scratch,
+            crt_mode=crt_mode,
         )
         self.plan_worker.log.connect(self.append_output)
         self.plan_worker.result.connect(self.on_plan_finished)
@@ -1532,22 +1797,28 @@ class ZapScraperTab(QWidget):
         self.plan_worker.finished.connect(self.on_plan_worker_finished)
         self.plan_worker.start()
 
-    def confirm_metadata_conflict_cleanup(self, conflicts, output_format):
+    def confirm_metadata_conflict_cleanup(self, conflicts, output_format, media_mismatches=None):
+        has_metadata_conflicts = _metadata_conflict_count(conflicts) > 0
+
         box = QMessageBox(self)
         box.setIcon(QMessageBox.Icon.Warning)
-        box.setWindowTitle("Existing Metadata Detected")
-        box.setText("Existing metadata needs attention.")
-        box.setInformativeText(_metadata_conflict_message(conflicts, output_format))
+        box.setWindowTitle("Existing Metadata or Media Detected")
+        box.setText("Existing metadata or media needs attention.")
+        box.setInformativeText(_metadata_conflict_message(conflicts, output_format, media_mismatches))
 
-        clean_button = box.addButton("Clean and Continue", QMessageBox.ButtonRole.AcceptRole)
+        clean_button = None
+
+        if has_metadata_conflicts:
+            clean_button = box.addButton("Clean and Continue", QMessageBox.ButtonRole.AcceptRole)
+
         continue_button = box.addButton("Continue Anyway", QMessageBox.ButtonRole.DestructiveRole)
         cancel_button = box.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
-        box.setDefaultButton(clean_button)
+        box.setDefaultButton(clean_button or continue_button)
         box.exec()
 
         clicked = box.clickedButton()
 
-        if clicked == clean_button:
+        if clean_button is not None and clicked == clean_button:
             return "clean"
 
         if clicked == continue_button:
@@ -1613,6 +1884,7 @@ class ZapScraperTab(QWidget):
         image_source = self.image_source_combo.currentText()
         region = self._active_region()
         zaparoo_media_sources = self._active_zaparoo_media_sources()
+        crt_mode = self._active_crt_mode()
 
         self.progress_bar.setRange(0, max(1, len(self.planned_actions)))
         self.progress_bar.setValue(0)
@@ -1621,11 +1893,13 @@ class ZapScraperTab(QWidget):
         if self._is_zaparoo_companion_mode():
             self.append_output(
                 f"Starting ScreenScraper scrape using {output_format} output, {region} region priority, "
-                f"and media: {', '.join(zaparoo_media_sources)}."
+                f"and media: {', '.join(zaparoo_media_sources)}. "
+                f"Image Size: {self._active_image_size()}."
             )
         else:
             self.append_output(
-                f"Starting ScreenScraper scrape using {image_source}, {region} region preference, and {output_format} output."
+                f"Starting ScreenScraper scrape using {image_source}, {region} region preference, and {output_format} output. "
+                f"Image Size: {self._active_image_size()}."
             )
 
         self.scrape_worker = ZapScraperScrapeWorker(
@@ -1637,6 +1911,7 @@ class ZapScraperTab(QWidget):
             region,
             skip_existing_metadata=self.skip_metadata_checkbox.isChecked(),
             zaparoo_media_source_names=zaparoo_media_sources,
+            crt_mode=crt_mode,
         )
         self.scrape_worker.progress.connect(self.on_scrape_progress)
         self.scrape_worker.log.connect(self.append_output)
@@ -1835,6 +2110,7 @@ class ZapScraperTab(QWidget):
         for checkbox in self.zaparoo_media_checkboxes.values():
             checkbox.setEnabled(enabled and self._is_zaparoo_companion_mode())
 
+        self.image_size_combo.setEnabled(enabled)
         self.skip_metadata_incomplete_media_checkbox.setEnabled(enabled)
         self.update_skip_option_ui()
 
@@ -1888,6 +2164,7 @@ class ZapScraperTab(QWidget):
         for checkbox in self.zaparoo_media_checkboxes.values():
             checkbox.setEnabled(enabled and self._is_zaparoo_companion_mode())
 
+        self.image_size_combo.setEnabled(enabled)
         self.skip_metadata_incomplete_media_checkbox.setEnabled(enabled)
         self.update_skip_option_ui()
 

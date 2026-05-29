@@ -64,6 +64,10 @@ IMAGE_COMPRESSION_QUALITY_STEP = 5
 IMAGE_COMPRESSION_RESIZE_STEP = 0.90
 IMAGE_COMPRESSION_MIN_DIMENSION = 320
 
+CRT_IMAGE_MAX_DIMENSION = 125
+CRT_IMAGE_QUALITY = 78
+CRT_IMAGE_MIN_QUALITY = 65
+
 
 SCAN_CACHE_VERSION = 1
 DEFAULT_OUTPUT_FORMAT = OUTPUT_FORMAT_RECALBOX
@@ -640,6 +644,7 @@ def scan_sd_card(
     output_format: str = DEFAULT_OUTPUT_FORMAT,
     zaparoo_media_source_names=None,
     fast_skip_completed: bool = False,
+    crt_mode: bool = False,
 ) -> list[dict[str, Any]]:
     sd_root = Path(sd_root)
 
@@ -659,6 +664,7 @@ def scan_sd_card(
         output_format=output_format,
         zaparoo_media_source_names=zaparoo_media_source_names,
         fast_skip_completed=fast_skip_completed,
+        crt_mode=crt_mode,
     )
 
 
@@ -674,6 +680,7 @@ def scan_games_folder(
     output_format: str = DEFAULT_OUTPUT_FORMAT,
     zaparoo_media_source_names=None,
     fast_skip_completed: bool = False,
+    crt_mode: bool = False,
 ) -> list[dict[str, Any]]:
     games_root = Path(games_root)
 
@@ -728,6 +735,7 @@ def scan_games_folder(
                 update_changed_images=update_changed_images,
                 output_format=output_format,
                 zaparoo_media_source_names=zaparoo_media_source_names,
+                crt_mode=crt_mode,
             )
 
         roms = scan_system_folder(
@@ -1294,6 +1302,24 @@ def build_local_image_path(
     return image_path, relative
 
 
+def find_existing_local_image(
+    system_path: str | Path,
+    rom_filename: str,
+    image_source_name: str,
+) -> tuple[Path, str] | None:
+    system_path = Path(system_path)
+    image_folder = get_image_source_folder(image_source_name)
+    safe_name = safe_media_filename(Path(rom_filename).stem)
+    media_dir = system_path / image_folder
+
+    for ext in _MEDIA_EXTENSIONS:
+        candidate = media_dir / f"{safe_name}{ext}"
+        if candidate.exists():
+            return candidate, f"./{image_folder}/{candidate.name}"
+
+    return None
+
+
 def safe_media_filename(name: str) -> str:
     name = str(name or "").strip()
     name = re.sub(r'[<>:"/\\|?*]', "_", name)
@@ -1339,6 +1365,7 @@ def cache_entry_needs_image_update(
     cache: dict[str, Any],
     relative_path: str,
     selected_image_source: str,
+    crt_mode: bool = False,
 ) -> bool:
     image_source_id = get_image_source_id(selected_image_source)
     entry = cache.get(relative_path)
@@ -1346,7 +1373,12 @@ def cache_entry_needs_image_update(
     if not isinstance(entry, dict):
         return True
 
-    return entry.get("image_source") != image_source_id
+    cached_crt_mode = bool(entry.get("crt_mode", False))
+
+    return (
+        entry.get("image_source") != image_source_id
+        or cached_crt_mode != bool(crt_mode)
+    )
 
 
 def update_cache_entry(
@@ -1358,6 +1390,7 @@ def update_cache_entry(
     image_source_name: str = "",
     image_path: str = "",
     region: str = "",
+    crt_mode: bool | None = None,
 ):
     entry = cache.get(relative_path)
 
@@ -1379,7 +1412,57 @@ def update_cache_entry(
     if region:
         entry["region"] = region
 
+    if crt_mode is not None:
+        entry["crt_mode"] = bool(crt_mode)
+
     cache[relative_path] = entry
+
+
+def update_zaparoo_media_cache_entry(
+    cache: dict[str, Any],
+    relative_path: str,
+    media_source_name: str,
+    media_relative_path: str,
+    crt_mode: bool = False,
+):
+    entry = cache.get(relative_path)
+
+    if not isinstance(entry, dict):
+        entry = {}
+
+    zaparoo_media = entry.get("zaparoo_media")
+    if not isinstance(zaparoo_media, dict):
+        zaparoo_media = {}
+
+    zaparoo_media[str(media_source_name or "")] = {
+        "path": str(media_relative_path or ""),
+        "crt_mode": bool(crt_mode),
+    }
+
+    entry["zaparoo_media"] = zaparoo_media
+    cache[relative_path] = entry
+
+
+def zaparoo_media_cache_matches_mode(
+    cache: dict[str, Any],
+    relative_path: str,
+    media_source_name: str,
+    crt_mode: bool = False,
+) -> bool:
+    entry = cache.get(relative_path)
+
+    if not isinstance(entry, dict):
+        return False
+
+    zaparoo_media = entry.get("zaparoo_media")
+    if not isinstance(zaparoo_media, dict):
+        return False
+
+    media_entry = zaparoo_media.get(str(media_source_name or ""))
+    if not isinstance(media_entry, dict):
+        return False
+
+    return bool(media_entry.get("crt_mode", False)) == bool(crt_mode)
 
 
 def _child_text(element: ET.Element | None, tag: str) -> str:
@@ -1412,6 +1495,9 @@ def _zaparoo_selected_media_complete(
     system_path: str | Path,
     parent: ET.Element | None,
     media_source_names=None,
+    cache: dict[str, Any] | None = None,
+    cache_relative_path: str = "",
+    crt_mode: bool = False,
 ) -> bool:
     if parent is None:
         return False
@@ -1426,6 +1512,15 @@ def _zaparoo_selected_media_complete(
         media_relative_path = _child_text(parent, xml_node)
         if not _media_relative_file_exists(system_path, media_relative_path):
             return False
+
+        if cache is not None and cache_relative_path:
+            if not zaparoo_media_cache_matches_mode(
+                cache,
+                cache_relative_path,
+                media_source_name,
+                crt_mode=crt_mode,
+            ):
+                return False
 
     return True
 
@@ -1469,6 +1564,8 @@ def _zaparoo_action_already_complete(
     media_source_names=None,
     skip_existing_metadata: bool = True,
     skip_games_with_metadata_ignore_incomplete_media: bool = False,
+    cache: dict[str, Any] | None = None,
+    crt_mode: bool = False,
 ) -> bool:
     system_path = action.get("system_path")
     rom = action.get("rom") or {}
@@ -1498,6 +1595,9 @@ def _zaparoo_action_already_complete(
             system_path,
             parent,
             media_source_names=media_source_names,
+            cache=cache,
+            cache_relative_path=relative_path,
+            crt_mode=crt_mode,
         )
 
         if metadata_ok and media_ok:
@@ -1520,6 +1620,7 @@ def _recalbox_action_already_complete(
     skip_existing_images: bool = True,
     skip_games_with_metadata_ignore_incomplete_media: bool = False,
     update_changed_images: bool = True,
+    crt_mode: bool = False,
 ) -> bool:
     game = entries.get(relative_path)
     has_metadata = game_has_metadata(game)
@@ -1529,17 +1630,20 @@ def _recalbox_action_already_complete(
 
     needs_metadata = not has_metadata or not skip_existing_metadata
 
-    image_path, _image_relative_path = build_local_image_path(
+    default_image_path, _image_relative_path = build_local_image_path(
         system_path,
         rom_filename,
         image_source_name,
     )
+    existing_image = find_existing_local_image(system_path, rom_filename, image_source_name)
+    image_path = existing_image[0] if existing_image else default_image_path
 
     image_exists = image_path.exists()
     image_source_changed = cache_entry_needs_image_update(
         cache,
         relative_path,
         image_source_name,
+        crt_mode=crt_mode,
     )
 
     needs_image = True
@@ -1566,6 +1670,7 @@ def _make_completed_scrape_checker(
     update_changed_images: bool = True,
     output_format: str = DEFAULT_OUTPUT_FORMAT,
     zaparoo_media_source_names=None,
+    crt_mode: bool = False,
 ):
     output_format = normalize_output_format(output_format)
     system_path = Path(system_path)
@@ -1584,6 +1689,7 @@ def _make_completed_scrape_checker(
 
     if _is_zaparoo_format(output_format):
         children_by_path, parents_by_id = _zaparoo_parent_maps(tree)
+        cache = load_zapscraper_cache(system_path)
 
         def zaparoo_checker(
             relative_path: str,
@@ -1614,6 +1720,8 @@ def _make_completed_scrape_checker(
                 media_source_names=zaparoo_media_source_names,
                 skip_existing_metadata=skip_existing_metadata,
                 skip_games_with_metadata_ignore_incomplete_media=skip_games_with_metadata_ignore_incomplete_media,
+                cache=cache,
+                crt_mode=crt_mode,
             )
 
         return zaparoo_checker
@@ -1638,6 +1746,7 @@ def _make_completed_scrape_checker(
             skip_existing_images=skip_existing_images,
             skip_games_with_metadata_ignore_incomplete_media=skip_games_with_metadata_ignore_incomplete_media,
             update_changed_images=update_changed_images,
+            crt_mode=crt_mode,
         )
 
     return recalbox_checker
@@ -1652,6 +1761,7 @@ def filter_systems_for_pending_scrape(
     update_changed_images: bool = True,
     output_format: str = DEFAULT_OUTPUT_FORMAT,
     zaparoo_media_source_names=None,
+    crt_mode: bool = False,
 ) -> list[dict[str, Any]]:
     output_format = normalize_output_format(output_format)
 
@@ -1670,6 +1780,7 @@ def filter_systems_for_pending_scrape(
             update_changed_images=update_changed_images,
             output_format=output_format,
             zaparoo_media_source_names=zaparoo_media_source_names,
+            crt_mode=crt_mode,
         )
 
         if not actions:
@@ -1712,6 +1823,7 @@ def load_pending_scan_cache_systems(
     update_changed_images: bool = True,
     output_format: str = DEFAULT_OUTPUT_FORMAT,
     zaparoo_media_source_names=None,
+    crt_mode: bool = False,
 ) -> list[dict[str, Any]]:
     systems = load_scan_cache_systems(source_mode, source_path)
 
@@ -1724,6 +1836,7 @@ def load_pending_scan_cache_systems(
         update_changed_images=update_changed_images,
         output_format=output_format,
         zaparoo_media_source_names=zaparoo_media_source_names,
+        crt_mode=crt_mode,
     )
 
 
@@ -1736,6 +1849,7 @@ def plan_scrape_actions(
     update_changed_images: bool = True,
     output_format: str = DEFAULT_OUTPUT_FORMAT,
     zaparoo_media_source_names=None,
+    crt_mode: bool = False,
 ) -> list[dict[str, Any]]:
     output_format = normalize_output_format(output_format)
     system_path = Path(system["path"])
@@ -1773,6 +1887,8 @@ def plan_scrape_actions(
                 media_source_names=zaparoo_media_source_names,
                 skip_existing_metadata=skip_existing_metadata,
                 skip_games_with_metadata_ignore_incomplete_media=skip_games_with_metadata_ignore_incomplete_media,
+                cache=cache,
+                crt_mode=crt_mode,
             ):
                 continue
 
@@ -1789,6 +1905,8 @@ def plan_scrape_actions(
                     "image_path": "",
                     "image_relative_path": "",
                     "image_source_changed": False,
+                    "crt_mode_changed": False,
+                    "crt_mode": bool(crt_mode),
                 }
             )
             continue
@@ -1806,12 +1924,20 @@ def plan_scrape_actions(
             rom.get("filename") or Path(rom["path"]).name,
             image_source_name,
         )
+        existing_image = find_existing_local_image(
+            system_path,
+            rom.get("filename") or Path(rom["path"]).name,
+            image_source_name,
+        )
+        if existing_image:
+            image_path, image_relative_path = existing_image
 
         image_exists = image_path.exists()
         image_source_changed = cache_entry_needs_image_update(
             cache,
             relative_path,
             image_source_name,
+            crt_mode=crt_mode,
         )
 
         needs_image = True
@@ -1838,6 +1964,7 @@ def plan_scrape_actions(
                 "image_path": str(image_path),
                 "image_relative_path": image_relative_path,
                 "image_source_changed": image_source_changed,
+                "crt_mode": bool(crt_mode),
             }
         )
 
@@ -1854,6 +1981,7 @@ def apply_scrape_result(
     skip_existing_metadata: bool = True,
     log_callback=None,
     stop_checker=None,
+    crt_mode: bool = False,
 ):
     _check_stopped(stop_checker)
     system_path = Path(system_path)
@@ -1881,6 +2009,7 @@ def apply_scrape_result(
         image_source_name=image_source_name,
         image_path=image_relative_path,
         region=region,
+        crt_mode=crt_mode,
     )
 
     _log(log_callback, "Writing gamelist entry...")
@@ -2589,6 +2718,76 @@ def _compressed_image_path(target_path: Path) -> Path:
     return target_path.with_suffix(".jpg")
 
 
+def _resize_image_to_max_dimension(image: Image.Image, max_dimension: int, stop_checker=None) -> Image.Image:
+    _check_stopped(stop_checker)
+
+    max_dimension = int(max_dimension or 0)
+    if max_dimension <= 0:
+        return image
+
+    width, height = image.size
+    if width <= max_dimension and height <= max_dimension:
+        return image
+
+    scale = min(max_dimension / float(width), max_dimension / float(height))
+    next_width = max(1, int(round(width * scale)))
+    next_height = max(1, int(round(height * scale)))
+
+    if (next_width, next_height) == image.size:
+        return image
+
+    _check_stopped(stop_checker)
+    return image.resize((next_width, next_height), Image.Resampling.LANCZOS)
+
+
+def _convert_image_bytes_to_crt(
+    content: bytes,
+    target_path: Path,
+    stop_checker=None,
+) -> tuple[Path, bytes] | None:
+    if Image is None:
+        return None
+
+    _check_stopped(stop_checker)
+
+    try:
+        with Image.open(BytesIO(content)) as source_image:
+            source_image.load()
+            _check_stopped(stop_checker)
+            image = _prepare_image_for_jpeg(source_image)
+            image = _resize_image_to_max_dimension(
+                image,
+                CRT_IMAGE_MAX_DIMENSION,
+                stop_checker=stop_checker,
+            )
+            image.load()
+    except InterruptedError:
+        raise
+    except Exception:
+        return None
+
+    final_path = _compressed_image_path(target_path)
+    best_data = b""
+
+    for quality in range(CRT_IMAGE_QUALITY, CRT_IMAGE_MIN_QUALITY - 1, -5):
+        _check_stopped(stop_checker)
+
+        try:
+            data = _encode_jpeg(image, quality)
+        except Exception:
+            return None
+
+        best_data = data
+
+        if len(data) <= TARGET_IMAGE_SIZE_BYTES:
+            return final_path, data
+
+    if best_data:
+        return final_path, best_data
+
+    return None
+
+
 def _compress_image_bytes(
     content: bytes,
     target_path: Path,
@@ -2695,6 +2894,7 @@ def download_image(
     stop_checker=None,
     log_callback=None,
     media_label: str = "media",
+    crt_mode: bool = False,
 ) -> Path:
     target_path = Path(target_path)
     target_path.parent.mkdir(parents=True, exist_ok=True)
@@ -2703,7 +2903,20 @@ def download_image(
     final_path = target_path
     final_content = content
 
-    if len(content) > MAX_IMAGE_SIZE_BYTES:
+    if crt_mode:
+        _log(log_callback, f"Converting media for CRT Mode: {media_label}")
+        converted = _convert_image_bytes_to_crt(content, target_path, stop_checker=stop_checker)
+
+        if converted is not None:
+            final_path, final_content = converted
+            final_path.parent.mkdir(parents=True, exist_ok=True)
+
+            if final_path != target_path and target_path.exists():
+                try:
+                    target_path.unlink()
+                except OSError:
+                    pass
+    elif len(content) > MAX_IMAGE_SIZE_BYTES:
         _log(log_callback, f"Compressing media: {media_label}")
         compressed = _compress_image_bytes(content, target_path, stop_checker=stop_checker)
 
@@ -2960,6 +3173,9 @@ def download_zaparoo_companion_media_assets(
     media_source_names=None,
     stop_checker=None,
     log_callback=None,
+    crt_mode: bool = False,
+    cache: dict[str, Any] | None = None,
+    cache_relative_path: str = "",
 ) -> dict[str, str]:
     media_source_names = normalize_zaparoo_media_source_names(media_source_names)
     downloaded: dict[str, str] = {}
@@ -2972,7 +3188,26 @@ def download_zaparoo_companion_media_assets(
             continue
 
         existing = find_existing_zaparoo_media(system_path, game_name, media_source_name)
-        if existing:
+        if existing and cache is not None and cache_relative_path:
+            _existing_path, existing_relative_path = existing
+            if zaparoo_media_cache_matches_mode(
+                cache,
+                cache_relative_path,
+                media_source_name,
+                crt_mode=crt_mode,
+            ):
+                media_path, media_relative_path = existing
+                _log(log_callback, f"Using existing media: {media_source_name}")
+                set_child_text(parent, xml_node, media_relative_path)
+                downloaded[xml_node] = media_relative_path
+                continue
+
+            _log(log_callback, f"Replacing media for selected CRT Mode: {media_source_name}")
+            try:
+                Path(_existing_path).unlink()
+            except OSError:
+                pass
+        elif existing and not crt_mode:
             media_path, media_relative_path = existing
             _log(log_callback, f"Using existing media: {media_source_name}")
             set_child_text(parent, xml_node, media_relative_path)
@@ -3006,6 +3241,7 @@ def download_zaparoo_companion_media_assets(
                     stop_checker=stop_checker,
                     log_callback=log_callback,
                     media_label=media_source_name,
+                    crt_mode=crt_mode,
                 )
                 media_relative_path = zaparoo_companion_image_relative_path(media_source_name, media_path)
             except InterruptedError:
@@ -3016,6 +3252,15 @@ def download_zaparoo_companion_media_assets(
 
         set_child_text(parent, xml_node, media_relative_path)
         downloaded[xml_node] = media_relative_path
+
+        if cache is not None and cache_relative_path:
+            update_zaparoo_media_cache_entry(
+                cache,
+                cache_relative_path,
+                media_source_name,
+                media_relative_path,
+                crt_mode=crt_mode,
+            )
 
     return downloaded
 
@@ -3032,6 +3277,7 @@ def apply_zaparoo_companion_scrape_result(
     quota_callback=None,
     stop_checker=None,
     log_callback=None,
+    crt_mode: bool = False,
 ) -> dict[str, Any]:
     system_path = Path(system_path)
     tree = load_gamelist(system_path)
@@ -3056,6 +3302,9 @@ def apply_zaparoo_companion_scrape_result(
         media_source_names=media_source_names,
         stop_checker=stop_checker,
         log_callback=log_callback,
+        crt_mode=crt_mode,
+        cache=cache,
+        cache_relative_path=relative_path,
     )
 
     _check_stopped(stop_checker)
@@ -3076,6 +3325,7 @@ def apply_zaparoo_companion_scrape_result(
         image_source_name="Zaparoo Companion",
         image_path=next(iter(media_paths.values()), ""),
         region=region,
+        crt_mode=crt_mode,
     )
 
     _log(log_callback, "Writing gamelist entry...")
@@ -3150,6 +3400,7 @@ def _apply_placeholder_after_request_failure(
     stop_checker=None,
     log_callback=None,
     reason: str = "",
+    crt_mode: bool = False,
 ) -> dict[str, Any]:
     metadata = create_placeholder_metadata_from_rom(rom, region_code)
 
@@ -3167,6 +3418,7 @@ def _apply_placeholder_after_request_failure(
             media_source_names=zaparoo_media_source_names,
             stop_checker=stop_checker,
             log_callback=log_callback,
+            crt_mode=crt_mode,
         )
 
         return {
@@ -3191,6 +3443,7 @@ def _apply_placeholder_after_request_failure(
         skip_existing_metadata=skip_existing_metadata,
         log_callback=log_callback,
         stop_checker=stop_checker,
+        crt_mode=crt_mode,
     )
 
     return {
@@ -3216,6 +3469,7 @@ def process_scrape_action(
     quota_callback=None,
     stop_checker=None,
     log_callback=None,
+    crt_mode: bool = False,
 ) -> dict[str, Any]:
     rom = action.get("rom") or {}
     rom_path = Path(rom.get("path", ""))
@@ -3254,6 +3508,7 @@ def process_scrape_action(
                 media_source_names=zaparoo_media_source_names,
                 stop_checker=stop_checker,
                 log_callback=log_callback,
+                crt_mode=crt_mode,
             )
             return {
                 "metadata": {"id": cached_id},
@@ -3296,6 +3551,7 @@ def process_scrape_action(
             stop_checker=stop_checker,
             log_callback=log_callback,
             reason=f"ScreenScraper request timed out or connection stalled ({e})",
+            crt_mode=crt_mode,
         )
     except requests.exceptions.RequestException as e:
         return _apply_placeholder_after_request_failure(
@@ -3310,6 +3566,7 @@ def process_scrape_action(
             stop_checker=stop_checker,
             log_callback=log_callback,
             reason=f"ScreenScraper request failed ({e})",
+            crt_mode=crt_mode,
         )
 
     if not data:
@@ -3325,6 +3582,7 @@ def process_scrape_action(
             stop_checker=stop_checker,
             log_callback=log_callback,
             reason="game not found on ScreenScraper",
+            crt_mode=crt_mode,
         )
 
     game = extract_game_from_response(data)
@@ -3348,6 +3606,7 @@ def process_scrape_action(
             media_source_names=zaparoo_media_source_names,
             stop_checker=stop_checker,
             log_callback=log_callback,
+            crt_mode=crt_mode,
         )
 
         if zaparoo_slug_key is not None:
@@ -3388,6 +3647,7 @@ def process_scrape_action(
                     stop_checker=stop_checker,
                     log_callback=log_callback,
                     media_label=image_source_name,
+                    crt_mode=crt_mode,
                 )
                 image_relative_path = recalbox_image_relative_path(image_source_name, image_path)
             except InterruptedError:
@@ -3414,6 +3674,7 @@ def process_scrape_action(
         skip_existing_metadata=skip_existing_metadata,
         log_callback=log_callback,
         stop_checker=stop_checker,
+        crt_mode=crt_mode,
     )
 
     return {
@@ -3439,6 +3700,7 @@ def run_scrape_actions(
     log_callback=None,
     quota_callback=None,
     stop_checker=None,
+    crt_mode: bool = False,
 ):
     output_format = normalize_output_format(output_format)
 
@@ -3499,6 +3761,8 @@ def run_scrape_actions(
                 parents_by_id=parents_by_id,
                 media_source_names=zaparoo_media_source_names,
                 skip_existing_metadata=skip_existing_metadata,
+                cache=load_zapscraper_cache(system_path),
+                crt_mode=crt_mode,
             ):
                 if callable(log_callback):
                     log_callback(f"Skipped: {rom_filename} - metadata and selected media already exist.")
@@ -3521,6 +3785,7 @@ def run_scrape_actions(
                 quota_callback=quota_callback,
                 stop_checker=stop_checker,
                 log_callback=log_callback,
+                crt_mode=crt_mode,
             )
 
             if _is_zaparoo_format(output_format):
@@ -4204,6 +4469,7 @@ def apply_manual_scrape_result(
     selected_region: str,
     system_id: int,
     quota_callback=None,
+    crt_mode: bool = False,
 ) -> dict[str, Any]:
     region_code = detect_region_from_filename(
         rom.get("filename") or Path(relative_path).name,
@@ -4260,7 +4526,7 @@ def apply_manual_scrape_result(
             image_source_name,
             extension=extension,
         )
-        image_path = download_image(image_url, image_path)
+        image_path = download_image(image_url, image_path, crt_mode=crt_mode)
         image_relative_path = recalbox_image_relative_path(image_source_name, image_path)
 
     apply_scrape_result(
@@ -4271,6 +4537,7 @@ def apply_manual_scrape_result(
         image_source_name=image_source_name,
         region=region_code,
         skip_existing_metadata=False,
+        crt_mode=crt_mode,
     )
 
     return {
