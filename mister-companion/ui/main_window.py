@@ -47,6 +47,8 @@ from ui.dialogs.remote_dialog import RemoteDialog
 from ui.dialogs.retroachievements_dialog import RetroAchievementsDialog
 from ui.dialogs.setup_notice_dialog import SetupNoticeDialog
 from ui.dialogs.support_dialog import SupportDialog
+from ui.dialogs.changelog_dialog import ChangelogDialog
+from ui.dialogs.update_available_dialog import UpdateAvailableDialog
 from ui.tabs.connection_tab import ConnectionTab
 from ui.tabs.device_tab import DeviceTab
 from ui.tabs.extras_tab import ExtrasTab
@@ -1309,46 +1311,50 @@ class MainWindow(QMainWindow):
 
         if info.update_available:
             if mc_updater_available():
-                reply = QMessageBox.question(
-                    self,
-                    "Update Available",
-                    (
-                        f"A new version of MiSTer Companion is available.\n\n"
-                        f"Current version: {info.current_version}\n"
-                        f"Latest version: {info.latest_version}\n\n"
-                        "Do you want to run MC-Updater now?"
-                    ),
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
-                    QMessageBox.StandardButton.Yes,
-                )
+                while not self._closing:
+                    dialog = UpdateAvailableDialog(
+                        info,
+                        "Run MC-Updater",
+                        "Do you want to run MC-Updater now?",
+                        self,
+                    )
+                    dialog.exec()
 
-                if reply == QMessageBox.StandardButton.Yes:
-                    if launch_mc_updater():
-                        self.close()
-                    else:
-                        QMessageBox.warning(
-                            self,
-                            "Updater Failed",
-                            "MC-Updater could not be started.",
-                        )
+                    if dialog.selected_action == UpdateAvailableDialog.ACTION_SHOW_CHANGELOG:
+                        self.show_update_changelog(info)
+                        continue
+
+                    if dialog.selected_action == UpdateAvailableDialog.ACTION_UPDATE:
+                        if launch_mc_updater():
+                            self.close()
+                        else:
+                            QMessageBox.warning(
+                                self,
+                                "Updater Failed",
+                                "MC-Updater could not be started.",
+                            )
+
+                    break
 
                 return
 
-            reply = QMessageBox.question(
-                self,
-                "Update Available",
-                (
-                    f"A new version of MiSTer Companion is available.\n\n"
-                    f"Current version: {info.current_version}\n"
-                    f"Latest version: {info.latest_version}\n\n"
-                    f"Do you want to open the download page?"
-                ),
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.Yes,
-            )
+            while not self._closing:
+                dialog = UpdateAvailableDialog(
+                    info,
+                    "Open Download Page",
+                    "Do you want to open the download page?",
+                    self,
+                )
+                dialog.exec()
 
-            if reply == QMessageBox.StandardButton.Yes:
-                open_release_page(info.release_url)
+                if dialog.selected_action == UpdateAvailableDialog.ACTION_SHOW_CHANGELOG:
+                    self.show_update_changelog(info)
+                    continue
+
+                if dialog.selected_action == UpdateAvailableDialog.ACTION_UPDATE:
+                    open_release_page(info.release_url)
+
+                break
         elif show_no_update:
             QMessageBox.information(
                 self,
@@ -1358,6 +1364,16 @@ class MainWindow(QMainWindow):
                     f"Current version: {info.current_version}"
                 ),
             )
+
+    def show_update_changelog(self, info):
+        release_body = getattr(info, "release_body", "") or ""
+
+        if not release_body.strip():
+            open_release_page(info.release_url)
+            return
+
+        dialog = ChangelogDialog(info.release_name, release_body, self)
+        dialog.exec()
 
     def on_update_check_error(self, message: str):
         if self._closing:

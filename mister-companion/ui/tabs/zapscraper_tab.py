@@ -702,6 +702,7 @@ class ZapScraperTab(QWidget):
         self.systems = []
         self.planned_actions = []
         self._stop_requested = False
+        self._scrape_interrupted_by_quota = False
         self.logged_in = False
         self.account_name = ""
         self.quota_info = {}
@@ -1185,6 +1186,10 @@ class ZapScraperTab(QWidget):
             return
 
         self.quota_info = dict(quota_info)
+
+        if quota_info.get("quota_reached"):
+            self._scrape_interrupted_by_quota = True
+
         self.update_quota_label()
 
     def update_quota_label(self):
@@ -1888,6 +1893,7 @@ class ZapScraperTab(QWidget):
 
         self.progress_bar.setRange(0, max(1, len(self.planned_actions)))
         self.progress_bar.setValue(0)
+        self._scrape_interrupted_by_quota = False
         self.current_task_label.setText("Scraping...")
 
         if self._is_zaparoo_companion_mode():
@@ -1927,16 +1933,27 @@ class ZapScraperTab(QWidget):
         self.current_task_label.setText(f"Scraping {current} / {total}: {rom_filename}")
 
     def on_scrape_finished(self, completed, total):
-        self.progress_bar.setRange(0, max(1, int(total)))
-        self.progress_bar.setValue(int(completed))
+        completed = int(completed)
+        total = int(total)
+        display_total = max(1, total)
+
+        self.progress_bar.setRange(0, display_total)
 
         if getattr(self, "_stop_requested", False):
+            self.progress_bar.setValue(min(completed, display_total))
             self.current_task_label.setText(f"Scrape stopped. Processed {completed} / {total} games.")
             self.append_output(f"Scrape stopped. Processed {completed} / {total} games.")
             return
 
-        self.current_task_label.setText(f"Scrape complete. Processed {completed} / {total} games.")
-        self.append_output(f"Scrape complete. Processed {completed} / {total} games.")
+        if getattr(self, "_scrape_interrupted_by_quota", False):
+            self.progress_bar.setValue(min(completed, display_total))
+            self.current_task_label.setText(f"Scrape stopped by ScreenScraper quota. Processed {completed} / {total} games.")
+            self.append_output(f"Scrape stopped by ScreenScraper quota. Processed {completed} / {total} games.")
+            return
+
+        self.progress_bar.setValue(display_total)
+        self.current_task_label.setText(f"Scrape complete. Processed {total} / {total} games.")
+        self.append_output(f"Scrape complete. Processed {total} / {total} games.")
 
     def on_scrape_error(self, message):
         if self._is_stop_error_message(message):

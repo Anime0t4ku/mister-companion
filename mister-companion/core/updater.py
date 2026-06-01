@@ -19,6 +19,7 @@ class UpdateInfo:
     latest_version: str
     release_url: str
     release_name: str
+    release_body: str
 
 
 def normalize_version(version: str) -> tuple[int, int, int]:
@@ -50,6 +51,7 @@ def check_for_update(timeout: int = 10) -> UpdateInfo:
     latest_version = data.get("tag_name", "") or data.get("name", "")
     release_url = data.get("html_url", "")
     release_name = data.get("name", latest_version)
+    release_body = data.get("body", "") or ""
 
     current_tuple = normalize_version(APP_VERSION)
     latest_tuple = normalize_version(latest_version)
@@ -60,6 +62,7 @@ def check_for_update(timeout: int = 10) -> UpdateInfo:
         latest_version=latest_version,
         release_url=release_url,
         release_name=release_name,
+        release_body=release_body,
     )
 
 
