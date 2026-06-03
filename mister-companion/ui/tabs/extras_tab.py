@@ -24,12 +24,15 @@ from core.extras_actions import (
     get_3sx_status,
     get_sonic_mania_status,
     get_zaparoo_launcher_status,
+    get_mms2_gb_core_status,
     install_or_update_3sx as backend_install_or_update_3sx,
     install_or_update_sonic_mania as backend_install_or_update_sonic_mania,
     install_or_update_zaparoo_launcher as backend_install_or_update_zaparoo_launcher,
+    install_or_update_mms2_gb_core as backend_install_or_update_mms2_gb_core,
     uninstall_3sx as backend_uninstall_3sx,
     uninstall_sonic_mania as backend_uninstall_sonic_mania,
     uninstall_zaparoo_launcher as backend_uninstall_zaparoo_launcher,
+    uninstall_mms2_gb_core as backend_uninstall_mms2_gb_core,
     upload_3sx_afs as backend_upload_3sx_afs,
     upload_sonic_mania_data_rsdk as backend_upload_sonic_mania_data_rsdk,
 )
@@ -52,6 +55,12 @@ from core.extras_zaparoo_launcher import (
     get_zaparoo_launcher_status_local,
     install_or_update_zaparoo_launcher_local as backend_install_or_update_zaparoo_launcher_local,
     uninstall_zaparoo_launcher_local as backend_uninstall_zaparoo_launcher_local,
+)
+
+from core.extras_mms2_gb_core import (
+    get_mms2_gb_core_status_local,
+    install_or_update_mms2_gb_core_local as backend_install_or_update_mms2_gb_core_local,
+    uninstall_mms2_gb_core_local as backend_uninstall_mms2_gb_core_local,
 )
 
 from core.extras_ra_cores import (
@@ -105,6 +114,7 @@ class ExtrasStatusWorker(QThread):
     EXTRA_3SX = "3sx_mister"
     EXTRA_SONIC_MANIA = "sonic_mania_mister"
     EXTRA_ZAPAROO_LAUNCHER = "zaparoo_frontend"
+    EXTRA_MMS2_GB_CORE = "mms2_gb_core"
     EXTRA_RA_CORES = "retroachievement_cores"
 
     def __init__(self, connection, offline=False, sd_root=""):
@@ -135,6 +145,12 @@ class ExtrasStatusWorker(QThread):
                     lambda: get_zaparoo_launcher_status_local(self.sd_root)
                     if self.offline
                     else get_zaparoo_launcher_status(self.connection),
+                ),
+                (
+                    self.EXTRA_MMS2_GB_CORE,
+                    lambda: get_mms2_gb_core_status_local(self.sd_root)
+                    if self.offline
+                    else get_mms2_gb_core_status(self.connection),
                 ),
                 (
                     self.EXTRA_RA_CORES,
@@ -171,17 +187,20 @@ class ExtrasTab(QWidget):
     EXTRA_3SX = "3sx_mister"
     EXTRA_SONIC_MANIA = "sonic_mania_mister"
     EXTRA_ZAPAROO_LAUNCHER = "zaparoo_frontend"
+    EXTRA_MMS2_GB_CORE = "mms2_gb_core"
     EXTRA_RA_CORES = "retroachievement_cores"
 
     TASK_CHECK_3SX = "check_updates_3sx"
     TASK_CHECK_SONIC_MANIA = "check_updates_sonic_mania"
     TASK_CHECK_ZAPAROO_LAUNCHER = "check_updates_zaparoo_launcher"
+    TASK_CHECK_MMS2_GB_CORE = "check_updates_mms2_gb_core"
     TASK_CHECK_RA_CORES = "check_updates_ra_cores"
 
     OFFLINE_SUPPORTED_EXTRAS = {
         EXTRA_3SX,
         EXTRA_SONIC_MANIA,
         EXTRA_ZAPAROO_LAUNCHER,
+        EXTRA_MMS2_GB_CORE,
         EXTRA_RA_CORES,
     }
 
@@ -204,6 +223,7 @@ class ExtrasTab(QWidget):
             self.EXTRA_3SX,
             self.EXTRA_SONIC_MANIA,
             self.EXTRA_ZAPAROO_LAUNCHER,
+            self.EXTRA_MMS2_GB_CORE,
             self.EXTRA_RA_CORES,
         ]
 
@@ -211,6 +231,7 @@ class ExtrasTab(QWidget):
             self.EXTRA_3SX: "3S-ARM",
             self.EXTRA_SONIC_MANIA: "Sonic Mania MiSTer",
             self.EXTRA_ZAPAROO_LAUNCHER: "Zaparoo Frontend",
+            self.EXTRA_MMS2_GB_CORE: "MMS2 GB Core",
             self.EXTRA_RA_CORES: "RetroAchievement Cores",
         }
 
@@ -230,6 +251,13 @@ class ExtrasTab(QWidget):
                 "Make sure you are using the latest version of Zaparoo before installing "
                 "or updating Zaparoo Frontend."
             ),
+            self.EXTRA_MMS2_GB_CORE: (
+                "Installs Heber’s custom GB core for MMS2 with physical cartridge support.\n\n"
+                "The core is installed in a separate custom location and adds a MiSTer "
+                "home screen shortcut for directly loading cartridges. This does not "
+                "affect the original Game Boy core, and regular ROMs should still be "
+                "launched with the standard Game Boy core."
+            ),
             self.EXTRA_RA_CORES: (
                 "RetroAchievement Cores adds RetroAchievements-enabled MiSTer cores "
                 "and the required MiSTer_RA support files. It uses MGL launchers so "
@@ -241,6 +269,7 @@ class ExtrasTab(QWidget):
             self.EXTRA_3SX: "Unknown",
             self.EXTRA_SONIC_MANIA: "Unknown",
             self.EXTRA_ZAPAROO_LAUNCHER: "Unknown",
+            self.EXTRA_MMS2_GB_CORE: "Unknown",
             self.EXTRA_RA_CORES: "Unknown",
         }
 
@@ -337,12 +366,14 @@ class ExtrasTab(QWidget):
         self.threesx_actions_widget = self._build_3sx_actions()
         self.sonic_mania_actions_widget = self._build_sonic_mania_actions()
         self.zaparoo_launcher_actions_widget = self._build_zaparoo_launcher_actions()
+        self.mms2_gb_core_actions_widget = self._build_mms2_gb_core_actions()
         self.ra_cores_actions_widget = self._build_ra_cores_actions()
 
         self.extra_action_widgets = {
             self.EXTRA_3SX: self.threesx_actions_widget,
             self.EXTRA_SONIC_MANIA: self.sonic_mania_actions_widget,
             self.EXTRA_ZAPAROO_LAUNCHER: self.zaparoo_launcher_actions_widget,
+            self.EXTRA_MMS2_GB_CORE: self.mms2_gb_core_actions_widget,
             self.EXTRA_RA_CORES: self.ra_cores_actions_widget,
         }
 
@@ -404,6 +435,16 @@ class ExtrasTab(QWidget):
         )
         self.uninstall_zaparoo_launcher_button.clicked.connect(
             self.uninstall_zaparoo_launcher
+        )
+
+        self.install_update_mms2_gb_core_button.clicked.connect(
+            self.install_or_update_mms2_gb_core
+        )
+        self.check_updates_mms2_gb_core_button.clicked.connect(
+            self.check_mms2_gb_core_updates
+        )
+        self.uninstall_mms2_gb_core_button.clicked.connect(
+            self.uninstall_mms2_gb_core
         )
 
         self.install_update_ra_cores_button.clicked.connect(self.install_or_update_ra_cores)
@@ -526,6 +567,33 @@ class ExtrasTab(QWidget):
         layout.addLayout(
             self._build_button_row(
                 self.uninstall_zaparoo_launcher_button,
+            )
+        )
+
+        widget.setLayout(layout)
+        return widget
+
+    def _build_mms2_gb_core_actions(self):
+        widget = QWidget()
+        layout = QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+
+        self.install_update_mms2_gb_core_button = QPushButton("Install")
+        set_text_button_min_width(self.install_update_mms2_gb_core_button, 170)
+        self.check_updates_mms2_gb_core_button = QPushButton("Check for Updates")
+        set_text_button_min_width(self.check_updates_mms2_gb_core_button, 170)
+        self.uninstall_mms2_gb_core_button = QPushButton("Uninstall")
+        set_text_button_min_width(self.uninstall_mms2_gb_core_button, 170)
+        layout.addLayout(
+            self._build_button_row(
+                self.install_update_mms2_gb_core_button,
+                self.check_updates_mms2_gb_core_button,
+            )
+        )
+        layout.addLayout(
+            self._build_button_row(
+                self.uninstall_mms2_gb_core_button,
             )
         )
 
@@ -674,6 +742,7 @@ class ExtrasTab(QWidget):
         self.install_update_3sx_button.setText("Install")
         self.install_update_sonic_mania_button.setText("Install")
         self.install_update_zaparoo_launcher_button.setText("Install")
+        self.install_update_mms2_gb_core_button.setText("Install")
         self.install_update_ra_cores_button.setText("Install")
 
         for extra_key in self.extra_status_texts:
@@ -695,6 +764,9 @@ class ExtrasTab(QWidget):
             self.install_update_zaparoo_launcher_button,
             self.check_updates_zaparoo_launcher_button,
             self.uninstall_zaparoo_launcher_button,
+            self.install_update_mms2_gb_core_button,
+            self.check_updates_mms2_gb_core_button,
+            self.uninstall_mms2_gb_core_button,
             self.install_update_ra_cores_button,
             self.check_updates_ra_cores_button,
             self.edit_ra_cores_config_button,
@@ -798,6 +870,11 @@ class ExtrasTab(QWidget):
                 self.install_update_zaparoo_launcher_button,
                 self.check_updates_zaparoo_launcher_button,
                 [self.uninstall_zaparoo_launcher_button],
+            ),
+            self.EXTRA_MMS2_GB_CORE: (
+                self.install_update_mms2_gb_core_button,
+                self.check_updates_mms2_gb_core_button,
+                [self.uninstall_mms2_gb_core_button],
             ),
             self.EXTRA_RA_CORES: (
                 self.install_update_ra_cores_button,
@@ -971,7 +1048,13 @@ class ExtrasTab(QWidget):
         task_kind = self.current_task_kind
 
         if isinstance(result, dict) and result.get("soft_reboot_required"):
-            self.prompt_zaparoo_launcher_soft_reboot_required()
+            self.prompt_soft_reboot_required(
+                result.get("soft_reboot_title", "Soft Reboot Required"),
+                result.get(
+                    "soft_reboot_message",
+                    "A soft reboot is required to apply these changes.\n\nDo you want to soft reboot MiSTer now?",
+                ),
+            )
             return
 
         if isinstance(result, dict) and result.get("reboot_required"):
@@ -1046,6 +1129,7 @@ class ExtrasTab(QWidget):
             self.TASK_CHECK_3SX,
             self.TASK_CHECK_SONIC_MANIA,
             self.TASK_CHECK_ZAPAROO_LAUNCHER,
+            self.TASK_CHECK_MMS2_GB_CORE,
             self.TASK_CHECK_RA_CORES,
         }
 
@@ -1054,6 +1138,7 @@ class ExtrasTab(QWidget):
             self.TASK_CHECK_3SX: self.EXTRA_3SX,
             self.TASK_CHECK_SONIC_MANIA: self.EXTRA_SONIC_MANIA,
             self.TASK_CHECK_ZAPAROO_LAUNCHER: self.EXTRA_ZAPAROO_LAUNCHER,
+            self.TASK_CHECK_MMS2_GB_CORE: self.EXTRA_MMS2_GB_CORE,
             self.TASK_CHECK_RA_CORES: self.EXTRA_RA_CORES,
         }.get(task_kind)
 
@@ -1111,6 +1196,12 @@ class ExtrasTab(QWidget):
             self.install_update_zaparoo_launcher_button.setEnabled(result["install_enabled"])
             self.check_updates_zaparoo_launcher_button.setEnabled(result.get("installed", False))
             self.uninstall_zaparoo_launcher_button.setEnabled(result["uninstall_enabled"])
+
+        elif extra_key == self.EXTRA_MMS2_GB_CORE:
+            self.install_update_mms2_gb_core_button.setText(result["install_label"])
+            self.install_update_mms2_gb_core_button.setEnabled(result["install_enabled"])
+            self.check_updates_mms2_gb_core_button.setEnabled(result.get("installed", False))
+            self.uninstall_mms2_gb_core_button.setEnabled(result["uninstall_enabled"])
 
         elif extra_key == self.EXTRA_RA_CORES:
             self.install_update_ra_cores_button.setText(result["install_label"])
@@ -1187,6 +1278,30 @@ class ExtrasTab(QWidget):
             return get_zaparoo_launcher_status(self.connection, check_latest=True)
 
         self._run_worker(task, "", task_kind=self.TASK_CHECK_ZAPAROO_LAUNCHER)
+
+    def check_mms2_gb_core_updates(self):
+        if self.is_offline_mode():
+            if not self.has_offline_sd_root():
+                return
+
+            def task(log):
+                log("Checking MMS2 GB Core updates...\n")
+                return get_mms2_gb_core_status_local(
+                    self.get_offline_sd_root(),
+                    check_latest=True,
+                )
+
+            self._run_worker(task, "", task_kind=self.TASK_CHECK_MMS2_GB_CORE)
+            return
+
+        if not self.is_online_connected():
+            return
+
+        def task(log):
+            log("Checking MMS2 GB Core updates...\n")
+            return get_mms2_gb_core_status(self.connection, check_latest=True)
+
+        self._run_worker(task, "", task_kind=self.TASK_CHECK_MMS2_GB_CORE)
 
     def check_ra_cores_updates(self):
         if self.is_offline_mode():
@@ -1519,17 +1634,103 @@ class ExtrasTab(QWidget):
         self._clear_cached_update_result(self.EXTRA_ZAPAROO_LAUNCHER)
         self._run_worker(task, "Zaparoo Frontend uninstalled.")
 
-    def prompt_zaparoo_launcher_soft_reboot_required(self):
+    def install_or_update_mms2_gb_core(self):
+        button_text = self.install_update_mms2_gb_core_button.text().strip()
+        success_message = "MMS2 GB Core installed."
+
+        if button_text == "Update":
+            success_message = "MMS2 GB Core updated."
+
         if self.is_offline_mode():
+            if not self.has_offline_sd_root():
+                return
+
+            def task(log):
+                return backend_install_or_update_mms2_gb_core_local(
+                    self.get_offline_sd_root(),
+                    log,
+                )
+
+            self._clear_cached_update_result(self.EXTRA_MMS2_GB_CORE)
+            self._run_worker(task, success_message)
             return
 
-        soft_reboot_now = QMessageBox.question(
+        if not self.is_online_connected():
+            return
+
+        def task(log):
+            return backend_install_or_update_mms2_gb_core(self.connection, log)
+
+        self._clear_cached_update_result(self.EXTRA_MMS2_GB_CORE)
+        self._run_worker(task, success_message)
+
+    def uninstall_mms2_gb_core(self):
+        if self.is_offline_mode():
+            if not self.has_offline_sd_root():
+                return
+
+            reply = QMessageBox.question(
+                self,
+                "Uninstall MMS2 GB Core",
+                (
+                    "Remove the MMS2 GB Core .rbf file, the Load GB-GBC Cartridge "
+                    "MGL launcher, and MMS2_GB_Cart.CFG from the Offline SD Card?"
+                ),
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+
+            def task(log):
+                return backend_uninstall_mms2_gb_core_local(
+                    self.get_offline_sd_root(),
+                    log,
+                )
+
+            self._clear_cached_update_result(self.EXTRA_MMS2_GB_CORE)
+            self._run_worker(task, "MMS2 GB Core uninstalled.")
+            return
+
+        if not self.is_online_connected():
+            return
+
+        reply = QMessageBox.question(
             self,
+            "Uninstall MMS2 GB Core",
+            (
+                "Remove the MMS2 GB Core .rbf file, the Load GB-GBC Cartridge "
+                "MGL launcher, and MMS2_GB_Cart.CFG?"
+            ),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        def task(log):
+            return backend_uninstall_mms2_gb_core(self.connection, log)
+
+        self._clear_cached_update_result(self.EXTRA_MMS2_GB_CORE)
+        self._run_worker(task, "MMS2 GB Core uninstalled.")
+
+    def prompt_zaparoo_launcher_soft_reboot_required(self):
+        self.prompt_soft_reboot_required(
             "Soft Reboot Required",
             (
                 "A soft reboot is required to apply the Zaparoo Frontend changes.\n\n"
                 "Do you want to soft reboot MiSTer now?"
             ),
+        )
+
+    def prompt_soft_reboot_required(self, title, message):
+        if self.is_offline_mode():
+            return
+
+        soft_reboot_now = QMessageBox.question(
+            self,
+            title,
+            message,
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.Yes,
         )

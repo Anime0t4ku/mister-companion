@@ -18,6 +18,12 @@ from core.extras_zaparoo_launcher import (
     uninstall_zaparoo_launcher,
 )
 
+from core.extras_mms2_gb_core import (
+    get_mms2_gb_core_status,
+    install_or_update_mms2_gb_core,
+    uninstall_mms2_gb_core,
+)
+
 
 __all__ = [
     "get_3sx_status",
@@ -33,4 +39,8 @@ __all__ = [
     "get_zaparoo_launcher_status",
     "install_or_update_zaparoo_launcher",
     "uninstall_zaparoo_launcher",
+
+    "get_mms2_gb_core_status",
+    "install_or_update_mms2_gb_core",
+    "uninstall_mms2_gb_core",
 ]
