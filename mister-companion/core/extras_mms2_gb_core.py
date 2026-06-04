@@ -135,20 +135,20 @@ def _build_status(installed_date: str, mgl_exists: bool, cfg_exists: bool, check
             latest_error = str(e)
 
     if installed:
-        status_text = f"Installed ({installed_date})"
+        status_text = f"✓ Installed ({installed_date})"
         install_label = "Install"
         install_enabled = False
     elif partial:
-        status_text = "Missing files"
+        status_text = "⚠ Missing files"
         install_label = "Install"
         install_enabled = True
     else:
-        status_text = "Not installed"
+        status_text = "✗ Not installed"
         install_label = "Install"
         install_enabled = True
 
     if update_available:
-        status_text = f"Update available ({installed_date} → {latest_version})"
+        status_text = f"▲ Update available ({installed_date} → {latest_version})"
         install_label = "Update"
         install_enabled = True
 

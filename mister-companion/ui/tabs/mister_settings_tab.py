@@ -16,6 +16,7 @@ from PyQt6.QtWidgets import (
 from core.config import save_config
 from core.device_actions import return_to_menu_remote
 from core.mister_ini import (
+    CUSTOM_RESOLUTION_VALUE,
     build_easy_mode_settings,
     easy_mode_values_from_ini_settings,
     parse_mister_ini,
@@ -669,6 +670,42 @@ class MiSTerSettingsTab(QWidget):
             self.easy_amigavision_preset_combo,
             self.easy_menu_crt_preset_combo,
         ]
+
+    def remove_custom_resolution_item(self):
+        index = self.easy_resolution_combo.findText(CUSTOM_RESOLUTION_VALUE)
+        if index >= 0:
+            self.easy_resolution_combo.removeItem(index)
+
+    def add_custom_resolution_item(self):
+        index = self.easy_resolution_combo.findText(CUSTOM_RESOLUTION_VALUE)
+
+        if index < 0:
+            self.easy_resolution_combo.addItem(CUSTOM_RESOLUTION_VALUE)
+            index = self.easy_resolution_combo.findText(CUSTOM_RESOLUTION_VALUE)
+
+        item = self.easy_resolution_combo.model().item(index)
+        if item is not None:
+            item.setEnabled(False)
+
+        return index
+
+    def set_resolution_combo_value(self, value):
+        value = (value or "1920x1080@60").strip()
+
+        self.easy_resolution_combo.blockSignals(True)
+
+        if value == CUSTOM_RESOLUTION_VALUE:
+            index = self.add_custom_resolution_item()
+            self.easy_resolution_combo.setCurrentIndex(index)
+        else:
+            self.remove_custom_resolution_item()
+
+            if self.easy_resolution_combo.findText(value) < 0:
+                value = "1920x1080@60"
+
+            self.easy_resolution_combo.setCurrentText(value)
+
+        self.easy_resolution_combo.blockSignals(False)
 
     def remove_custom_analogue_item(self):
         index = self.easy_analogue_combo.findText(self.CUSTOM_ANALOGUE_VALUE)
@@ -1578,7 +1615,7 @@ class MiSTerSettingsTab(QWidget):
 
     def apply_easy_mode_values(self, values):
         self.easy_hdmi_mode_combo.setCurrentText(values.get("hdmi_mode", "HD Output (Default)"))
-        self.easy_resolution_combo.setCurrentText(values.get("resolution", "1920x1080@60"))
+        self.set_resolution_combo_value(values.get("resolution", "1920x1080@60"))
         self.easy_scaling_combo.setCurrentText(values.get("scaling", "Low Latency"))
         self.easy_hdmi_audio_combo.setCurrentText(values.get("hdmi_audio", "Enabled"))
         self.easy_hdr_combo.setCurrentText(values.get("hdr", "Disabled"))

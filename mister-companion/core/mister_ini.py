@@ -18,6 +18,8 @@ RESOLUTION_MAP = {
 
 RESOLUTION_REVERSE_MAP = {value: key for key, value in RESOLUTION_MAP.items()}
 
+CUSTOM_RESOLUTION_VALUE = "Custom Resolution"
+
 SCALING_MAP = {
     "0": "Disabled",
     "1": "Low Latency",
@@ -337,7 +339,10 @@ def easy_mode_values_from_ini_settings(settings):
     )
 
     video_mode = settings.get("video_mode", "").strip()
-    values["resolution"] = RESOLUTION_MAP.get(video_mode, "1920x1080@60")
+    values["resolution"] = RESOLUTION_MAP.get(
+        video_mode,
+        CUSTOM_RESOLUTION_VALUE if video_mode else "1920x1080@60",
+    )
 
     values["scaling"] = SCALING_MAP.get(
         settings.get("vsync_adjust", "1").strip(),

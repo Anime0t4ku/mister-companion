@@ -529,6 +529,34 @@ def _expected_core_files_present_local(sd_root: str) -> bool:
     return True
 
 
+def _any_expected_core_files_present(connection) -> bool:
+    for source in RA_SOURCES:
+        if source["key"] == "main":
+            continue
+
+        if _path_exists(connection, _rbf_path_for_source(source)):
+            return True
+
+        if _path_exists(connection, _mgl_path_for_source(source)):
+            return True
+
+    return False
+
+
+def _any_expected_core_files_present_local(sd_root: str) -> bool:
+    for source in RA_SOURCES:
+        if source["key"] == "main":
+            continue
+
+        if _path_exists_local(sd_root, _rbf_path_for_source(source)):
+            return True
+
+        if _path_exists_local(sd_root, _mgl_path_for_source(source)):
+            return True
+
+    return False
+
+
 def _is_ra_cores_installed(connection) -> bool:
     return (
         _path_exists(connection, RA_MAIN_BINARY_PATH)
@@ -546,6 +574,26 @@ def _is_ra_cores_installed_local(sd_root: str) -> bool:
         and _path_exists_local(sd_root, RA_SOUND_PATH)
         and _mister_ini_has_ra_block_local(sd_root)
         and _expected_core_files_present_local(sd_root)
+    )
+
+
+def _is_ra_cores_partial_install(connection) -> bool:
+    return (
+        _path_exists(connection, RA_MAIN_BINARY_PATH)
+        or _path_exists(connection, RA_CONFIG_PATH)
+        or _path_exists(connection, RA_SOUND_PATH)
+        or _mister_ini_has_ra_block(connection)
+        or _any_expected_core_files_present(connection)
+    )
+
+
+def _is_ra_cores_partial_install_local(sd_root: str) -> bool:
+    return (
+        _path_exists_local(sd_root, RA_MAIN_BINARY_PATH)
+        or _path_exists_local(sd_root, RA_CONFIG_PATH)
+        or _path_exists_local(sd_root, RA_SOUND_PATH)
+        or _mister_ini_has_ra_block_local(sd_root)
+        or _any_expected_core_files_present_local(sd_root)
     )
 
 
@@ -603,8 +651,9 @@ def get_ra_cores_status(connection, check_latest: bool = False):
 
     installed = _is_ra_cores_installed(connection)
     legacy_installed = False if installed else _is_legacy_ra_cores_installed(connection)
+    partial_installed = False if (installed or legacy_installed) else _is_ra_cores_partial_install(connection)
 
-    installed_versions = _read_versions(connection) if (installed or legacy_installed) else {"sources": {}}
+    installed_versions = _read_versions(connection) if (installed or legacy_installed or partial_installed) else {"sources": {}}
 
     latest_versions = {}
     latest_error = ""
@@ -626,6 +675,11 @@ def get_ra_cores_status(connection, check_latest: bool = False):
     if legacy_installed:
         status_text = "▲ Legacy install found"
         install_label = "Migrate"
+        install_enabled = True
+        uninstall_enabled = True
+    elif partial_installed:
+        status_text = "⚠ Files missing"
+        install_label = "Install"
         install_enabled = True
         uninstall_enabled = True
     elif not installed:
@@ -657,6 +711,7 @@ def get_ra_cores_status(connection, check_latest: bool = False):
     return {
         "installed": installed,
         "legacy_installed": legacy_installed,
+        "partial_installed": partial_installed,
         "installed_versions": installed_versions,
         "latest_versions": latest_versions,
         "latest_error": latest_error,
@@ -689,8 +744,9 @@ def get_ra_cores_status_local(sd_root: str, check_latest: bool = False):
 
     installed = _is_ra_cores_installed_local(sd_root)
     legacy_installed = False if installed else _is_legacy_ra_cores_installed_local(sd_root)
+    partial_installed = False if (installed or legacy_installed) else _is_ra_cores_partial_install_local(sd_root)
 
-    installed_versions = _read_versions_local(sd_root) if (installed or legacy_installed) else {"sources": {}}
+    installed_versions = _read_versions_local(sd_root) if (installed or legacy_installed or partial_installed) else {"sources": {}}
 
     latest_versions = {}
     latest_error = ""
@@ -712,6 +768,11 @@ def get_ra_cores_status_local(sd_root: str, check_latest: bool = False):
     if legacy_installed:
         status_text = "▲ Legacy install found"
         install_label = "Migrate"
+        install_enabled = True
+        uninstall_enabled = True
+    elif partial_installed:
+        status_text = "⚠ Files missing"
+        install_label = "Install"
         install_enabled = True
         uninstall_enabled = True
     elif not installed:
@@ -743,6 +804,7 @@ def get_ra_cores_status_local(sd_root: str, check_latest: bool = False):
     return {
         "installed": installed,
         "legacy_installed": legacy_installed,
+        "partial_installed": partial_installed,
         "installed_versions": installed_versions,
         "latest_versions": latest_versions,
         "latest_error": latest_error,
