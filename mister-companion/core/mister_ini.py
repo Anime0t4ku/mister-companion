@@ -353,7 +353,12 @@ def easy_mode_values_from_ini_settings(settings):
     values["hdmi_audio"] = "Disabled (DVI Mode)" if dvi == "1" else "Enabled"
 
     hdr = settings.get("hdr", "0").strip()
-    values["hdr"] = "Enabled" if hdr == "1" else "Disabled"
+    if hdr == "1":
+        values["hdr"] = "HLG HDR (recommended)"
+    elif hdr == "2":
+        values["hdr"] = "DCI P3 HDR"
+    else:
+        values["hdr"] = "Disabled"
 
     limited = settings.get("hdmi_limited", "0").strip()
     values["hdmi_limited"] = "Limited Range" if limited == "1" else "Full Range"
@@ -462,7 +467,12 @@ def build_easy_mode_settings(easy_values):
     settings["dvi_mode"] = "0" if audio == "Enabled" else "1"
 
     hdr = easy_values.get("hdr", "").strip()
-    settings["hdr"] = "1" if hdr == "Enabled" else "0"
+    if hdr in ("HLG HDR (recommended)", "HLG HDR (1, recommended)", "Enabled"):
+        settings["hdr"] = "1"
+    elif hdr in ("DCI P3 HDR", "DCI P3 HDR (2)"):
+        settings["hdr"] = "2"
+    else:
+        settings["hdr"] = "0"
 
     limited = easy_values.get("hdmi_limited", "").strip()
     settings["hdmi_limited"] = "1" if limited == "Limited Range" else "0"

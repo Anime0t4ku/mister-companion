@@ -12,6 +12,7 @@ import tarfile
 import time
 import zipfile
 from pathlib import Path
+from urllib.parse import quote, unquote
 from typing import Callable
 
 import requests
@@ -42,10 +43,14 @@ BASE_DIR = get_app_base_dir()
 TOOLS_DIR = BASE_DIR / "tools"
 BALENA_DIR = TOOLS_DIR / "balena-cli"
 MR_FUSION_DIR = TOOLS_DIR / "mr-fusion"
+MC_FUSION_DIR = TOOLS_DIR / "mc-fusion"
 SUPERSTATION_DIR = TOOLS_DIR / "superstation"
 
 BALENA_REPO = "balena-io/balena-cli"
 MR_FUSION_REPO = "MiSTer-devel/mr-fusion"
+MC_FUSION_REPO = "Anime0t4ku/mc-fusion"
+MC_FUSION_ASSET_NAME = "mc-fusion.img.zip"
+MC_FUSION_VERSION_FILE = MC_FUSION_DIR / "version.txt"
 SUPERSTATION_REPO = "Retro-Remake/SuperStation-SD-Card-Installer"
 
 GITHUB_API_BASE = "https://api.github.com/repos"
@@ -242,6 +247,7 @@ def ensure_tools_dirs(log_callback: LogCallback | None = None) -> None:
     TOOLS_DIR.mkdir(parents=True, exist_ok=True)
     BALENA_DIR.mkdir(parents=True, exist_ok=True)
     MR_FUSION_DIR.mkdir(parents=True, exist_ok=True)
+    MC_FUSION_DIR.mkdir(parents=True, exist_ok=True)
     SUPERSTATION_DIR.mkdir(parents=True, exist_ok=True)
     _log(log_callback, f"Using tools directory: {TOOLS_DIR}")
 
@@ -258,6 +264,31 @@ def _github_latest_release(repo: str) -> dict:
     response = session.get(url, timeout=30)
     response.raise_for_status()
     return response.json()
+
+
+def _github_latest_release_tag_from_page(repo: str) -> str:
+    url = f"https://github.com/{repo}/releases/latest"
+    session = _get_session()
+    response = session.get(url, timeout=30, allow_redirects=True)
+    response.raise_for_status()
+
+    final_url = response.url or ""
+    match = re.search(r"/releases/tag/([^/?#]+)", final_url)
+    if match:
+        return unquote(match.group(1))
+
+    match = re.search(rf"/{re.escape(repo)}/releases/tag/([^\"'<>?#]+)", response.text)
+    if match:
+        return unquote(match.group(1))
+
+    raise RuntimeError(f"Could not determine the latest release tag for {repo}.")
+
+
+def _github_release_asset_download_url(repo: str, tag: str, asset_name: str) -> str:
+    return (
+        f"https://github.com/{repo}/releases/download/"
+        f"{quote(tag, safe='')}/{quote(asset_name, safe='')}"
+    )
 
 
 def _download_file(
@@ -389,6 +420,14 @@ def has_mr_fusion_image() -> bool:
         return False
 
 
+def has_mc_fusion_image() -> bool:
+    try:
+        get_mc_fusion_image()
+        return True
+    except Exception:
+        return False
+
+
 def has_superstation_image() -> bool:
     try:
         get_superstation_image()
@@ -421,6 +460,14 @@ def get_mr_fusion_image() -> Path:
     raise RuntimeError("Mr. Fusion image not found. Download it first.")
 
 
+def get_mc_fusion_image() -> Path:
+    image = _find_first_matching_file(MC_FUSION_DIR, "*.img")
+    if image:
+        return image
+
+    raise RuntimeError("MC-Fusion image not found. Download it first.")
+
+
 def get_superstation_image() -> Path:
     image = _find_first_matching_file(SUPERSTATION_DIR, "*.img")
     if image:
@@ -439,6 +486,12 @@ def remove_mr_fusion_image(log_callback: LogCallback | None = None) -> None:
     ensure_tools_dirs(log_callback)
     _clear_directory_contents(MR_FUSION_DIR)
     _log(log_callback, "Removed Mr. Fusion files.")
+
+
+def remove_mc_fusion_image(log_callback: LogCallback | None = None) -> None:
+    ensure_tools_dirs(log_callback)
+    _clear_directory_contents(MC_FUSION_DIR)
+    _log(log_callback, "Removed MC-Fusion files.")
 
 
 def remove_superstation_image(log_callback: LogCallback | None = None) -> None:
@@ -513,8 +566,63 @@ def _get_local_archive_name(folder: Path) -> str | None:
     return None
 
 
+def _read_mc_fusion_version() -> str | None:
+    try:
+        version = MC_FUSION_VERSION_FILE.read_text(encoding="utf-8").strip()
+        return version or None
+    except FileNotFoundError:
+        return None
+    except Exception:
+        return None
+
+
+def _write_mc_fusion_version(version: str) -> None:
+    MC_FUSION_VERSION_FILE.parent.mkdir(parents=True, exist_ok=True)
+    MC_FUSION_VERSION_FILE.write_text(version.strip() + "\n", encoding="utf-8")
+
+
 def _asset_timestamp(asset: dict) -> str:
     return str(asset.get("updated_at") or asset.get("created_at") or "")
+
+
+def get_mc_fusion_image_status(log_callback: LogCallback | None = None) -> dict:
+    ensure_tools_dirs(log_callback)
+
+    local_version = _read_mc_fusion_version()
+    local_img = _find_first_matching_file(MC_FUSION_DIR, "*.img")
+
+    installed = bool(local_img)
+    local_name = local_version or (local_img.name if local_img else None)
+
+    latest_name = None
+    up_to_date = None
+    update_available = False
+
+    try:
+        latest_tag = _github_latest_release_tag_from_page(MC_FUSION_REPO)
+        latest_name = latest_tag
+
+        if installed:
+            if local_version and latest_tag:
+                up_to_date = local_version == latest_tag
+                update_available = not up_to_date
+            else:
+                up_to_date = None
+                update_available = False
+    except Exception as e:
+        _log(log_callback, f"Unable to check latest MC-Fusion release: {e}")
+        latest_name = None
+        if installed:
+            up_to_date = None
+            update_available = False
+
+    return {
+        "installed": installed,
+        "up_to_date": up_to_date,
+        "local_name": local_name,
+        "latest_name": latest_name,
+        "update_available": update_available,
+    }
 
 
 def get_superstation_image_status(log_callback: LogCallback | None = None) -> dict:
@@ -624,6 +732,47 @@ def ensure_mr_fusion_image(
 
     image = get_mr_fusion_image()
     _log(log_callback, f"Mr. Fusion image ready: {image}")
+    return image
+
+
+def ensure_mc_fusion_image(
+    force_download: bool = False,
+    log_callback: LogCallback | None = None,
+) -> Path:
+    if not is_flash_supported():
+        raise RuntimeError("Flash SD is not supported on this platform.")
+
+    ensure_tools_dirs(log_callback)
+
+    if not force_download:
+        try:
+            status = get_mc_fusion_image_status(log_callback=log_callback)
+            if status.get("installed") and not status.get("update_available"):
+                image = get_mc_fusion_image()
+                _log(log_callback, f"Using existing MC-Fusion image: {image}")
+                return image
+        except Exception:
+            pass
+
+    _log(log_callback, "Checking latest MC-Fusion release...")
+    latest_tag = _github_latest_release_tag_from_page(MC_FUSION_REPO)
+    asset_url = _github_release_asset_download_url(
+        MC_FUSION_REPO,
+        latest_tag,
+        MC_FUSION_ASSET_NAME,
+    )
+
+    _log(log_callback, f"Latest MC-Fusion release: {latest_tag}")
+
+    archive_path = MC_FUSION_DIR / MC_FUSION_ASSET_NAME
+
+    _clear_directory_contents(MC_FUSION_DIR)
+    _download_file(asset_url, archive_path, log_callback)
+    _extract_archive(archive_path, MC_FUSION_DIR, log_callback)
+    _write_mc_fusion_version(latest_tag)
+
+    image = get_mc_fusion_image()
+    _log(log_callback, f"MC-Fusion image ready: {image}")
     return image
 
 

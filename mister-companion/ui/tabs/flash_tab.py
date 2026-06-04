@@ -19,18 +19,23 @@ from PyQt6.QtWidgets import (
 from ui.scaling import set_text_button_min_width
 from core.flasher import (
     ensure_balena_cli,
+    ensure_mc_fusion_image,
     ensure_mr_fusion_image,
     ensure_superstation_image,
     flash_image,
+    get_mc_fusion_image,
+    get_mc_fusion_image_status,
     get_mr_fusion_image,
     get_superstation_image,
     get_superstation_image_status,
     has_balena_cli,
+    has_mc_fusion_image,
     has_mr_fusion_image,
     has_superstation_image,
     is_flash_supported,
     list_available_drives,
     remove_balena_cli,
+    remove_mc_fusion_image,
     remove_mr_fusion_image,
     remove_superstation_image,
 )
@@ -51,6 +56,13 @@ class FlashStatusWorker(QThread):
             status = {
                 "mode": self.mode,
                 "balena_ready": balena_ready,
+                "mc_fusion_status": {
+                    "installed": False,
+                    "up_to_date": None,
+                    "local_name": None,
+                    "latest_name": None,
+                    "update_available": False,
+                },
                 "mr_fusion_installed": False,
                 "mr_fusion_name": "",
                 "superstation_status": {
@@ -62,7 +74,19 @@ class FlashStatusWorker(QThread):
                 },
             }
 
-            if self.mode == FlashTab.MODE_MR_FUSION:
+            if self.mode == FlashTab.MODE_MC_FUSION:
+                try:
+                    status["mc_fusion_status"] = get_mc_fusion_image_status()
+                except Exception:
+                    status["mc_fusion_status"] = {
+                        "installed": False,
+                        "up_to_date": None,
+                        "local_name": None,
+                        "latest_name": None,
+                        "update_available": False,
+                    }
+
+            elif self.mode == FlashTab.MODE_MR_FUSION:
                 installed = has_mr_fusion_image()
                 status["mr_fusion_installed"] = installed
 
@@ -125,6 +149,7 @@ class FlashWorker(QThread):
 
 
 class FlashTab(QWidget):
+    MODE_MC_FUSION = "mc_fusion"
     MODE_MR_FUSION = "mr_fusion"
     MODE_SUPERSTATION = "superstation"
 
@@ -166,6 +191,7 @@ class FlashTab(QWidget):
 
         mode_label = QLabel("Select installer:")
         self.mode_combo = QComboBox()
+        self.mode_combo.addItem("MC-Fusion", self.MODE_MC_FUSION)
         self.mode_combo.addItem("Mr. Fusion", self.MODE_MR_FUSION)
         self.mode_combo.addItem("SuperStationOne SD Card Installer", self.MODE_SUPERSTATION)
         self.mode_combo.setMinimumWidth(300)
@@ -378,6 +404,9 @@ class FlashTab(QWidget):
     def current_mode(self):
         return self.mode_combo.currentData()
 
+    def is_mc_fusion_mode(self):
+        return self.current_mode() == self.MODE_MC_FUSION
+
     def is_mr_fusion_mode(self):
         return self.current_mode() == self.MODE_MR_FUSION
 
@@ -401,7 +430,15 @@ class FlashTab(QWidget):
         label.setStyleSheet("color: #1e88e5; font-weight: bold;")
 
     def update_mode_ui(self):
-        if self.is_mr_fusion_mode():
+        if self.is_mc_fusion_mode():
+            self.info_label.setText(
+                "Follow the steps below to prepare and flash an MC-Fusion SD card for MiSTer. "
+                "MC-Fusion is a MiSTer Companion focused fork of Mr. Fusion."
+            )
+            self.image_status_title.setText("MC-Fusion image:")
+            self.download_image_button.setText("Download MC-Fusion")
+            self.remove_image_button.setText("Remove MC-Fusion")
+        elif self.is_mr_fusion_mode():
             self.info_label.setText(
                 "Follow the steps below to prepare and flash a Mr. Fusion SD card for MiSTer."
             )
@@ -525,7 +562,53 @@ class FlashTab(QWidget):
         mode = status.get("mode", self.current_mode())
         balena_ready = bool(status.get("balena_ready"))
 
-        if mode == self.MODE_MR_FUSION:
+        if mode == self.MODE_MC_FUSION:
+            mc_fusion_status = status.get("mc_fusion_status") or {}
+
+            installed = bool(mc_fusion_status.get("installed"))
+            up_to_date = mc_fusion_status.get("up_to_date")
+            local_name = mc_fusion_status.get("local_name")
+            latest_name = mc_fusion_status.get("latest_name")
+            update_available = bool(mc_fusion_status.get("update_available"))
+
+            if not installed:
+                self._set_not_downloaded_status(self.image_status_label)
+                self.download_image_button.setText("Download MC-Fusion")
+                self.download_image_button.setEnabled(
+                    is_flash_supported() and self.current_worker is None
+                )
+                self.remove_image_button.setEnabled(False)
+            else:
+                if update_available:
+                    label_text = "Update available"
+                    if local_name and latest_name:
+                        label_text = f"Update available ({local_name} -> {latest_name})"
+                    elif latest_name:
+                        label_text = f"Update available ({latest_name})"
+
+                    self._set_warning_status(self.image_status_label, label_text)
+                    self.download_image_button.setText("Update")
+                    self.download_image_button.setEnabled(
+                        is_flash_supported() and self.current_worker is None
+                    )
+                    self.remove_image_button.setEnabled(
+                        is_flash_supported() and self.current_worker is None
+                    )
+                else:
+                    ready_text = f"Ready ({local_name})" if local_name else "Ready"
+
+                    if up_to_date is False:
+                        self._set_warning_status(self.image_status_label, ready_text)
+                    else:
+                        self._set_ready_status(self.image_status_label, ready_text)
+
+                    self.download_image_button.setText("Download MC-Fusion")
+                    self.download_image_button.setEnabled(False)
+                    self.remove_image_button.setEnabled(
+                        is_flash_supported() and self.current_worker is None
+                    )
+
+        elif mode == self.MODE_MR_FUSION:
             installed = bool(status.get("mr_fusion_installed"))
             name = status.get("mr_fusion_name", "")
 
@@ -607,6 +690,13 @@ class FlashTab(QWidget):
         self.update_connection_state(lightweight=True)
 
     def selected_image_ready(self):
+        if self.is_mc_fusion_mode():
+            cached = self._cached_status(self.MODE_MC_FUSION)
+            if cached is not None:
+                mc_fusion_status = cached.get("mc_fusion_status") or {}
+                return bool(mc_fusion_status.get("installed"))
+            return has_mc_fusion_image()
+
         if self.is_mr_fusion_mode():
             cached = self._cached_status(self.MODE_MR_FUSION)
             if cached is not None:
@@ -624,11 +714,15 @@ class FlashTab(QWidget):
             return False
 
     def get_selected_image_path(self):
+        if self.is_mc_fusion_mode():
+            return get_mc_fusion_image()
         if self.is_mr_fusion_mode():
             return get_mr_fusion_image()
         return get_superstation_image()
 
     def get_selected_image_name(self):
+        if self.is_mc_fusion_mode():
+            return "MC-Fusion"
         if self.is_mr_fusion_mode():
             return "Mr. Fusion"
         return "SuperStation image"
@@ -795,10 +889,24 @@ class FlashTab(QWidget):
         return self.drive_map.get(text, "")
 
     def download_selected_image(self):
-        if self.is_mr_fusion_mode():
+        if self.is_mc_fusion_mode():
+            self.download_mc_fusion()
+        elif self.is_mr_fusion_mode():
             self.download_mr_fusion()
         else:
             self.download_superstation()
+
+    def download_mc_fusion(self):
+        def task(log):
+            ensure_mc_fusion_image(force_download=True, log_callback=log)
+
+        button_text = self.download_image_button.text().strip().lower()
+        success_message = (
+            "MC-Fusion image update complete."
+            if button_text == "update"
+            else "MC-Fusion image download complete."
+        )
+        self.start_worker(task, success_message=success_message)
 
     def download_mr_fusion(self):
         def task(log):
@@ -825,7 +933,13 @@ class FlashTab(QWidget):
         self.start_worker(task, success_message="balena CLI download complete.")
 
     def remove_selected_image(self):
-        if self.is_mr_fusion_mode():
+        if self.is_mc_fusion_mode():
+            title = "Remove MC-Fusion"
+            text = (
+                "This will remove the downloaded MC-Fusion image files from the tools folder.\n\n"
+                "Do you want to continue?"
+            )
+        elif self.is_mr_fusion_mode():
             title = "Remove Mr. Fusion"
             text = (
                 "This will remove the downloaded Mr. Fusion image files from the tools folder.\n\n"
@@ -843,16 +957,19 @@ class FlashTab(QWidget):
             return
 
         def task(log):
-            if self.is_mr_fusion_mode():
+            if self.is_mc_fusion_mode():
+                remove_mc_fusion_image(log_callback=log)
+            elif self.is_mr_fusion_mode():
                 remove_mr_fusion_image(log_callback=log)
             else:
                 remove_superstation_image(log_callback=log)
 
-        success_message = (
-            "Mr. Fusion files removed."
-            if self.is_mr_fusion_mode()
-            else "SuperStation files removed."
-        )
+        if self.is_mc_fusion_mode():
+            success_message = "MC-Fusion files removed."
+        elif self.is_mr_fusion_mode():
+            success_message = "Mr. Fusion files removed."
+        else:
+            success_message = "SuperStation files removed."
         self.start_worker(task, success_message=success_message)
 
     def remove_balena(self):

@@ -495,7 +495,8 @@ class MiSTerSettingsTab(QWidget):
         self.easy_hdr_combo = QComboBox()
         self.easy_hdr_combo.addItems([
             "Disabled",
-            "Enabled"
+            "HLG HDR (recommended)",
+            "DCI P3 HDR"
         ])
 
         self.easy_hdmi_limited_combo = QComboBox()
