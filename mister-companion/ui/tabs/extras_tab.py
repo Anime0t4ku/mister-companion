@@ -1313,6 +1313,7 @@ class ExtrasTab(QWidget):
                 return get_ra_cores_status_local(
                     self.get_offline_sd_root(),
                     check_latest=True,
+                    log=log,
                 )
 
             self._run_worker(task, "", task_kind=self.TASK_CHECK_RA_CORES)
@@ -1323,7 +1324,7 @@ class ExtrasTab(QWidget):
 
         def task(log):
             log("Checking RetroAchievement Cores updates...\n")
-            return get_ra_cores_status(self.connection, check_latest=True)
+            return get_ra_cores_status(self.connection, check_latest=True, log=log)
 
         self._run_worker(task, "", task_kind=self.TASK_CHECK_RA_CORES)
 

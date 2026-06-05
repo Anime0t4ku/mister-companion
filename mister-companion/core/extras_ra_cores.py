@@ -351,9 +351,11 @@ def _fetch_latest_release_from_html(repo: str) -> dict:
     }
 
 
-def _fetch_all_latest_releases() -> dict:
+def _fetch_all_latest_releases(log=None) -> dict:
     latest = {}
     for source in RA_SOURCES:
+        if log:
+            log(f"Checking {source['title']}...\n")
         latest[source["key"]] = _fetch_latest_release(source["repo"])
     return latest
 
@@ -632,7 +634,7 @@ def _get_outdated_sources(installed_versions: dict, latest_versions: dict) -> li
     return outdated
 
 
-def get_ra_cores_status(connection, check_latest: bool = False):
+def get_ra_cores_status(connection, check_latest: bool = False, log=None):
     if not connection.is_connected():
         return {
             "installed": False,
@@ -662,7 +664,7 @@ def get_ra_cores_status(connection, check_latest: bool = False):
 
     if check_latest:
         try:
-            latest_versions = _fetch_all_latest_releases()
+            latest_versions = _fetch_all_latest_releases(log=log)
             if installed:
                 outdated_sources = _get_outdated_sources(
                     installed_versions,
@@ -725,7 +727,7 @@ def get_ra_cores_status(connection, check_latest: bool = False):
     }
 
 
-def get_ra_cores_status_local(sd_root: str, check_latest: bool = False):
+def get_ra_cores_status_local(sd_root: str, check_latest: bool = False, log=None):
     if not sd_root or not _local_root(sd_root).exists():
         return {
             "installed": False,
@@ -755,7 +757,7 @@ def get_ra_cores_status_local(sd_root: str, check_latest: bool = False):
 
     if check_latest:
         try:
-            latest_versions = _fetch_all_latest_releases()
+            latest_versions = _fetch_all_latest_releases(log=log)
             if installed:
                 outdated_sources = _get_outdated_sources(
                     installed_versions,

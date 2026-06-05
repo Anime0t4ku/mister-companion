@@ -268,6 +268,8 @@ class NetworkScannerDialog(QDialog):
                 connection_tab.profile_selector.setCurrentIndex(-1)
                 connection_tab.profile_selector.blockSignals(False)
 
+            connection_tab.update_save_buttons_state()
+
         self.accept()
 
     def closeEvent(self, event):
