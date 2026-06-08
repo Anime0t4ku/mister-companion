@@ -28,6 +28,7 @@ from core.extras_actions import (
     install_or_update_3sx as backend_install_or_update_3sx,
     install_or_update_sonic_mania as backend_install_or_update_sonic_mania,
     install_or_update_zaparoo_launcher as backend_install_or_update_zaparoo_launcher,
+    enable_zaparoo_launcher_frontend as backend_enable_zaparoo_launcher_frontend,
     install_or_update_mms2_gb_core as backend_install_or_update_mms2_gb_core,
     uninstall_3sx as backend_uninstall_3sx,
     uninstall_sonic_mania as backend_uninstall_sonic_mania,
@@ -55,6 +56,7 @@ from core.extras_zaparoo_launcher import (
     get_zaparoo_launcher_status_local,
     install_or_update_zaparoo_launcher_local as backend_install_or_update_zaparoo_launcher_local,
     uninstall_zaparoo_launcher_local as backend_uninstall_zaparoo_launcher_local,
+    enable_zaparoo_launcher_frontend_local as backend_enable_zaparoo_launcher_frontend_local,
 )
 
 from core.extras_mms2_gb_core import (
@@ -679,7 +681,7 @@ class ExtrasTab(QWidget):
             self.extra_status_label.setStyleSheet("color: #1e88e5; font-weight: bold;")
         elif "update available" in lowered:
             self.extra_status_label.setStyleSheet("color: #cc8400;")
-        elif "legacy" in lowered or "missing" in lowered:
+        elif "legacy" in lowered or "missing" in lowered or "not enabled" in lowered:
             self.extra_status_label.setStyleSheet("color: #cc8400;")
         elif "installed" in lowered and "not" not in lowered:
             self.extra_status_label.setStyleSheet("color: #00aa00;")
@@ -1547,6 +1549,8 @@ class ExtrasTab(QWidget):
 
         if button_text == "Update":
             success_message = "Zaparoo Frontend updated."
+        elif button_text == "Enable Frontend":
+            success_message = "Zaparoo Frontend enabled."
 
         if self.is_offline_mode():
             if not self.has_offline_sd_root():
@@ -1555,6 +1559,12 @@ class ExtrasTab(QWidget):
             self.zaparoo_launcher_show_reboot_after_success = False
 
             def task(log):
+                if button_text == "Enable Frontend":
+                    return backend_enable_zaparoo_launcher_frontend_local(
+                        self.get_offline_sd_root(),
+                        log,
+                    )
+
                 return backend_install_or_update_zaparoo_launcher_local(
                     self.get_offline_sd_root(),
                     log,
@@ -1570,6 +1580,9 @@ class ExtrasTab(QWidget):
         self.zaparoo_launcher_show_reboot_after_success = False
 
         def task(log):
+            if button_text == "Enable Frontend":
+                return backend_enable_zaparoo_launcher_frontend(self.connection, log)
+
             return backend_install_or_update_zaparoo_launcher(self.connection, log)
 
         self._clear_cached_update_result(self.EXTRA_ZAPAROO_LAUNCHER)

@@ -1,9 +1,19 @@
 import json
 from pathlib import Path
 
+from core.extras_zaparoo_launcher import (
+    MISTER_INI_PATH,
+    _mister_ini_text_has_zaparoo_launcher_entries,
+    _patch_mister_ini_for_zaparoo_launcher,
+    _remove_zaparoo_launcher_from_mister_ini,
+)
+
 
 JSON_PATH = "/media/fat/Scripts/.config/update_all/update_all.json"
 ARCADE_ORGANIZER_INI_PATH = "/media/fat/Scripts/update_arcade-organizer.ini"
+
+ZAPAROO_SECTION = "ZaparooProject/Zaparoo_MiSTer"
+ZAPAROO_DB_URL = "https://raw.githubusercontent.com/ZaparooProject/Zaparoo_MiSTer/db/db.json.zip"
 
 MISTER_FRONTIER_SECTION = "MiSTerOrganize/MiSTer_Frontier"
 MISTER_FRONTIER_DB_URL = "https://raw.githubusercontent.com/MiSTerOrganize/MiSTer_Frontier/db/db.json.zip"
@@ -384,7 +394,7 @@ def ensure_split_downloader_configs_local(sd_root):
         write_local_text(sd_root, paths["bios"], "\n".join(bios_lines).rstrip() + "\n")
 
 
-def _build_config_data(ini_data, json_data, arcade_org_ini, manualsdb_ini=""):
+def _build_config_data(ini_data, json_data, arcade_org_ini, manualsdb_ini="", mister_ini=""):
     def is_enabled(section):
         return section_enabled_in_text(ini_data, section)
 
@@ -415,6 +425,8 @@ def _build_config_data(ini_data, json_data, arcade_org_ini, manualsdb_ini=""):
         "tty2oled": is_enabled("tty2oled_files"),
         "i2c2oled": is_enabled("i2c2oled_files"),
         "retrospy": is_enabled("retrospy/retrospy-MiSTer"),
+        "zaparoo": is_enabled(ZAPAROO_SECTION),
+        "zaparoo_frontend": _mister_ini_text_has_zaparoo_launcher_entries(mister_ini),
 
         "bios": is_enabled("bios_db"),
         "arcade_roms": is_enabled("arcade_roms_db"),
@@ -479,12 +491,14 @@ def load_update_all_config(connection):
             json_data = {}
 
         arcade_org_ini = read_remote_text(sftp, ARCADE_ORGANIZER_INI_PATH, "")
+        mister_ini = read_remote_text(sftp, MISTER_INI_PATH, "")
 
         return _build_config_data(
             ini_data,
             json_data,
             arcade_org_ini,
             files["manualsdb"],
+            mister_ini,
         )
     finally:
         sftp.close()
@@ -506,12 +520,14 @@ def load_update_all_config_local(sd_root):
         json_data = {}
 
     arcade_org_ini = read_local_text(sd_root, ARCADE_ORGANIZER_INI_PATH, "")
+    mister_ini = read_local_text(sd_root, MISTER_INI_PATH, "")
 
     return _build_config_data(
         ini_data,
         json_data,
         arcade_org_ini,
         files["manualsdb"],
+        mister_ini,
     )
 
 
@@ -743,6 +759,15 @@ def _prepare_config_lines_and_json(config, main_lines, arcade_lines, bios_lines,
         ],
     )
     main_lines = handle_simple_section(
+        ZAPAROO_SECTION,
+        config.get("zaparoo", False),
+        main_lines,
+        [
+            f"[{ZAPAROO_SECTION}]",
+            f"db_url = {ZAPAROO_DB_URL}",
+        ],
+    )
+    main_lines = handle_simple_section(
         "anime0t4ku_mister_scripts",
         config.get("anime0t4ku_mister_scripts", False),
         main_lines,
@@ -857,6 +882,38 @@ def _prepare_config_lines_and_json(config, main_lines, arcade_lines, bios_lines,
     return main_lines, arcade_lines, bios_lines, json_data
 
 
+def _apply_zaparoo_frontend_mister_ini_text(text, enabled):
+    if enabled:
+        return _patch_mister_ini_for_zaparoo_launcher(text)
+    return _remove_zaparoo_launcher_from_mister_ini(text)
+
+
+def _save_remote_zaparoo_frontend_state(sftp, enabled):
+    current = read_remote_text(sftp, MISTER_INI_PATH, "")
+
+    if not current and not enabled:
+        return
+
+    patched = _apply_zaparoo_frontend_mister_ini_text(current, enabled)
+    current_normalized = current.replace("\r\n", "\n").replace("\r", "\n")
+
+    if patched != current_normalized:
+        write_remote_text(sftp, MISTER_INI_PATH, patched)
+
+
+def _save_local_zaparoo_frontend_state(sd_root, enabled):
+    current = read_local_text(sd_root, MISTER_INI_PATH, "")
+
+    if not current and not enabled:
+        return
+
+    patched = _apply_zaparoo_frontend_mister_ini_text(current, enabled)
+    current_normalized = current.replace("\r\n", "\n").replace("\r", "\n")
+
+    if patched != current_normalized:
+        write_local_text(sd_root, MISTER_INI_PATH, patched)
+
+
 def _prepare_manualsdb_ini(config):
     if not config.get("manualsdb", False):
         return ""
@@ -917,6 +974,11 @@ def save_update_all_config(connection, config):
         else:
             remove_remote_file(sftp, paths["manualsdb"])
 
+        _save_remote_zaparoo_frontend_state(
+            sftp,
+            bool(config.get("zaparoo_frontend", False)),
+        )
+
         with sftp.open(JSON_PATH, "w") as f:
             f.write(json.dumps(json_data, indent=4))
     finally:
@@ -963,5 +1025,10 @@ def save_update_all_config_local(sd_root, config):
         write_local_text(sd_root, paths["manualsdb"], manualsdb_ini)
     else:
         remove_local_file(sd_root, paths["manualsdb"])
+
+    _save_local_zaparoo_frontend_state(
+        sd_root,
+        bool(config.get("zaparoo_frontend", False)),
+    )
 
     write_local_text(sd_root, JSON_PATH, json.dumps(json_data, indent=4))

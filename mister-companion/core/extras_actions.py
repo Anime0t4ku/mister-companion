@@ -15,6 +15,7 @@ from core.extras_sonic_mania import (
 from core.extras_zaparoo_launcher import (
     get_zaparoo_launcher_status,
     install_or_update_zaparoo_launcher,
+    enable_zaparoo_launcher_frontend,
     uninstall_zaparoo_launcher,
 )
 
@@ -38,6 +39,7 @@ __all__ = [
 
     "get_zaparoo_launcher_status",
     "install_or_update_zaparoo_launcher",
+    "enable_zaparoo_launcher_frontend",
     "uninstall_zaparoo_launcher",
 
     "get_mms2_gb_core_status",

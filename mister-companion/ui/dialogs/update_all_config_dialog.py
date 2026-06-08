@@ -174,6 +174,8 @@ class UpdateAllConfigDialog(QDialog):
         self.tty2oled_check = QCheckBox("tty2oled Add-on Script")
         self.i2c2oled_check = QCheckBox("i2c2oled Add-on Script")
         self.retrospy_check = QCheckBox("RetroSpy Utility")
+        self.zaparoo_check = QCheckBox("Zaparoo")
+        self.zaparoo_frontend_check = QCheckBox("Enable Zaparoo Frontend")
         self.anime0t4ku_mister_scripts_check = QCheckBox("Anime0t4ku MiSTer Scripts")
 
         for widget in [
@@ -183,9 +185,12 @@ class UpdateAllConfigDialog(QDialog):
             self.tty2oled_check,
             self.i2c2oled_check,
             self.retrospy_check,
-            self.anime0t4ku_mister_scripts_check,
+            self.zaparoo_check,
         ]:
             self._add(tools_group, widget)
+
+        self._add(tools_group, self.zaparoo_frontend_check, indent=True)
+        self._add(tools_group, self.anime0t4ku_mister_scripts_check)
 
         extra_group = self._group("Extra Content", self.left_column_layout)
         self.bios_check = QCheckBox("BIOS Database")
@@ -628,6 +633,8 @@ class UpdateAllConfigDialog(QDialog):
         self.tty2oled_check.setChecked(data["tty2oled"])
         self.i2c2oled_check.setChecked(data["i2c2oled"])
         self.retrospy_check.setChecked(data["retrospy"])
+        self.zaparoo_check.setChecked(data.get("zaparoo", False))
+        self.zaparoo_frontend_check.setChecked(data.get("zaparoo_frontend", False))
         self.anime0t4ku_mister_scripts_check.setChecked(data["anime0t4ku_mister_scripts"])
 
         self.bios_check.setChecked(data["bios"])
@@ -673,6 +680,8 @@ class UpdateAllConfigDialog(QDialog):
             "tty2oled": self.tty2oled_check.isChecked(),
             "i2c2oled": self.i2c2oled_check.isChecked(),
             "retrospy": self.retrospy_check.isChecked(),
+            "zaparoo": self.zaparoo_check.isChecked(),
+            "zaparoo_frontend": self.zaparoo_frontend_check.isChecked(),
             "anime0t4ku_mister_scripts": self.anime0t4ku_mister_scripts_check.isChecked(),
 
             "bios": self.bios_check.isChecked(),

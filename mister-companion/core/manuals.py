@@ -40,6 +40,26 @@ def is_pdf_name(filename: str) -> bool:
     return str(filename or "").lower().endswith(".pdf")
 
 
+def sanitize_relative_pdf_path(filename: str) -> Path:
+    parts = []
+
+    for part in str(filename or "").replace("\\", "/").split("/"):
+        clean_part = sanitize_name(part)
+
+        if clean_part in (".", ".."):
+            continue
+
+        parts.append(clean_part)
+
+    if not parts:
+        parts = ["Unknown.pdf"]
+
+    if not is_pdf_name(parts[-1]):
+        parts[-1] = f"{parts[-1]}.pdf"
+
+    return Path(*parts)
+
+
 def scan_cached_systems():
     root = get_manuals_cache_root()
 
@@ -71,16 +91,23 @@ def scan_cached_pdfs(system_name: str):
 
     pdfs = []
 
-    for file_path in sorted(system_dir.iterdir(), key=lambda p: p.name.lower()):
-        if file_path.is_file() and is_pdf_name(file_path.name):
-            pdfs.append(
-                {
-                    "name": file_path.name,
-                    "path": str(file_path),
-                    "source": "cache",
-                    "system": system_name,
-                }
-            )
+    for file_path in sorted(system_dir.rglob("*"), key=lambda p: str(p).lower()):
+        if not file_path.is_file() or not is_pdf_name(file_path.name):
+            continue
+
+        try:
+            relative_name = file_path.relative_to(system_dir).as_posix()
+        except Exception:
+            relative_name = file_path.name
+
+        pdfs.append(
+            {
+                "name": relative_name,
+                "path": str(file_path),
+                "source": "cache",
+                "system": system_name,
+            }
+        )
 
     return pdfs
 
@@ -162,20 +189,20 @@ def scan_remote_systems(connection):
         return []
 
     command = (
-        f"find {quote(root)} -mindepth 2 -maxdepth 2 "
-        f"-type d -name Manuals -printf '%h\\n' 2>/dev/null"
+        f"find {quote(root)} -mindepth 2 -type f "
+        f"\\( -iname '*.pdf' \\) -printf '%P\\n' 2>/dev/null"
     )
 
     output = connection.run_command(command)
     systems = []
 
     for line in output.splitlines():
-        line = line.strip()
+        relative_path = line.strip().lstrip("/")
 
-        if not line:
+        if not relative_path or "/" not in relative_path:
             continue
 
-        system_name = line.rstrip("/").split("/")[-1]
+        system_name = relative_path.split("/", 1)[0]
 
         if system_name and system_name not in systems:
             systems.append(system_name)
@@ -183,44 +210,44 @@ def scan_remote_systems(connection):
     return sorted(systems, key=str.lower)
 
 
-def get_remote_manuals_dir(connection, system_name: str):
+def get_remote_system_docs_dir(connection, system_name: str):
     root = get_remote_docs_root(connection)
 
     if not root:
         return ""
 
-    manuals_dir = f"{root}/{system_name}/Manuals"
+    system_dir = f"{root}/{system_name}"
 
-    if remote_path_exists(connection, manuals_dir):
-        return manuals_dir
+    if remote_path_exists(connection, system_dir):
+        return system_dir
 
     return ""
 
 
 def scan_remote_pdfs(connection, system_name: str):
-    manuals_dir = get_remote_manuals_dir(connection, system_name)
+    system_dir = get_remote_system_docs_dir(connection, system_name)
 
-    if not manuals_dir:
+    if not system_dir:
         return []
 
     command = (
-        f"find {quote(manuals_dir)} -maxdepth 1 -type f "
-        f"\\( -iname '*.pdf' \\) -printf '%f\\n' 2>/dev/null"
+        f"find {quote(system_dir)} -type f "
+        f"\\( -iname '*.pdf' \\) -printf '%P\\n' 2>/dev/null"
     )
 
     output = connection.run_command(command)
     pdfs = []
 
     for line in output.splitlines():
-        filename = line.strip()
+        relative_name = line.strip().lstrip("/")
 
-        if not filename or not is_pdf_name(filename):
+        if not relative_name or not is_pdf_name(relative_name):
             continue
 
         pdfs.append(
             {
-                "name": filename,
-                "path": f"{manuals_dir}/{filename}",
+                "name": relative_name,
+                "path": f"{system_dir}/{relative_name}",
                 "source": "remote",
                 "system": system_name,
             }
@@ -231,14 +258,18 @@ def scan_remote_pdfs(connection, system_name: str):
 
 def get_cached_pdf_path(system_name: str, filename: str):
     system_dir = ensure_manuals_cache_root() / sanitize_name(system_name)
-    system_dir.mkdir(parents=True, exist_ok=True)
-    return system_dir / sanitize_name(filename)
+    relative_path = sanitize_relative_pdf_path(filename)
+    local_path = system_dir / relative_path
+    local_path.parent.mkdir(parents=True, exist_ok=True)
+    return local_path
 
 
 def get_temp_pdf_path(system_name: str, filename: str):
     system_dir = ensure_manuals_cache_root() / ".viewer_temp" / sanitize_name(system_name)
-    system_dir.mkdir(parents=True, exist_ok=True)
-    return system_dir / sanitize_name(filename)
+    relative_path = sanitize_relative_pdf_path(filename)
+    local_path = system_dir / relative_path
+    local_path.parent.mkdir(parents=True, exist_ok=True)
+    return local_path
 
 
 def cache_remote_pdf(

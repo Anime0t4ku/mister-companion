@@ -395,20 +395,32 @@ def _remove_local_mister_ini_entries(sd_root: str, log):
         log("No Zaparoo Frontend entries found in MiSTer.ini.\n")
 
 
-def _is_zaparoo_launcher_installed(connection) -> bool:
+def _zaparoo_launcher_files_installed(connection) -> bool:
     return (
         _path_exists(connection, ZAPAROO_LAUNCHER_MAIN_PATH)
         and _path_exists(connection, ZAPAROO_LAUNCHER_UI_PATH)
         and _path_exists(connection, ZAPAROO_LAUNCHER_MENU_CORE_PATH)
+    )
+
+
+def _zaparoo_launcher_files_installed_local(sd_root: str) -> bool:
+    return (
+        _path_exists_local(sd_root, ZAPAROO_LAUNCHER_MAIN_PATH)
+        and _path_exists_local(sd_root, ZAPAROO_LAUNCHER_UI_PATH)
+        and _path_exists_local(sd_root, ZAPAROO_LAUNCHER_MENU_CORE_PATH)
+    )
+
+
+def _is_zaparoo_launcher_installed(connection) -> bool:
+    return (
+        _zaparoo_launcher_files_installed(connection)
         and _mister_ini_has_zaparoo_launcher_entries(connection)
     )
 
 
 def _is_zaparoo_launcher_installed_local(sd_root: str) -> bool:
     return (
-        _path_exists_local(sd_root, ZAPAROO_LAUNCHER_MAIN_PATH)
-        and _path_exists_local(sd_root, ZAPAROO_LAUNCHER_UI_PATH)
-        and _path_exists_local(sd_root, ZAPAROO_LAUNCHER_MENU_CORE_PATH)
+        _zaparoo_launcher_files_installed_local(sd_root)
         and _mister_ini_has_zaparoo_launcher_entries_local(sd_root)
     )
 
@@ -417,6 +429,8 @@ def get_zaparoo_launcher_status(connection, check_latest: bool = False):
     if not connection.is_connected():
         return {
             "installed": False,
+            "files_installed": False,
+            "frontend_enabled": False,
             "installed_version": "",
             "latest_version": "",
             "latest_error": "",
@@ -437,25 +451,36 @@ def get_zaparoo_launcher_status(connection, check_latest: bool = False):
         except Exception as exc:
             latest_error = str(exc)
 
-    installed = _is_zaparoo_launcher_installed(connection)
+    files_installed = _zaparoo_launcher_files_installed(connection)
+    frontend_enabled = (
+        _mister_ini_has_zaparoo_launcher_entries(connection)
+        if files_installed
+        else False
+    )
+    installed = files_installed
     installed_version = (
         _read_installed_zaparoo_launcher_version(connection)
-        if installed
+        if files_installed
         else ""
     )
 
     update_available = False
     if check_latest:
-        if installed and latest_version and installed_version:
+        if files_installed and frontend_enabled and latest_version and installed_version:
             update_available = installed_version != latest_version
-        elif installed and latest_version and not installed_version:
+        elif files_installed and frontend_enabled and latest_version and not installed_version:
             update_available = True
 
-    if not installed:
+    if not files_installed:
         status_text = "✗ Not installed"
         install_label = "Install"
         install_enabled = True
         uninstall_enabled = False
+    elif not frontend_enabled:
+        status_text = "✓ Installed but not enabled"
+        install_label = "Enable Frontend"
+        install_enabled = True
+        uninstall_enabled = True
     elif update_available:
         status_text = f"▲ Update available ({installed_version or 'unknown'} → {latest_version})"
         install_label = "Update"
@@ -473,6 +498,8 @@ def get_zaparoo_launcher_status(connection, check_latest: bool = False):
 
     return {
         "installed": installed,
+        "files_installed": files_installed,
+        "frontend_enabled": frontend_enabled,
         "installed_version": installed_version,
         "latest_version": latest_version,
         "latest_error": latest_error,
@@ -495,25 +522,36 @@ def get_zaparoo_launcher_status_local(sd_root: str, check_latest: bool = False):
         except Exception as exc:
             latest_error = str(exc)
 
-    installed = _is_zaparoo_launcher_installed_local(sd_root)
+    files_installed = _zaparoo_launcher_files_installed_local(sd_root)
+    frontend_enabled = (
+        _mister_ini_has_zaparoo_launcher_entries_local(sd_root)
+        if files_installed
+        else False
+    )
+    installed = files_installed
     installed_version = (
         _read_installed_zaparoo_launcher_version_local(sd_root)
-        if installed
+        if files_installed
         else ""
     )
 
     update_available = False
     if check_latest:
-        if installed and latest_version and installed_version:
+        if files_installed and frontend_enabled and latest_version and installed_version:
             update_available = installed_version != latest_version
-        elif installed and latest_version and not installed_version:
+        elif files_installed and frontend_enabled and latest_version and not installed_version:
             update_available = True
 
-    if not installed:
+    if not files_installed:
         status_text = "✗ Not installed"
         install_label = "Install"
         install_enabled = True
         uninstall_enabled = False
+    elif not frontend_enabled:
+        status_text = "✓ Installed but not enabled"
+        install_label = "Enable Frontend"
+        install_enabled = True
+        uninstall_enabled = True
     elif update_available:
         status_text = f"▲ Update available ({installed_version or 'unknown'} → {latest_version})"
         install_label = "Update"
@@ -531,6 +569,8 @@ def get_zaparoo_launcher_status_local(sd_root: str, check_latest: bool = False):
 
     return {
         "installed": installed,
+        "files_installed": files_installed,
+        "frontend_enabled": frontend_enabled,
         "installed_version": installed_version,
         "latest_version": latest_version,
         "latest_error": latest_error,
@@ -539,6 +579,36 @@ def get_zaparoo_launcher_status_local(sd_root: str, check_latest: bool = False):
         "install_label": install_label,
         "install_enabled": install_enabled,
         "uninstall_enabled": uninstall_enabled,
+    }
+
+
+def enable_zaparoo_launcher_frontend(connection, log):
+    if not connection.is_connected():
+        raise RuntimeError("Not connected to MiSTer.")
+
+    if not _zaparoo_launcher_files_installed(connection):
+        raise RuntimeError("Zaparoo Frontend files are not installed.")
+
+    _patch_remote_mister_ini(connection, log)
+    log("Zaparoo Frontend enabled in MiSTer.ini.\n")
+
+    return {
+        "frontend_enabled": True,
+        "soft_reboot_required": True,
+        "reboot_required": False,
+    }
+
+
+def enable_zaparoo_launcher_frontend_local(sd_root: str, log):
+    if not _zaparoo_launcher_files_installed_local(sd_root):
+        raise RuntimeError("Zaparoo Frontend files are not installed.")
+
+    _patch_local_mister_ini(sd_root, log)
+    log("Zaparoo Frontend enabled in MiSTer.ini.\n")
+
+    return {
+        "frontend_enabled": True,
+        "reboot_required": True,
     }
 
 
