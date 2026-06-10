@@ -632,13 +632,21 @@ class RemoteDialog(QDialog):
         if getattr(status, "error", ""):
             self.append_log(f"Status check failed: {status.error}")
 
+        update_available = bool(getattr(status, "update_available", False))
+
         self.set_status_labels(
-            installed="Installed" if status.installed else "Not Installed",
+            installed="Update Available" if update_available else ("Installed" if status.installed else "Not Installed"),
             running="Running" if status.running else "Not Running",
             startup="Enabled" if status.startup_enabled else "Disabled",
         )
 
-        if status.ready:
+        if update_available:
+            installed_version = getattr(status, "version_label", "Unknown")
+            bundled_version = getattr(status, "bundled_version", "") or "Unknown"
+            self.append_log(
+                f"Companion Remote update available. Installed: {installed_version}. Bundled: {bundled_version}."
+            )
+        elif status.ready:
             self.append_log("Companion Remote daemon is installed and running.")
             self.connect_remote_client()
         elif status.installed:
@@ -649,7 +657,7 @@ class RemoteDialog(QDialog):
             self.append_log("Companion Remote daemon is not installed yet.")
 
         self.update_daemon_button_state()
-        self.set_remote_controls_enabled(status.ready and self.remote_client is not None)
+        self.set_remote_controls_enabled(status.ready and not update_available and self.remote_client is not None)
 
     def on_status_error(self, message: str):
         self.append_log(f"Status check failed: {message}")
@@ -756,11 +764,13 @@ class RemoteDialog(QDialog):
         running = bool(status and status.running)
         script_exists = bool(status and status.script_exists)
         startup_enabled = bool(status and status.startup_enabled)
+        update_available = bool(status and getattr(status, "update_available", False))
 
         self.refresh_button.setEnabled(connected)
 
         if not connected:
             self.install_button.setEnabled(False)
+            self.install_button.setText("Install")
             self.start_stop_button.setEnabled(False)
             self.boot_button.setEnabled(False)
             self.uninstall_button.setEnabled(False)
@@ -770,6 +780,7 @@ class RemoteDialog(QDialog):
 
         if not installed:
             self.install_button.setEnabled(True)
+            self.install_button.setText("Install")
             self.start_stop_button.setEnabled(False)
             self.boot_button.setEnabled(False)
             self.uninstall_button.setEnabled(False)
@@ -777,9 +788,10 @@ class RemoteDialog(QDialog):
             self.boot_button.setText("Enable Start on Boot")
             return
 
-        self.install_button.setEnabled(False)
-        self.start_stop_button.setEnabled(script_exists)
-        self.boot_button.setEnabled(script_exists)
+        self.install_button.setEnabled(update_available)
+        self.install_button.setText("Update" if update_available else "Install")
+        self.start_stop_button.setEnabled(script_exists and not update_available)
+        self.boot_button.setEnabled(script_exists and not update_available)
         self.uninstall_button.setEnabled(True)
 
         if running:

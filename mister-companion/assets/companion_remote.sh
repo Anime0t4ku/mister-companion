@@ -1,6 +1,7 @@
 #!/bin/sh
 
 TITLE="MiSTer Companion Remote by Anime0t4ku"
+SCRIPT_VERSION="1.0.1"
 SCRIPT_PATH="/media/fat/Scripts/companion_remote.sh"
 
 BASE="/media/fat/Scripts/.config/companion_remote"
@@ -83,6 +84,7 @@ import socket
 import struct
 import sys
 import time
+import threading
 import fcntl
 
 UINPUT_PATH = "/dev/uinput"
@@ -308,6 +310,7 @@ class RemoteState:
     def __init__(self):
         self.keyboard = None
         self.controller = None
+        self.lock = threading.RLock()
         self.held_keys = set()
         self.held_buttons = set()
         self.dpad = {
@@ -346,80 +349,87 @@ class RemoteState:
         )
 
     def keyboard_key(self, code, down):
-        if down:
-            self.held_keys.add(code)
-        else:
-            self.held_keys.discard(code)
+        with self.lock:
+            if down:
+                self.held_keys.add(code)
+            else:
+                self.held_keys.discard(code)
 
-        self.keyboard.key(code, down)
+            self.keyboard.key(code, down)
 
     def controller_button(self, code, down):
-        if down:
-            self.held_buttons.add(code)
-        else:
-            self.held_buttons.discard(code)
+        with self.lock:
+            if down:
+                self.held_buttons.add(code)
+            else:
+                self.held_buttons.discard(code)
 
-        self.controller.key(code, down)
+            self.controller.key(code, down)
 
     def set_dpad(self, name, down):
-        if name not in self.dpad:
-            raise ValueError("Unknown D-pad direction: %s" % name)
+        with self.lock:
+            if name not in self.dpad:
+                raise ValueError("Unknown D-pad direction: %s" % name)
 
-        self.dpad[name] = down
+            self.dpad[name] = down
 
-        x = 0
-        y = 0
+            x = 0
+            y = 0
 
-        if self.dpad["left"] and not self.dpad["right"]:
-            x = -1
-        elif self.dpad["right"] and not self.dpad["left"]:
-            x = 1
+            if self.dpad["left"] and not self.dpad["right"]:
+                x = -1
+            elif self.dpad["right"] and not self.dpad["left"]:
+                x = 1
 
-        if self.dpad["up"] and not self.dpad["down"]:
-            y = -1
-        elif self.dpad["down"] and not self.dpad["up"]:
-            y = 1
+            if self.dpad["up"] and not self.dpad["down"]:
+                y = -1
+            elif self.dpad["down"] and not self.dpad["up"]:
+                y = 1
 
-        self.controller.abs(ABS_HAT0X, x)
-        self.controller.abs(ABS_HAT0Y, y)
+            self.controller.abs(ABS_HAT0X, x)
+            self.controller.abs(ABS_HAT0Y, y)
 
     def release_all(self):
-        for code in list(self.held_keys):
+        with self.lock:
+            for code in list(self.held_keys):
+                try:
+                    self.keyboard.key(code, False)
+                except Exception:
+                    pass
+
+            for code in list(self.held_buttons):
+                try:
+                    self.controller.key(code, False)
+                except Exception:
+                    pass
+
+            self.held_keys.clear()
+            self.held_buttons.clear()
+
+            self.dpad = {
+                "up": False,
+                "down": False,
+                "left": False,
+                "right": False,
+            }
+
             try:
-                self.keyboard.key(code, False)
+                self.controller.abs(ABS_HAT0X, 0)
+                self.controller.abs(ABS_HAT0Y, 0)
             except Exception:
                 pass
-
-        for code in list(self.held_buttons):
-            try:
-                self.controller.key(code, False)
-            except Exception:
-                pass
-
-        self.held_keys.clear()
-        self.held_buttons.clear()
-
-        self.dpad = {
-            "up": False,
-            "down": False,
-            "left": False,
-            "right": False,
-        }
-
-        try:
-            self.controller.abs(ABS_HAT0X, 0)
-            self.controller.abs(ABS_HAT0Y, 0)
-        except Exception:
-            pass
 
     def destroy(self):
         self.release_all()
 
-        if self.keyboard:
-            self.keyboard.destroy()
+        with self.lock:
+            if self.keyboard:
+                self.keyboard.destroy()
+                self.keyboard = None
 
-        if self.controller:
-            self.controller.destroy()
+            if self.controller:
+                self.controller.destroy()
+                self.controller = None
 
 
 state = RemoteState()
@@ -712,8 +722,24 @@ def main():
 
     try:
         while running:
-            client, address = server.accept()
-            handle_client(client, address, args.path)
+            try:
+                client, address = server.accept()
+            except OSError:
+                if not running:
+                    break
+                continue
+
+            try:
+                client.settimeout(10)
+            except Exception:
+                pass
+
+            thread = threading.Thread(
+                target=handle_client,
+                args=(client, address, args.path),
+                daemon=True,
+            )
+            thread.start()
     finally:
         try:
             server.close()
@@ -897,6 +923,7 @@ print_status() {
     fi
 
     print_line "SCRIPT_INSTALLED=$SCRIPT_INSTALLED"
+    print_line "VERSION=$SCRIPT_VERSION"
     print_line "BASE_EXISTS=$BASE_EXISTS"
     print_line "CONFIG_EXISTS=$CONFIG_EXISTS"
     print_line "DAEMON_INSTALLED=$DAEMON_INSTALLED"
@@ -940,6 +967,7 @@ status_text() {
     fi
 
     cat <<EOF
+Version: $SCRIPT_VERSION
 Status: $DAEMON_RUNNING_TEXT
 Daemon: $DAEMON_INSTALLED_TEXT
 Boot: $BOOT_TEXT

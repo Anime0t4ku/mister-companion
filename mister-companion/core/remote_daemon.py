@@ -25,6 +25,20 @@ def app_base_dir() -> Path:
 
 BASE_DIR = app_base_dir()
 LOCAL_REMOTE_SCRIPT_PATH = BASE_DIR / "assets" / "companion_remote.sh"
+BUNDLED_REMOTE_SCRIPT_VERSION = "1.0.1"
+
+
+def _version_tuple(value: str):
+    parts = []
+    for part in str(value or "").strip().split("."):
+        try:
+            parts.append(int(part))
+        except Exception:
+            parts.append(0)
+    while len(parts) < 3:
+        parts.append(0)
+    return tuple(parts[:3])
+
 
 
 @dataclass
@@ -36,6 +50,7 @@ class RemoteDaemonStatus:
     port_listening: bool = False
     startup_enabled: bool = False
     version: str = ""
+    bundled_version: str = BUNDLED_REMOTE_SCRIPT_VERSION
     raw_output: str = ""
     error: str = ""
 
@@ -50,6 +65,22 @@ class RemoteDaemonStatus:
     @property
     def ready(self) -> bool:
         return self.installed and self.running and self.port_listening
+
+    @property
+    def update_available(self) -> bool:
+        if not self.script_exists:
+            return False
+
+        installed_version = str(self.version or "").strip()
+
+        if not installed_version:
+            return True
+
+        return _version_tuple(installed_version) < _version_tuple(self.bundled_version)
+
+    @property
+    def version_label(self) -> str:
+        return str(self.version or "Unknown").strip() or "Unknown"
 
 
 def remote_websocket_url(host: str) -> str:
@@ -88,7 +119,8 @@ def _parse_status_output(output: str) -> RemoteDaemonStatus:
         process_running=_parse_bool(_value(values, "process_running", "daemon_running")),
         port_listening=_parse_bool(_value(values, "port_listening")),
         startup_enabled=_parse_bool(_value(values, "startup_enabled", "start_on_boot")),
-        version=_value(values, "version"),
+        version=_value(values, "version", "script_version", "companion_remote_version"),
+        bundled_version=BUNDLED_REMOTE_SCRIPT_VERSION,
         raw_output=str(output or ""),
     )
 
@@ -215,7 +247,7 @@ EOF_COMPANION_REMOTE
 
 chmod +x '{REMOTE_SCRIPT_PATH}'
 
-echo "Installing Companion Remote..."
+echo "Installing or updating Companion Remote..."
 sh '{REMOTE_SCRIPT_PATH}' install --unattended
 INSTALL_RESULT=$?
 
@@ -235,7 +267,7 @@ if [ $START_RESULT -ne 0 ]; then
 fi
 
 echo ""
-echo "OK: Companion Remote installed and started."
+echo "OK: Companion Remote installed or updated and started."
 """
 
     return connection.run_command(command)
@@ -410,12 +442,31 @@ class RemoteWebSocketClient:
                     self.ws = None
 
     def send_json(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        with self.lock:
-            if self.ws is None:
-                self.connect()
+        last_error = None
 
-            self.ws.send(json.dumps(payload))
-            raw = self.ws.recv()
+        for attempt in range(2):
+            with self.lock:
+                if self.ws is None:
+                    self.connect()
+
+                try:
+                    self.ws.send(json.dumps(payload))
+                    raw = self.ws.recv()
+                    break
+                except Exception as e:
+                    last_error = e
+
+                    try:
+                        self.ws.close()
+                    except Exception:
+                        pass
+
+                    self.ws = None
+
+                    if attempt == 1:
+                        raise RuntimeError(f"WebSocket command failed: {last_error}")
+        else:
+            raise RuntimeError(f"WebSocket command failed: {last_error}")
 
         try:
             result = json.loads(raw)
