@@ -1,45 +1,81 @@
 name: Feature Request
-description: Suggest a new feature for MiSTer Companion
+description: Suggest an improvement for MiSTer Companion
 title: "[FEATURE] "
-labels: ["enhancement"]
-
+labels:
+  - enhancement
 body:
+  - type: markdown
+    attributes:
+      value: |
+        Have an idea that could improve MiSTer Companion? Keep the request focused and explain how it would help users.
 
-- type: markdown
-  attributes:
-    value: |
-      Have an idea to improve MiSTer Companion?
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Desktop
+        - Mobile
+        - Desktop and Mobile
+    validations:
+      required: true
 
-      Describe your feature below.
+  - type: dropdown
+    id: desktop_platform
+    attributes:
+      label: Desktop Operating System
+      description: Select Not Applicable when the request is only for Mobile.
+      options:
+        - Windows
+        - Linux
+        - Windows and Linux
+        - Not Applicable
+    validations:
+      required: true
 
-- type: textarea
-  id: feature
-  attributes:
-    label: Feature Description
-    description: What feature would you like to see added?
-  validations:
-    required: true
+  - type: dropdown
+    id: mobile_platform
+    attributes:
+      label: Mobile Operating System
+      description: Android is currently the only supported Mobile platform.
+      options:
+        - Android
+        - Not Applicable
+    validations:
+      required: true
 
-- type: textarea
-  id: problem
-  attributes:
-    label: Problem or Motivation
-    description: What problem does this feature solve?
+  - type: textarea
+    id: feature
+    attributes:
+      label: Feature Description
+      description: What would you like to be added or changed?
+    validations:
+      required: true
 
-- type: textarea
-  id: solution
-  attributes:
-    label: Proposed Solution
-    description: How do you imagine this working?
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Why Is This Useful?
+      description: What problem would this solve or what would it improve?
+    validations:
+      required: true
 
-- type: textarea
-  id: alternatives
-  attributes:
-    label: Alternatives Considered
-    description: Have you considered other approaches?
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Suggested Behavior
+      description: Briefly explain how you imagine the feature working.
 
-- type: textarea
-  id: additional
-  attributes:
-    label: Additional Context
-    description: Screenshots, examples, or references.
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Information
+      description: Add mockups, screenshots, examples, or relevant links.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before Submitting
+      options:
+        - label: I searched the existing issues and did not find the same request.
+          required: true

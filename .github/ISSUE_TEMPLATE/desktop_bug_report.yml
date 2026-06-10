@@ -1,0 +1,115 @@
+name: Desktop Bug Report
+description: Report a problem with MiSTer Companion Desktop
+title: "[DESKTOP BUG] "
+labels:
+  - bug
+  - desktop
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a MiSTer Companion Desktop issue.
+
+        Please check that you are using the latest release and search existing issues before submitting.
+
+  - type: input
+    id: version
+    attributes:
+      label: MiSTer Companion Version
+      description: Which Desktop version are you using?
+      placeholder: e.g. v4.5.3
+    validations:
+      required: true
+
+  - type: dropdown
+    id: operating_system
+    attributes:
+      label: Operating System
+      options:
+        - Windows
+        - Linux
+    validations:
+      required: true
+
+  - type: dropdown
+    id: installation_type
+    attributes:
+      label: Installation Type
+      options:
+        - Executable
+        - Python Script
+    validations:
+      required: true
+
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Mode
+      options:
+        - Online Mode
+        - Offline Mode
+        - Both
+        - Not Applicable
+    validations:
+      required: true
+
+  - type: input
+    id: affected_feature
+    attributes:
+      label: Affected Tab or Feature
+      description: Which part of MiSTer Companion is affected?
+      placeholder: e.g. Connection, MiSTer Settings, Scripts, Extras
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Describe the Bug
+      description: Explain what happened and include any important context.
+      placeholder: Describe the problem clearly.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      placeholder: |
+        1. Open MiSTer Companion
+        2. Go to ...
+        3. Select ...
+        4. The problem occurs
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or Console Output
+      description: Paste relevant errors or console output here. Remove private information first.
+      render: shell
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Information
+      description: Add screenshots, videos, or other useful details.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before Submitting
+      options:
+        - label: I am using the latest available version of MiSTer Companion Desktop.
+          required: true
+        - label: I searched the existing issues and did not find the same problem.
+          required: true
