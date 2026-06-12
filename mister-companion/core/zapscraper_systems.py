@@ -195,7 +195,7 @@ SUPPORTED_SYSTEMS = {
     "GameNWatch": {
         "label": "Game & Watch",
         "screenscraper_id": 52,
-        "extensions": [".gnw", ".zip", ".7z"],
+        "extensions": [".bin", ".zip", ".7z"],
     },
     "GBA": {
         "label": "Game Boy Advance",
