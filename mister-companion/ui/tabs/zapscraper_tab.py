@@ -855,6 +855,14 @@ class ZapScraperTab(QWidget):
         self.source_location_label.setWordWrap(True)
         source_layout.addWidget(self.source_location_label)
 
+        self.source_mode_notice = QLabel(
+            "SD card access is only available in Offline Mode. "
+            "Custom local and network folders can still be used in Online Mode."
+        )
+        self.source_mode_notice.setWordWrap(True)
+        self.source_mode_notice.setStyleSheet("color: gray;")
+        source_layout.addWidget(self.source_mode_notice)
+
         right_layout.addWidget(source_group)
 
         options_group = QGroupBox("Scraper Options")
@@ -1363,7 +1371,21 @@ class ZapScraperTab(QWidget):
         custom_mode = source_mode == SOURCE_CUSTOM_GAMES_FOLDER
         sd_root = self._sd_root()
         custom_folder = getattr(self, "custom_games_folder", "")
+        is_offline = self._is_offline_mode()
 
+        model = self.source_combo.model()
+        sd_item = model.item(self.source_combo.findText(SOURCE_SELECTED_SD))
+        if sd_item is not None:
+            sd_item.setEnabled(is_offline)
+
+        if not is_offline and source_mode == SOURCE_SELECTED_SD:
+            custom_index = self.source_combo.findText(SOURCE_CUSTOM_GAMES_FOLDER)
+            if custom_index >= 0:
+                self.source_combo.setCurrentIndex(custom_index)
+                source_mode = SOURCE_CUSTOM_GAMES_FOLDER
+                custom_mode = True
+
+        self.source_mode_notice.setVisible(not is_offline)
         self.browse_custom_folder_button.setEnabled(custom_mode and not self._is_busy())
 
         if custom_mode:
@@ -1464,7 +1486,14 @@ class ZapScraperTab(QWidget):
         return ""
 
     def _has_usable_source(self) -> bool:
-        return bool(self._is_offline_mode() and self._active_source_path())
+        source_path = self._active_source_path()
+        if not source_path:
+            return False
+
+        if self._active_source_mode() == SOURCE_CUSTOM_GAMES_FOLDER:
+            return True
+
+        return self._is_offline_mode()
 
     def _scan_cache_identity(self):
         source_path = self._active_source_path()
@@ -2146,19 +2175,18 @@ class ZapScraperTab(QWidget):
         is_offline = self._is_offline_mode()
         busy = self._is_busy()
 
-        if is_offline and not busy:
+        if not busy:
             self.sync_scan_cache_for_source(force=False)
 
         can_use_source = self._has_usable_source()
 
-        self.source_combo.setEnabled(is_offline and not busy)
+        self.source_combo.setEnabled(not busy)
         self.browse_custom_folder_button.setEnabled(
-            is_offline
-            and not busy
+            not busy
             and self.source_combo.currentText() == SOURCE_CUSTOM_GAMES_FOLDER
         )
 
-        enabled = bool(is_offline and can_use_source and not busy)
+        enabled = bool(can_use_source and not busy)
 
         self.scan_button.setEnabled(enabled)
         self.scrape_button.setEnabled(enabled)
@@ -2168,10 +2196,10 @@ class ZapScraperTab(QWidget):
             not busy and self.systems_list.currentItem() is not None
         )
 
-        self.username_edit.setEnabled(is_offline and not busy and not self.logged_in)
-        self.password_edit.setEnabled(is_offline and not busy and not self.logged_in)
-        self.login_button.setEnabled(is_offline and not busy and not self.logged_in)
-        self.logout_button.setEnabled(is_offline and not busy and self.logged_in)
+        self.username_edit.setEnabled(not busy and not self.logged_in)
+        self.password_edit.setEnabled(not busy and not self.logged_in)
+        self.login_button.setEnabled(not busy and not self.logged_in)
+        self.logout_button.setEnabled(not busy and self.logged_in)
 
         self.output_format_combo.setEnabled(enabled)
         self.image_source_combo.setEnabled(enabled and not self._is_zaparoo_companion_mode())

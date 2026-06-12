@@ -192,6 +192,11 @@ SUPPORTED_SYSTEMS = {
         "screenscraper_id": 21,
         "extensions": [".gg", ".zip", ".7z"],
     },
+    "GameNWatch": {
+        "label": "Game & Watch",
+        "screenscraper_id": 52,
+        "extensions": [".gnw", ".zip", ".7z"],
+    },
     "GBA": {
         "label": "Game Boy Advance",
         "screenscraper_id": 12,
@@ -346,6 +351,11 @@ SUPPORTED_SYSTEMS = {
         "label": "Vectrex",
         "screenscraper_id": 102,
         "extensions": [".vec", ".bin", ".rom", ".zip", ".7z"],
+    },
+    "Virtual Boy": {
+        "label": "Virtual Boy",
+        "screenscraper_id": 11,
+        "extensions": [".vb", ".zip", ".7z"],
     },
     "WonderSwan": {
         "label": "WonderSwan",

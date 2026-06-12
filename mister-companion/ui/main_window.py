@@ -12,7 +12,6 @@ from PyQt6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
-    QStackedWidget,
     QTabWidget,
     QVBoxLayout,
     QWidget,
@@ -317,6 +316,7 @@ class MainWindow(QMainWindow):
         self.connection_check_worker = None
         self.connection_fail_count = 0
         self.connection_fail_threshold = 3
+        self._connected_session_active = False
 
         self.reboot_reconnect_worker = None
         self.reboot_reconnect_attempts = 0
@@ -474,15 +474,18 @@ class MainWindow(QMainWindow):
         self.scripts_tab = ScriptsTab(self)
         self.tabs.addTab(self.scripts_tab, self.tab_icon("scripts"), "Scripts")
 
-        self.zaparoo_tab_stack = QStackedWidget()
         self.zapscripts_tab = ZapScriptsTab(self)
-        self.zapscraper_tab = ZapScraperTab(self)
-        self.zaparoo_tab_stack.addWidget(self.zapscripts_tab)
-        self.zaparoo_tab_stack.addWidget(self.zapscraper_tab)
-        self.zaparoo_tab_index = self.tabs.addTab(
-            self.zaparoo_tab_stack,
+        self.tabs.addTab(
+            self.zapscripts_tab,
             self.tab_icon("zapscripts"),
             "ZapScripts",
+        )
+
+        self.zapscraper_tab = ZapScraperTab(self)
+        self.tabs.addTab(
+            self.zapscraper_tab,
+            self.tab_icon("zapscripts"),
+            "ZapScraper",
         )
 
         self.savemanager_tab = SaveManagerTab(self)
@@ -969,36 +972,11 @@ class MainWindow(QMainWindow):
         if hasattr(self, "manuals_button"):
             self.manuals_button.setEnabled(self.is_online_mode())
 
-        self.update_zaparoo_tab_for_mode()
-
         if hasattr(self, "connection_tab") and hasattr(self.connection_tab, "update_mode_state"):
             self.connection_tab.update_mode_state()
 
     def current_content_widget(self):
-        current_widget = self.tabs.currentWidget()
-
-        if (
-            hasattr(self, "zaparoo_tab_stack")
-            and current_widget is self.zaparoo_tab_stack
-        ):
-            return self.zaparoo_tab_stack.currentWidget()
-
-        return current_widget
-
-    def update_zaparoo_tab_for_mode(self):
-        if not hasattr(self, "zaparoo_tab_stack"):
-            return
-
-        index = self.tabs.indexOf(self.zaparoo_tab_stack)
-
-        if self.is_offline_mode():
-            self.zaparoo_tab_stack.setCurrentWidget(self.zapscraper_tab)
-            if index >= 0:
-                self.tabs.setTabText(index, "ZapScraper")
-        else:
-            self.zaparoo_tab_stack.setCurrentWidget(self.zapscripts_tab)
-            if index >= 0:
-                self.tabs.setTabText(index, "ZapScripts")
+        return self.tabs.currentWidget()
 
     def _stop_worker(self, worker, wait_ms: int = 3000):
         if worker is None:
@@ -1509,12 +1487,6 @@ class MainWindow(QMainWindow):
         if current_widget is None:
             return
 
-        if (
-            hasattr(self, "zaparoo_tab_stack")
-            and current_widget is self.zaparoo_tab_stack
-        ):
-            current_widget = self.zaparoo_tab_stack.currentWidget()
-
         if current_widget is None:
             return
 
@@ -1550,7 +1522,11 @@ class MainWindow(QMainWindow):
         if self.is_offline_mode():
             return
 
+        if not self._connected_session_active:
+            return
+
         if not self.connection.is_connected():
+            self.handle_connection_lost()
             return
 
         if self.reboot_reconnect_timer.isActive():
@@ -1602,6 +1578,7 @@ class MainWindow(QMainWindow):
             return
 
         self.connection_fail_count = 0
+        self._connected_session_active = False
 
         try:
             self.connection.disconnect()
@@ -1643,6 +1620,7 @@ class MainWindow(QMainWindow):
         self.reboot_reconnect_look_for_ssh_keys = self.config_data.get("look_for_ssh_keys", False)
 
         self.connection_fail_count = 0
+        self._connected_session_active = False
         self.connection.mark_disconnected()
         self.connection_tab.apply_disconnected_state()
         self.update_all_tab_states(lightweight=True)
@@ -1723,6 +1701,7 @@ class MainWindow(QMainWindow):
             self.reboot_reconnect_timer.stop()
             self.reboot_reconnect_attempts = 0
             self.connection_fail_count = 0
+            self._connected_session_active = True
             self.reboot_reconnect_host = ""
             self.reboot_reconnect_username = ""
             self.reboot_reconnect_password = ""
@@ -1792,6 +1771,7 @@ class MainWindow(QMainWindow):
             error_message = "Unable to connect to MiSTer."
 
         if not success:
+            self._connected_session_active = False
             self.set_connection_status("Status: Disconnected")
             self.connection_tab.apply_disconnected_state()
             self.update_all_tab_states(lightweight=True)
@@ -1803,6 +1783,7 @@ class MainWindow(QMainWindow):
             self.config_data["last_connected"] = selected_name
             save_config(self.config_data)
 
+        self._connected_session_active = True
         self.set_connection_status(f"Status: Connected to {host}")
         self.connection_tab.apply_connected_state()
         self.apply_app_mode_state()
@@ -1810,6 +1791,8 @@ class MainWindow(QMainWindow):
         self.refresh_current_tab(force=True)
 
     def disconnect_from_mister(self):
+        self._connected_session_active = False
+
         try:
             self.connection.disconnect()
         except Exception:
