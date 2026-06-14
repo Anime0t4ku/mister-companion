@@ -1055,41 +1055,18 @@ class ZapScriptsTab(QWidget):
                 self.start_load_db(check_zaparoo_state=False)
             return
 
-        self.db_path = self._get_db_path()
-
-        if self.load_worker is not None and self.load_worker.isRunning():
-            return
-
-        if self.db_path and self.db_path.exists():
-            try:
-                try:
-                    self.entries = read_media_db_entries(
-                        self.db_path,
-                        cancel_callback=lambda: False,
-                    )
-                except TypeError:
-                    self.entries = read_media_db_entries(self.db_path)
-            except Exception:
-                self.entries = []
-        else:
-            self.entries = []
-
+        self._request_load_worker_stop()
+        self.db_path = None
+        self.entries = []
         self.scripts = []
-        self._db_loaded_once = True
+        self.filtered_entries = []
+        self._db_loaded_once = False
+        self._loading_db = False
 
-        systems = sorted(
-            {
-                item.get("system", "Unknown")
-                for item in self.entries
-                if item.get("type") == "game"
-            },
-            key=str.casefold,
-        )
-
-        self._rebuild_systems(systems)
-        self._filter()
+        self._rebuild_systems([])
+        self._refresh_list()
 
         self.progress.setRange(0, 100)
         self.progress.setValue(0)
-        self.status.setText("No library found")
+        self.status.setText("Connect to your MiSTer to use ZapScripts")
         self._clear_refreshing_status_style()
