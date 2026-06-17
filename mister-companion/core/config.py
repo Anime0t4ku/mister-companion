@@ -18,6 +18,7 @@ DEFAULT_CONFIG = {
     "theme_mode": "auto",
     "hide_update_all_warning": False,
     "hide_zapscripts_scan_notice": False,
+    "check_updates_on_startup": True,
     "use_ssh_agent": False,
     "look_for_ssh_keys": False,
 }

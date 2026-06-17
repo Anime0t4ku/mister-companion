@@ -46,6 +46,7 @@ from ui.dialogs.remote_dialog import RemoteDialog
 from ui.dialogs.retroachievements_dialog import RetroAchievementsDialog
 from ui.dialogs.setup_notice_dialog import SetupNoticeDialog
 from ui.dialogs.support_dialog import SupportDialog
+from ui.dialogs.app_settings_dialog import AppSettingsDialog
 from ui.dialogs.changelog_dialog import ChangelogDialog
 from ui.dialogs.update_available_dialog import UpdateAvailableDialog
 from ui.tabs.connection_tab import ConnectionTab
@@ -382,17 +383,7 @@ class MainWindow(QMainWindow):
 
         bottom_bar.addStretch()
 
-        self.check_update_button = QPushButton("Check for Updates")
-        self.check_update_button.clicked.connect(self.check_for_updates_manual)
-        bottom_bar.addWidget(self.check_update_button)
-
-        self.support_button = QPushButton("Support")
-        self.support_button.clicked.connect(self.open_support_dialog)
-        bottom_bar.addWidget(self.support_button)
-
-        self.feedback_button = QPushButton("Feedback")
-        self.feedback_button.clicked.connect(self.open_feedback)
-        bottom_bar.addWidget(self.feedback_button)
+        self.check_update_button = None
 
         self.remote_button = QPushButton("Remote")
         self.remote_button.clicked.connect(self.open_remote)
@@ -415,6 +406,12 @@ class MainWindow(QMainWindow):
         self.theme_combo = QComboBox()
         self.theme_combo.addItems(["Auto", "Light", "Dark"])
         bottom_bar.addWidget(self.theme_combo)
+
+        self.settings_button = QPushButton()
+        self.settings_button.setToolTip("App Settings")
+        self.settings_button.setFixedWidth(34)
+        self.settings_button.clicked.connect(self.open_app_settings)
+        bottom_bar.addWidget(self.settings_button)
 
         content_layout.addLayout(bottom_bar)
 
@@ -570,6 +567,13 @@ class MainWindow(QMainWindow):
         dialog = RetroAchievementsDialog(self)
         dialog.exec()
 
+    def open_app_settings(self):
+        if self._closing:
+            return
+
+        dialog = AppSettingsDialog(self)
+        dialog.exec()
+
     def open_support_dialog(self):
         if self._closing:
             return
@@ -655,6 +659,17 @@ class MainWindow(QMainWindow):
 
         resolved_mode = resolve_theme_mode(mode)
         self.title_bar.set_logo_mode(resolved_mode)
+        self.update_settings_button_icon(resolved_mode)
+
+    def update_settings_button_icon(self, resolved_mode: str = ""):
+        if not hasattr(self, "settings_button"):
+            return
+
+        if not resolved_mode:
+            resolved_mode = resolve_theme_mode(self.config_data.get("theme_mode", "auto"))
+
+        icon_name = "settings_dark_mode" if resolved_mode == "dark" else "settings_light_mode"
+        self.settings_button.setIcon(self.tab_icon(icon_name))
 
     def apply_windows_native_corner_radius(self):
         if not sys.platform.startswith("win"):
@@ -1255,6 +1270,10 @@ class MainWindow(QMainWindow):
             return
 
         self.startup_update_check_done = True
+
+        if not self.config_data.get("check_updates_on_startup", True):
+            return
+
         self.start_update_check(show_no_update=False, show_errors=False)
 
     def check_for_updates_manual(self):
@@ -1270,8 +1289,9 @@ class MainWindow(QMainWindow):
         if self.update_check_worker is not None and self.update_check_worker.isRunning():
             return
 
-        self.check_update_button.setEnabled(False)
-        self.check_update_button.setText("Checking...")
+        if self.check_update_button is not None:
+            self.check_update_button.setEnabled(False)
+            self.check_update_button.setText("Checking...")
 
         self.update_check_worker = UpdateCheckWorker()
         self.update_check_worker.show_no_update = show_no_update
@@ -1370,8 +1390,9 @@ class MainWindow(QMainWindow):
         if self._closing:
             return
 
-        self.check_update_button.setEnabled(True)
-        self.check_update_button.setText("Check for Updates")
+        if self.check_update_button is not None:
+            self.check_update_button.setEnabled(True)
+            self.check_update_button.setText("Check for Updates")
         self.update_check_worker = None
 
     def _managed_tabs(self):
