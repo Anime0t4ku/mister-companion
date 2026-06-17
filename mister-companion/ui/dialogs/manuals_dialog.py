@@ -3,8 +3,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-from PyQt6.QtCore import QBuffer, QByteArray, QIODevice, QSize, Qt, QThread, pyqtSignal
-from PyQt6.QtGui import QImage, QKeySequence, QPixmap, QShortcut
+from PyQt6.QtCore import QBuffer, QByteArray, QIODevice, QPoint, QSize, Qt, QThread, pyqtSignal
+from PyQt6.QtGui import QImage, QKeySequence, QPalette, QPixmap, QShortcut
 from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -12,6 +12,7 @@ from PyQt6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QListWidget,
     QListWidgetItem,
     QMessageBox,
@@ -131,6 +132,111 @@ class ManualsCacheWorker(QThread):
             self.error.emit(str(e))
 
 
+class ManualPreviewArea(QScrollArea):
+    zoom_requested = pyqtSignal(int)
+    active_changed = pyqtSignal(bool)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.active = False
+        self.has_pdf = False
+        self.can_pan = False
+        self.dragging = False
+        self.drag_start_pos = QPoint()
+        self.drag_start_h = 0
+        self.drag_start_v = 0
+
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setFrameShape(QFrame.Shape.StyledPanel)
+        self.setWidgetResizable(False)
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.update_active_style()
+
+    def set_has_pdf(self, has_pdf):
+        self.has_pdf = bool(has_pdf)
+        if not self.has_pdf:
+            self.set_active(False)
+
+    def set_can_pan(self, can_pan):
+        self.can_pan = bool(can_pan)
+        if not self.can_pan:
+            self.dragging = False
+            if self.active:
+                self.viewport().setCursor(Qt.CursorShape.ArrowCursor)
+
+    def set_active(self, active):
+        active = bool(active and self.has_pdf)
+        if self.active == active:
+            return
+
+        self.active = active
+        self.update_active_style()
+        self.active_changed.emit(self.active)
+
+        if not self.active:
+            self.dragging = False
+            self.viewport().setCursor(Qt.CursorShape.ArrowCursor)
+        elif self.can_pan:
+            self.viewport().setCursor(Qt.CursorShape.OpenHandCursor)
+
+    def update_active_style(self):
+        if self.active:
+            color = self.palette().color(QPalette.ColorRole.Highlight).name()
+            self.setStyleSheet(f"QScrollArea {{ border: 2px solid {color}; border-radius: 4px; }}")
+        else:
+            self.setStyleSheet("QScrollArea { border: 1px solid rgba(127, 127, 127, 90); border-radius: 4px; }")
+
+    def mousePressEvent(self, event):
+        self.setFocus()
+        self.set_active(True)
+
+        if event.button() == Qt.MouseButton.LeftButton and self.can_pan:
+            self.dragging = True
+            self.drag_start_pos = event.position().toPoint()
+            self.drag_start_h = self.horizontalScrollBar().value()
+            self.drag_start_v = self.verticalScrollBar().value()
+            self.viewport().setCursor(Qt.CursorShape.ClosedHandCursor)
+            event.accept()
+            return
+
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self.dragging:
+            delta = event.position().toPoint() - self.drag_start_pos
+            self.horizontalScrollBar().setValue(self.drag_start_h - delta.x())
+            self.verticalScrollBar().setValue(self.drag_start_v - delta.y())
+            event.accept()
+            return
+
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if self.dragging and event.button() == Qt.MouseButton.LeftButton:
+            self.dragging = False
+            self.viewport().setCursor(
+                Qt.CursorShape.OpenHandCursor if self.active and self.can_pan else Qt.CursorShape.ArrowCursor
+            )
+            event.accept()
+            return
+
+        super().mouseReleaseEvent(event)
+
+    def wheelEvent(self, event):
+        if self.active and self.has_pdf:
+            delta = event.angleDelta().y()
+            if delta:
+                self.zoom_requested.emit(1 if delta > 0 else -1)
+                event.accept()
+                return
+
+        super().wheelEvent(event)
+
+    def focusOutEvent(self, event):
+        self.set_active(False)
+        super().focusOutEvent(event)
+
+
 class ManualsDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -146,6 +252,7 @@ class ManualsDialog(QDialog):
 
         self.current_system = ""
         self.current_pdf_item = None
+        self.current_pdf_entries = []
         self.current_cached_pdf_path = None
         self.current_pdf_is_temp = False
         self.has_persistent_cached_manuals = has_cached_manuals()
@@ -155,6 +262,8 @@ class ManualsDialog(QDialog):
         self.pdf_buffer = None
         self.current_page = 0
         self.page_count = 0
+        self.zoom_factor = 1.0
+        self.zoom_fit_mode = True
 
         self.setWindowTitle("Manuals")
         self.resize(1200, 760)
@@ -172,10 +281,17 @@ class ManualsDialog(QDialog):
         self.systems_list.setMaximumWidth(260)
         content_layout.addWidget(self.wrap_panel("Systems", self.systems_list), 1)
 
+        self.manual_search_edit = QLineEdit()
+        self.manual_search_edit.setPlaceholderText("Search manuals...")
+        self.manual_search_edit.textChanged.connect(self.filter_manuals)
+
         self.pdfs_list = QListWidget()
         self.pdfs_list.setMinimumWidth(260)
         self.pdfs_list.setMaximumWidth(360)
-        content_layout.addWidget(self.wrap_panel("PDF Manuals", self.pdfs_list), 1)
+        content_layout.addWidget(
+            self.wrap_panel("PDF Manuals", self.pdfs_list, extra_widget=self.manual_search_edit),
+            1,
+        )
 
         viewer_panel = QFrame()
         viewer_panel.setFrameShape(QFrame.Shape.StyledPanel)
@@ -186,6 +302,30 @@ class ManualsDialog(QDialog):
         viewer_title = QLabel("PDF Viewer")
         viewer_title.setStyleSheet("font-weight: bold;")
         viewer_layout.addWidget(viewer_title)
+
+        zoom_layout = QHBoxLayout()
+        zoom_layout.setSpacing(8)
+
+        self.zoom_out_button = QPushButton("Zoom -")
+        self.zoom_out_button.clicked.connect(self.zoom_out)
+
+        self.zoom_label = QLabel("Fit")
+        self.zoom_label.setMinimumWidth(60)
+        self.zoom_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self.zoom_in_button = QPushButton("Zoom +")
+        self.zoom_in_button.clicked.connect(self.zoom_in)
+
+        self.zoom_fit_button = QPushButton("Fit")
+        self.zoom_fit_button.clicked.connect(self.zoom_to_fit)
+
+        zoom_layout.addStretch()
+        zoom_layout.addWidget(self.zoom_out_button)
+        zoom_layout.addWidget(self.zoom_label)
+        zoom_layout.addWidget(self.zoom_in_button)
+        zoom_layout.addWidget(self.zoom_fit_button)
+        zoom_layout.addStretch()
+        viewer_layout.addLayout(zoom_layout)
 
         self.viewer_status_label = QLabel("Select a manual to view it.")
         self.viewer_status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -201,11 +341,11 @@ class ManualsDialog(QDialog):
             QSizePolicy.Policy.Expanding,
         )
 
-        self.scroll_area = QScrollArea()
-        self.scroll_area.setWidgetResizable(True)
-        self.scroll_area.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.scroll_area = ManualPreviewArea()
+        self.scroll_area.zoom_requested.connect(self.adjust_zoom_from_wheel)
 
         viewer_holder = QWidget()
+        viewer_holder.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         viewer_holder_layout = QVBoxLayout(viewer_holder)
         viewer_holder_layout.setContentsMargins(0, 0, 0, 0)
         viewer_holder_layout.addWidget(self.viewer_status_label)
@@ -266,7 +406,7 @@ class ManualsDialog(QDialog):
         self.update_page_buttons()
         self.refresh_systems()
 
-    def wrap_panel(self, title, widget):
+    def wrap_panel(self, title, widget, extra_widget=None):
         panel = QFrame()
         panel.setFrameShape(QFrame.Shape.StyledPanel)
 
@@ -278,6 +418,8 @@ class ManualsDialog(QDialog):
         label.setStyleSheet("font-weight: bold;")
 
         layout.addWidget(label)
+        if extra_widget is not None:
+            layout.addWidget(extra_widget)
         layout.addWidget(widget, 1)
 
         return panel
@@ -302,6 +444,8 @@ class ManualsDialog(QDialog):
     def refresh_systems(self):
         self.systems_list.clear()
         self.pdfs_list.clear()
+        self.current_pdf_entries = []
+        self.manual_search_edit.clear()
         self.set_viewer_message("Scanning manuals...")
 
         self.scan_worker = ManualsScanWorker(self.connection)
@@ -313,6 +457,7 @@ class ManualsDialog(QDialog):
     def on_systems_loaded(self, result):
         self.systems_list.clear()
         self.pdfs_list.clear()
+        self.current_pdf_entries = []
 
         self.has_persistent_cached_manuals = bool(
             result.get("has_persistent_cached_manuals", False)
@@ -350,6 +495,8 @@ class ManualsDialog(QDialog):
             return
 
         self.current_system = system_name
+        self.current_pdf_entries = []
+        self.manual_search_edit.clear()
         self.pdfs_list.clear()
         self.set_viewer_message("Scanning PDF manuals...")
 
@@ -363,12 +510,8 @@ class ManualsDialog(QDialog):
         if system_name != self.current_system:
             return
 
-        self.pdfs_list.clear()
-
-        for pdf in pdfs:
-            item = QListWidgetItem(pdf["name"])
-            item.setData(Qt.ItemDataRole.UserRole, pdf)
-            self.pdfs_list.addItem(item)
+        self.current_pdf_entries = list(pdfs)
+        self.filter_manuals()
 
         if pdfs:
             self.set_viewer_message("Select a manual to view it.")
@@ -381,6 +524,34 @@ class ManualsDialog(QDialog):
 
     def cleanup_pdf_scan_worker(self):
         self.pdf_scan_worker = None
+
+    def filter_manuals(self):
+        search_text = self.manual_search_edit.text().strip().lower()
+        self.pdfs_list.blockSignals(True)
+        self.pdfs_list.clear()
+
+        if not self.current_pdf_entries:
+            self.pdfs_list.blockSignals(False)
+            return
+
+        matches = []
+
+        for pdf in self.current_pdf_entries:
+            name = str(pdf.get("name", ""))
+            if not search_text or search_text in name.lower():
+                matches.append(pdf)
+
+        for pdf in matches:
+            item = QListWidgetItem(pdf["name"])
+            item.setData(Qt.ItemDataRole.UserRole, pdf)
+            self.pdfs_list.addItem(item)
+
+        if search_text and not matches:
+            item = QListWidgetItem("No manuals match your search.")
+            item.setFlags(Qt.ItemFlag.NoItemFlags)
+            self.pdfs_list.addItem(item)
+
+        self.pdfs_list.blockSignals(False)
 
     def on_pdf_selected(self, current, previous):
         if current is None:
@@ -518,6 +689,8 @@ class ManualsDialog(QDialog):
 
         self.page_count = self.pdf_document.pageCount()
         self.current_page = 0
+        self.zoom_factor = 1.0
+        self.zoom_fit_mode = True
 
         if self.page_count <= 0:
             self.set_viewer_message("PDF has no pages.")
@@ -534,6 +707,8 @@ class ManualsDialog(QDialog):
         try:
             self.page_image_label.clear()
             self.page_image_label.setPixmap(QPixmap())
+            self.scroll_area.set_has_pdf(False)
+            self.scroll_area.set_can_pan(False)
         except Exception:
             pass
 
@@ -544,6 +719,8 @@ class ManualsDialog(QDialog):
         self.pdf_buffer = None
         self.page_count = 0
         self.current_page = 0
+        self.zoom_factor = 1.0
+        self.zoom_fit_mode = True
         self.page_label.setText("")
         self.update_page_buttons()
 
@@ -574,21 +751,32 @@ class ManualsDialog(QDialog):
         except Exception:
             pass
 
-    def render_current_page(self):
+    def render_current_page(self, preserve_scroll=False):
         if not self.pdf_document or self.page_count <= 0:
             self.update_page_buttons()
             return
 
+        h_bar = self.scroll_area.horizontalScrollBar()
+        v_bar = self.scroll_area.verticalScrollBar()
+        h_ratio = h_bar.value() / h_bar.maximum() if preserve_scroll and h_bar.maximum() > 0 else 0.5
+        v_ratio = v_bar.value() / v_bar.maximum() if preserve_scroll and v_bar.maximum() > 0 else 0.5
+
         page_size = self.pdf_document.pagePointSize(self.current_page).toSize()
-        target_width = max(600, self.scroll_area.viewport().width() - 40)
+        viewport_width = max(1, self.scroll_area.viewport().width() - 40)
+        viewport_height = max(1, self.scroll_area.viewport().height() - 40)
 
-        if page_size.width() > 0:
-            scale = target_width / page_size.width()
+        if page_size.width() > 0 and page_size.height() > 0:
+            fit_scale = min(viewport_width / page_size.width(), viewport_height / page_size.height())
+        elif page_size.width() > 0:
+            fit_scale = viewport_width / page_size.width()
         else:
-            scale = 1.0
+            fit_scale = 1.0
 
-        target_height = int(page_size.height() * scale)
-        target_size = QSize(int(target_width), max(1, target_height))
+        fit_scale = max(0.1, fit_scale)
+        render_scale = fit_scale if self.zoom_fit_mode else fit_scale * self.zoom_factor
+        target_width = max(1, int(page_size.width() * render_scale))
+        target_height = max(1, int(page_size.height() * render_scale))
+        target_size = QSize(target_width, target_height)
 
         image = self.pdf_document.render(
             self.current_page,
@@ -606,8 +794,72 @@ class ManualsDialog(QDialog):
 
         self.viewer_status_label.clear()
         self.page_image_label.setPixmap(pixmap)
+        self.page_image_label.adjustSize()
+        widget = self.scroll_area.widget()
+        if widget is not None:
+            widget.adjustSize()
         self.page_label.setText(f"Page {self.current_page + 1} / {self.page_count}")
+        self.scroll_area.set_has_pdf(True)
         self.update_page_buttons()
+        QApplication.processEvents()
+        self.update_preview_pan_state()
+
+        if preserve_scroll:
+            h_bar.setValue(int(h_bar.maximum() * h_ratio))
+            v_bar.setValue(int(v_bar.maximum() * v_ratio))
+
+    def set_zoom_factor(self, zoom_factor):
+        if not self.pdf_document or self.page_count <= 0:
+            return
+
+        self.zoom_fit_mode = False
+        self.zoom_factor = max(0.5, min(4.0, float(zoom_factor)))
+        self.render_current_page(preserve_scroll=True)
+
+    def zoom_in(self):
+        self.set_zoom_factor(self.zoom_factor + 0.1)
+
+    def zoom_out(self):
+        self.set_zoom_factor(self.zoom_factor - 0.1)
+
+    def zoom_to_fit(self):
+        if not self.pdf_document or self.page_count <= 0:
+            return
+
+        self.zoom_fit_mode = True
+        self.zoom_factor = 1.0
+        self.render_current_page()
+
+    def adjust_zoom_from_wheel(self, direction):
+        step = 0.1 if direction > 0 else -0.1
+        self.set_zoom_factor(self.zoom_factor + step)
+
+    def update_preview_pan_state(self):
+        has_pdf = bool(self.pdf_document and self.page_count > 0)
+        can_pan = bool(
+            has_pdf
+            and not self.zoom_fit_mode
+            and (
+                self.scroll_area.horizontalScrollBar().maximum() > 0
+                or self.scroll_area.verticalScrollBar().maximum() > 0
+            )
+        )
+        self.scroll_area.set_can_pan(can_pan)
+
+    def update_zoom_controls(self):
+        has_pdf = bool(self.pdf_document and self.page_count > 0)
+        self.zoom_out_button.setEnabled(has_pdf and not self.zoom_fit_mode and self.zoom_factor > 0.5)
+        self.zoom_in_button.setEnabled(has_pdf and (self.zoom_fit_mode or self.zoom_factor < 4.0))
+        self.zoom_fit_button.setEnabled(has_pdf and not self.zoom_fit_mode)
+
+        if not has_pdf:
+            self.zoom_label.setText("Fit")
+            return
+
+        if self.zoom_fit_mode:
+            self.zoom_label.setText("Fit")
+        else:
+            self.zoom_label.setText(f"{int(round(self.zoom_factor * 100))}%")
 
     def previous_page(self):
         if not self.pdf_document or self.page_count <= 0:
@@ -617,6 +869,8 @@ class ManualsDialog(QDialog):
             return
 
         self.current_page -= 1
+        self.zoom_factor = 1.0
+        self.zoom_fit_mode = True
         self.render_current_page()
 
     def next_page(self):
@@ -627,6 +881,8 @@ class ManualsDialog(QDialog):
             return
 
         self.current_page += 1
+        self.zoom_factor = 1.0
+        self.zoom_fit_mode = True
         self.render_current_page()
 
     def update_page_buttons(self):
@@ -637,6 +893,9 @@ class ManualsDialog(QDialog):
 
         if not has_pdf:
             self.page_label.setText("")
+
+        self.update_zoom_controls()
+        self.update_preview_pan_state()
 
     def update_cache_buttons(self):
         enabled = bool(self.has_persistent_cached_manuals)

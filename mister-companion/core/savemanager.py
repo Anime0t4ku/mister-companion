@@ -86,6 +86,28 @@ def list_backups_for_device(profile_name: str = "", ip_address: str = ""):
     return backups
 
 
+def get_device_backup_root_by_name(device_name: str) -> Path:
+    device_name = str(device_name or "").strip()
+    if not device_name:
+        return BACKUP_ROOT
+    return BACKUP_ROOT / device_name
+
+
+def list_backup_devices():
+    ensure_savemanager_dirs()
+    if not BACKUP_ROOT.exists():
+        return []
+
+    devices = []
+    for device_root in sorted([p for p in BACKUP_ROOT.iterdir() if p.is_dir()], key=lambda p: p.name.lower()):
+        backups = [p.name for p in device_root.iterdir() if p.is_dir()]
+        backups.sort(reverse=True)
+        if backups:
+            devices.append({"name": device_root.name, "backups": backups})
+
+    return devices
+
+
 def enforce_backup_retention(config_data, profile_name: str = "", ip_address: str = "", log_callback=None):
     retention = int(config_data.get("backup_retention", 10))
     if retention < 1:
@@ -293,7 +315,7 @@ def create_backup(connection, config_data, profile_name: str = "", ip_address: s
     enforce_backup_retention(config_data, profile_name, ip_address, log_callback=log_callback)
 
     if log_callback:
-        log_callback("Rebuilding sync folder from latest backups...")
+        log_callback("Rebuilding merge folder from latest backups...")
 
     rebuild_sync_folder_from_latest_backups(log_callback=log_callback)
 
@@ -328,17 +350,20 @@ def create_backup_local(sd_root, config_data, profile_name: str = "", ip_address
     enforce_backup_retention(config_data, profile_name, ip_address, log_callback=log_callback)
 
     if log_callback:
-        log_callback("Rebuilding sync folder from latest backups...")
+        log_callback("Rebuilding merge folder from latest backups...")
 
     rebuild_sync_folder_from_latest_backups(log_callback=log_callback)
 
     return backup_path
 
 
-def restore_backup(connection, backup_name: str, profile_name: str = "", ip_address: str = "", log_callback=None):
+def restore_backup(connection, backup_name: str, profile_name: str = "", ip_address: str = "", source_device_name: str = "", log_callback=None):
     ensure_remote_save_dirs(connection, log_callback=log_callback)
 
-    device_root = get_device_backup_root(profile_name, ip_address)
+    if source_device_name:
+        device_root = get_device_backup_root_by_name(source_device_name)
+    else:
+        device_root = get_device_backup_root(profile_name, ip_address)
     backup_path = device_root / backup_name
 
     if not backup_path.exists():
@@ -348,7 +373,7 @@ def restore_backup(connection, backup_name: str, profile_name: str = "", ip_addr
     savestates_path = backup_path / "savestates"
 
     if log_callback:
-        log_callback(f"Restoring backup: {backup_name}")
+        log_callback(f"Restoring backup from {device_root.name}: {backup_name}")
 
     sftp = connection.client.open_sftp()
     try:
@@ -361,11 +386,14 @@ def restore_backup(connection, backup_name: str, profile_name: str = "", ip_addr
         log_callback("Restore completed successfully.")
 
 
-def restore_backup_local(sd_root, backup_name: str, profile_name: str = "", ip_address: str = "", log_callback=None):
+def restore_backup_local(sd_root, backup_name: str, profile_name: str = "", ip_address: str = "", source_device_name: str = "", log_callback=None):
     ensure_local_save_dirs(sd_root, log_callback=log_callback)
 
     sd_root = Path(sd_root)
-    device_root = get_device_backup_root(profile_name, ip_address)
+    if source_device_name:
+        device_root = get_device_backup_root_by_name(source_device_name)
+    else:
+        device_root = get_device_backup_root(profile_name, ip_address)
     backup_path = device_root / backup_name
 
     if not backup_path.exists():
@@ -375,7 +403,7 @@ def restore_backup_local(sd_root, backup_name: str, profile_name: str = "", ip_a
     savestates_path = backup_path / "savestates"
 
     if log_callback:
-        log_callback(f"Restoring backup: {backup_name}")
+        log_callback(f"Restoring backup from {device_root.name}: {backup_name}")
 
     _copy_dir(saves_path, sd_root / LOCAL_SAVES_DIR)
     _copy_dir(savestates_path, sd_root / LOCAL_SAVESTATES_DIR)
@@ -393,7 +421,7 @@ def sync_saves(connection, log_callback=None):
 
     if not sync_saves_path.exists() or not sync_savestates_path.exists():
         if log_callback:
-            log_callback("Sync folder missing, rebuilding from latest backups...")
+            log_callback("Merge folder missing, rebuilding from latest backups...")
         rebuild_sync_folder_from_latest_backups(log_callback=log_callback)
 
     if log_callback:
@@ -413,7 +441,7 @@ def sync_saves(connection, log_callback=None):
         sftp.close()
 
     if log_callback:
-        log_callback("Sync completed successfully.")
+        log_callback("Merge completed successfully.")
 
 
 def sync_saves_local(sd_root, log_callback=None):
@@ -427,7 +455,7 @@ def sync_saves_local(sd_root, log_callback=None):
 
     if not sync_saves_path.exists() or not sync_savestates_path.exists():
         if log_callback:
-            log_callback("Sync folder missing, rebuilding from latest backups...")
+            log_callback("Merge folder missing, rebuilding from latest backups...")
         rebuild_sync_folder_from_latest_backups(log_callback=log_callback)
 
     if log_callback:
@@ -443,4 +471,4 @@ def sync_saves_local(sd_root, log_callback=None):
     _merge_local_dir_newer_into_local(sync_savestates_path, sd_root / LOCAL_SAVESTATES_DIR)
 
     if log_callback:
-        log_callback("Sync completed successfully.")
+        log_callback("Merge completed successfully.")

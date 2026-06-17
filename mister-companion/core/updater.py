@@ -10,6 +10,7 @@ import requests
 from core.open_helpers import open_uri
 
 from core.app_info import APP_VERSION, GITHUB_OWNER, GITHUB_REPO
+from core.config import CONFIG_PATH
 
 
 @dataclass
@@ -100,7 +101,7 @@ def get_mc_updater_filename() -> str:
 
 
 def get_mc_updater_path() -> Path:
-    return get_app_folder() / get_mc_updater_filename()
+    return CONFIG_PATH.resolve().parent / get_mc_updater_filename()
 
 
 def get_update_now_path() -> Path:

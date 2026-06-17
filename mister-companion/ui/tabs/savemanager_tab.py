@@ -4,6 +4,7 @@ from PyQt6.QtCore import QThread, pyqtSignal
 from PyQt6.QtWidgets import (
     QCheckBox,
     QDialog,
+    QComboBox,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -26,7 +27,7 @@ from core.savemanager import (
     ensure_savemanager_dirs,
     get_backup_count,
     get_device_backup_root,
-    list_backups_for_device,
+    list_backup_devices,
     open_folder,
     restore_backup,
     restore_backup_local,
@@ -53,20 +54,30 @@ class SaveManagerWorker(QThread):
 
 
 class RestoreBackupDialog(QDialog):
-    def __init__(self, backups, parent=None):
+    def __init__(self, backup_devices, parent=None):
         super().__init__(parent)
+        self.backup_devices = backup_devices
         self.setWindowTitle("Restore Backup")
-        self.setMinimumSize(520, 360)
+        self.setMinimumSize(560, 390)
 
         layout = QVBoxLayout(self)
 
-        info = QLabel("Select a backup to restore:")
+        info = QLabel("Choose which SaveManager backup you want to restore to the current MiSTer or selected SD Card.")
+        info.setWordWrap(True)
         layout.addWidget(info)
 
+        device_label = QLabel("Restore from device:")
+        layout.addWidget(device_label)
+
+        self.device_combo = QComboBox()
+        for entry in self.backup_devices:
+            self.device_combo.addItem(entry.get("name", ""))
+        layout.addWidget(self.device_combo)
+
+        backup_label = QLabel("Backup:")
+        layout.addWidget(backup_label)
+
         self.list_widget = QListWidget()
-        self.list_widget.addItems(backups)
-        if backups:
-            self.list_widget.setCurrentRow(0)
         layout.addWidget(self.list_widget)
 
         self.backup_before_restore_checkbox = QCheckBox("Backup current device before restoring")
@@ -83,8 +94,25 @@ class RestoreBackupDialog(QDialog):
         button_row.addWidget(self.cancel_button)
         layout.addLayout(button_row)
 
+        self.device_combo.currentIndexChanged.connect(self.populate_backups)
         self.restore_button.clicked.connect(self.accept)
         self.cancel_button.clicked.connect(self.reject)
+        self.list_widget.itemDoubleClicked.connect(lambda _: self.accept())
+        self.populate_backups()
+
+    def populate_backups(self):
+        self.list_widget.clear()
+        index = self.device_combo.currentIndex()
+        if index < 0 or index >= len(self.backup_devices):
+            return
+
+        backups = self.backup_devices[index].get("backups", [])
+        self.list_widget.addItems(backups)
+        if backups:
+            self.list_widget.setCurrentRow(0)
+
+    def selected_device(self):
+        return self.device_combo.currentText().strip()
 
     def selected_backup(self):
         item = self.list_widget.currentItem()
@@ -94,41 +122,41 @@ class RestoreBackupDialog(QDialog):
         return self.backup_before_restore_checkbox.isChecked()
 
 
-class SyncConfirmDialog(QDialog):
+class MergeConfirmDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Sync Saves")
+        self.setWindowTitle("Merge Saves")
         self.setMinimumWidth(420)
 
         layout = QVBoxLayout(self)
 
         info = QLabel(
-            "Sync merges local SaveManager data with the current MiSTer saves, using your PC as the middleman.\n\n"
+            "Merge combines local SaveManager data with the current MiSTer saves, using your PC as the middleman.\n\n"
             "Newest files are kept, then the merged result is uploaded back to the MiSTer.\n\n"
-            "This is a manual sync process.\n"
+            "This is a manual merge process.\n"
             "For automatic syncing, install ftp_save_sync from the Scripts tab (requires FTP access with write permissions)."
         )
         info.setWordWrap(True)
         layout.addWidget(info)
 
-        self.backup_checkbox = QCheckBox("Backup current device before syncing")
+        self.backup_checkbox = QCheckBox("Backup current device before merging")
         self.backup_checkbox.setChecked(True)
         layout.addWidget(self.backup_checkbox)
 
         button_row = QHBoxLayout()
         button_row.addStretch()
 
-        self.sync_button = QPushButton("Sync")
+        self.merge_button = QPushButton("Merge")
         self.cancel_button = QPushButton("Cancel")
 
-        button_row.addWidget(self.sync_button)
+        button_row.addWidget(self.merge_button)
         button_row.addWidget(self.cancel_button)
         layout.addLayout(button_row)
 
-        self.sync_button.clicked.connect(self.accept)
+        self.merge_button.clicked.connect(self.accept)
         self.cancel_button.clicked.connect(self.reject)
 
-    def backup_before_sync(self):
+    def backup_before_merge(self):
         return self.backup_checkbox.isChecked()
 
 
@@ -156,9 +184,9 @@ class SaveManagerTab(QWidget):
         main_group_layout.setSpacing(12)
 
         self.info_label = QLabel(
-            "SaveManager allows you to backup, restore and sync MiSTer saves and savestates.\n\n"
+            "SaveManager allows you to backup, restore and merge MiSTer saves and savestates.\n\n"
             "Backups are stored locally on your PC and are never modified.\n"
-            "The Sync folder is used to merge saves between devices."
+            "The Merge folder is used to combine saves between devices."
         )
         self.info_label.setWordWrap(True)
         self.info_label.setMaximumWidth(520)
@@ -175,7 +203,7 @@ class SaveManagerTab(QWidget):
 
         self.backup_button = QPushButton("Backup Saves")
         self.restore_button = QPushButton("Restore Backup")
-        self.sync_button = QPushButton("Sync Saves")
+        self.sync_button = QPushButton("Merge Saves")
 
         set_text_button_min_width(self.backup_button, 115)
         set_text_button_min_width(self.restore_button, 115)
@@ -223,7 +251,7 @@ class SaveManagerTab(QWidget):
         folder_row.setSpacing(12)
 
         self.open_backup_folder_button = QPushButton("Browse Backups")
-        self.open_sync_folder_button = QPushButton("Browse Sync Folder")
+        self.open_sync_folder_button = QPushButton("Browse Merge Folder")
 
         set_text_button_min_width(self.open_backup_folder_button, 115)
         set_text_button_min_width(self.open_sync_folder_button, 132)
@@ -493,18 +521,19 @@ class SaveManagerTab(QWidget):
         profile_name = self.get_current_profile_name()
         ip_address = self.get_current_ip()
 
-        backups = list_backups_for_device(profile_name=profile_name, ip_address=ip_address)
-        if not backups:
-            QMessageBox.warning(self, "Restore Backup", "No backups found for this device.")
+        backup_devices = list_backup_devices()
+        if not backup_devices:
+            QMessageBox.warning(self, "Restore Backup", "No SaveManager backups found.")
             return
 
-        dialog = RestoreBackupDialog(backups, self)
+        dialog = RestoreBackupDialog(backup_devices, self)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
 
+        selected_device = dialog.selected_device()
         selected_backup = dialog.selected_backup()
-        if not selected_backup:
-            QMessageBox.warning(self, "Restore Backup", "Select a backup first.")
+        if not selected_device or not selected_backup:
+            QMessageBox.warning(self, "Restore Backup", "Select a device and backup first.")
             return
 
         backup_before_restore = dialog.backup_before_restore()
@@ -527,6 +556,7 @@ class SaveManagerTab(QWidget):
                     selected_backup,
                     profile_name=profile_name,
                     ip_address=ip_address,
+                    source_device_name=selected_device,
                     log_callback=log,
                 )
         else:
@@ -545,6 +575,7 @@ class SaveManagerTab(QWidget):
                     selected_backup,
                     profile_name=profile_name,
                     ip_address=ip_address,
+                    source_device_name=selected_device,
                     log_callback=log,
                 )
 
@@ -554,11 +585,11 @@ class SaveManagerTab(QWidget):
         if not self.require_available():
             return
 
-        dialog = SyncConfirmDialog(self)
+        dialog = MergeConfirmDialog(self)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
 
-        backup_before_sync = dialog.backup_before_sync()
+        backup_before_merge = dialog.backup_before_merge()
         profile_name = self.get_current_profile_name()
         ip_address = self.get_current_ip()
 
@@ -566,8 +597,8 @@ class SaveManagerTab(QWidget):
             sd_root = self.get_offline_sd_root()
 
             def task(log):
-                if backup_before_sync:
-                    log("Creating safety backup before sync...")
+                if backup_before_merge:
+                    log("Creating safety backup before merge...")
                     create_backup_local(
                         sd_root,
                         self.main_window.config_data,
@@ -581,8 +612,8 @@ class SaveManagerTab(QWidget):
                 )
         else:
             def task(log):
-                if backup_before_sync:
-                    log("Creating safety backup before sync...")
+                if backup_before_merge:
+                    log("Creating safety backup before merge...")
                     create_backup(
                         self.connection,
                         self.main_window.config_data,

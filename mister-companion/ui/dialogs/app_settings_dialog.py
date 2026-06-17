@@ -1,4 +1,4 @@
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import QThread, Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QCheckBox,
     QDialog,
@@ -6,11 +6,29 @@ from PyQt6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QLabel,
+    QMessageBox,
     QPushButton,
     QVBoxLayout,
 )
 
+from core import mc_updater
 from core.config import save_config
+from ui.dialogs.mc_updater_progress_dialog import MCUpdaterProgressDialog
+
+
+class MCUpdaterCheckWorker(QThread):
+    result = pyqtSignal(object)
+    error = pyqtSignal(str)
+
+    def __init__(self, config_data: dict):
+        super().__init__()
+        self.config_data = config_data
+
+    def run(self):
+        try:
+            self.result.emit(mc_updater.check_update_status(self.config_data))
+        except Exception as e:
+            self.error.emit(str(e))
 
 
 class AppSettingsDialog(QDialog):
@@ -19,12 +37,16 @@ class AppSettingsDialog(QDialog):
 
         self.main_window = main_window
         self.config_data = main_window.config_data
+        self.mc_updater_check_worker = None
+        self.mc_updater_latest_version = ""
+        self.mc_updater_update_available = False
 
         self.setWindowTitle("App Settings")
-        self.setMinimumWidth(480)
+        self.setMinimumWidth(520)
 
         self.build_ui()
         self.load_values()
+        self.refresh_mc_updater_state()
 
     def build_ui(self):
         main_layout = QVBoxLayout(self)
@@ -52,6 +74,44 @@ class AppSettingsDialog(QDialog):
         update_row.addStretch()
         updates_layout.addLayout(update_row)
 
+        mc_updater_group = QGroupBox("MC-Updater")
+        mc_updater_layout = QVBoxLayout(mc_updater_group)
+        mc_updater_layout.setSpacing(8)
+
+        mc_updater_text = QLabel("MC-Updater enables automatic updates for MiSTer Companion.")
+        mc_updater_text.setWordWrap(True)
+        mc_updater_layout.addWidget(mc_updater_text)
+
+        self.mc_updater_status_label = QLabel("Status: Checking...")
+        self.mc_updater_status_label.setWordWrap(True)
+        mc_updater_layout.addWidget(self.mc_updater_status_label)
+
+        mc_updater_check_row = QHBoxLayout()
+        mc_updater_check_row.addStretch()
+        self.mc_updater_check_button = QPushButton("Check for MC-Updater Updates")
+        self.mc_updater_check_button.setMinimumWidth(230)
+        self.mc_updater_check_button.clicked.connect(self.check_mc_updater_updates)
+        mc_updater_check_row.addWidget(self.mc_updater_check_button)
+        mc_updater_check_row.addStretch()
+        mc_updater_layout.addLayout(mc_updater_check_row)
+
+        mc_updater_action_row = QHBoxLayout()
+        mc_updater_action_row.addStretch()
+
+        self.mc_updater_install_button = QPushButton("Install MC-Updater")
+        self.mc_updater_install_button.setMinimumWidth(170)
+        self.mc_updater_install_button.clicked.connect(self.install_or_update_mc_updater)
+        mc_updater_action_row.addWidget(self.mc_updater_install_button)
+
+        self.mc_updater_remove_button = QPushButton("Remove MC-Updater")
+        self.mc_updater_remove_button.setMinimumWidth(170)
+        self.mc_updater_remove_button.clicked.connect(self.remove_mc_updater)
+        mc_updater_action_row.addWidget(self.mc_updater_remove_button)
+
+        mc_updater_action_row.addStretch()
+        mc_updater_layout.addLayout(mc_updater_action_row)
+
+        updates_layout.addWidget(mc_updater_group)
         main_layout.addWidget(updates_group)
 
         notices_group = QGroupBox("Notices")
@@ -117,6 +177,73 @@ class AppSettingsDialog(QDialog):
             not bool(self.config_data.get("hide_zapscripts_scan_notice", False))
         )
 
+    def refresh_mc_updater_state(self, latest_status=None):
+        local_status = mc_updater.get_local_status(self.config_data)
+
+        self.mc_updater_latest_version = ""
+        self.mc_updater_update_available = False
+
+        if latest_status is not None:
+            self.mc_updater_latest_version = latest_status.latest_version
+            self.mc_updater_update_available = latest_status.update_available
+
+        if not local_status.supported:
+            self.mc_updater_status_label.setText("Status: Unsupported platform")
+            self.mc_updater_check_button.setEnabled(False)
+            self.mc_updater_install_button.setText("Install MC-Updater")
+            self.mc_updater_install_button.setEnabled(False)
+            self.mc_updater_remove_button.setEnabled(False)
+            return
+
+        self.mc_updater_check_button.setEnabled(local_status.installed)
+        self.mc_updater_remove_button.setEnabled(local_status.installed)
+
+        if not local_status.installed:
+            if self.mc_updater_latest_version:
+                self.mc_updater_status_label.setText(
+                    f"Status: Not installed, latest {self.mc_updater_latest_version}"
+                )
+            else:
+                self.mc_updater_status_label.setText("Status: Not installed")
+
+            self.mc_updater_install_button.setText("Install MC-Updater")
+            self.mc_updater_install_button.setEnabled(True)
+            return
+
+        if not local_status.installed_version:
+            if self.mc_updater_latest_version:
+                self.mc_updater_status_label.setText(
+                    f"Status: Installed, unknown version, latest {self.mc_updater_latest_version}"
+                )
+            else:
+                self.mc_updater_status_label.setText("Status: Installed, unknown version")
+
+            self.mc_updater_install_button.setText("Update MC-Updater")
+            self.mc_updater_install_button.setEnabled(True)
+            return
+
+        if self.mc_updater_update_available:
+            self.mc_updater_status_label.setText(
+                "Status: Update available, "
+                f"installed {local_status.installed_version}, "
+                f"latest {self.mc_updater_latest_version}"
+            )
+            self.mc_updater_install_button.setText("Update MC-Updater")
+            self.mc_updater_install_button.setEnabled(True)
+            return
+
+        if self.mc_updater_latest_version:
+            self.mc_updater_status_label.setText(
+                f"Status: Installed, up to date, {local_status.installed_version}"
+            )
+        else:
+            self.mc_updater_status_label.setText(
+                f"Status: Installed, {local_status.installed_version}"
+            )
+
+        self.mc_updater_install_button.setText("Install MC-Updater")
+        self.mc_updater_install_button.setEnabled(False)
+
     def save_and_accept(self):
         self.config_data["check_updates_on_startup"] = self.check_updates_on_startup_check.isChecked()
         self.config_data["hide_setup_notice"] = not self.show_setup_notice_check.isChecked()
@@ -128,6 +255,76 @@ class AppSettingsDialog(QDialog):
     def check_for_updates_now(self):
         self.save_current_values()
         self.main_window.check_for_updates_manual()
+
+    def check_mc_updater_updates(self):
+        if self.mc_updater_check_worker is not None and self.mc_updater_check_worker.isRunning():
+            return
+
+        self.save_current_values()
+        self.mc_updater_check_button.setEnabled(False)
+        self.mc_updater_check_button.setText("Checking...")
+
+        self.mc_updater_check_worker = MCUpdaterCheckWorker(self.config_data)
+        self.mc_updater_check_worker.result.connect(self.on_mc_updater_check_result)
+        self.mc_updater_check_worker.error.connect(self.on_mc_updater_check_error)
+        self.mc_updater_check_worker.finished.connect(self.on_mc_updater_check_finished)
+        self.mc_updater_check_worker.start()
+
+    def on_mc_updater_check_result(self, status):
+        self.refresh_mc_updater_state(status)
+
+    def on_mc_updater_check_error(self, message: str):
+        QMessageBox.warning(
+            self,
+            "MC-Updater Check Failed",
+            f"Could not check MC-Updater updates.\n\n{message}",
+        )
+        self.refresh_mc_updater_state()
+
+    def on_mc_updater_check_finished(self):
+        self.mc_updater_check_button.setText("Check for MC-Updater Updates")
+        local_status = mc_updater.get_local_status(self.config_data)
+        self.mc_updater_check_button.setEnabled(local_status.supported and local_status.installed)
+
+    def install_or_update_mc_updater(self):
+        self.save_current_values()
+        local_status = mc_updater.get_local_status(self.config_data)
+        action = "install"
+
+        if local_status.installed:
+            action = "update"
+
+        dialog = MCUpdaterProgressDialog(self, action, self.config_data)
+        dialog.exec()
+
+        self.mc_updater_latest_version = ""
+        self.mc_updater_update_available = False
+        self.refresh_mc_updater_state()
+
+    def remove_mc_updater(self):
+        local_status = mc_updater.get_local_status(self.config_data)
+        if not local_status.installed:
+            self.refresh_mc_updater_state()
+            return
+
+        answer = QMessageBox.question(
+            self,
+            "Remove MC-Updater",
+            "Remove MC-Updater from MiSTer Companion?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+
+        self.save_current_values()
+        dialog = MCUpdaterProgressDialog(self, "remove", self.config_data)
+        dialog.exec()
+
+        self.mc_updater_latest_version = ""
+        self.mc_updater_update_available = False
+        self.refresh_mc_updater_state()
 
     def open_support(self):
         self.main_window.open_support_dialog()
