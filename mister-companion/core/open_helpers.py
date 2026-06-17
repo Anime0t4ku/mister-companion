@@ -3,6 +3,7 @@ import platform
 import shutil
 import subprocess
 import sys
+import webbrowser
 from pathlib import Path
 
 
@@ -120,10 +121,19 @@ def open_uri(uri: str):
     if not uri:
         raise ValueError("No URI was provided.")
 
+    lower_uri = uri.lower()
+
     if sys.platform.startswith("win"):
-        if uri.startswith("smb://"):
+        if lower_uri.startswith(("http://", "https://", "mailto:")):
+            webbrowser.open(uri, new=2)
+            return
+
+        if lower_uri.startswith("smb://"):
             uri = uri.replace("smb://", "\\\\").replace("/", "\\")
-        subprocess.Popen(["explorer", uri])
+            subprocess.Popen(["explorer", uri])
+            return
+
+        os.startfile(uri)
         return
 
     if sys.platform == "darwin":

@@ -761,10 +761,13 @@ class RetroAchievementsDialog(QDialog):
         title.setStyleSheet("font-weight: bold; font-size: 16px;")
         title.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
 
+        self.refresh_button = QPushButton("Refresh")
+        set_text_button_min_width(self.refresh_button, 90)
         self.toggle_login_button = QPushButton("Settings")
         set_text_button_min_width(self.toggle_login_button, 90)
         header_row.addWidget(title)
         header_row.addStretch()
+        header_row.addWidget(self.refresh_button)
         header_row.addWidget(self.toggle_login_button)
 
         layout.addLayout(header_row)
@@ -787,7 +790,6 @@ class RetroAchievementsDialog(QDialog):
         self.get_api_key_button = QPushButton("Get API Key")
         set_text_button_min_width(self.get_api_key_button, 110)
         self.save_login_button = QPushButton("Save / Login")
-        self.refresh_button = QPushButton("Refresh")
 
         config_layout.addWidget(QLabel("Username:"), 0, 0)
         config_layout.addWidget(self.username_input, 0, 1, 1, 3)
@@ -800,7 +802,6 @@ class RetroAchievementsDialog(QDialog):
         login_buttons_row = QHBoxLayout()
         login_buttons_row.addStretch()
         login_buttons_row.addWidget(self.save_login_button)
-        login_buttons_row.addWidget(self.refresh_button)
         login_buttons_row.addStretch()
 
         config_layout.addLayout(login_buttons_row, 2, 0, 1, 4)
