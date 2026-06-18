@@ -282,13 +282,13 @@ jobs:
 
       - name: Package macOS App
         working-directory: mister-companion/dist
-        run: zip -r MiSTer-Companion-macOS.zip MiSTer-Companion.app
+        run: zip -r MiSTer-Companion-macOS-arm64.zip MiSTer-Companion.app
 
       - name: Upload macOS Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MiSTer-Companion-macOS
-          path: mister-companion/dist/MiSTer-Companion-macOS.zip
+          name: MiSTer-Companion-macOS-arm64
+          path: mister-companion/dist/MiSTer-Companion-macOS-arm64.zip
 
   # ============================================================
   # Pre-release Creation
@@ -327,7 +327,7 @@ jobs:
 
       - name: Move macOS Build
         run: |
-          mv dist/MiSTer-Companion-macOS.zip MiSTer-Companion-macOS.zip
+          mv dist/MiSTer-Companion-macOS-arm64.zip MiSTer-Companion-macOS-arm64.zip
 
       - name: Update Git Tag
         run: |
@@ -344,4 +344,4 @@ jobs:
           artifacts: |
             MiSTer-Companion-Windows-x86_64.zip
             MiSTer-Companion-Linux-x86_64.tar.gz
-            MiSTer-Companion-macOS.zip
+            MiSTer-Companion-macOS-arm64.zip
