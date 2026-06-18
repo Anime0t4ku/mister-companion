@@ -140,8 +140,7 @@ MiSTer Companion uses a tabbed interface to organize functionality.
 |------|----------|--------|------|
 | MiSTer Companion | Windows x86-64 | [![Build Status](https://github.com/Anime0t4ku/mister-companion/actions/workflows/build.yaml/badge.svg)](https://github.com/Anime0t4ku/mister-companion/actions/workflows/build.yaml) | [Download](https://github.com/Anime0t4ku/mister-companion/releases/download/Pre-release/MiSTer-Companion-Windows-x86_64.zip) |
 | MiSTer Companion | Linux x86-64 | [![Build Status](https://github.com/Anime0t4ku/mister-companion/actions/workflows/build.yaml/badge.svg)](https://github.com/Anime0t4ku/mister-companion/actions/workflows/build.yaml) | [Download](https://github.com/Anime0t4ku/mister-companion/releases/download/Pre-release/MiSTer-Companion-Linux-x86_64.tar.gz) |
-
-macOS users will have to wait just a bit longer for the official release.
+| MiSTer Companion | macOS | [![Build Status](https://github.com/Anime0t4ku/mister-companion/actions/workflows/build.yaml/badge.svg)](https://github.com/Anime0t4ku/mister-companion/actions/workflows/build.yaml) | [Download](https://github.com/Anime0t4ku/mister-companion/releases/download/Pre-release/MiSTer-Companion-macOS.zip) |
 
 ---
 
