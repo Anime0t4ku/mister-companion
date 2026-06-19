@@ -1629,7 +1629,7 @@ class ZapScraperTab(QWidget):
         self.set_busy_state(True)
 
         location = self._active_games_location_text()
-        self.append_output(f"Scanning {location} for supported console and handheld systems...")
+        self.append_output(f"Scanning {location} for supported systems...")
 
         self.last_scan_log_message = ""
         self.scan_worker = ZapScraperScanWorker(self._active_source_mode(), source_path)
@@ -1689,8 +1689,8 @@ class ZapScraperTab(QWidget):
                 f"Scan complete. Found {len(self.systems)} supported systems with {total_games} games."
             )
         else:
-            self.current_task_label.setText("No supported console or handheld systems found.")
-            self.append_output("No supported console or handheld systems found in the selected games folder.")
+            self.current_task_label.setText("No supported systems found.")
+            self.append_output("No supported systems found in the selected location.")
 
     def on_scan_error(self, message):
         self.current_task_label.setText("Scan failed.")
