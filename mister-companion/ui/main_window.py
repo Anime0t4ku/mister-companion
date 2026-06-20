@@ -48,6 +48,7 @@ from ui.dialogs.setup_notice_dialog import SetupNoticeDialog
 from ui.dialogs.support_dialog import SupportDialog
 from ui.dialogs.app_settings_dialog import AppSettingsDialog
 from ui.dialogs.changelog_dialog import ChangelogDialog
+from ui.dialogs.file_browser_dialog import FileBrowserDialog
 from ui.dialogs.update_available_dialog import UpdateAvailableDialog
 from ui.tabs.connection_tab import ConnectionTab
 from ui.tabs.device_tab import DeviceTab
@@ -385,6 +386,10 @@ class MainWindow(QMainWindow):
 
         self.check_update_button = None
 
+        self.files_button = QPushButton("Files")
+        self.files_button.clicked.connect(self.open_files)
+        bottom_bar.addWidget(self.files_button)
+
         self.remote_button = QPushButton("Remote")
         self.remote_button.clicked.connect(self.open_remote)
         bottom_bar.addWidget(self.remote_button)
@@ -565,6 +570,29 @@ class MainWindow(QMainWindow):
             return
 
         dialog = RetroAchievementsDialog(self)
+        dialog.exec()
+
+    def open_files(self):
+        if self._closing:
+            return
+
+        if self.is_offline_mode():
+            QMessageBox.information(
+                self,
+                "Files",
+                "Files is only available in Online Mode.",
+            )
+            return
+
+        if not self.connection.is_connected():
+            QMessageBox.information(
+                self,
+                "Files",
+                "Connect to a MiSTer first before using Files.",
+            )
+            return
+
+        dialog = FileBrowserDialog(self)
         dialog.exec()
 
     def open_app_settings(self):
@@ -986,6 +1014,11 @@ class MainWindow(QMainWindow):
 
         if hasattr(self, "manuals_button"):
             self.manuals_button.setEnabled(self.is_online_mode())
+
+        if hasattr(self, "files_button"):
+            self.files_button.setEnabled(
+                self.is_online_mode() and self.connection.is_connected()
+            )
 
         if hasattr(self, "connection_tab") and hasattr(self.connection_tab, "update_mode_state"):
             self.connection_tab.update_mode_state()
