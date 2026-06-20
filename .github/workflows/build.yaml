@@ -332,6 +332,13 @@ jobs:
           path: dist
           merge-multiple: true
 
+      - name: Verify Downloaded Artifacts
+        run: |
+          ls -la dist
+          test -f dist/MiSTer-Companion.exe
+          test -f dist/MiSTer-Companion
+          test -f dist/MiSTer-Companion-macOS-Apple-Silicon.dmg
+
       - name: Zip Windows Build
         run: |
           cd dist
@@ -341,6 +348,16 @@ jobs:
         run: |
           cd dist
           tar -czvf ../MiSTer-Companion-Linux-x86_64.tar.gz MiSTer-Companion
+
+      - name: Copy macOS DMG
+        run: cp dist/MiSTer-Companion-macOS-Apple-Silicon.dmg ./MiSTer-Companion-macOS-Apple-Silicon.dmg
+
+      - name: Verify Release Packages
+        run: |
+          test -f MiSTer-Companion-Windows-x86_64.zip
+          test -f MiSTer-Companion-Linux-x86_64.tar.gz
+          test -f MiSTer-Companion-macOS-Apple-Silicon.dmg
+          ls -lh MiSTer-Companion-Windows-x86_64.zip MiSTer-Companion-Linux-x86_64.tar.gz MiSTer-Companion-macOS-Apple-Silicon.dmg
 
       - name: Update Git Tag
         run: |
