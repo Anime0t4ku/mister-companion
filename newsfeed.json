@@ -2,6 +2,24 @@
   "version": 1,
   "items": [
     {
+      "id": "mister-companion-macos-release",
+      "date": "2026-06-20",
+      "type": "info",
+      "headline": "MiSTer Companion Is Now Available on macOS",
+      "message": "MiSTer Companion is now available for macOS.\n\nThis brings the desktop version of MiSTer Companion to Apple Silicon Macs. The macOS version is still unsigned, so the first launch may require manually allowing the app through macOS Privacy & Security settings.\n\nThank you to everyone who helped test the macOS build.",
+      "url": "https://github.com/Anime0t4ku/mister-companion/releases",
+      "url_label": "Download MiSTer Companion"
+    },
+    {
+      "id": "mc-updater-windows-linux-available",
+      "date": "2026-06-20",
+      "type": "info",
+      "headline": "MC-Updater Is Available for Windows and Linux",
+      "message": "MC-Updater is now available for Windows and Linux.\n\nMC-Updater can be installed directly from MiSTer Companion by opening the settings icon in the app. Once installed, it can help update MiSTer Companion more easily on supported platforms.\n\nmacOS support for MC-Updater is planned to follow in the near future.",
+      "url": "https://github.com/Anime0t4ku/mister-companion/releases",
+      "url_label": "View MiSTer Companion Releases"
+    },
+    {
       "id": "mister-companion-android-google-play",
       "date": "2026-05-27",
       "type": "info",
