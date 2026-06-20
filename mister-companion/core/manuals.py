@@ -1,8 +1,8 @@
 import os
 import shutil
-import sys
 from pathlib import Path
 
+from core.app_paths import app_base_dir, generated_path
 from core.open_helpers import open_local_folder
 from shlex import quote
 
@@ -11,15 +11,8 @@ REMOTE_CIFS_DOCS_ROOT = "/media/fat/cifs/docs"
 REMOTE_LOCAL_DOCS_ROOT = "/media/fat/docs"
 
 
-def app_base_dir() -> Path:
-    if getattr(sys, "frozen", False):
-        return Path(sys.executable).resolve().parent
-
-    return Path(__file__).resolve().parent.parent
-
-
 def get_manuals_cache_root() -> Path:
-    return app_base_dir() / "Manuals"
+    return generated_path("Manuals", default_root=app_base_dir())
 
 
 def ensure_manuals_cache_root() -> Path:

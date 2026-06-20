@@ -1,9 +1,11 @@
 import re
 from pathlib import Path
 
+from core.app_paths import generated_path
 
-ZAPLAUNCHER_DIR = Path("zaplauncher")
-ZAPLAUNCHER_DIR.mkdir(exist_ok=True)
+
+ZAPLAUNCHER_DIR = generated_path("zaplauncher")
+ZAPLAUNCHER_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def _sanitize(name: str) -> str:

@@ -25,6 +25,7 @@ except Exception:
     UnidentifiedImageError = Exception
 
 from core.screenscraper_private import get_dev_credentials
+from core.app_paths import generated_path
 from core.zapscraper_systems import (
     DISC_HELPER_EXTENSIONS,
     OUTPUT_FORMAT_RECALBOX,
@@ -410,7 +411,7 @@ def get_application_base_dir() -> Path:
 
 
 def get_scan_cache_dir() -> Path:
-    cache_dir = get_application_base_dir() / "scrapecache"
+    cache_dir = generated_path("scrapecache", default_root=get_application_base_dir())
     cache_dir.mkdir(parents=True, exist_ok=True)
     return cache_dir
 

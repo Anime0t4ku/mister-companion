@@ -1,4 +1,5 @@
 from datetime import datetime
+import sys
 
 from PyQt6.QtCore import Qt, QThread, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
@@ -21,6 +22,7 @@ from core.config import load_config, save_config
 from core.zapscripts import (
     fetch_media_from_db_cache,
     read_media_db_entries,
+    read_media_db_entries_macos_fast,
     list_scripts,
     launch_media,
     send_input_command,
@@ -68,12 +70,12 @@ class ZapScriptsLoadWorker(QThread):
 
             if db_exists:
                 try:
-                    try:
-                        entries = read_media_db_entries(
+                    if sys.platform == "darwin":
+                        entries = read_media_db_entries_macos_fast(
                             self.db_path,
                             cancel_callback=self.isInterruptionRequested,
                         )
-                    except TypeError:
+                    else:
                         entries = read_media_db_entries(self.db_path)
                 except Exception as e:
                     if str(e) in {"__LOAD_CANCELLED__", "__SCAN_ABORTED__"}:
@@ -178,6 +180,7 @@ class ZapScriptsTab(QWidget):
         self.entries = []
         self.scripts = []
         self.filtered_entries = []
+        self._macos_list_entries = []
 
         self.worker = None
         self.load_worker = None
@@ -886,6 +889,10 @@ class ZapScriptsTab(QWidget):
         return f"({system_name}) {name}"
 
     def _refresh_list(self):
+        if sys.platform == "darwin":
+            self._refresh_list_macos_fast()
+            return
+
         self.list.clear()
 
         current_item = self.systems.currentItem()
@@ -896,6 +903,39 @@ class ZapScriptsTab(QWidget):
             list_item = QListWidgetItem(display_name)
             list_item.setData(Qt.ItemDataRole.UserRole, item)
             self.list.addItem(list_item)
+
+    def _refresh_list_macos_fast(self):
+        current_item = self.systems.currentItem()
+        selected_system = current_item.text() if current_item else "All"
+
+        self._macos_list_entries = list(self.filtered_entries)
+        display_names = [
+            self._format_display_name(item, selected_system)
+            for item in self._macos_list_entries
+        ]
+
+        self.list.setUpdatesEnabled(False)
+        self.list.blockSignals(True)
+        try:
+            self.list.clear()
+            if display_names:
+                self.list.addItems(display_names)
+        finally:
+            self.list.blockSignals(False)
+            self.list.setUpdatesEnabled(True)
+
+    def _get_selected_entry(self):
+        current_item = self.list.currentItem()
+        if not current_item:
+            return None
+
+        if sys.platform == "darwin":
+            row = self.list.currentRow()
+            if 0 <= row < len(self._macos_list_entries):
+                return self._macos_list_entries[row]
+            return None
+
+        return current_item.data(Qt.ItemDataRole.UserRole)
 
     def _filter(self):
         if self._is_offline_mode():
@@ -938,11 +978,7 @@ class ZapScriptsTab(QWidget):
             QMessageBox.warning(self, "Not connected", "Please connect to your MiSTer first.")
             return
 
-        current_item = self.list.currentItem()
-        if not current_item:
-            return
-
-        entry = current_item.data(Qt.ItemDataRole.UserRole)
+        entry = self._get_selected_entry()
         if not entry:
             return
 
@@ -974,12 +1010,10 @@ class ZapScriptsTab(QWidget):
 
         payload = ""
 
-        current_item = self.list.currentItem()
-        if current_item:
-            entry = current_item.data(Qt.ItemDataRole.UserRole)
-            if entry:
-                raw_path = (entry.get("path") or "").strip()
-                payload = self._normalize_nfc_payload_path(raw_path)
+        entry = self._get_selected_entry()
+        if entry:
+            raw_path = (entry.get("path") or "").strip()
+            payload = self._normalize_nfc_payload_path(raw_path)
 
         dlg = NFCWriterDialog(payload=payload, parent=self)
         dlg.exec()

@@ -1,9 +1,8 @@
 import json
-from pathlib import Path
-
 from core.app_info import APP_VERSION
+from core.app_paths import generated_path
 
-CONFIG_PATH = Path("config.json")
+CONFIG_PATH = generated_path("config.json")
 
 VALID_THEME_MODES = {"auto", "light", "dark"}
 

@@ -160,7 +160,7 @@ class DeviceTab(QWidget):
         sharing_layout.setSpacing(14)
 
         self.smb_status_label = QLabel(
-            "Remote Access: Unknown" if sys.platform == "darwin" else "SMB: Unknown"
+            "SMB: Unknown"
         )
         self.smb_status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
@@ -168,10 +168,10 @@ class DeviceTab(QWidget):
         sharing_buttons_row.setSpacing(24)
 
         self.enable_smb_button = QPushButton(
-            "Enable Access" if sys.platform == "darwin" else "Enable SMB"
+            "Enable SMB"
         )
         self.disable_smb_button = QPushButton(
-            "Disable Access" if sys.platform == "darwin" else "Disable SMB"
+            "Disable SMB"
         )
         self.open_share_button = QPushButton(self.open_share_button_text())
 
@@ -281,9 +281,7 @@ class DeviceTab(QWidget):
             self.usb_label.setStyleSheet("color: #1e88e5; font-weight: bold;")
 
         self.smb_status_label.setText(
-            "Remote Access: Refreshing..."
-            if sys.platform == "darwin"
-            else "SMB: Refreshing..."
+            "SMB: Refreshing..."
         )
         self.smb_status_label.setStyleSheet("color: #1e88e5; font-weight: bold;")
 
@@ -346,10 +344,10 @@ class DeviceTab(QWidget):
         self.open_share_button.setEnabled(False)
 
         self.enable_smb_button.setText(
-            "Enable Access" if sys.platform == "darwin" else "Enable SMB"
+            "Enable SMB"
         )
         self.disable_smb_button.setText(
-            "Disable Access" if sys.platform == "darwin" else "Disable SMB"
+            "Disable SMB"
         )
         self.open_share_button.setText(self.open_share_button_text())
 
@@ -373,10 +371,10 @@ class DeviceTab(QWidget):
         self.reboot_button.setEnabled(False)
 
         self.enable_smb_button.setText(
-            "Enable Access" if sys.platform == "darwin" else "Enable SMB"
+            "Enable SMB"
         )
         self.disable_smb_button.setText(
-            "Disable Access" if sys.platform == "darwin" else "Disable SMB"
+            "Disable SMB"
         )
         self.open_share_button.setText(self.open_share_button_text())
 
@@ -399,7 +397,7 @@ class DeviceTab(QWidget):
         self.usb_label.setText("--")
         self.usb_label.setStyleSheet("")
         self.smb_status_label.setText(
-            "Remote Access: Unknown" if sys.platform == "darwin" else "SMB: Unknown"
+            "SMB: Unknown"
         )
         self.smb_status_label.setStyleSheet("")
 
@@ -418,10 +416,10 @@ class DeviceTab(QWidget):
         self.reboot_button.setToolTip("Unavailable in Offline Mode because it requires a running MiSTer.")
 
         self.enable_smb_button.setText(
-            "Enable Access on Boot" if sys.platform == "darwin" else "Enable SMB on Boot"
+            "Enable SMB on Boot"
         )
         self.disable_smb_button.setText(
-            "Disable Access on Boot" if sys.platform == "darwin" else "Disable SMB on Boot"
+            "Disable SMB on Boot"
         )
         self.open_share_button.setText("Open SD Card")
 
@@ -452,9 +450,7 @@ class DeviceTab(QWidget):
                 self.storage_label.setText("Offline Mode: No SD card selected")
                 self.storage_label.setStyleSheet("")
                 self.smb_status_label.setText(
-                    "Remote Access Startup: No SD card selected"
-                    if sys.platform == "darwin"
-                    else "SMB Startup: No SD card selected"
+                    "SMB Startup: No SD card selected"
                 )
                 self.smb_status_label.setStyleSheet("color: #f39c12;")
                 self.enable_smb_button.setEnabled(False)
@@ -530,9 +526,7 @@ class DeviceTab(QWidget):
             self.storage_label.setText("Unable to read selected SD card storage")
             self.storage_label.setStyleSheet("")
             self.smb_status_label.setText(
-                "Remote Access Startup: Unknown"
-                if sys.platform == "darwin"
-                else "SMB Startup: Unknown"
+                "SMB Startup: Unknown"
             )
             self.smb_status_label.setStyleSheet("color: #f39c12;")
             self.refresh_button.setEnabled(True)
@@ -571,9 +565,7 @@ class DeviceTab(QWidget):
 
         if smb_error:
             self.smb_status_label.setText(
-                "Remote Access Startup: Unknown"
-                if sys.platform == "darwin"
-                else "SMB Startup: Unknown"
+                "SMB Startup: Unknown"
             )
             self.smb_status_label.setStyleSheet("color: #f39c12;")
             self.enable_smb_button.setEnabled(True)
@@ -582,18 +574,14 @@ class DeviceTab(QWidget):
 
         if smb_enabled:
             self.smb_status_label.setText(
-                "Remote Access Startup: Enabled ✓"
-                if sys.platform == "darwin"
-                else "SMB Startup: Enabled ✓"
+                "SMB Startup: Enabled ✓"
             )
             self.smb_status_label.setStyleSheet("color: #00aa00;")
             self.enable_smb_button.setEnabled(False)
             self.disable_smb_button.setEnabled(True)
         else:
             self.smb_status_label.setText(
-                "Remote Access Startup: Disabled"
-                if sys.platform == "darwin"
-                else "SMB Startup: Disabled"
+                "SMB Startup: Disabled"
             )
             self.smb_status_label.setStyleSheet("color: #cc0000;")
             self.enable_smb_button.setEnabled(True)
@@ -637,9 +625,7 @@ class DeviceTab(QWidget):
 
         if smb_enabled:
             self.smb_status_label.setText(
-                "Remote Access: Enabled ✓"
-                if sys.platform == "darwin"
-                else "SMB: Enabled ✓"
+                "SMB: Enabled ✓"
             )
             self.smb_status_label.setStyleSheet("color: #00aa00;")
             self.enable_smb_button.setEnabled(False)
@@ -647,9 +633,7 @@ class DeviceTab(QWidget):
             self.open_share_button.setEnabled(True)
         else:
             self.smb_status_label.setText(
-                "Remote Access: Disabled"
-                if sys.platform == "darwin"
-                else "SMB: Disabled"
+                "SMB: Disabled"
             )
             self.smb_status_label.setStyleSheet("color: #cc0000;")
             self.enable_smb_button.setEnabled(True)
@@ -693,9 +677,7 @@ class DeviceTab(QWidget):
 
         if not sd_root:
             self.smb_status_label.setText(
-                "Remote Access Startup: No SD card selected"
-                if sys.platform == "darwin"
-                else "SMB Startup: No SD card selected"
+                "SMB Startup: No SD card selected"
             )
             self.smb_status_label.setStyleSheet("color: #f39c12;")
             self.enable_smb_button.setEnabled(False)
@@ -709,9 +691,7 @@ class DeviceTab(QWidget):
             smb_enabled = is_smb_enabled_offline(sd_root)
         except Exception:
             self.smb_status_label.setText(
-                "Remote Access Startup: Unknown"
-                if sys.platform == "darwin"
-                else "SMB Startup: Unknown"
+                "SMB Startup: Unknown"
             )
             self.smb_status_label.setStyleSheet("color: #f39c12;")
             self.enable_smb_button.setEnabled(True)
@@ -720,18 +700,14 @@ class DeviceTab(QWidget):
 
         if smb_enabled:
             self.smb_status_label.setText(
-                "Remote Access Startup: Enabled ✓"
-                if sys.platform == "darwin"
-                else "SMB Startup: Enabled ✓"
+                "SMB Startup: Enabled ✓"
             )
             self.smb_status_label.setStyleSheet("color: #00aa00;")
             self.enable_smb_button.setEnabled(False)
             self.disable_smb_button.setEnabled(True)
         else:
             self.smb_status_label.setText(
-                "Remote Access Startup: Disabled"
-                if sys.platform == "darwin"
-                else "SMB Startup: Disabled"
+                "SMB Startup: Disabled"
             )
             self.smb_status_label.setStyleSheet("color: #cc0000;")
             self.enable_smb_button.setEnabled(True)
@@ -784,7 +760,7 @@ class DeviceTab(QWidget):
 
         if smb_enabled:
             self.smb_status_label.setText(
-                "Remote Access: Enabled ✓" if sys.platform == "darwin" else "SMB: Enabled ✓"
+                "SMB: Enabled ✓"
             )
             self.smb_status_label.setStyleSheet("color: #00aa00;")
             self.enable_smb_button.setEnabled(False)
@@ -792,7 +768,7 @@ class DeviceTab(QWidget):
             self.open_share_button.setEnabled(True)
         else:
             self.smb_status_label.setText(
-                "Remote Access: Disabled" if sys.platform == "darwin" else "SMB: Disabled"
+                "SMB: Disabled"
             )
             self.smb_status_label.setStyleSheet("color: #cc0000;")
             self.enable_smb_button.setEnabled(True)
@@ -828,11 +804,9 @@ class DeviceTab(QWidget):
 
         reboot_now = QMessageBox.question(
             self,
-            "Remote Access Enabled" if sys.platform == "darwin" else "SMB Enabled",
+            "SMB Enabled",
             (
-                "Remote Access has been enabled.\n\nA reboot is required.\n\nReboot now?"
-                if sys.platform == "darwin"
-                else "SMB has been enabled.\n\nA reboot is required.\n\nReboot now?"
+                "SMB has been enabled.\n\nA reboot is required.\n\nReboot now?"
             ),
         )
 
@@ -855,11 +829,9 @@ class DeviceTab(QWidget):
 
         reboot_now = QMessageBox.question(
             self,
-            "Remote Access Disabled" if sys.platform == "darwin" else "SMB Disabled",
+            "SMB Disabled",
             (
-                "Remote Access has been disabled.\n\nA reboot is required.\n\nReboot now?"
-                if sys.platform == "darwin"
-                else "SMB has been disabled.\n\nA reboot is required.\n\nReboot now?"
+                "SMB has been disabled.\n\nA reboot is required.\n\nReboot now?"
             ),
         )
 
@@ -889,12 +861,9 @@ class DeviceTab(QWidget):
 
         QMessageBox.information(
             self,
-            "Remote Access Enabled on Boot" if sys.platform == "darwin" else "SMB Enabled on Boot",
+            "SMB Enabled on Boot",
             (
-                "Remote Access has been enabled on the selected SD card.\n\n"
-                "It will apply the next time MiSTer boots."
-                if sys.platform == "darwin"
-                else "SMB has been enabled on the selected SD card.\n\n"
+                "SMB has been enabled on the selected SD card.\n\n"
                 "It will apply the next time MiSTer boots."
             ),
         )
@@ -921,12 +890,9 @@ class DeviceTab(QWidget):
 
         QMessageBox.information(
             self,
-            "Remote Access Disabled on Boot" if sys.platform == "darwin" else "SMB Disabled on Boot",
+            "SMB Disabled on Boot",
             (
-                "Remote Access has been disabled on the selected SD card.\n\n"
-                "It will apply the next time MiSTer boots."
-                if sys.platform == "darwin"
-                else "SMB has been disabled on the selected SD card.\n\n"
+                "SMB has been disabled on the selected SD card.\n\n"
                 "It will apply the next time MiSTer boots."
             ),
         )

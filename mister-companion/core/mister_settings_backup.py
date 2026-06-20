@@ -3,16 +3,18 @@ import shlex
 import subprocess
 import sys
 import time
+from pathlib import Path
 
+from core.app_paths import generated_path
 from core.profile_folder_sync import sanitize_folder_name, ip_to_folder_name
 from core.open_helpers import open_local_folder
 
 
-MISTER_SETTINGS_ROOT = "MiSTerSettings"
+MISTER_SETTINGS_ROOT = generated_path("MiSTerSettings")
 
 
 def ensure_settings_root_exists():
-    os.makedirs(MISTER_SETTINGS_ROOT, exist_ok=True)
+    MISTER_SETTINGS_ROOT.mkdir(parents=True, exist_ok=True)
 
 
 def get_mister_settings_device_name(profile_name, host):
@@ -30,8 +32,8 @@ def get_mister_settings_device_name(profile_name, host):
 def get_mister_settings_device_path(profile_name, host):
     device_name = get_mister_settings_device_name(profile_name, host)
     if not device_name:
-        return os.path.abspath(MISTER_SETTINGS_ROOT)
-    return os.path.abspath(os.path.join(MISTER_SETTINGS_ROOT, device_name))
+        return str(MISTER_SETTINGS_ROOT.resolve())
+    return str((MISTER_SETTINGS_ROOT / device_name).resolve())
 
 
 def save_mister_settings_retention_setting(config_data, value):

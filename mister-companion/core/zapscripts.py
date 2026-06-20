@@ -462,6 +462,224 @@ def read_media_db_entries(
             pass
 
 
+
+def _fast_basename(path: str) -> str:
+    path = _safe_text(path).rstrip("/")
+    if not path:
+        return ""
+    return path.rsplit("/", 1)[-1]
+
+
+def _fast_suffix(path: str) -> str:
+    filename = _fast_basename(path)
+    dot = filename.rfind(".")
+    if dot <= 0:
+        return ""
+    return filename[dot:].lower()
+
+
+def _fast_stem(path: str) -> str:
+    filename = _fast_basename(path)
+    dot = filename.rfind(".")
+    if dot <= 0:
+        return filename.strip()
+    return filename[:dot].strip()
+
+
+def _normalize_cd_set_name_fast(name: str) -> str:
+    name = _safe_text(name)
+    name = _fast_stem(name)
+    name = _CD_TRACK_RE.sub("", name)
+    name = re.sub(r"\s+", " ", name)
+    name = name.strip(" ._-")
+    return name.lower()
+
+
+def _cue_matches_bin_fast(cue_path: str, bin_path: str) -> bool:
+    cue_name = _normalize_cd_set_name_fast(cue_path)
+    bin_name = _normalize_cd_set_name_fast(bin_path)
+
+    if not cue_name or not bin_name:
+        return False
+
+    return cue_name == bin_name or bin_name.startswith(cue_name) or cue_name.startswith(bin_name)
+
+
+def _looks_like_cd_track_bin_fast(path: str) -> bool:
+    filename = _fast_basename(path)
+    return filename.lower().endswith(".bin") and bool(_CD_TRACK_RE.search(_fast_stem(filename)))
+
+
+def _should_hide_bin_entry_fast(path: str, parent_dir: str, cue_lookup: dict[str, list[str]]) -> bool:
+    if _fast_suffix(path) != ".bin":
+        return False
+
+    for cue_path in cue_lookup.get(parent_dir, []):
+        if _cue_matches_bin_fast(cue_path, path):
+            return True
+
+    return _looks_like_cd_track_bin_fast(path)
+
+
+def _make_filename_fast(path: str, parent_dir: str | None = None) -> str:
+    path = _safe_text(path)
+    parent_dir = _safe_text(parent_dir)
+
+    if parent_dir and path.startswith(parent_dir):
+        filename = path[len(parent_dir):].lstrip("/")
+        if filename:
+            return filename
+
+    return _fast_basename(path)
+
+
+def _raise_if_cancelled(cancel_callback):
+    if callable(cancel_callback) and cancel_callback():
+        raise RuntimeError("__LOAD_CANCELLED__")
+
+
+def read_media_db_entries_macos_fast(
+    local_path: Path,
+    progress_callback=None,
+    include_missing: bool = True,
+    cancel_callback=None,
+) -> list[dict]:
+    local_path = Path(local_path)
+
+    if not local_path.exists():
+        raise ZaparooApiError(f"Local media.db not found:\n{local_path}")
+
+    entries = []
+
+    try:
+        db = sqlite3.connect(str(local_path))
+        db.text_factory = lambda value: value.decode("utf-8", errors="replace")
+        db.row_factory = sqlite3.Row
+    except Exception as e:
+        raise ZaparooApiError(f"Could not open media.db:\n{e}") from e
+
+    try:
+        cursor = db.cursor()
+        media_columns = _get_table_columns(cursor, "Media")
+        title_columns = _get_table_columns(cursor, "MediaTitles")
+        system_columns = _get_table_columns(cursor, "Systems")
+
+        required_media = {"Path", "ParentDir", "MediaTitleDBID", "SystemDBID"}
+        required_titles = {"DBID", "Name"}
+        required_systems = {"DBID", "SystemID", "Name"}
+
+        missing = []
+        if not required_media.issubset(media_columns):
+            missing.append("Media")
+        if not required_titles.issubset(title_columns):
+            missing.append("MediaTitles")
+        if not required_systems.issubset(system_columns):
+            missing.append("Systems")
+
+        if missing:
+            raise ZaparooApiError(
+                "media.db does not have the expected Zaparoo schema. "
+                f"Problem table(s): {', '.join(missing)}"
+            )
+
+        where = ""
+        if not include_missing and "IsMissing" in media_columns:
+            where = "WHERE COALESCE(m.IsMissing, 0) = 0"
+
+        cursor.execute(f"SELECT COUNT(*) FROM Media m {where}")
+        total = int(cursor.fetchone()[0] or 0)
+
+        _raise_if_cancelled(cancel_callback)
+
+        cue_lookup = {}
+        cue_where = "AND" if where else "WHERE"
+        cue_query = f'''
+            SELECT m.Path AS FullPath, m.ParentDir AS ParentDir
+            FROM Media m
+            {where}
+            {cue_where} LOWER(m.Path) LIKE '%.cue'
+        '''
+        for row in cursor.execute(cue_query):
+            _raise_if_cancelled(cancel_callback)
+            parent_dir = _safe_text(row["ParentDir"])
+            path = _safe_text(row["FullPath"])
+            cue_lookup.setdefault(parent_dir, []).append(path)
+
+        _raise_if_cancelled(cancel_callback)
+
+        query = f'''
+            SELECT
+                m.DBID AS MediaDBID,
+                m.Path AS FullPath,
+                m.ParentDir AS ParentDir,
+                {"m.IsMissing AS IsMissing," if "IsMissing" in media_columns else "0 AS IsMissing,"}
+                mt.Name AS TitleName,
+                s.SystemID AS SystemID,
+                s.Name AS SystemName
+            FROM Media m
+            LEFT JOIN MediaTitles mt ON mt.DBID = m.MediaTitleDBID
+            LEFT JOIN Systems s ON s.DBID = m.SystemDBID
+            {where}
+        '''
+
+        scanned = 0
+        for row in cursor.execute(query):
+            scanned += 1
+
+            if scanned % 1000 == 0:
+                _raise_if_cancelled(cancel_callback)
+
+            path = _safe_text(row["FullPath"])
+            parent_dir = _safe_text(row["ParentDir"])
+
+            if _should_hide_bin_entry_fast(path, parent_dir, cue_lookup):
+                if progress_callback and (scanned % 500 == 0 or scanned == total):
+                    progress_callback(scanned)
+                continue
+
+            filename = _make_filename_fast(path, parent_dir)
+            title_name = _safe_text(row["TitleName"])
+            system_id = _safe_text(row["SystemID"]) or "Unknown"
+            system_name = _safe_text(row["SystemName"]) or system_id or "Unknown"
+            display_name = filename or title_name or path
+
+            entries.append(
+                {
+                    "name": display_name,
+                    "filename": filename or display_name,
+                    "title_name": title_name,
+                    "path": path,
+                    "parent_dir": parent_dir,
+                    "directory": parent_dir,
+                    "type": "game",
+                    "system": system_name,
+                    "system_id": system_id,
+                    "system_name": system_name,
+                    "zapScript": None,
+                    "is_missing": bool(row["IsMissing"]),
+                    "media_dbid": row["MediaDBID"],
+                }
+            )
+
+            if progress_callback and (scanned % 500 == 0 or scanned == total):
+                progress_callback(scanned)
+
+        return entries
+
+    except ZaparooApiError:
+        raise
+    except RuntimeError as e:
+        if str(e) == "__LOAD_CANCELLED__":
+            raise
+        raise ZaparooApiError(f"Could not read media.db:\n{e}") from e
+    except Exception as e:
+        raise ZaparooApiError(f"Could not read media.db:\n{e}") from e
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
+
 def fetch_media_from_db_cache(
     connection,
     local_path: Path,

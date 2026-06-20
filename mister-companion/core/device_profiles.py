@@ -1,12 +1,13 @@
 from pathlib import Path
 
+from core.app_paths import generated_path
 from core.config import save_config
 
 
 def get_profile_sync_roots():
-    roots = ["MiSTerSettings"]
+    roots = [str(generated_path("MiSTerSettings"))]
 
-    save_root = Path("SaveManager")
+    save_root = generated_path("SaveManager")
     roots.append(str(save_root / "backups"))
     roots.append(str(save_root / "sync"))
 

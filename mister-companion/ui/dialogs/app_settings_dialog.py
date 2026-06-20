@@ -1,3 +1,5 @@
+import sys
+
 from PyQt6.QtCore import QThread, Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QCheckBox,
@@ -40,13 +42,15 @@ class AppSettingsDialog(QDialog):
         self.mc_updater_check_worker = None
         self.mc_updater_latest_version = ""
         self.mc_updater_update_available = False
+        self.show_mc_updater_settings = sys.platform != "darwin"
 
         self.setWindowTitle("App Settings")
         self.setMinimumWidth(520)
 
         self.build_ui()
         self.load_values()
-        self.refresh_mc_updater_state()
+        if self.show_mc_updater_settings:
+            self.refresh_mc_updater_state()
 
     def build_ui(self):
         main_layout = QVBoxLayout(self)
@@ -74,44 +78,45 @@ class AppSettingsDialog(QDialog):
         update_row.addStretch()
         updates_layout.addLayout(update_row)
 
-        mc_updater_group = QGroupBox("MC-Updater")
-        mc_updater_layout = QVBoxLayout(mc_updater_group)
-        mc_updater_layout.setSpacing(8)
+        if self.show_mc_updater_settings:
+            mc_updater_group = QGroupBox("MC-Updater")
+            mc_updater_layout = QVBoxLayout(mc_updater_group)
+            mc_updater_layout.setSpacing(8)
 
-        mc_updater_text = QLabel("MC-Updater enables automatic updates for MiSTer Companion.")
-        mc_updater_text.setWordWrap(True)
-        mc_updater_layout.addWidget(mc_updater_text)
+            mc_updater_text = QLabel("MC-Updater enables automatic updates for MiSTer Companion.")
+            mc_updater_text.setWordWrap(True)
+            mc_updater_layout.addWidget(mc_updater_text)
 
-        self.mc_updater_status_label = QLabel("Status: Checking...")
-        self.mc_updater_status_label.setWordWrap(True)
-        mc_updater_layout.addWidget(self.mc_updater_status_label)
+            self.mc_updater_status_label = QLabel("Status: Checking...")
+            self.mc_updater_status_label.setWordWrap(True)
+            mc_updater_layout.addWidget(self.mc_updater_status_label)
 
-        mc_updater_check_row = QHBoxLayout()
-        mc_updater_check_row.addStretch()
-        self.mc_updater_check_button = QPushButton("Check for MC-Updater Updates")
-        self.mc_updater_check_button.setMinimumWidth(230)
-        self.mc_updater_check_button.clicked.connect(self.check_mc_updater_updates)
-        mc_updater_check_row.addWidget(self.mc_updater_check_button)
-        mc_updater_check_row.addStretch()
-        mc_updater_layout.addLayout(mc_updater_check_row)
+            mc_updater_check_row = QHBoxLayout()
+            mc_updater_check_row.addStretch()
+            self.mc_updater_check_button = QPushButton("Check for MC-Updater Updates")
+            self.mc_updater_check_button.setMinimumWidth(230)
+            self.mc_updater_check_button.clicked.connect(self.check_mc_updater_updates)
+            mc_updater_check_row.addWidget(self.mc_updater_check_button)
+            mc_updater_check_row.addStretch()
+            mc_updater_layout.addLayout(mc_updater_check_row)
 
-        mc_updater_action_row = QHBoxLayout()
-        mc_updater_action_row.addStretch()
+            mc_updater_action_row = QHBoxLayout()
+            mc_updater_action_row.addStretch()
 
-        self.mc_updater_install_button = QPushButton("Install MC-Updater")
-        self.mc_updater_install_button.setMinimumWidth(170)
-        self.mc_updater_install_button.clicked.connect(self.install_or_update_mc_updater)
-        mc_updater_action_row.addWidget(self.mc_updater_install_button)
+            self.mc_updater_install_button = QPushButton("Install MC-Updater")
+            self.mc_updater_install_button.setMinimumWidth(170)
+            self.mc_updater_install_button.clicked.connect(self.install_or_update_mc_updater)
+            mc_updater_action_row.addWidget(self.mc_updater_install_button)
 
-        self.mc_updater_remove_button = QPushButton("Remove MC-Updater")
-        self.mc_updater_remove_button.setMinimumWidth(170)
-        self.mc_updater_remove_button.clicked.connect(self.remove_mc_updater)
-        mc_updater_action_row.addWidget(self.mc_updater_remove_button)
+            self.mc_updater_remove_button = QPushButton("Remove MC-Updater")
+            self.mc_updater_remove_button.setMinimumWidth(170)
+            self.mc_updater_remove_button.clicked.connect(self.remove_mc_updater)
+            mc_updater_action_row.addWidget(self.mc_updater_remove_button)
 
-        mc_updater_action_row.addStretch()
-        mc_updater_layout.addLayout(mc_updater_action_row)
+            mc_updater_action_row.addStretch()
+            mc_updater_layout.addLayout(mc_updater_action_row)
 
-        updates_layout.addWidget(mc_updater_group)
+            updates_layout.addWidget(mc_updater_group)
         main_layout.addWidget(updates_group)
 
         notices_group = QGroupBox("Notices")

@@ -7,11 +7,12 @@ import time
 from pathlib import Path
 
 from core.config import save_config
+from core.app_paths import generated_path
 from core.open_helpers import open_local_folder
 from core.profile_folder_sync import get_profile_or_ip_folder_name
 
 
-SAVE_ROOT = Path("SaveManager")
+SAVE_ROOT = generated_path("SaveManager")
 BACKUP_ROOT = SAVE_ROOT / "backups"
 SYNC_ROOT = SAVE_ROOT / "sync"
 
