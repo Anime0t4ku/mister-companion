@@ -12,7 +12,49 @@ It provides a simple interface for common maintenance tasks without needing to u
 
 ## Features
 
-MiSTer Companion uses a tabbed interface to organize functionality.
+MiSTer Companion organizes functionality through a clean interface with selectable menu styles.
+
+The app supports both a modern **Side menu** layout and the classic **Tabs** layout. You can switch between them from the app settings.
+
+### Interface and Customization
+
+- New Side menu layout
+- Classic Tabs layout remains available
+- Switch between Side menu and Tabs from the app settings
+- Custom theme support through simple JSON files
+- Built-in Theme Picker for selecting built-in and custom themes
+- Built-in Auto, Light and Dark themes remain available
+- Custom themes can define background, surface, accent, text and logo preference
+- Custom themes include author metadata for attribution
+- Improved theme handling across icons, buttons, menus and dialogs
+
+### File Browser
+
+- Browse files on your MiSTer over SFTP
+- Open the File Browser from the bottom bar using the Files button
+- Browse `/media/fat`
+- Browse `/media/usb0` when USB storage is connected
+- Upload files and folders
+- Drag and drop files or folders from your computer into the File Browser
+- Download files and folders from the MiSTer
+- Copy, paste and move files or folders
+- Rename files or folders
+- Delete files or folders with confirmation
+- Overwrite warnings for upload, download, copy, move and rename actions
+- Sortable file list columns
+- Resizable file list columns
+- Remembered window size, column widths and sorting
+- Built-in output and progress log for file operations
+- Available when connected to a MiSTer in Online Mode
+
+### Performance and Responsiveness
+
+- Many threading and speed improvements across the app
+- Faster tab and menu switching
+- Improved connected-mode responsiveness
+- Reduced interface blocking during background tasks
+- Cleaner handling of SSH-based actions
+- Improved refresh behavior for status checks and connected features
 
 ### Flash SD
 
