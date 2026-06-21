@@ -1,8 +1,8 @@
 from datetime import datetime
 from pathlib import Path
 
-from PyQt6.QtCore import QThread, QTimer, Qt, pyqtSignal
-from PyQt6.QtGui import QAction, QKeySequence, QShortcut
+from PyQt6.QtCore import QEvent, QPoint, QRect, QThread, QTimer, Qt, pyqtSignal
+from PyQt6.QtGui import QAction, QCursor, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
@@ -21,6 +21,7 @@ from PyQt6.QtWidgets import (
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
+    QWidget,
 )
 
 from core.config import load_config, save_config
@@ -229,6 +230,11 @@ class FileBrowserDialog(QDialog):
         self._save_columns_timer = QTimer(self)
         self._save_columns_timer.setSingleShot(True)
         self._save_columns_timer.timeout.connect(self.save_file_browser_config)
+        self._resize_margin = 8
+        self._resize_edges = Qt.Edge(0)
+        self._resize_start_pos = QPoint()
+        self._resize_start_geometry = QRect()
+        self._resizing_window = False
 
         self.setWindowTitle("MiSTer File Browser")
         self.resize(
@@ -236,13 +242,134 @@ class FileBrowserDialog(QDialog):
             int(self.file_browser_config.get("window_height", 720)),
         )
         self.setMinimumSize(820, 560)
-        self.setSizeGripEnabled(True)
+        self.setSizeGripEnabled(False)
+        self.setMouseTracking(True)
+        self.installEventFilter(self)
 
         self.build_ui()
+        self.install_resize_event_filters()
         self.bind_shortcuts()
         self.update_action_buttons()
         self.append_output("Ready")
         self.refresh_roots()
+
+    def install_resize_event_filters(self):
+        for widget in self.findChildren(QWidget):
+            if hasattr(widget, "installEventFilter") and hasattr(widget, "setMouseTracking"):
+                try:
+                    widget.setMouseTracking(True)
+                    widget.installEventFilter(self)
+                except Exception:
+                    pass
+
+    def eventFilter(self, watched, event):
+        if event.type() == QEvent.Type.MouseButtonPress:
+            if self._handle_resize_press(event):
+                return True
+
+        if event.type() == QEvent.Type.MouseMove:
+            if self._handle_resize_move(event):
+                return True
+
+        if event.type() == QEvent.Type.MouseButtonRelease:
+            if self._resizing_window:
+                self._resizing_window = False
+                self._resize_edges = Qt.Edge(0)
+                self.unsetCursor()
+                event.accept()
+                return True
+
+        if event.type() in (QEvent.Type.Show, QEvent.Type.ChildAdded):
+            QTimer.singleShot(0, self.install_resize_event_filters)
+
+        return super().eventFilter(watched, event)
+
+    def _resize_hit_edges(self, global_pos):
+        if getattr(self, "_mister_dialog_maximized", False):
+            return Qt.Edge(0)
+
+        geometry = self.geometry()
+        margin = int(self._resize_margin)
+        edges = Qt.Edge(0)
+
+        if abs(global_pos.x() - geometry.left()) <= margin:
+            edges |= Qt.Edge.LeftEdge
+        elif abs(global_pos.x() - geometry.right()) <= margin:
+            edges |= Qt.Edge.RightEdge
+
+        if abs(global_pos.y() - geometry.top()) <= margin:
+            edges |= Qt.Edge.TopEdge
+        elif abs(global_pos.y() - geometry.bottom()) <= margin:
+            edges |= Qt.Edge.BottomEdge
+
+        return edges
+
+    def _resize_cursor_for_edges(self, edges):
+        if edges in (Qt.Edge.LeftEdge | Qt.Edge.TopEdge, Qt.Edge.RightEdge | Qt.Edge.BottomEdge):
+            return Qt.CursorShape.SizeFDiagCursor
+        if edges in (Qt.Edge.RightEdge | Qt.Edge.TopEdge, Qt.Edge.LeftEdge | Qt.Edge.BottomEdge):
+            return Qt.CursorShape.SizeBDiagCursor
+        if edges in (Qt.Edge.LeftEdge, Qt.Edge.RightEdge):
+            return Qt.CursorShape.SizeHorCursor
+        if edges in (Qt.Edge.TopEdge, Qt.Edge.BottomEdge):
+            return Qt.CursorShape.SizeVerCursor
+        return Qt.CursorShape.ArrowCursor
+
+    def _handle_resize_press(self, event):
+        if event.button() != Qt.MouseButton.LeftButton:
+            return False
+
+        edges = self._resize_hit_edges(event.globalPosition().toPoint())
+        if not edges:
+            return False
+
+        self._resizing_window = True
+        self._resize_edges = edges
+        self._resize_start_pos = event.globalPosition().toPoint()
+        self._resize_start_geometry = self.geometry()
+        self.setCursor(QCursor(self._resize_cursor_for_edges(edges)))
+        event.accept()
+        return True
+
+    def _handle_resize_move(self, event):
+        global_pos = event.globalPosition().toPoint()
+
+        if self._resizing_window and event.buttons() & Qt.MouseButton.LeftButton:
+            delta = global_pos - self._resize_start_pos
+            geometry = QRect(self._resize_start_geometry)
+            minimum = self.minimumSize()
+
+            if self._resize_edges & Qt.Edge.LeftEdge:
+                new_left = geometry.left() + delta.x()
+                if geometry.right() - new_left + 1 >= minimum.width():
+                    geometry.setLeft(new_left)
+
+            if self._resize_edges & Qt.Edge.RightEdge:
+                new_right = geometry.right() + delta.x()
+                if new_right - geometry.left() + 1 >= minimum.width():
+                    geometry.setRight(new_right)
+
+            if self._resize_edges & Qt.Edge.TopEdge:
+                new_top = geometry.top() + delta.y()
+                if geometry.bottom() - new_top + 1 >= minimum.height():
+                    geometry.setTop(new_top)
+
+            if self._resize_edges & Qt.Edge.BottomEdge:
+                new_bottom = geometry.bottom() + delta.y()
+                if new_bottom - geometry.top() + 1 >= minimum.height():
+                    geometry.setBottom(new_bottom)
+
+            self.setGeometry(geometry)
+            event.accept()
+            return True
+
+        edges = self._resize_hit_edges(global_pos)
+        if edges:
+            self.setCursor(QCursor(self._resize_cursor_for_edges(edges)))
+        else:
+            self.unsetCursor()
+
+        return False
 
     def build_ui(self):
         root_layout = QVBoxLayout(self)

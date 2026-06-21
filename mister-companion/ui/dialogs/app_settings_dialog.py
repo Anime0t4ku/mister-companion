@@ -3,14 +3,15 @@ import sys
 from PyQt6.QtCore import QThread, Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QCheckBox,
-    QComboBox,
     QDialog,
     QDialogButtonBox,
+    QButtonGroup,
     QGroupBox,
     QHBoxLayout,
     QLabel,
     QMessageBox,
     QPushButton,
+    QRadioButton,
     QVBoxLayout,
 )
 
@@ -120,22 +121,22 @@ class AppSettingsDialog(QDialog):
             updates_layout.addWidget(mc_updater_group)
         main_layout.addWidget(updates_group)
 
-        appearance_group = QGroupBox("Appearance")
-        appearance_layout = QVBoxLayout(appearance_group)
-        appearance_layout.setSpacing(8)
+        menu_style_group = QGroupBox("Menu style")
+        menu_style_layout = QVBoxLayout(menu_style_group)
+        menu_style_layout.setSpacing(8)
 
         menu_style_row = QHBoxLayout()
-        menu_style_label = QLabel("Menu style:")
-        self.menu_style_combo = QComboBox()
-        self.menu_style_combo.addItem("Side menu", "side_menu")
-        self.menu_style_combo.addItem("Tabs", "tabs")
-        self.menu_style_combo.setMinimumWidth(160)
-        menu_style_row.addWidget(menu_style_label)
-        menu_style_row.addWidget(self.menu_style_combo)
+        self.menu_style_group = QButtonGroup(self)
+        self.menu_style_side_menu_radio = QRadioButton("Side menu")
+        self.menu_style_tabs_radio = QRadioButton("Tabs")
+        self.menu_style_group.addButton(self.menu_style_side_menu_radio)
+        self.menu_style_group.addButton(self.menu_style_tabs_radio)
+        menu_style_row.addWidget(self.menu_style_side_menu_radio)
+        menu_style_row.addWidget(self.menu_style_tabs_radio)
         menu_style_row.addStretch()
-        appearance_layout.addLayout(menu_style_row)
+        menu_style_layout.addLayout(menu_style_row)
 
-        main_layout.addWidget(appearance_group)
+        main_layout.addWidget(menu_style_group)
 
         notices_group = QGroupBox("Notices")
         notices_layout = QVBoxLayout(notices_group)
@@ -203,8 +204,15 @@ class AppSettingsDialog(QDialog):
         menu_style = str(self.config_data.get("menu_style", "side_menu") or "side_menu").strip().lower()
         if menu_style == "overlay":
             menu_style = "side_menu"
-        index = self.menu_style_combo.findData(menu_style)
-        self.menu_style_combo.setCurrentIndex(max(0, index))
+        if menu_style == "tabs":
+            self.menu_style_tabs_radio.setChecked(True)
+        else:
+            self.menu_style_side_menu_radio.setChecked(True)
+
+    def get_selected_menu_style(self):
+        if self.menu_style_tabs_radio.isChecked():
+            return "tabs"
+        return "side_menu"
 
     def refresh_mc_updater_state(self, latest_status=None):
         local_status = mc_updater.get_local_status(self.config_data)
@@ -278,7 +286,7 @@ class AppSettingsDialog(QDialog):
         self.config_data["hide_setup_notice"] = not self.show_setup_notice_check.isChecked()
         self.config_data["hide_update_all_warning"] = not self.show_update_all_warning_check.isChecked()
         self.config_data["hide_zapscripts_scan_notice"] = not self.show_zapscripts_scan_notice_check.isChecked()
-        self.config_data["menu_style"] = self.menu_style_combo.currentData() or "side_menu"
+        self.config_data["menu_style"] = self.get_selected_menu_style()
         save_config(self.config_data)
         self.main_window.config_data = self.config_data
         if hasattr(self.main_window, "apply_menu_style"):
@@ -370,7 +378,7 @@ class AppSettingsDialog(QDialog):
         self.config_data["hide_setup_notice"] = not self.show_setup_notice_check.isChecked()
         self.config_data["hide_update_all_warning"] = not self.show_update_all_warning_check.isChecked()
         self.config_data["hide_zapscripts_scan_notice"] = not self.show_zapscripts_scan_notice_check.isChecked()
-        self.config_data["menu_style"] = self.menu_style_combo.currentData() or "side_menu"
+        self.config_data["menu_style"] = self.get_selected_menu_style()
         save_config(self.config_data)
         self.main_window.config_data = self.config_data
         if hasattr(self.main_window, "apply_menu_style"):
