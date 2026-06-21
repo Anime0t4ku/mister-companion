@@ -405,7 +405,7 @@ class ScriptsTab(QWidget):
             QListWidget::item:selected {
                 background-color: palette(highlight);
                 color: palette(highlighted-text);
-                border-left: 4px solid #7c4dff;
+                border-left: none;
             }
             """
         )

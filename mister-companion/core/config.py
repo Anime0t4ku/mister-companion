@@ -5,6 +5,7 @@ from core.app_paths import generated_path
 CONFIG_PATH = generated_path("config.json")
 
 VALID_THEME_MODES = {"auto", "light", "dark"}
+VALID_MENU_STYLES = {"side_menu", "tabs"}
 
 THEME_MODE_MIGRATIONS = {
     "purple": "dark",
@@ -20,6 +21,7 @@ DEFAULT_CONFIG = {
     "check_updates_on_startup": True,
     "use_ssh_agent": False,
     "look_for_ssh_keys": False,
+    "menu_style": "side_menu",
 }
 
 
@@ -27,10 +29,25 @@ def normalize_theme_mode(value):
     mode = str(value or "auto").strip().lower()
     mode = THEME_MODE_MIGRATIONS.get(mode, mode)
 
+    if mode.startswith("custom:") and len(mode.split(":", 1)[1].strip()) > 0:
+        return mode
+
     if mode not in VALID_THEME_MODES:
         return "auto"
 
     return mode
+
+
+def normalize_menu_style(value):
+    style = str(value or "side_menu").strip().lower().replace("-", "_").replace(" ", "_")
+
+    if style == "overlay":
+        style = "side_menu"
+
+    if style not in VALID_MENU_STYLES:
+        return "side_menu"
+
+    return style
 
 
 def normalize_config(data):
@@ -45,6 +62,7 @@ def normalize_config(data):
 
     merged["app_version"] = APP_VERSION
     merged["theme_mode"] = normalize_theme_mode(merged.get("theme_mode"))
+    merged["menu_style"] = normalize_menu_style(merged.get("menu_style"))
 
     merged.pop("offline_sd_root", None)
 
