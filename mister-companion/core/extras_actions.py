@@ -25,6 +25,12 @@ from core.extras_mms2_gb_core import (
     uninstall_mms2_gb_core,
 )
 
+from core.extras_paprium_megadrive import (
+    get_paprium_megadrive_status,
+    install_or_update_paprium_megadrive,
+    uninstall_paprium_megadrive,
+)
+
 
 __all__ = [
     "get_3sx_status",
@@ -45,4 +51,8 @@ __all__ = [
     "get_mms2_gb_core_status",
     "install_or_update_mms2_gb_core",
     "uninstall_mms2_gb_core",
+
+    "get_paprium_megadrive_status",
+    "install_or_update_paprium_megadrive",
+    "uninstall_paprium_megadrive",
 ]

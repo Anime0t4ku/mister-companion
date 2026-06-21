@@ -25,15 +25,18 @@ from core.extras_actions import (
     get_sonic_mania_status,
     get_zaparoo_launcher_status,
     get_mms2_gb_core_status,
+    get_paprium_megadrive_status,
     install_or_update_3sx as backend_install_or_update_3sx,
     install_or_update_sonic_mania as backend_install_or_update_sonic_mania,
     install_or_update_zaparoo_launcher as backend_install_or_update_zaparoo_launcher,
     enable_zaparoo_launcher_frontend as backend_enable_zaparoo_launcher_frontend,
     install_or_update_mms2_gb_core as backend_install_or_update_mms2_gb_core,
+    install_or_update_paprium_megadrive as backend_install_or_update_paprium_megadrive,
     uninstall_3sx as backend_uninstall_3sx,
     uninstall_sonic_mania as backend_uninstall_sonic_mania,
     uninstall_zaparoo_launcher as backend_uninstall_zaparoo_launcher,
     uninstall_mms2_gb_core as backend_uninstall_mms2_gb_core,
+    uninstall_paprium_megadrive as backend_uninstall_paprium_megadrive,
     upload_3sx_afs as backend_upload_3sx_afs,
     upload_sonic_mania_data_rsdk as backend_upload_sonic_mania_data_rsdk,
 )
@@ -63,6 +66,14 @@ from core.extras_mms2_gb_core import (
     get_mms2_gb_core_status_local,
     install_or_update_mms2_gb_core_local as backend_install_or_update_mms2_gb_core_local,
     uninstall_mms2_gb_core_local as backend_uninstall_mms2_gb_core_local,
+)
+
+from core.extras_paprium_megadrive import (
+    get_paprium_megadrive_status_local,
+    install_or_update_paprium_megadrive_local as backend_install_or_update_paprium_megadrive_local,
+    open_paprium_game_folder_local,
+    open_paprium_game_folder_on_host,
+    uninstall_paprium_megadrive_local as backend_uninstall_paprium_megadrive_local,
 )
 
 from core.extras_ra_cores import (
@@ -117,6 +128,7 @@ class ExtrasStatusWorker(QThread):
     EXTRA_SONIC_MANIA = "sonic_mania_mister"
     EXTRA_ZAPAROO_LAUNCHER = "zaparoo_frontend"
     EXTRA_MMS2_GB_CORE = "mms2_gb_core"
+    EXTRA_PAPRIUM_MEGADRIVE = "paprium_megadrive"
     EXTRA_RA_CORES = "retroachievement_cores"
 
     def __init__(self, connection, offline=False, sd_root=""):
@@ -155,6 +167,12 @@ class ExtrasStatusWorker(QThread):
                     else get_mms2_gb_core_status(self.connection),
                 ),
                 (
+                    self.EXTRA_PAPRIUM_MEGADRIVE,
+                    lambda: get_paprium_megadrive_status_local(self.sd_root)
+                    if self.offline
+                    else get_paprium_megadrive_status(self.connection),
+                ),
+                (
                     self.EXTRA_RA_CORES,
                     lambda: get_ra_cores_status_local(self.sd_root)
                     if self.offline
@@ -190,12 +208,14 @@ class ExtrasTab(QWidget):
     EXTRA_SONIC_MANIA = "sonic_mania_mister"
     EXTRA_ZAPAROO_LAUNCHER = "zaparoo_frontend"
     EXTRA_MMS2_GB_CORE = "mms2_gb_core"
+    EXTRA_PAPRIUM_MEGADRIVE = "paprium_megadrive"
     EXTRA_RA_CORES = "retroachievement_cores"
 
     TASK_CHECK_3SX = "check_updates_3sx"
     TASK_CHECK_SONIC_MANIA = "check_updates_sonic_mania"
     TASK_CHECK_ZAPAROO_LAUNCHER = "check_updates_zaparoo_launcher"
     TASK_CHECK_MMS2_GB_CORE = "check_updates_mms2_gb_core"
+    TASK_CHECK_PAPRIUM_MEGADRIVE = "check_updates_paprium_megadrive"
     TASK_CHECK_RA_CORES = "check_updates_ra_cores"
 
     OFFLINE_SUPPORTED_EXTRAS = {
@@ -203,6 +223,7 @@ class ExtrasTab(QWidget):
         EXTRA_SONIC_MANIA,
         EXTRA_ZAPAROO_LAUNCHER,
         EXTRA_MMS2_GB_CORE,
+        EXTRA_PAPRIUM_MEGADRIVE,
         EXTRA_RA_CORES,
     }
 
@@ -226,6 +247,7 @@ class ExtrasTab(QWidget):
             self.EXTRA_SONIC_MANIA,
             self.EXTRA_ZAPAROO_LAUNCHER,
             self.EXTRA_MMS2_GB_CORE,
+            self.EXTRA_PAPRIUM_MEGADRIVE,
             self.EXTRA_RA_CORES,
         ]
 
@@ -234,6 +256,7 @@ class ExtrasTab(QWidget):
             self.EXTRA_SONIC_MANIA: "Sonic Mania MiSTer",
             self.EXTRA_ZAPAROO_LAUNCHER: "Zaparoo Frontend",
             self.EXTRA_MMS2_GB_CORE: "MMS2 GB Core",
+            self.EXTRA_PAPRIUM_MEGADRIVE: "Paprium MegaDrive",
             self.EXTRA_RA_CORES: "RetroAchievement Cores",
         }
 
@@ -260,6 +283,11 @@ class ExtrasTab(QWidget):
                 "affect the original Game Boy core, and regular ROMs should still be "
                 "launched with the standard Game Boy core."
             ),
+            self.EXTRA_PAPRIUM_MEGADRIVE: (
+                "Installs Pezz82’s customized MegaDrive core for running Paprium. "
+                "This only installs the core and launcher. Provide your own ROM and "
+                "make sure you use the correct ROM version with WAV files, not the MP3 files."
+            ),
             self.EXTRA_RA_CORES: (
                 "RetroAchievement Cores adds RetroAchievements-enabled MiSTer cores "
                 "and the required MiSTer_RA support files. It uses MGL launchers so "
@@ -272,6 +300,7 @@ class ExtrasTab(QWidget):
             self.EXTRA_SONIC_MANIA: "Unknown",
             self.EXTRA_ZAPAROO_LAUNCHER: "Unknown",
             self.EXTRA_MMS2_GB_CORE: "Unknown",
+            self.EXTRA_PAPRIUM_MEGADRIVE: "Unknown",
             self.EXTRA_RA_CORES: "Unknown",
         }
 
@@ -369,6 +398,7 @@ class ExtrasTab(QWidget):
         self.sonic_mania_actions_widget = self._build_sonic_mania_actions()
         self.zaparoo_launcher_actions_widget = self._build_zaparoo_launcher_actions()
         self.mms2_gb_core_actions_widget = self._build_mms2_gb_core_actions()
+        self.paprium_megadrive_actions_widget = self._build_paprium_megadrive_actions()
         self.ra_cores_actions_widget = self._build_ra_cores_actions()
 
         self.extra_action_widgets = {
@@ -376,6 +406,7 @@ class ExtrasTab(QWidget):
             self.EXTRA_SONIC_MANIA: self.sonic_mania_actions_widget,
             self.EXTRA_ZAPAROO_LAUNCHER: self.zaparoo_launcher_actions_widget,
             self.EXTRA_MMS2_GB_CORE: self.mms2_gb_core_actions_widget,
+            self.EXTRA_PAPRIUM_MEGADRIVE: self.paprium_megadrive_actions_widget,
             self.EXTRA_RA_CORES: self.ra_cores_actions_widget,
         }
 
@@ -447,6 +478,19 @@ class ExtrasTab(QWidget):
         )
         self.uninstall_mms2_gb_core_button.clicked.connect(
             self.uninstall_mms2_gb_core
+        )
+
+        self.install_update_paprium_megadrive_button.clicked.connect(
+            self.install_or_update_paprium_megadrive
+        )
+        self.check_updates_paprium_megadrive_button.clicked.connect(
+            self.check_paprium_megadrive_updates
+        )
+        self.open_paprium_game_folder_button.clicked.connect(
+            self.open_paprium_game_folder
+        )
+        self.uninstall_paprium_megadrive_button.clicked.connect(
+            self.uninstall_paprium_megadrive
         )
 
         self.install_update_ra_cores_button.clicked.connect(self.install_or_update_ra_cores)
@@ -602,6 +646,36 @@ class ExtrasTab(QWidget):
         widget.setLayout(layout)
         return widget
 
+    def _build_paprium_megadrive_actions(self):
+        widget = QWidget()
+        layout = QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+
+        self.install_update_paprium_megadrive_button = QPushButton("Install")
+        set_text_button_min_width(self.install_update_paprium_megadrive_button, 170)
+        self.check_updates_paprium_megadrive_button = QPushButton("Check for Updates")
+        set_text_button_min_width(self.check_updates_paprium_megadrive_button, 170)
+        self.open_paprium_game_folder_button = QPushButton("Open Game Folder")
+        set_text_button_min_width(self.open_paprium_game_folder_button, 170)
+        self.uninstall_paprium_megadrive_button = QPushButton("Uninstall")
+        set_text_button_min_width(self.uninstall_paprium_megadrive_button, 170)
+        layout.addLayout(
+            self._build_button_row(
+                self.install_update_paprium_megadrive_button,
+                self.check_updates_paprium_megadrive_button,
+            )
+        )
+        layout.addLayout(
+            self._build_button_row(
+                self.open_paprium_game_folder_button,
+                self.uninstall_paprium_megadrive_button,
+            )
+        )
+
+        widget.setLayout(layout)
+        return widget
+
     def _build_ra_cores_actions(self):
         widget = QWidget()
         layout = QVBoxLayout()
@@ -745,6 +819,7 @@ class ExtrasTab(QWidget):
         self.install_update_sonic_mania_button.setText("Install")
         self.install_update_zaparoo_launcher_button.setText("Install")
         self.install_update_mms2_gb_core_button.setText("Install")
+        self.install_update_paprium_megadrive_button.setText("Install")
         self.install_update_ra_cores_button.setText("Install")
 
         for extra_key in self.extra_status_texts:
@@ -769,6 +844,10 @@ class ExtrasTab(QWidget):
             self.install_update_mms2_gb_core_button,
             self.check_updates_mms2_gb_core_button,
             self.uninstall_mms2_gb_core_button,
+            self.install_update_paprium_megadrive_button,
+            self.check_updates_paprium_megadrive_button,
+            self.open_paprium_game_folder_button,
+            self.uninstall_paprium_megadrive_button,
             self.install_update_ra_cores_button,
             self.check_updates_ra_cores_button,
             self.edit_ra_cores_config_button,
@@ -877,6 +956,11 @@ class ExtrasTab(QWidget):
                 self.install_update_mms2_gb_core_button,
                 self.check_updates_mms2_gb_core_button,
                 [self.uninstall_mms2_gb_core_button],
+            ),
+            self.EXTRA_PAPRIUM_MEGADRIVE: (
+                self.install_update_paprium_megadrive_button,
+                self.check_updates_paprium_megadrive_button,
+                [self.open_paprium_game_folder_button, self.uninstall_paprium_megadrive_button],
             ),
             self.EXTRA_RA_CORES: (
                 self.install_update_ra_cores_button,
@@ -1132,6 +1216,7 @@ class ExtrasTab(QWidget):
             self.TASK_CHECK_SONIC_MANIA,
             self.TASK_CHECK_ZAPAROO_LAUNCHER,
             self.TASK_CHECK_MMS2_GB_CORE,
+            self.TASK_CHECK_PAPRIUM_MEGADRIVE,
             self.TASK_CHECK_RA_CORES,
         }
 
@@ -1141,6 +1226,7 @@ class ExtrasTab(QWidget):
             self.TASK_CHECK_SONIC_MANIA: self.EXTRA_SONIC_MANIA,
             self.TASK_CHECK_ZAPAROO_LAUNCHER: self.EXTRA_ZAPAROO_LAUNCHER,
             self.TASK_CHECK_MMS2_GB_CORE: self.EXTRA_MMS2_GB_CORE,
+            self.TASK_CHECK_PAPRIUM_MEGADRIVE: self.EXTRA_PAPRIUM_MEGADRIVE,
             self.TASK_CHECK_RA_CORES: self.EXTRA_RA_CORES,
         }.get(task_kind)
 
@@ -1204,6 +1290,13 @@ class ExtrasTab(QWidget):
             self.install_update_mms2_gb_core_button.setEnabled(result["install_enabled"])
             self.check_updates_mms2_gb_core_button.setEnabled(result.get("installed", False))
             self.uninstall_mms2_gb_core_button.setEnabled(result["uninstall_enabled"])
+
+        elif extra_key == self.EXTRA_PAPRIUM_MEGADRIVE:
+            self.install_update_paprium_megadrive_button.setText(result["install_label"])
+            self.install_update_paprium_megadrive_button.setEnabled(result["install_enabled"])
+            self.check_updates_paprium_megadrive_button.setEnabled(result.get("installed", False))
+            self.open_paprium_game_folder_button.setEnabled(result.get("folder_open_enabled", False))
+            self.uninstall_paprium_megadrive_button.setEnabled(result["uninstall_enabled"])
 
         elif extra_key == self.EXTRA_RA_CORES:
             self.install_update_ra_cores_button.setText(result["install_label"])
@@ -1304,6 +1397,30 @@ class ExtrasTab(QWidget):
             return get_mms2_gb_core_status(self.connection, check_latest=True)
 
         self._run_worker(task, "", task_kind=self.TASK_CHECK_MMS2_GB_CORE)
+
+    def check_paprium_megadrive_updates(self):
+        if self.is_offline_mode():
+            if not self.has_offline_sd_root():
+                return
+
+            def task(log):
+                log("Checking Paprium MegaDrive updates...\n")
+                return get_paprium_megadrive_status_local(
+                    self.get_offline_sd_root(),
+                    check_latest=True,
+                )
+
+            self._run_worker(task, "", task_kind=self.TASK_CHECK_PAPRIUM_MEGADRIVE)
+            return
+
+        if not self.is_online_connected():
+            return
+
+        def task(log):
+            log("Checking Paprium MegaDrive updates...\n")
+            return get_paprium_megadrive_status(self.connection, check_latest=True)
+
+        self._run_worker(task, "", task_kind=self.TASK_CHECK_PAPRIUM_MEGADRIVE)
 
     def check_ra_cores_updates(self):
         if self.is_offline_mode():
@@ -1727,6 +1844,124 @@ class ExtrasTab(QWidget):
 
         self._clear_cached_update_result(self.EXTRA_MMS2_GB_CORE)
         self._run_worker(task, "MMS2 GB Core uninstalled.")
+
+    def install_or_update_paprium_megadrive(self):
+        button_text = self.install_update_paprium_megadrive_button.text().strip()
+        success_message = "Paprium MegaDrive installed."
+
+        if button_text == "Update":
+            success_message = "Paprium MegaDrive updated."
+
+        if self.is_offline_mode():
+            if not self.has_offline_sd_root():
+                return
+
+            def task(log):
+                return backend_install_or_update_paprium_megadrive_local(
+                    self.get_offline_sd_root(),
+                    log,
+                )
+
+            self._clear_cached_update_result(self.EXTRA_PAPRIUM_MEGADRIVE)
+            self._run_worker(task, success_message)
+            return
+
+        if not self.is_online_connected():
+            return
+
+        def task(log):
+            return backend_install_or_update_paprium_megadrive(self.connection, log)
+
+        self._clear_cached_update_result(self.EXTRA_PAPRIUM_MEGADRIVE)
+        self._run_worker(task, success_message)
+
+    def open_paprium_game_folder(self):
+        try:
+            if self.is_offline_mode():
+                if not self.has_offline_sd_root():
+                    return
+                open_paprium_game_folder_local(self.get_offline_sd_root())
+                return
+
+            if not self.is_online_connected():
+                return
+
+            open_paprium_game_folder_on_host(self.connection.host)
+        except Exception as e:
+            QMessageBox.critical(self, "Paprium MegaDrive", str(e))
+
+    def uninstall_paprium_megadrive(self):
+        if self.is_offline_mode():
+            if not self.has_offline_sd_root():
+                return
+
+            reply = QMessageBox.question(
+                self,
+                "Uninstall Paprium MegaDrive",
+                (
+                    "Remove the Paprium MegaDrive core and launcher from the Offline SD Card?\n\n"
+                    "The PapriumMD game folder can also be removed in the next step."
+                ),
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+
+            remove_game_folder = self.ask_remove_paprium_game_folder()
+
+            def task(log):
+                return backend_uninstall_paprium_megadrive_local(
+                    self.get_offline_sd_root(),
+                    log,
+                    remove_game_folder=remove_game_folder,
+                )
+
+            self._clear_cached_update_result(self.EXTRA_PAPRIUM_MEGADRIVE)
+            self._run_worker(task, "Paprium MegaDrive uninstalled.")
+            return
+
+        if not self.is_online_connected():
+            return
+
+        reply = QMessageBox.question(
+            self,
+            "Uninstall Paprium MegaDrive",
+            (
+                "Remove the Paprium MegaDrive core and launcher?\n\n"
+                "The PapriumMD game folder can also be removed in the next step."
+            ),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        remove_game_folder = self.ask_remove_paprium_game_folder()
+
+        def task(log):
+            return backend_uninstall_paprium_megadrive(
+                self.connection,
+                log,
+                remove_game_folder=remove_game_folder,
+            )
+
+        self._clear_cached_update_result(self.EXTRA_PAPRIUM_MEGADRIVE)
+        self._run_worker(task, "Paprium MegaDrive uninstalled.")
+
+    def ask_remove_paprium_game_folder(self):
+        reply = QMessageBox.question(
+            self,
+            "Remove PapriumMD Game Folder?",
+            (
+                "Do you also want to remove the PapriumMD game folder?\n\n"
+                "Choose Yes to delete /media/fat/games/PapriumMD.\n"
+                "Choose No to keep your Paprium game files untouched."
+            ),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        return reply == QMessageBox.StandardButton.Yes
 
     def prompt_zaparoo_launcher_soft_reboot_required(self):
         self.prompt_soft_reboot_required(
