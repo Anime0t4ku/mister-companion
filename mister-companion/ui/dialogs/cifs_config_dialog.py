@@ -7,6 +7,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMessageBox,
+    QWidget,
     QPushButton,
     QVBoxLayout,
 )
@@ -56,6 +57,7 @@ class CifsConfigDialog(QDialog):
         self.username_input = QLineEdit()
         self.password_input = QLineEdit()
         self.mount_at_boot_check = QCheckBox("Mount at boot")
+        self.advanced_check = QCheckBox("Advanced options")
 
         self.mount_at_boot_check.setChecked(True)
         self.password_input.setEchoMode(QLineEdit.EchoMode.Password)
@@ -65,8 +67,38 @@ class CifsConfigDialog(QDialog):
         form.addRow("Username", self.username_input)
         form.addRow("Password", self.password_input)
         form.addRow("", self.mount_at_boot_check)
+        form.addRow("", self.advanced_check)
 
         layout.addLayout(form)
+
+        self.advanced_widget = QWidget()
+        advanced_layout = QFormLayout(self.advanced_widget)
+        advanced_layout.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
+
+        self.share_directory_input = QLineEdit()
+        self.domain_input = QLineEdit()
+        self.local_dir_input = QLineEdit()
+        self.additional_mount_options_input = QLineEdit()
+
+        self.local_dir_input.setText("cifs/games")
+        self.local_dir_input.setPlaceholderText("cifs/games")
+        self.additional_mount_options_input.setPlaceholderText("Example: vers=3.0")
+
+        advanced_layout.addRow("Share Directory", self.share_directory_input)
+        advanced_layout.addRow("Domain", self.domain_input)
+        advanced_layout.addRow("Local Mount Folder", self.local_dir_input)
+        advanced_layout.addRow("Additional Mount Options", self.additional_mount_options_input)
+
+        advanced_help = QLabel(
+            "Local Mount Folder is relative to /media/fat. "
+            "Default: cifs/games. Example: cifs, cifs/games, cifs/docs. "
+            "Leave additional mount options empty unless your NAS requires them."
+        )
+        advanced_help.setWordWrap(True)
+        advanced_layout.addRow("", advanced_help)
+
+        layout.addWidget(self.advanced_widget)
+        self.advanced_widget.setVisible(False)
 
         button_row = QHBoxLayout()
         button_row.addStretch()
@@ -83,6 +115,7 @@ class CifsConfigDialog(QDialog):
         self.test_button.clicked.connect(self.on_test_connection)
         self.save_button.clicked.connect(self.on_save)
         self.cancel_button.clicked.connect(self.reject)
+        self.advanced_check.toggled.connect(self.advanced_widget.setVisible)
 
         if self.offline_mode:
             self.test_button.setEnabled(False)
@@ -106,11 +139,56 @@ class CifsConfigDialog(QDialog):
         self.share_input.setText(config.get("SHARE", ""))
         self.username_input.setText(config.get("USERNAME", ""))
         self.password_input.setText(config.get("PASSWORD", ""))
+        self.share_directory_input.setText(config.get("SHARE_DIRECTORY", ""))
+        self.domain_input.setText(config.get("DOMAIN", ""))
+        self.local_dir_input.setText(config.get("LOCAL_DIR", "cifs/games") or "cifs/games")
+        self.additional_mount_options_input.setText(config.get("ADDITIONAL_MOUNT_OPTIONS", ""))
+
+        use_advanced = self._config_uses_advanced_values(config)
+        self.advanced_check.setChecked(use_advanced)
+        self.advanced_widget.setVisible(use_advanced)
 
         if config.get("MOUNT_AT_BOOT", "true").lower() == "false":
             self.mount_at_boot_check.setChecked(False)
         else:
             self.mount_at_boot_check.setChecked(True)
+
+
+    def _config_uses_advanced_values(self, config):
+        if not config:
+            return False
+
+        local_dir = config.get("LOCAL_DIR", "cifs/games") or "cifs/games"
+        advanced_values = [
+            config.get("SHARE_DIRECTORY", ""),
+            config.get("DOMAIN", ""),
+            config.get("ADDITIONAL_MOUNT_OPTIONS", ""),
+        ]
+
+        return local_dir != "cifs/games" or any(value for value in advanced_values)
+
+    def _validated_local_dir(self):
+        local_dir = self.local_dir_input.text().strip() or "cifs/games"
+        local_dir = local_dir.replace("\\", "/").strip("/")
+
+        blocked_names = {
+            "linux",
+            "config",
+            "scripts",
+            "system volume information",
+        }
+
+        parts = [part for part in local_dir.split("/") if part]
+        if not parts:
+            return "cifs/games"
+
+        if any(part in {".", ".."} for part in parts):
+            raise ValueError("Local Mount Folder cannot contain . or ...")
+
+        if parts[0].lower() in blocked_names:
+            raise ValueError("Local Mount Folder cannot point to a protected MiSTer folder.")
+
+        return "/".join(parts)
 
     def on_test_connection(self):
         if self.offline_mode:
@@ -126,6 +204,15 @@ class CifsConfigDialog(QDialog):
         username = self.username_input.text().strip()
         password = self.password_input.text().strip()
 
+        if self.advanced_check.isChecked():
+            share_directory = self.share_directory_input.text().strip()
+            domain = self.domain_input.text().strip()
+            additional_mount_options = self.additional_mount_options_input.text().strip()
+        else:
+            share_directory = ""
+            domain = ""
+            additional_mount_options = ""
+
         if not server or not share:
             QMessageBox.critical(
                 self,
@@ -140,6 +227,9 @@ class CifsConfigDialog(QDialog):
             share,
             username,
             password,
+            share_directory=share_directory,
+            domain=domain,
+            additional_mount_options=additional_mount_options,
         )
 
         if ok:
@@ -158,6 +248,21 @@ class CifsConfigDialog(QDialog):
         password = self.password_input.text().strip()
         mount_at_boot = self.mount_at_boot_check.isChecked()
 
+        if self.advanced_check.isChecked():
+            share_directory = self.share_directory_input.text().strip()
+            domain = self.domain_input.text().strip()
+            additional_mount_options = self.additional_mount_options_input.text().strip()
+            try:
+                local_dir = self._validated_local_dir()
+            except ValueError as e:
+                QMessageBox.critical(self, "Invalid Local Mount Folder", str(e))
+                return
+        else:
+            share_directory = ""
+            domain = ""
+            local_dir = "cifs/games"
+            additional_mount_options = ""
+
         if not server:
             QMessageBox.critical(self, "Missing Information", "Server IP is required.")
             return
@@ -175,6 +280,10 @@ class CifsConfigDialog(QDialog):
                     username=username,
                     password=password,
                     mount_at_boot=mount_at_boot,
+                    share_directory=share_directory,
+                    domain=domain,
+                    local_dir=local_dir,
+                    additional_mount_options=additional_mount_options,
                 )
             else:
                 save_cifs_config(
@@ -184,6 +293,10 @@ class CifsConfigDialog(QDialog):
                     username=username,
                     password=password,
                     mount_at_boot=mount_at_boot,
+                    share_directory=share_directory,
+                    domain=domain,
+                    local_dir=local_dir,
+                    additional_mount_options=additional_mount_options,
                 )
 
             self.accept()
