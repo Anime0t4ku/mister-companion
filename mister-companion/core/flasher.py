@@ -17,6 +17,8 @@ from typing import Callable
 
 import requests
 
+from core.app_paths import generated_path
+
 try:
     import winreg
 except ImportError:
@@ -40,7 +42,7 @@ def get_app_base_dir() -> Path:
 
 
 BASE_DIR = get_app_base_dir()
-TOOLS_DIR = BASE_DIR / "tools"
+TOOLS_DIR = generated_path("tools", default_root=BASE_DIR)
 BALENA_DIR = TOOLS_DIR / "balena-cli"
 MR_FUSION_DIR = TOOLS_DIR / "mr-fusion"
 MC_FUSION_DIR = TOOLS_DIR / "mc-fusion"
