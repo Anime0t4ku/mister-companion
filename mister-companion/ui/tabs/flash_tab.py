@@ -251,8 +251,8 @@ class FlashTab(QWidget):
         self.download_image_button = QPushButton("Download Image")
         self.remove_image_button = QPushButton("Remove Image")
 
-        self.download_image_button.setMinimumWidth(150)
-        self.remove_image_button.setMinimumWidth(130)
+        set_text_button_min_width(self.download_image_button, 150)
+        set_text_button_min_width(self.remove_image_button, 130)
 
         image_buttons_row.addWidget(self.download_image_button)
         image_buttons_row.addWidget(self.remove_image_button)
@@ -279,8 +279,8 @@ class FlashTab(QWidget):
         self.download_balena_button = QPushButton("Download balena CLI")
         self.remove_balena_button = QPushButton("Remove balena CLI")
 
-        self.download_balena_button.setMinimumWidth(150)
-        self.remove_balena_button.setMinimumWidth(130)
+        set_text_button_min_width(self.download_balena_button, 150)
+        set_text_button_min_width(self.remove_balena_button, 130)
 
         balena_buttons_row.addWidget(self.download_balena_button)
         balena_buttons_row.addWidget(self.remove_balena_button)
@@ -306,7 +306,14 @@ class FlashTab(QWidget):
         self.drive_combo.addItem("Click 'Refresh Drives' to load available drives")
 
         self.refresh_drives_button = QPushButton("Refresh Drives")
-        self.refresh_drives_button.setMinimumWidth(120)
+        set_text_button_min_width(self.refresh_drives_button, 120)
+
+        target_group.setMinimumWidth(
+            self.drive_combo.minimumWidth()
+            + self.refresh_drives_button.minimumWidth()
+            + drive_row.spacing()
+            + 32
+        )
 
         drive_row.addWidget(self.drive_combo, 1)
         drive_row.addWidget(self.refresh_drives_button)
@@ -322,8 +329,7 @@ class FlashTab(QWidget):
         flash_row.addStretch()
 
         self.flash_button = QPushButton("Flash SD Card")
-        self.flash_button.setMinimumWidth(190)
-        self.flash_button.setMinimumHeight(34)
+        set_text_button_min_width(self.flash_button, 190, height=34)
 
         flash_row.addWidget(self.flash_button)
         flash_row.addStretch()

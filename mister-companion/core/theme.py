@@ -3,6 +3,7 @@ import platform
 
 from PyQt6.QtGui import QColor, QFont, QPalette
 
+from core.app_paths import is_macos_packaged_app
 from core.custom_themes import get_custom_theme, is_custom_theme_key, themes_dir
 from PyQt6.QtWidgets import QApplication, QStyleFactory
 
@@ -10,6 +11,8 @@ from PyQt6.QtWidgets import QApplication, QStyleFactory
 _ORIGINAL_STYLE = None
 _ORIGINAL_PALETTE = None
 _ORIGINAL_FONT = None
+
+MACOS_PACKAGED_UI_SCALE_FACTOR = 0.8
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 ASSETS_DIR = BASE_DIR / "assets"
@@ -308,7 +311,12 @@ def normalize_ui_scale_percent(value) -> int:
 
 
 def ui_scale_factor(value) -> float:
-    return normalize_ui_scale_percent(value) / 100.0
+    factor = normalize_ui_scale_percent(value) / 100.0
+
+    if is_macos_packaged_app():
+        factor *= MACOS_PACKAGED_UI_SCALE_FACTOR
+
+    return factor
 
 
 def make_scaler(value):

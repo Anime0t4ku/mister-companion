@@ -105,15 +105,24 @@ class ConnectionTab(QWidget):
         header_text_layout.addWidget(self.mode_hint_label)
 
         self.show_news_button = QPushButton("Show News")
+        set_text_button_min_width(self.show_news_button, 90)
         self.show_news_button.hide()
 
-        show_news_button_width = self.show_news_button.sizeHint().width()
+        show_news_button_width = self.show_news_button.minimumWidth()
 
         self.show_news_button_placeholder = QWidget()
-        self.show_news_button_placeholder.setFixedWidth(show_news_button_width)
+        self.show_news_button_placeholder.setMinimumWidth(show_news_button_width)
+        self.show_news_button_placeholder.setSizePolicy(
+            QSizePolicy.Policy.Minimum,
+            QSizePolicy.Policy.Fixed,
+        )
 
         self.show_news_button_container = QWidget()
-        self.show_news_button_container.setFixedWidth(show_news_button_width)
+        self.show_news_button_container.setMinimumWidth(show_news_button_width)
+        self.show_news_button_container.setSizePolicy(
+            QSizePolicy.Policy.Minimum,
+            QSizePolicy.Policy.Fixed,
+        )
 
         show_news_button_layout = QHBoxLayout(self.show_news_button_container)
         show_news_button_layout.setContentsMargins(0, 0, 0, 0)
