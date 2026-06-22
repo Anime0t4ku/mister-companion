@@ -3,8 +3,8 @@ from __future__ import annotations
 import platform
 from pathlib import Path
 
-from PyQt6.QtCore import QEvent, QPoint, Qt
-from PyQt6.QtGui import QIcon, QMouseEvent
+from PyQt6.QtCore import QEvent, QPoint, Qt, QObject, QRectF
+from PyQt6.QtGui import QIcon, QMouseEvent, QPainterPath, QRegion
 from PyQt6.QtWidgets import (
     QApplication,
     QDialog,
@@ -138,6 +138,8 @@ class CustomMessageDialog(QDialog):
             }
             """
         )
+
+        _install_rounded_mask(self)
 
     def _finish(self, button_text):
         normalized = str(button_text or "").strip().lower()
@@ -351,6 +353,7 @@ class _MessageTitleBar(QWidget):
 
             self.dialog._mister_dialog_maximized = True
 
+        _apply_rounded_mask(self.dialog)
         self.dialog.raise_()
         self.dialog.activateWindow()
 
@@ -409,6 +412,50 @@ class _MessageTitleBar(QWidget):
             return
 
         super().mouseDoubleClickEvent(event)
+
+
+def _install_rounded_mask(dialog: QDialog) -> None:
+    if getattr(dialog, "_mister_rounded_mask_filter", None) is not None:
+        _apply_rounded_mask(dialog)
+        return
+
+    mask_filter = _RoundedDialogMaskFilter(dialog)
+    dialog._mister_rounded_mask_filter = mask_filter
+    dialog.installEventFilter(mask_filter)
+    _apply_rounded_mask(dialog)
+
+
+def _apply_rounded_mask(dialog: QDialog) -> None:
+    try:
+        if dialog.isMaximized() or getattr(dialog, "_mister_dialog_maximized", False):
+            dialog.clearMask()
+            return
+
+        rect = dialog.rect()
+        if rect.isNull() or rect.width() <= 0 or rect.height() <= 0:
+            return
+
+        path = QPainterPath()
+        path.addRoundedRect(QRectF(rect), 10, 10)
+        dialog.setMask(QRegion(path.toFillPolygon().toPolygon()))
+    except Exception:
+        pass
+
+
+class _RoundedDialogMaskFilter(QObject):
+    def __init__(self, dialog: QDialog) -> None:
+        super().__init__(dialog)
+        self.dialog = dialog
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        if event.type() in (
+            QEvent.Type.Show,
+            QEvent.Type.Resize,
+            QEvent.Type.WindowStateChange,
+        ):
+            _apply_rounded_mask(self.dialog)
+
+        return False
 
 
 def _is_linux() -> bool:
