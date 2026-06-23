@@ -479,6 +479,13 @@ class InstallCenterDetailsDialog(QDialog):
             self.rom_meta_label.setWordWrap(True)
             right_panel.addWidget(self.rom_meta_label)
 
+        rom_redistribution_text = self.rom_redistribution_text()
+        if rom_redistribution_text:
+            self.rom_redistribution_label = QLabel(rom_redistribution_text)
+            self.rom_redistribution_label.setStyleSheet("color: gray;")
+            self.rom_redistribution_label.setWordWrap(True)
+            right_panel.addWidget(self.rom_redistribution_label)
+
         self.status_label = QLabel(self.full_status_text())
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.status_label.setStyleSheet(self.tab.status_style_for(self.status, pill=True))
@@ -531,8 +538,11 @@ class InstallCenterDetailsDialog(QDialog):
 
         layout.addWidget(body_container, 1)
 
+    def is_rom_item(self):
+        return self.item.get("category") == "roms" or self.item.get("type") == "rom"
+
     def rom_metadata_text(self):
-        if self.item.get("category") != "roms" and self.item.get("type") != "rom":
+        if not self.is_rom_item():
             return ""
         parts = []
         system = self.item.get("system")
@@ -547,11 +557,41 @@ class InstallCenterDetailsDialog(QDialog):
             parts.append(f"{label}: {', '.join(genres)}")
         return "  •  ".join(parts)
 
+    def rom_redistribution_text(self):
+        if not self.is_rom_item():
+            return ""
+
+        status = str(self.item.get("redistribution_status") or self.item.get("redistribution") or "").strip().lower()
+        license_name = str(self.item.get("license_name") or "").strip()
+        permission_note = str(self.item.get("permission_note") or "").strip()
+        redistribution_notes = str(self.item.get("redistribution_notes") or "").strip()
+
+        if status in {"license", "licensed"}:
+            text = f"Redistribution: Allowed by {license_name} license" if license_name else "Redistribution: Allowed by license"
+        elif status in {"permission", "developer_permission"}:
+            text = "Redistribution: Allowed by developer permission"
+        elif status in {"public_domain", "public domain", "cc0"}:
+            text = f"Redistribution: {license_name}" if license_name else "Redistribution: Public domain"
+        elif status in {"official_source_only", "official source only"}:
+            text = "Distribution: Official source download"
+        elif status == "allowed":
+            text = "Redistribution: Allowed"
+        elif license_name:
+            text = f"License: {license_name}"
+        elif permission_note:
+            text = "Redistribution: Allowed by developer permission"
+        else:
+            return ""
+
+        note = permission_note or redistribution_notes
+        if note:
+            text += f"  •  {note}"
+        return text
+
     def update_rom_path_label(self):
         if not hasattr(self, "rom_path_label"):
             return
-        is_rom = self.item.get("category") == "roms" or self.item.get("type") == "rom"
-        if not is_rom:
+        if not self.is_rom_item():
             self.rom_path_label.setVisible(False)
             return
         if self.status.get("install_path"):
@@ -666,6 +706,18 @@ class InstallCenterDetailsDialog(QDialog):
             add_button("Choose Install Folder", self.choose_rom_install_folder, enabled=True, min_width=150)
         add_button("Update" if update_available else "Install", self.install_or_update, enabled=(not installed or update_available), min_width=88)
         add_button("Uninstall", self.uninstall, enabled=installed, min_width=88)
+
+        license_button = QPushButton("License")
+        self.prepare_action_button(license_button)
+        license_button.setVisible(bool(self.item.get("license_url")))
+        license_button.clicked.connect(self.open_license_page)
+        actions.addWidget(license_button)
+
+        source_button = QPushButton("Source")
+        self.prepare_action_button(source_button)
+        source_button.setVisible(bool(self.item.get("source_url")))
+        source_button.clicked.connect(self.open_source_page)
+        actions.addWidget(source_button)
 
         official_button = QPushButton("Official Page")
         self.prepare_action_button(official_button)
@@ -799,6 +851,18 @@ class InstallCenterDetailsDialog(QDialog):
         else:
             add_button("Uninstall", self.uninstall, enabled=installed)
 
+        license_button = QPushButton("License")
+        self.prepare_action_button(license_button)
+        license_button.setVisible(bool(self.item.get("license_url")))
+        license_button.clicked.connect(self.open_license_page)
+        actions.addWidget(license_button)
+
+        source_button = QPushButton("Source")
+        self.prepare_action_button(source_button)
+        source_button.setVisible(bool(self.item.get("source_url")))
+        source_button.clicked.connect(self.open_source_page)
+        actions.addWidget(source_button)
+
         official_button = QPushButton("Official Page")
         self.prepare_action_button(official_button)
         official_button.setVisible(bool(self.item.get("official_url")))
@@ -835,6 +899,18 @@ class InstallCenterDetailsDialog(QDialog):
             add_button("Edit Config", self.configure, enabled=self.status.get("edit_config_enabled", installed), min_width=170)
 
         add_button("Uninstall", self.uninstall, enabled=self.status.get("uninstall_enabled", installed), min_width=170)
+
+        license_button = QPushButton("License")
+        self.prepare_action_button(license_button)
+        license_button.setVisible(bool(self.item.get("license_url")))
+        license_button.clicked.connect(self.open_license_page)
+        actions.addWidget(license_button)
+
+        source_button = QPushButton("Source")
+        self.prepare_action_button(source_button)
+        source_button.setVisible(bool(self.item.get("source_url")))
+        source_button.clicked.connect(self.open_source_page)
+        actions.addWidget(source_button)
 
         official_button = QPushButton("Official Page")
         self.prepare_action_button(official_button)
@@ -916,10 +992,19 @@ class InstallCenterDetailsDialog(QDialog):
             self.install_update_button.setText("Update" if self.status.get("update_available") else "Install")
             self.install_update_button.setVisible(action_supported(self.item, self.status, "install_update") and self.tab.has_ready_context())
 
-    def open_official_page(self):
-        url = str(self.item.get("official_url") or "").strip()
+    def open_item_url(self, key):
+        url = str(self.item.get(key) or "").strip()
         if url:
             webbrowser.open(url)
+
+    def open_official_page(self):
+        self.open_item_url("official_url")
+
+    def open_license_page(self):
+        self.open_item_url("license_url")
+
+    def open_source_page(self):
+        self.open_item_url("source_url")
 
 
 class InstallCenterUpdatesDialog(QDialog):
