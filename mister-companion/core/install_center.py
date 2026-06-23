@@ -2,11 +2,14 @@ import json
 import time
 import urllib.request
 import ssl
+import tempfile
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
 from core.app_paths import generated_path
+from core.file_browser import join_remote_path, normalize_remote_path, ensure_remote_dir
 from core.scripts_actions import (
     get_scripts_status,
     get_scripts_status_local,
@@ -665,23 +668,221 @@ def open_wallpaper_folder(context: InstallCenterContext):
             context.connection.password or "1",
         )
 
-def check_rom_status(item: dict, context: InstallCenterContext) -> dict:
-    item_id = item.get("id")
-    catalog_version = item.get("version")
 
-    manifest = {}
+def _rom_manifest_path_for_context(context: InstallCenterContext):
+    if context.offline:
+        return _local_manifest_path(context.sd_root)
+    return ROM_MANIFEST_REMOTE_PATH
+
+
+def _empty_rom_manifest():
+    return {"schema_version": 1, "installed_roms": {}}
+
+
+def _read_rom_manifest(context: InstallCenterContext) -> dict:
     try:
         if context.offline:
             path = _local_manifest_path(context.sd_root)
             if path.exists():
-                manifest = json.loads(path.read_text(encoding="utf-8"))
+                data = json.loads(path.read_text(encoding="utf-8"))
+                if isinstance(data, dict):
+                    data.setdefault("installed_roms", {})
+                    return data
         else:
             raw = context.connection.run_command(f"cat {ROM_MANIFEST_REMOTE_PATH} 2>/dev/null")
             if raw:
-                manifest = json.loads(raw)
+                data = json.loads(raw)
+                if isinstance(data, dict):
+                    data.setdefault("installed_roms", {})
+                    return data
     except Exception:
-        manifest = {}
+        pass
+    return _empty_rom_manifest()
 
+
+def _write_rom_manifest(context: InstallCenterContext, manifest: dict):
+    manifest.setdefault("schema_version", 1)
+    manifest.setdefault("installed_roms", {})
+    text = json.dumps(manifest, indent=2, ensure_ascii=False)
+    if context.offline:
+        path = _local_manifest_path(context.sd_root)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+        return
+
+    sftp = context.connection.client.open_sftp()
+    try:
+        ensure_remote_dir(sftp, "/media/fat/Scripts/.config/mister_companion/install_center")
+        with sftp.open(ROM_MANIFEST_REMOTE_PATH, "w") as handle:
+            handle.write(text)
+    finally:
+        sftp.close()
+
+
+def normalize_mister_relative_path(path: str, default="/games") -> str:
+    text = str(path or default).replace("\\", "/").strip()
+    if not text:
+        text = default
+    if text.startswith("/media/fat"):
+        text = text[len("/media/fat"):]
+    if text.startswith("/media/usb0"):
+        text = text[len("/media/usb0"):]
+    if not text.startswith("/"):
+        text = "/" + text
+    text = normalize_remote_path(text)
+    if text == "/":
+        text = default
+    return text
+
+
+def resolve_mister_relative_path(context: InstallCenterContext, relative_path: str) -> str:
+    relative_path = normalize_mister_relative_path(relative_path)
+    if context.offline:
+        return str(Path(context.sd_root).expanduser().resolve() / relative_path.strip("/"))
+    return "/media/fat" + relative_path
+
+
+def _download_rom_file(url: str, log: Callable[[str], None]) -> bytes:
+    if not url:
+        raise RuntimeError("This ROM entry does not have a download URL.")
+    log(f"Downloading {url}...\n")
+    request = urllib.request.Request(url, headers={"User-Agent": "MiSTer-Companion/Install-Center"})
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            return response.read()
+    except Exception:
+        context = ssl._create_unverified_context()
+        with urllib.request.urlopen(request, timeout=60, context=context) as response:
+            return response.read()
+
+
+def _rom_install_extensions(item: dict):
+    download = item.get("download") or {}
+    extensions = download.get("install_extensions") or []
+    if isinstance(extensions, str):
+        extensions = [extensions]
+    return {str(ext).lower() for ext in extensions if str(ext).startswith(".")}
+
+
+def _rom_download_filename(item: dict, url: str) -> str:
+    name = str((item.get("download") or {}).get("filename") or "").strip()
+    if not name:
+        name = Path(str(url).split("?", 1)[0]).name
+    if not name:
+        name = f"{item.get('id', 'rom')}.rom"
+    return name
+
+
+def _write_rom_file(context: InstallCenterContext, target_relative: str, data: bytes, log: Callable[[str], None]):
+    target_relative = normalize_mister_relative_path(target_relative)
+    if context.offline:
+        target = Path(resolve_mister_relative_path(context, target_relative))
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+    else:
+        target = resolve_mister_relative_path(context, target_relative)
+        sftp = context.connection.client.open_sftp()
+        try:
+            ensure_remote_dir(sftp, str(Path(target).parent).replace("\\", "/"))
+            with sftp.open(target, "wb") as handle:
+                handle.write(data)
+        finally:
+            sftp.close()
+    log(f"Installed {target_relative}\n")
+
+
+def _delete_rom_file(context: InstallCenterContext, target_relative: str, log: Callable[[str], None]):
+    target_relative = normalize_mister_relative_path(target_relative)
+    if context.offline:
+        target = Path(resolve_mister_relative_path(context, target_relative))
+        if target.exists() and target.is_file():
+            target.unlink()
+            log(f"Removed {target_relative}\n")
+    else:
+        target = resolve_mister_relative_path(context, target_relative)
+        try:
+            context.connection.run_command(f"rm -f {json.dumps(target)}")
+            log(f"Removed {target_relative}\n")
+        except Exception as e:
+            log(f"Could not remove {target_relative}: {e}\n")
+
+
+def install_rom_item(item: dict, context: InstallCenterContext, log: Callable[[str], None], install_path: str | None = None):
+    item_id = item.get("id")
+    if not item_id:
+        raise RuntimeError("ROM entry is missing an id.")
+    download = item.get("download") or {}
+    url = download.get("url")
+    download_type = str(download.get("type") or "file").lower()
+    install_path = normalize_mister_relative_path(install_path or item.get("default_install_path") or "/games")
+    data = _download_rom_file(url, log)
+    installed_files = []
+
+    if download_type == "archive":
+        allowed_exts = _rom_install_extensions(item)
+        with tempfile.TemporaryDirectory() as tmp:
+            archive_path = Path(tmp) / "download.zip"
+            archive_path.write_bytes(data)
+            try:
+                with zipfile.ZipFile(archive_path, "r") as archive:
+                    for info in archive.infolist():
+                        if info.is_dir():
+                            continue
+                        name = Path(info.filename).name
+                        if not name:
+                            continue
+                        ext = Path(name).suffix.lower()
+                        if allowed_exts and ext not in allowed_exts:
+                            continue
+                        file_data = archive.read(info.filename)
+                        target_relative = normalize_mister_relative_path(join_remote_path(install_path, name))
+                        _write_rom_file(context, target_relative, file_data, log)
+                        installed_files.append(target_relative)
+            except zipfile.BadZipFile:
+                raise RuntimeError("The downloaded archive could not be opened.")
+    else:
+        filename = _rom_download_filename(item, url)
+        target_relative = normalize_mister_relative_path(join_remote_path(install_path, filename))
+        _write_rom_file(context, target_relative, data, log)
+        installed_files.append(target_relative)
+
+    if not installed_files:
+        raise RuntimeError("No installable ROM files were found in the download.")
+
+    manifest = _read_rom_manifest(context)
+    manifest.setdefault("installed_roms", {})[item_id] = {
+        "id": item_id,
+        "name": item.get("name") or item_id,
+        "system": item.get("system"),
+        "installed_version": item.get("version"),
+        "installed_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "install_path": install_path,
+        "installed_files": installed_files,
+        "source_catalog_version": item.get("version"),
+    }
+    _write_rom_manifest(context, manifest)
+    log("ROM install manifest updated.\n")
+
+
+def uninstall_rom_item(item: dict, context: InstallCenterContext, log: Callable[[str], None]):
+    item_id = item.get("id")
+    manifest = _read_rom_manifest(context)
+    installed_roms = manifest.setdefault("installed_roms", {})
+    entry = installed_roms.get(item_id)
+    if not entry:
+        log("This ROM is not tracked as installed.\n")
+        return
+    for target_relative in entry.get("installed_files") or []:
+        _delete_rom_file(context, target_relative, log)
+    installed_roms.pop(item_id, None)
+    _write_rom_manifest(context, manifest)
+    log("ROM install manifest updated.\n")
+
+
+def check_rom_status(item: dict, context: InstallCenterContext) -> dict:
+    item_id = item.get("id")
+    catalog_version = item.get("version")
+    manifest = _read_rom_manifest(context)
     entry = (manifest.get("installed_roms") or {}).get(item_id)
     if not entry:
         return {"state": "not_installed", "status_text": "Not installed", "installed": False, "update_available": False}
@@ -695,8 +896,8 @@ def check_rom_status(item: dict, context: InstallCenterContext) -> dict:
         "update_available": update_available,
         "installed_version": installed_version,
         "latest_version": catalog_version,
+        "install_path": entry.get("install_path"),
     }
-
 
 def action_supported(item: dict, status: dict, action: str) -> bool:
     category = item.get("category")
@@ -714,6 +915,12 @@ def action_supported(item: dict, status: dict, action: str) -> bool:
         return False
 
     if item_type == "rom" or category == "roms":
+        if action == "install_update":
+            return state in {"not_installed", "update_available"}
+        if action == "uninstall":
+            return installed
+        if action == "choose_install_folder":
+            return bool(item.get("allow_custom_install_path", False)) and not installed
         return False
 
     if action == "install_update":
@@ -752,6 +959,10 @@ def run_install_or_update(item: dict, context: InstallCenterContext, log: Callab
             install_local(context.sd_root, log)
         else:
             install_online(context.connection, log)
+        return
+
+    if item_type == "rom" or category == "roms":
+        install_rom_item(item, context, log, install_path=item.get("_selected_install_path"))
         return
 
     if item_type == "wallpaper_pack" or category == "wallpaper_packs":
@@ -793,6 +1004,10 @@ def run_uninstall(item: dict, context: InstallCenterContext, log: Callable[[str]
             uninstall_local(context.sd_root, log)
         else:
             uninstall_online(context.connection, log)
+        return
+
+    if item_type == "rom" or category == "roms":
+        uninstall_rom_item(item, context, log)
         return
 
     if item_type == "wallpaper_pack" or category == "wallpaper_packs":

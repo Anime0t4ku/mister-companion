@@ -1,14 +1,18 @@
+import hashlib
+import ssl
+import time
 import traceback
 import urllib.request
 import webbrowser
 from datetime import datetime
 from pathlib import Path
 
-from PyQt6.QtCore import QThread, Qt, QSize, QRect, pyqtSignal
+from PyQt6.QtCore import QThread, Qt, QSize, QTimer, QRect, pyqtSignal
 from PyQt6.QtGui import QColor, QIcon, QImage, QPainter, QPixmap, QPalette
 from PyQt6.QtWidgets import (
     QComboBox,
     QDialog,
+    QFileDialog,
     QFrame,
     QGridLayout,
     QGroupBox,
@@ -26,7 +30,8 @@ from PyQt6.QtWidgets import (
 )
 
 from ui.scaling import set_text_button_min_width
-from core.app_paths import app_base_dir
+from ui.update_all_runner import handle_update_all_result, prepare_update_all_task
+from core.app_paths import app_base_dir, install_center_cache_dir
 from core.install_center import (
     action_supported,
     build_context,
@@ -34,12 +39,15 @@ from core.install_center import (
     check_item_status,
     context_ready,
     load_catalog,
+    normalize_mister_relative_path,
     run_install_or_update,
     run_uninstall,
     install_wallpaper_pack,
     uninstall_wallpaper_pack,
     open_wallpaper_folder,
 )
+from core.file_browser import list_directory, join_remote_path, parent_path, DEFAULT_ROOT
+
 
 HUB_RAW_BASE_URL = "https://raw.githubusercontent.com/Anime0t4ku/mister-companion-hub/main/"
 
@@ -90,7 +98,60 @@ def local_asset_bytes(path):
     return None
 
 
-def download_thumbnail_bytes(catalog):
+def thumbnail_cache_path(item_id, candidate):
+    safe_id = "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in str(item_id or "item"))
+    candidate_text = str(candidate or "")
+    suffix = Path(candidate_text.split("?", 1)[0]).suffix.lower()
+    if suffix not in (".png", ".jpg", ".jpeg", ".webp"):
+        suffix = ".img"
+    digest = hashlib.sha1(candidate_text.encode("utf-8", errors="ignore")).hexdigest()[:12]
+    return install_center_cache_dir() / "thumbnails" / f"{safe_id}_{digest}{suffix}"
+
+
+def read_cached_thumbnail_bytes(catalog):
+    image_bytes = {}
+    for item in catalog.get("items", []):
+        item_id = item.get("id")
+        if not item_id:
+            continue
+        for candidate in thumbnail_candidates(catalog, item):
+            cache_path = thumbnail_cache_path(item_id, candidate)
+            try:
+                if cache_path.exists() and cache_path.is_file():
+                    data = cache_path.read_bytes()
+                    if data:
+                        image_bytes[item_id] = data
+                        break
+            except Exception:
+                continue
+    return image_bytes
+
+
+def read_url_bytes(url, timeout=15, force_reload=False):
+    final_url = url
+    if force_reload:
+        separator = "&" if "?" in final_url else "?"
+        final_url = f"{final_url}{separator}_mc_cache_bust={int(time.time())}"
+
+    request = urllib.request.Request(
+        final_url,
+        headers={
+            "User-Agent": "MiSTer-Companion/Install-Center",
+            "Accept": "image/png,image/jpeg,image/webp,*/*",
+            "Cache-Control": "no-cache",
+            "Pragma": "no-cache",
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return response.read()
+    except Exception:
+        context = ssl._create_unverified_context()
+        with urllib.request.urlopen(request, timeout=timeout, context=context) as response:
+            return response.read()
+
+
+def download_thumbnail_bytes(catalog, force_reload=False):
     image_bytes = {}
     url_cache = {}
 
@@ -105,47 +166,56 @@ def download_thumbnail_bytes(catalog):
                 image_bytes[item_id] = local_data
                 break
 
+            cache_path = thumbnail_cache_path(item_id, candidate)
             url = resolve_hub_asset_url(candidate)
             if not url:
                 continue
             try:
-                if url not in url_cache:
-                    request = urllib.request.Request(
-                        url,
-                        headers={
-                            "User-Agent": "MiSTer-Companion",
-                            "Accept": "image/png,image/jpeg,image/webp,*/*",
-                        },
-                    )
-                    with urllib.request.urlopen(request, timeout=15) as response:
-                        url_cache[url] = response.read()
+                cache_key = url if not force_reload else f"{url}::{int(time.time())}"
+                if cache_key not in url_cache:
+                    url_cache[cache_key] = read_url_bytes(url, force_reload=force_reload)
 
-                data = url_cache.get(url)
+                data = url_cache.get(cache_key)
                 if data:
+                    try:
+                        cache_path.parent.mkdir(parents=True, exist_ok=True)
+                        cache_path.write_bytes(data)
+                    except Exception:
+                        pass
                     image_bytes[item_id] = data
                     break
             except Exception:
+                try:
+                    if cache_path.exists() and cache_path.is_file():
+                        data = cache_path.read_bytes()
+                        if data:
+                            image_bytes[item_id] = data
+                            break
+                except Exception:
+                    pass
                 continue
 
     return image_bytes
-
 
 class InstallCenterLoadWorker(QThread):
     result = pyqtSignal(object)
     error = pyqtSignal(str)
 
-    def __init__(self, main_window, check_latest=False):
+    def __init__(self, main_window, check_latest=False, force_images=False):
         super().__init__()
         self.main_window = main_window
         self.check_latest = check_latest
+        self.force_images = force_images
 
     def run(self):
         try:
             catalog = load_catalog()
             context = build_context(self.main_window)
             statuses = check_all_status(catalog, context, check_latest=self.check_latest)
-            image_bytes = download_thumbnail_bytes(catalog)
-            self.result.emit({"catalog": catalog, "statuses": statuses, "image_bytes": image_bytes, "check_latest": self.check_latest})
+            cached_image_bytes = read_cached_thumbnail_bytes(catalog)
+            self.result.emit({"catalog": catalog, "statuses": statuses, "image_bytes": cached_image_bytes, "check_latest": self.check_latest, "images_loading": True})
+            image_bytes = download_thumbnail_bytes(catalog, force_reload=self.force_images)
+            self.result.emit({"catalog": catalog, "statuses": statuses, "image_bytes": image_bytes, "check_latest": self.check_latest, "images_loading": False})
         except Exception as e:
             self.error.emit(f"{e}\n\n{traceback.format_exc()}")
 
@@ -172,6 +242,7 @@ class InstallCenterTaskWorker(QThread):
     log_line = pyqtSignal(str)
     success = pyqtSignal(str)
     error = pyqtSignal(str)
+    task_result = pyqtSignal(object)
     finished_task = pyqtSignal()
 
     def __init__(self, task_fn, success_message):
@@ -184,8 +255,9 @@ class InstallCenterTaskWorker(QThread):
 
     def run(self):
         try:
-            self.task_fn(self.log)
+            result = self.task_fn(self.log)
             self.success.emit(self.success_message)
+            self.task_result.emit(result)
         except Exception as e:
             self.error.emit(f"{e}\n\n{traceback.format_exc()}")
         finally:
@@ -245,23 +317,113 @@ def category_label(item):
     return value.title() if value else "Item"
 
 
+
+
+class InstallCenterFolderDialog(QDialog):
+    def __init__(self, connection, start_path="/media/fat/games", parent=None):
+        super().__init__(parent)
+        self.connection = connection
+        self.current_path = start_path or "/media/fat/games"
+        self.selected_path = ""
+        self.entries = []
+        self.setWindowTitle("Choose Install Folder")
+        self.resize(620, 460)
+        self.build_ui()
+        self.load_path(self.current_path)
+
+    def build_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setSpacing(8)
+
+        self.path_label = QLabel(self.current_path)
+        self.path_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        layout.addWidget(self.path_label)
+
+        filter_row = QHBoxLayout()
+        filter_row.addWidget(QLabel("Search:"))
+        self.search_field = QLineEdit()
+        self.search_field.setPlaceholderText("Filter folders...")
+        self.search_field.textChanged.connect(self.populate_folders)
+        filter_row.addWidget(self.search_field, 1)
+        layout.addLayout(filter_row)
+
+        self.folder_list = QListWidget()
+        self.folder_list.itemDoubleClicked.connect(self.open_selected_folder)
+        layout.addWidget(self.folder_list, 1)
+
+        buttons = QHBoxLayout()
+        self.up_button = QPushButton("Up")
+        self.games_button = QPushButton("Games")
+        self.select_button = QPushButton("Use This Folder")
+        self.cancel_button = QPushButton("Cancel")
+        self.up_button.clicked.connect(self.go_up)
+        self.games_button.clicked.connect(lambda: self.load_path("/media/fat/games"))
+        self.select_button.clicked.connect(self.accept_current_folder)
+        self.cancel_button.clicked.connect(self.reject)
+        for button in (self.up_button, self.games_button, self.select_button, self.cancel_button):
+            set_text_button_min_width(button, 120)
+            buttons.addWidget(button)
+        buttons.addStretch()
+        layout.addLayout(buttons)
+
+    def load_path(self, path):
+        self.current_path = path or "/media/fat/games"
+        self.path_label.setText(self.current_path)
+        try:
+            data = list_directory(self.connection, self.current_path)
+            self.current_path = data.get("path", self.current_path)
+            self.path_label.setText(self.current_path)
+            self.entries = [entry for entry in data.get("entries", []) if entry.get("is_dir")]
+        except Exception as e:
+            QMessageBox.warning(self, "Choose Install Folder", f"Could not load folder:\n{e}")
+            self.entries = []
+        self.populate_folders()
+
+    def populate_folders(self):
+        search = self.search_field.text().strip().lower()
+        self.folder_list.clear()
+        for entry in self.entries:
+            name = str(entry.get("name") or "")
+            if search and search not in name.lower():
+                continue
+            item = QListWidgetItem(name)
+            item.setData(Qt.ItemDataRole.UserRole, entry.get("path"))
+            self.folder_list.addItem(item)
+
+    def open_selected_folder(self):
+        item = self.folder_list.currentItem()
+        if item:
+            self.load_path(item.data(Qt.ItemDataRole.UserRole))
+
+    def go_up(self):
+        self.load_path(parent_path(self.current_path))
+
+    def accept_current_folder(self):
+        self.selected_path = self.current_path
+        self.accept()
 class InstallCenterDetailsDialog(QDialog):
     def __init__(self, tab, item, status, parent=None):
         super().__init__(parent or tab)
         self.tab = tab
         self.item = item
         self.status = status or {}
+        self.rom_install_path = normalize_mister_relative_path(item.get("default_install_path") or "/games")
         self.setWindowTitle(item.get("name", "Install Center"))
         self.resize(820, 520)
         self.build_ui()
 
     def build_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(18, 18, 18, 18)
-        layout.setSpacing(12)
+        layout.setContentsMargins(14, 0, 14, 12)
+        layout.setSpacing(6)
 
-        content_row = QHBoxLayout()
-        content_row.setSpacing(16)
+        header_container = QWidget()
+        header_container.setMinimumHeight(150)
+        header_container.setMaximumHeight(150)
+        content_row = QHBoxLayout(header_container)
+        content_row.setContentsMargins(0, 0, 0, 0)
+        content_row.setSpacing(18)
 
         image_frame = QFrame()
         image_frame.setFrameShape(QFrame.Shape.StyledPanel)
@@ -275,10 +437,17 @@ class InstallCenterDetailsDialog(QDialog):
         if not pixmap.isNull():
             image_label.setPixmap(pixmap)
         image_layout.addWidget(image_label, 1)
-        content_row.addWidget(image_frame, 0, Qt.AlignmentFlag.AlignTop)
+        content_row.addWidget(image_frame, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        right_container = QWidget()
+        right_container.setMinimumHeight(150)
+        right_outer = QVBoxLayout(right_container)
+        right_outer.setContentsMargins(0, 0, 0, 0)
+        right_outer.setSpacing(0)
+        right_outer.addStretch(1)
 
         right_panel = QVBoxLayout()
-        right_panel.setSpacing(8)
+        right_panel.setSpacing(7)
 
         title = QLabel(self.item.get("name", self.item.get("id", "")))
         title_font = title.font()
@@ -303,34 +472,108 @@ class InstallCenterDetailsDialog(QDialog):
         meta.setWordWrap(True)
         right_panel.addWidget(meta)
 
+        rom_meta_text = self.rom_metadata_text()
+        if rom_meta_text:
+            self.rom_meta_label = QLabel(rom_meta_text)
+            self.rom_meta_label.setStyleSheet("color: gray;")
+            self.rom_meta_label.setWordWrap(True)
+            right_panel.addWidget(self.rom_meta_label)
+
         self.status_label = QLabel(self.full_status_text())
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.status_label.setStyleSheet(self.tab.status_style_for(self.status, pill=True))
         right_panel.addWidget(self.status_label, 0, Qt.AlignmentFlag.AlignLeft)
 
-        actions = QHBoxLayout()
-        actions.setSpacing(8)
-        self.actions_layout = actions
-        self.add_action_buttons(actions)
-        actions.addStretch()
-        right_panel.addLayout(actions)
-        right_panel.addStretch()
+        self.rom_path_label = QLabel("")
+        self.rom_path_label.setStyleSheet("color: gray;")
+        self.rom_path_label.setVisible(False)
+        right_panel.addWidget(self.rom_path_label)
+        self.update_rom_path_label()
 
-        content_row.addLayout(right_panel, 1)
-        layout.addLayout(content_row)
+        self.actions_layout = QHBoxLayout()
+        self.actions_layout.setSpacing(8)
+        self.add_action_buttons(self.actions_layout)
+        self.actions_layout.addStretch(1)
+        right_panel.addLayout(self.actions_layout)
+
+        right_outer.addLayout(right_panel)
+        right_outer.addStretch(1)
+        content_row.addWidget(right_container, 1)
+        layout.addWidget(header_container, 0)
+
+        body_container = QWidget()
+        body_layout = QVBoxLayout(body_container)
+        body_layout.setContentsMargins(16, 0, 0, 0)
+        body_layout.setSpacing(0)
+
+        description_title = QLabel("Description:")
+        description_title_font = description_title.font()
+        description_title_font.setBold(True)
+        description_title.setFont(description_title_font)
+        description_title.setContentsMargins(0, 0, 0, 2)
+        body_layout.addWidget(description_title)
 
         self.description_label = QLabel(self.item.get("description", ""))
         self.description_label.setWordWrap(True)
         self.description_label.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
-        self.description_label.setMinimumHeight(54)
-        self.description_label.setContentsMargins(0, 4, 0, 4)
-        layout.addWidget(self.description_label)
+        self.description_label.setMinimumHeight(0)
+        self.description_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.description_label.setContentsMargins(0, 0, 0, 0)
+        body_layout.addWidget(self.description_label, 0)
+
+        body_layout.addSpacing(14)
 
         self.output = QTextEdit()
         self.output.setReadOnly(True)
         self.output.setMinimumHeight(120)
         self.output.setPlaceholderText("Output will appear here while installing, updating, or removing this entry.")
-        layout.addWidget(self.output)
+        body_layout.addWidget(self.output, 1)
+
+        layout.addWidget(body_container, 1)
+
+    def rom_metadata_text(self):
+        if self.item.get("category") != "roms" and self.item.get("type") != "rom":
+            return ""
+        parts = []
+        system = self.item.get("system")
+        genres = self.item.get("genres") or []
+        if system:
+            parts.append(f"System: {system}")
+        if isinstance(genres, str):
+            genres = [genres]
+        genres = [str(genre) for genre in genres if str(genre).strip()]
+        if genres:
+            label = "Genre" if len(genres) == 1 else "Genres"
+            parts.append(f"{label}: {', '.join(genres)}")
+        return "  •  ".join(parts)
+
+    def update_rom_path_label(self):
+        if not hasattr(self, "rom_path_label"):
+            return
+        is_rom = self.item.get("category") == "roms" or self.item.get("type") == "rom"
+        if not is_rom:
+            self.rom_path_label.setVisible(False)
+            return
+        if self.status.get("install_path"):
+            self.rom_install_path = normalize_mister_relative_path(self.status.get("install_path"))
+        self.rom_path_label.setText(f"Install location: {self.rom_install_path}")
+        self.rom_path_label.setVisible(True)
+
+    def prepare_action_button(self, button, minimum=88, maximum=180):
+        metrics = button.fontMetrics()
+        width = metrics.horizontalAdvance(button.text()) + 34
+        width = max(minimum, min(width, maximum))
+        button.setFixedWidth(width)
+        button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        return button
+
+    def add_compact_button(self, layout, text, callback, enabled=True, minimum=88, maximum=180):
+        button = QPushButton(text)
+        self.prepare_action_button(button, min(minimum, 88), maximum)
+        button.setEnabled(bool(enabled))
+        button.clicked.connect(callback)
+        layout.addWidget(button)
+        return button
 
     def full_status_text(self):
         text = str(self.status.get("status_text") or clean_status_text(self.status))
@@ -348,6 +591,8 @@ class InstallCenterDetailsDialog(QDialog):
             return
         while self.actions_layout.count():
             layout_item = self.actions_layout.takeAt(0)
+            if layout_item is None:
+                continue
             widget = layout_item.widget()
             if widget is not None:
                 widget.deleteLater()
@@ -356,9 +601,10 @@ class InstallCenterDetailsDialog(QDialog):
         self.status = self.tab.statuses.get(self.item.get("id"), {}) or {}
         self.status_label.setText(self.full_status_text())
         self.status_label.setStyleSheet(self.tab.status_style_for(self.status, pill=True))
+        self.update_rom_path_label()
         self.clear_actions_layout()
         self.add_action_buttons(self.actions_layout)
-        self.actions_layout.addStretch()
+        self.actions_layout.addStretch(1)
 
     def mark_active(self):
         self.tab.active_details_dialog = self
@@ -366,6 +612,10 @@ class InstallCenterDetailsDialog(QDialog):
     def add_action_buttons(self, actions):
         context_ready = self.tab.has_ready_context()
         is_wallpaper = self.item.get("category") == "wallpaper_packs" or self.item.get("type") == "wallpaper_pack"
+
+        if self.item.get("category") == "roms" or self.item.get("type") == "rom":
+            self.add_rom_action_buttons(actions, context_ready)
+            return
 
         if is_wallpaper:
             self.add_wallpaper_action_buttons(actions, context_ready)
@@ -385,7 +635,7 @@ class InstallCenterDetailsDialog(QDialog):
         close_button = QPushButton("Close")
 
         for button in (self.install_update_button, uninstall_button, official_button, close_button):
-            set_text_button_min_width(button, 105)
+            self.prepare_action_button(button)
 
         self.install_update_button.setVisible(action_supported(self.item, self.status, "install_update") and context_ready)
         uninstall_button.setVisible(action_supported(self.item, self.status, "uninstall") and context_ready)
@@ -399,18 +649,66 @@ class InstallCenterDetailsDialog(QDialog):
         for button in (self.install_update_button, uninstall_button, official_button, close_button):
             actions.addWidget(button)
 
+    def add_rom_action_buttons(self, actions, context_ready):
+        installed = bool(self.status.get("installed"))
+        update_available = bool(self.status.get("update_available"))
+        allow_custom = bool(self.item.get("allow_custom_install_path", False)) and not installed
+
+        if self.status.get("install_path"):
+            self.rom_install_path = normalize_mister_relative_path(self.status.get("install_path"))
+
+        self.update_rom_path_label()
+
+        def add_button(text, callback, enabled=True, min_width=96):
+            return self.add_compact_button(actions, text, callback, enabled=(context_ready and enabled), minimum=min_width)
+
+        if allow_custom:
+            add_button("Choose Install Folder", self.choose_rom_install_folder, enabled=True, min_width=150)
+        add_button("Update" if update_available else "Install", self.install_or_update, enabled=(not installed or update_available), min_width=88)
+        add_button("Uninstall", self.uninstall, enabled=installed, min_width=88)
+
+        official_button = QPushButton("Official Page")
+        self.prepare_action_button(official_button)
+        official_button.setVisible(bool(self.item.get("official_url")))
+        official_button.clicked.connect(self.open_official_page)
+        actions.addWidget(official_button)
+
+        close_button = QPushButton("Close")
+        self.prepare_action_button(close_button)
+        close_button.clicked.connect(self.accept)
+        actions.addWidget(close_button)
+
+    def choose_rom_install_folder(self):
+        default_path = self.rom_install_path or self.item.get("default_install_path") or "/games"
+        if self.tab.is_offline_mode():
+            sd_root = self.tab.main_window.get_offline_sd_root() if hasattr(self.tab.main_window, "get_offline_sd_root") else ""
+            start = str((Path(sd_root) / default_path.strip("/")).resolve()) if sd_root else ""
+            folder = QFileDialog.getExistingDirectory(self, "Choose Install Folder", start or sd_root)
+            if not folder or not sd_root:
+                return
+            try:
+                relative = Path(folder).resolve().relative_to(Path(sd_root).expanduser().resolve())
+                self.rom_install_path = normalize_mister_relative_path("/" + str(relative).replace("\\", "/"))
+            except Exception:
+                QMessageBox.warning(self, "Choose Install Folder", "Please choose a folder inside the selected Offline SD card.")
+                return
+        else:
+            remote_start = "/media/fat" + normalize_mister_relative_path(default_path)
+            dialog = InstallCenterFolderDialog(self.tab.connection, remote_start, self)
+            if dialog.exec() != QDialog.DialogCode.Accepted or not dialog.selected_path:
+                return
+            self.rom_install_path = normalize_mister_relative_path(dialog.selected_path)
+
+        if hasattr(self, "rom_path_label"):
+            self.rom_path_label.setText(f"Install location: {self.rom_install_path}")
+
     def add_wallpaper_action_buttons(self, actions, context_ready):
         handler = self.item.get("handler") or self.item.get("id")
         if handler == "wallpaper_pack":
             handler = self.item.get("id")
 
-        def add_button(text, callback, enabled=True, min_width=170):
-            button = QPushButton(text)
-            set_text_button_min_width(button, min_width)
-            button.setEnabled(bool(context_ready and enabled))
-            button.clicked.connect(callback)
-            actions.addWidget(button)
-            return button
+        def add_button(text, callback, enabled=True, min_width=96):
+            return self.add_compact_button(actions, text, callback, enabled=(context_ready and enabled), minimum=min_width)
 
         if handler == "ranny_snice_wallpapers":
             installed_169 = bool(self.status.get("ranny_169_installed"))
@@ -419,25 +717,25 @@ class InstallCenterDetailsDialog(QDialog):
             missing_43 = bool(self.status.get("ranny_43_missing"))
             text_169 = "Update 16:9 Wallpapers" if installed_169 and missing_169 else "Install 16:9 Wallpapers"
             text_43 = "Update 4:3 Wallpapers" if installed_43 and missing_43 else "Install 4:3 Wallpapers"
-            add_button(text_169, lambda: self.install_wallpaper_variant("169"), enabled=(not installed_169 or missing_169), min_width=190)
-            add_button(text_43, lambda: self.install_wallpaper_variant("43"), enabled=(not installed_43 or missing_43), min_width=190)
+            add_button(text_169, lambda: self.install_wallpaper_variant("169"), enabled=(not installed_169 or missing_169), min_width=150)
+            add_button(text_43, lambda: self.install_wallpaper_variant("43"), enabled=(not installed_43 or missing_43), min_width=150)
             remove_enabled = installed_169 or installed_43
         else:
             installed = bool(self.status.get("wallpaper_installed", self.status.get("installed")))
             missing = bool(self.status.get("wallpaper_missing", self.status.get("update_available")))
             text = "Update Wallpapers" if installed and missing else "Install Wallpapers"
-            add_button(text, lambda: self.install_wallpaper_variant(None), enabled=(not installed or missing), min_width=190)
+            add_button(text, lambda: self.install_wallpaper_variant(None), enabled=(not installed or missing), min_width=150)
             remove_enabled = installed
 
-        add_button("Remove Installed Wallpapers", self.remove_wallpapers, enabled=remove_enabled, min_width=210)
-        add_button("Open Folder", self.open_wallpaper_folder, enabled=(self.tab.is_offline_mode() or bool(self.status.get("folder_available", True))), min_width=125)
+        add_button("Remove Installed Wallpapers", self.remove_wallpapers, enabled=remove_enabled, min_width=170)
+        add_button("Open Folder", self.open_wallpaper_folder, enabled=(self.tab.is_offline_mode() or bool(self.status.get("folder_available", True))), min_width=100)
         official_button = QPushButton("Official Page")
-        set_text_button_min_width(official_button, 115)
+        self.prepare_action_button(official_button)
         official_button.setVisible(bool(self.item.get("official_url")))
         official_button.clicked.connect(self.open_official_page)
         actions.addWidget(official_button)
         close_button = QPushButton("Close")
-        set_text_button_min_width(close_button, 95)
+        self.prepare_action_button(close_button)
         close_button.clicked.connect(self.accept)
         actions.addWidget(close_button)
 
@@ -450,13 +748,8 @@ class InstallCenterDetailsDialog(QDialog):
         configured = "configured" in status_lower and "not configured" not in status_lower
         service_enabled = "service enabled" in status_lower or "start on boot enabled" in status_lower
 
-        def add_button(text, callback, enabled=True, min_width=120):
-            button = QPushButton(text)
-            set_text_button_min_width(button, min_width)
-            button.setEnabled(bool(context_ready and enabled))
-            button.clicked.connect(callback)
-            actions.addWidget(button)
-            return button
+        def add_button(text, callback, enabled=True, min_width=96):
+            return self.add_compact_button(actions, text, callback, enabled=(context_ready and enabled), minimum=min_width)
 
         add_button("Install", self.install_or_update, enabled=not installed)
 
@@ -507,13 +800,13 @@ class InstallCenterDetailsDialog(QDialog):
             add_button("Uninstall", self.uninstall, enabled=installed)
 
         official_button = QPushButton("Official Page")
-        set_text_button_min_width(official_button, 115)
+        self.prepare_action_button(official_button)
         official_button.setVisible(bool(self.item.get("official_url")))
         official_button.clicked.connect(self.open_official_page)
         actions.addWidget(official_button)
 
         close_button = QPushButton("Close")
-        set_text_button_min_width(close_button, 95)
+        self.prepare_action_button(close_button)
         close_button.clicked.connect(self.accept)
         actions.addWidget(close_button)
 
@@ -522,13 +815,8 @@ class InstallCenterDetailsDialog(QDialog):
         installed = bool(self.status.get("installed"))
         update_available = bool(self.status.get("update_available"))
 
-        def add_button(text, callback, enabled=True, min_width=170):
-            button = QPushButton(text)
-            set_text_button_min_width(button, min_width)
-            button.setEnabled(bool(context_ready and enabled))
-            button.clicked.connect(callback)
-            actions.addWidget(button)
-            return button
+        def add_button(text, callback, enabled=True, min_width=96):
+            return self.add_compact_button(actions, text, callback, enabled=(context_ready and enabled), minimum=min_width)
 
         install_text = self.status.get("install_label") or ("Update" if update_available else "Install")
         install_enabled = self.status.get("install_enabled")
@@ -549,13 +837,13 @@ class InstallCenterDetailsDialog(QDialog):
         add_button("Uninstall", self.uninstall, enabled=self.status.get("uninstall_enabled", installed), min_width=170)
 
         official_button = QPushButton("Official Page")
-        set_text_button_min_width(official_button, 115)
+        self.prepare_action_button(official_button)
         official_button.setVisible(bool(self.item.get("official_url")))
         official_button.clicked.connect(self.open_official_page)
         actions.addWidget(official_button)
 
         close_button = QPushButton("Close")
-        set_text_button_min_width(close_button, 95)
+        self.prepare_action_button(close_button)
         close_button.clicked.connect(self.accept)
         actions.addWidget(close_button)
 
@@ -585,6 +873,8 @@ class InstallCenterDetailsDialog(QDialog):
     def install_or_update(self):
         self.mark_active()
         self.tab.current_item_id = self.item.get("id", "")
+        if self.item.get("category") == "roms" or self.item.get("type") == "rom":
+            self.item["_selected_install_path"] = self.rom_install_path
         self.tab.install_or_update_selected(output_widget=self.output)
 
     def configure(self):
@@ -796,7 +1086,7 @@ class InstallCenterTab(QWidget):
 
         self.refresh_button = QPushButton("Refresh")
         set_text_button_min_width(self.refresh_button, 110)
-        self.refresh_button.clicked.connect(self.refresh_status)
+        self.refresh_button.clicked.connect(lambda: self.refresh_status(force_images=True))
         header_row.addWidget(self.refresh_button)
 
         main_layout.addLayout(header_row)
@@ -868,6 +1158,8 @@ class InstallCenterTab(QWidget):
         super().showEvent(event)
         if not self.catalog.get("items"):
             self.refresh_status(lightweight=True)
+        else:
+            QTimer.singleShot(0, self.populate_items)
 
     def is_offline_mode(self):
         return hasattr(self.main_window, "is_offline_mode") and self.main_window.is_offline_mode()
@@ -878,7 +1170,7 @@ class InstallCenterTab(QWidget):
             return "Offline Mode" if root else "Offline Mode, no SD selected"
         return "Online Mode" if self.connection.is_connected() else "Online Mode, not connected"
 
-    def refresh_status(self, lightweight=False):
+    def refresh_status(self, lightweight=False, force_images=False):
         if self.load_worker is not None and self.load_worker.isRunning():
             return
 
@@ -887,7 +1179,7 @@ class InstallCenterTab(QWidget):
         self.refresh_button.setEnabled(False)
         self.global_check_button.setEnabled(False)
 
-        self.load_worker = InstallCenterLoadWorker(self.main_window, check_latest=False)
+        self.load_worker = InstallCenterLoadWorker(self.main_window, check_latest=False, force_images=force_images)
         self.load_worker.result.connect(self.on_load_result)
         self.load_worker.error.connect(self.on_load_error)
         self.load_worker.finished.connect(self.on_load_finished)
@@ -902,7 +1194,7 @@ class InstallCenterTab(QWidget):
         self.refresh_button.setEnabled(False)
         self.global_check_button.setEnabled(False)
 
-        self.load_worker = InstallCenterLoadWorker(self.main_window, check_latest=True)
+        self.load_worker = InstallCenterLoadWorker(self.main_window, check_latest=True, force_images=True)
         self.load_worker.result.connect(self.on_load_result)
         self.load_worker.error.connect(self.on_load_error)
         self.load_worker.finished.connect(self.on_load_finished)
@@ -911,7 +1203,9 @@ class InstallCenterTab(QWidget):
     def on_load_result(self, payload):
         self.catalog = payload.get("catalog") or {"categories": [], "items": []}
         self.statuses = payload.get("statuses") or {}
-        self.thumbnail_bytes = payload.get("image_bytes") or {}
+        incoming_images = payload.get("image_bytes") or {}
+        if incoming_images or not payload.get("images_loading"):
+            self.thumbnail_bytes = incoming_images
         update_count = sum(1 for status in self.statuses.values() if status.get("update_available"))
         self.update_filter_available = bool(payload.get("check_latest") and update_count)
         self.rebuild_status_filter()
@@ -925,6 +1219,11 @@ class InstallCenterTab(QWidget):
 
         item_count = len(self.catalog.get("items", []))
         visible_count = self.item_list.count()
+        if payload.get("images_loading"):
+            self.status_label.setText(f"Showing {visible_count}/{item_count} item(s). Refreshing images..." if item_count else "Loading Install Center images...")
+            self.status_label.setStyleSheet("color: gray;")
+            return
+
         if payload.get("check_latest") and update_count:
             self.status_label.setText(f"{update_count} update(s) available.")
             self.status_label.setStyleSheet("color: #00aa00; font-weight: bold;")
@@ -978,10 +1277,7 @@ class InstallCenterTab(QWidget):
                 widget.deleteLater()
 
         self.category_buttons = []
-        all_button = QPushButton("All")
-        all_button.setCheckable(True)
-        all_button.setChecked(self.current_category == "all")
-        all_button.clicked.connect(lambda: self.set_category_filter("all"))
+        all_button = self.create_category_button("All", "all")
         self.filter_layout.addWidget(all_button)
         self.category_buttons.append(("all", all_button))
 
@@ -989,14 +1285,50 @@ class InstallCenterTab(QWidget):
             category_id = category.get("id")
             if not category_id:
                 continue
-            button = QPushButton(category.get("name", category_id))
-            button.setCheckable(True)
-            button.setChecked(category_id == self.current_category)
-            button.clicked.connect(lambda checked=False, cid=category_id: self.set_category_filter(cid))
+            button = self.create_category_button(category.get("name", category_id), category_id)
             self.filter_layout.addWidget(button)
             self.category_buttons.append((category_id, button))
 
         self.filter_layout.addStretch()
+
+    def create_category_button(self, label, category_id):
+        button = QPushButton(label)
+        button.setCheckable(True)
+        button.setChecked(category_id == self.current_category)
+        button.setCursor(Qt.CursorShape.PointingHandCursor)
+        button.setMinimumHeight(30)
+        set_text_button_min_width(button, max(70, button.fontMetrics().horizontalAdvance(label) + 26))
+        button.setStyleSheet(self.category_button_style())
+        button.clicked.connect(lambda checked=False, cid=category_id: self.set_category_filter(cid))
+        return button
+
+    def category_button_style(self):
+        palette = self.palette()
+        button_bg = palette.color(QPalette.ColorRole.Button)
+        text = palette.color(QPalette.ColorRole.ButtonText)
+        border = palette.color(QPalette.ColorRole.Mid)
+        accent = palette.color(QPalette.ColorRole.Highlight)
+        accent_text = palette.color(QPalette.ColorRole.HighlightedText)
+        hover = button_bg.lighter(112) if button_bg.lightness() < 128 else button_bg.darker(105)
+        return (
+            "QPushButton { "
+            f"background-color: {button_bg.name()}; "
+            f"color: {text.name()}; "
+            f"border: 1px solid {border.name()}; "
+            "border-radius: 8px; "
+            "padding: 5px 12px; "
+            "font-weight: bold; "
+            "} "
+            "QPushButton:hover { "
+            f"background-color: {hover.name()}; "
+            f"border-color: {accent.name()}; "
+            "} "
+            "QPushButton:checked { "
+            f"background-color: {accent.name()}; "
+            f"color: {accent_text.name()}; "
+            f"border-color: {accent.name()}; "
+            "}"
+        )
 
     def set_category_filter(self, category_id):
         self.current_category = category_id or "all"
@@ -1154,26 +1486,26 @@ class InstallCenterTab(QWidget):
         painter.setBrush(bg)
         painter.drawRoundedRect(1, 1, width - 3, height - 3, 9, 9)
 
-        image = self.pixmap_for_item(item.get("id"), width - 24, 92)
+        image = self.pixmap_for_item(item.get("id"), width - 20, 100)
         image_x = int((width - image.width()) / 2)
-        painter.drawPixmap(image_x, 10, image)
+        painter.drawPixmap(image_x, 8, image)
 
         title_font = painter.font()
         title_font.setBold(True)
-        title_font.setPointSize(max(8, title_font.pointSize() - 1))
+        title_font.setPointSize(max(9, title_font.pointSize()))
         painter.setFont(title_font)
         painter.setPen(text_color)
         metrics = painter.fontMetrics()
         title = metrics.elidedText(str(item.get("name", item.get("id", ""))), Qt.TextElideMode.ElideRight, width - 24)
-        painter.drawText(QRect(12, 111, width - 24, 22), Qt.AlignmentFlag.AlignCenter, title)
+        painter.drawText(QRect(10, 113, width - 20, 24), Qt.AlignmentFlag.AlignCenter, title)
 
         type_font = painter.font()
         type_font.setBold(False)
-        type_font.setPointSize(max(7, type_font.pointSize() - 1))
+        type_font.setPointSize(max(8, type_font.pointSize()))
         painter.setFont(type_font)
         painter.setPen(muted_color)
         type_text = painter.fontMetrics().elidedText(category_label(item), Qt.TextElideMode.ElideRight, width - 24)
-        painter.drawText(QRect(12, 135, width - 24, 17), Qt.AlignmentFlag.AlignCenter, type_text)
+        painter.drawText(QRect(10, 139, width - 20, 19), Qt.AlignmentFlag.AlignCenter, type_text)
 
         status_text = clean_status_text(status)
         key = status_filter_key(status)
@@ -1186,11 +1518,11 @@ class InstallCenterTab(QWidget):
         fg, pill_bg = colors.get(key, colors["unknown"])
         status_font = painter.font()
         status_font.setBold(True)
-        status_font.setPointSize(max(7, status_font.pointSize() - 1))
+        status_font.setPointSize(max(8, status_font.pointSize()))
         painter.setFont(status_font)
         metrics = painter.fontMetrics()
-        pill_w = min(width - 34, metrics.horizontalAdvance(status_text) + 16)
-        pill_h = 17
+        pill_w = min(width - 28, metrics.horizontalAdvance(status_text) + 18)
+        pill_h = 18
         pill_x = int((width - pill_w) / 2)
         pill_y = height - pill_h - 12
         painter.setPen(fg)
@@ -1213,7 +1545,8 @@ class InstallCenterTab(QWidget):
 
     def on_viewport_left_items(self):
         if self.hovered_item_id:
-                self.populate_items()
+            self.hovered_item_id = ""
+            self.populate_items()
 
     def populate_items(self):
         previous_scroll = self.item_list.verticalScrollBar().value()
@@ -1326,7 +1659,7 @@ class InstallCenterTab(QWidget):
         self.item_status_worker.finished.connect(handle_finished)
         self.item_status_worker.start()
 
-    def start_task(self, label, task_fn, success_message, output_widget=None):
+    def start_task(self, label, task_fn, success_message, output_widget=None, result_handler=None):
         if self.task_worker is not None and self.task_worker.isRunning():
             QMessageBox.warning(self, "Busy", "Install Center is already running a task.")
             return
@@ -1341,6 +1674,8 @@ class InstallCenterTab(QWidget):
         self.task_worker.log_line.connect(target_output.append)
         self.task_worker.success.connect(lambda message: self.on_task_success(message, target_output))
         self.task_worker.error.connect(lambda message: self.on_task_error(message, target_output))
+        if result_handler is not None:
+            self.task_worker.task_result.connect(result_handler)
         self.task_worker.finished_task.connect(self.on_task_finished)
         self.task_worker.start()
 
@@ -1427,8 +1762,16 @@ class InstallCenterTab(QWidget):
         status = self.statuses.get(item.get("id"), {})
         if handler == "update_all" and hasattr(self.main_window, "scripts_tab"):
             self.main_window.scripts_tab.update_all_installed = bool(status.get("installed"))
-            self.main_window.scripts_tab.run_update_all()
-            self.refresh_status()
+            task = prepare_update_all_task(self.main_window, parent=self)
+            if task is None:
+                return
+            self.start_task(
+                "Running update_all...",
+                task,
+                "update_all finished.",
+                output_widget=output_widget,
+                result_handler=lambda result: handle_update_all_result(self.main_window, result),
+            )
             return
         QMessageBox.information(self, "Install Center", "Run is not available for this item.")
 

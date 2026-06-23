@@ -40,3 +40,15 @@ def generated_data_root(default_root=None, create: bool = True) -> Path:
 
 def generated_path(*parts, default_root=None) -> Path:
     return generated_data_root(default_root=default_root) / Path(*parts)
+
+
+def install_center_cache_dir(create: bool = True) -> Path:
+    if is_macos_packaged_app():
+        root = macos_application_support_dir() / "ICCache"
+    else:
+        root = app_base_dir() / "ICCache"
+
+    if create:
+        root.mkdir(parents=True, exist_ok=True)
+
+    return root

@@ -24,6 +24,7 @@ from core.share_opener import open_local_folder, open_mister_share
 from core.scripts_actions import get_scripts_status, get_scripts_status_local, remove_static_wallpaper
 from core.scripts_static_wallpaper import get_static_wallpaper_state_local, remove_static_wallpaper_local
 from ui.dialogs.static_wallpaper_dialog import StaticWallpaperDialog
+from ui.update_all_runner import UpdateAllOutputDialog, prepare_update_all_task
 
 
 class DeviceStatusWorker(QThread):
@@ -822,8 +823,14 @@ class DeviceTab(QWidget):
             QMessageBox.warning(self, "Update All", "Scripts backend is not available.")
             return
         scripts_tab.update_all_installed = True
-        scripts_tab.run_update_all()
-        self.refresh_info()
+        task = prepare_update_all_task(self.main_window, parent=self)
+        if task is None:
+            return
+        dialog = UpdateAllOutputDialog(self.main_window, task, parent=self)
+        self.update_all_output_dialog = dialog
+        dialog.finished.connect(self.refresh_info)
+        dialog.show()
+        dialog.start()
 
     def configure_update_all(self):
         scripts_tab = getattr(self.main_window, "scripts_tab", None)

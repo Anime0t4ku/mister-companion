@@ -8,6 +8,7 @@ Manuals/
 tools/
 zaplauncher/
 .DS_Store
+ICcache/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
