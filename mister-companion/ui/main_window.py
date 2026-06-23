@@ -58,6 +58,7 @@ from ui.tabs.connection_tab import ConnectionTab
 from ui.tabs.device_tab import DeviceTab
 from ui.tabs.extras_tab import ExtrasTab
 from ui.tabs.flash_tab import FlashTab
+from ui.tabs.install_center_tab import InstallCenterTab
 from ui.tabs.mister_settings_tab import MiSTerSettingsTab
 from ui.tabs.savemanager_tab import SaveManagerTab
 from ui.tabs.scripts_tab import ScriptsTab
@@ -503,6 +504,9 @@ class MainWindow(QMainWindow):
         self.device_tab = DeviceTab(self)
         self.tabs.addTab(self.device_tab, self.tab_icon("device"), "Device")
 
+        self.install_center_tab = InstallCenterTab(self)
+        self.tabs.addTab(self.install_center_tab, self.tab_icon("scripts"), "Install Center")
+
         self.mister_settings_tab = MiSTerSettingsTab(self)
         self.tabs.addTab(
             self.mister_settings_tab,
@@ -511,7 +515,6 @@ class MainWindow(QMainWindow):
         )
 
         self.scripts_tab = ScriptsTab(self)
-        self.tabs.addTab(self.scripts_tab, self.tab_icon("scripts"), "Scripts")
 
         self.zapscripts_tab = ZapScriptsTab(self)
         self.tabs.addTab(
@@ -535,14 +538,8 @@ class MainWindow(QMainWindow):
         )
 
         self.wallpapers_tab = WallpapersTab(self)
-        self.tabs.addTab(
-            self.wallpapers_tab,
-            self.tab_icon("wallpapers"),
-            "Wallpapers",
-        )
 
         self.extras_tab = ExtrasTab(self)
-        self.tabs.addTab(self.extras_tab, self.tab_icon("extras"), "Extras")
 
         self.build_side_menu()
         self.tabs.setCurrentWidget(self.connection_tab)
@@ -574,13 +571,11 @@ class MainWindow(QMainWindow):
             ("Flash SD", "flash_sd"),
             ("Connection", "connection"),
             ("Device", "device"),
+            ("Install Center", "scripts"),
             ("MiSTer Settings", "mister_settings"),
-            ("Scripts", "scripts"),
             ("ZapScripts", "zapscripts"),
             ("ZapScraper", "zapscripts"),
             ("SaveManager", "savemanager"),
-            ("Wallpapers", "wallpapers"),
-            ("Extras", "extras"),
         ]
 
     def current_menu_style(self) -> str:
@@ -1165,12 +1160,10 @@ class MainWindow(QMainWindow):
             "Connection": "connection",
             "Device": "device",
             "MiSTer Settings": "mister_settings",
-            "Scripts": "scripts",
+            "Install Center": "scripts",
             "ZapScripts": "zapscripts",
             "ZapScraper": "zapscripts",
             "SaveManager": "savemanager",
-            "Wallpapers": "wallpapers",
-            "Extras": "extras",
         }
 
         for index in range(self.tabs.count()):
@@ -1707,12 +1700,10 @@ class MainWindow(QMainWindow):
         for attr_name in (
             "device_tab",
             "mister_settings_tab",
-            "scripts_tab",
-            "extras_tab",
+            "install_center_tab",
             "zapscripts_tab",
             "zapscraper_tab",
             "savemanager_tab",
-            "wallpapers_tab",
             "flash_tab",
         ):
             if hasattr(self, attr_name):
@@ -1761,17 +1752,12 @@ class MainWindow(QMainWindow):
                 return
 
             if force:
-                if hasattr(self, "scripts_tab") and current_widget is self.scripts_tab:
-                    self.scripts_tab.refresh_status()
+                if hasattr(self, "install_center_tab") and current_widget is self.install_center_tab:
+                    self.install_center_tab.refresh_status()
                     return
 
-                if hasattr(self, "extras_tab") and current_widget is self.extras_tab:
-                    self.extras_tab.refresh_status()
-                    return
 
-                if hasattr(self, "wallpapers_tab") and current_widget is self.wallpapers_tab:
-                    self.wallpapers_tab.refresh_status()
-                    return
+
 
                 if hasattr(self, "zapscraper_tab") and current_widget is self.zapscraper_tab:
                     self.zapscraper_tab.refresh_status()
@@ -1790,21 +1776,16 @@ class MainWindow(QMainWindow):
             self.device_tab.refresh_info()
             return
 
-        if hasattr(self, "scripts_tab") and current_widget is self.scripts_tab:
-            self.scripts_tab.refresh_status()
+        if hasattr(self, "install_center_tab") and current_widget is self.install_center_tab:
+            self.install_center_tab.refresh_status()
             return
+
 
         if hasattr(self, "zapscripts_tab") and current_widget is self.zapscripts_tab:
             self.zapscripts_tab.refresh_status()
             return
 
-        if hasattr(self, "extras_tab") and current_widget is self.extras_tab:
-            self.extras_tab.refresh_status()
-            return
 
-        if hasattr(self, "wallpapers_tab") and current_widget is self.wallpapers_tab:
-            self.wallpapers_tab.refresh_status()
-            return
 
     def on_tab_changed(self, index):
         if self._closing:

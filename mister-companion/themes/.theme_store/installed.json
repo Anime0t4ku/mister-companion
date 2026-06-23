@@ -7,6 +7,14 @@
       "date_added": "2026-06-22",
       "theme_url": "https://raw.githubusercontent.com/Anime0t4ku/companion-themes/main/official-themes/demon_cloak.json",
       "preview_url": "https://raw.githubusercontent.com/Anime0t4ku/companion-themes/main/official-themes/demon_cloak.png"
+    },
+    "icy_snowflake": {
+      "name": "Icy Snowflake",
+      "author": "Phoenix",
+      "category": "community",
+      "date_added": "2026-06-22",
+      "theme_url": "https://raw.githubusercontent.com/Anime0t4ku/companion-themes/main/community-themes/icy_snowflake.json",
+      "preview_url": "https://raw.githubusercontent.com/Anime0t4ku/companion-themes/main/community-themes/icy_snowflake.png"
     }
   }
 }
