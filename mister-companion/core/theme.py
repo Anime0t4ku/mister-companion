@@ -356,7 +356,9 @@ def apply_font_scale(app: QApplication, ui_scale_percent=100):
         base_point_size = 9.0
 
     font.setPointSizeF(max(1.0, base_point_size * factor))
-    app.setFont(font)
+    current = app.font()
+    if current.family() != font.family() or abs(current.pointSizeF() - font.pointSizeF()) > 0.01:
+        app.setFont(font)
 
 
 def linux_button_width_fix(ui_scale_percent=100) -> str:
@@ -1883,7 +1885,8 @@ def apply_theme(app: QApplication, mode: str, ui_scale_percent=100):
     resolved_mode = resolve_theme_mode(mode)
     ui_scale_percent = normalize_ui_scale_percent(ui_scale_percent)
 
-    app.setStyle(QStyleFactory.create("Fusion"))
+    if app.style().objectName().lower() != "fusion":
+        app.setStyle(QStyleFactory.create("Fusion"))
     apply_font_scale(app, ui_scale_percent)
 
     if resolved_mode == "custom":

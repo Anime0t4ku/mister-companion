@@ -1168,7 +1168,6 @@ class DeviceTab(QWidget):
             if reply != QMessageBox.StandardButton.Yes:
                 return
 
-        self.apply_disconnected_state()
         self.refresh_timer.stop()
 
         try:
@@ -1178,7 +1177,7 @@ class DeviceTab(QWidget):
 
         try:
             self.connection.reboot()
-            QTimer.singleShot(7000, self.main_window.start_reboot_reconnect_polling)
+            self.main_window.start_reboot_reconnect_polling()
         except Exception as e:
             QMessageBox.critical(self, "Reboot Failed", str(e))
             return

@@ -272,6 +272,12 @@ def clean_status_text(status):
         return "Installed"
     if key == "not_installed":
         return "Not Installed"
+    if key == "needs_connection":
+        return "Needs Connection"
+    if key == "needs_sd_card":
+        return "Needs SD Card"
+    if key == "detected":
+        return "Detected"
     return "Unknown"
 
 
@@ -420,7 +426,6 @@ class InstallCenterDetailsDialog(QDialog):
 
         header_container = QWidget()
         header_container.setMinimumHeight(150)
-        header_container.setMaximumHeight(150)
         content_row = QHBoxLayout(header_container)
         content_row.setContentsMargins(0, 0, 0, 0)
         content_row.setSpacing(18)
@@ -431,13 +436,13 @@ class InstallCenterDetailsDialog(QDialog):
         image_frame.setMaximumSize(190, 150)
         image_layout = QVBoxLayout(image_frame)
         image_layout.setContentsMargins(8, 8, 8, 8)
-        image_label = QLabel()
-        image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.image_label = QLabel()
+        self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         pixmap = self.tab.pixmap_for_item(self.item.get("id"), 170, 120)
         if not pixmap.isNull():
-            image_label.setPixmap(pixmap)
-        image_layout.addWidget(image_label, 1)
-        content_row.addWidget(image_frame, 0, Qt.AlignmentFlag.AlignVCenter)
+            self.image_label.setPixmap(pixmap)
+        image_layout.addWidget(self.image_label, 1)
+        content_row.addWidget(image_frame, 0, Qt.AlignmentFlag.AlignTop)
 
         right_container = QWidget()
         right_container.setMinimumHeight(150)
@@ -599,17 +604,18 @@ class InstallCenterDetailsDialog(QDialog):
         self.rom_path_label.setText(f"Install location: {self.rom_install_path}")
         self.rom_path_label.setVisible(True)
 
-    def prepare_action_button(self, button, minimum=88, maximum=180):
+    def prepare_action_button(self, button, minimum=88, maximum=220):
         metrics = button.fontMetrics()
         width = metrics.horizontalAdvance(button.text()) + 34
         width = max(minimum, min(width, maximum))
-        button.setFixedWidth(width)
-        button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        button.setMinimumWidth(width)
+        button.setMinimumHeight(max(button.sizeHint().height(), metrics.height() + 14))
+        button.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
         return button
 
-    def add_compact_button(self, layout, text, callback, enabled=True, minimum=88, maximum=180):
+    def add_compact_button(self, layout, text, callback, enabled=True, minimum=88, maximum=220):
         button = QPushButton(text)
-        self.prepare_action_button(button, min(minimum, 88), maximum)
+        self.prepare_action_button(button, minimum, maximum)
         button.setEnabled(bool(enabled))
         button.clicked.connect(callback)
         layout.addWidget(button)
@@ -646,6 +652,13 @@ class InstallCenterDetailsDialog(QDialog):
         self.add_action_buttons(self.actions_layout)
         self.actions_layout.addStretch(1)
 
+    def refresh_theme(self):
+        if hasattr(self, "image_label"):
+            pixmap = self.tab.pixmap_for_item(self.item.get("id"), 170, 120)
+            if not pixmap.isNull():
+                self.image_label.setPixmap(pixmap)
+        self.refresh_from_current_status()
+
     def mark_active(self):
         self.tab.active_details_dialog = self
 
@@ -672,9 +685,7 @@ class InstallCenterDetailsDialog(QDialog):
         self.install_update_button = QPushButton("Update" if self.status.get("update_available") else "Install")
         uninstall_button = QPushButton("Uninstall")
         official_button = QPushButton("Official Page")
-        close_button = QPushButton("Close")
-
-        for button in (self.install_update_button, uninstall_button, official_button, close_button):
+        for button in (self.install_update_button, uninstall_button, official_button):
             self.prepare_action_button(button)
 
         self.install_update_button.setVisible(action_supported(self.item, self.status, "install_update") and context_ready)
@@ -684,9 +695,7 @@ class InstallCenterDetailsDialog(QDialog):
         self.install_update_button.clicked.connect(self.install_or_update)
         uninstall_button.clicked.connect(self.uninstall)
         official_button.clicked.connect(self.open_official_page)
-        close_button.clicked.connect(self.accept)
-
-        for button in (self.install_update_button, uninstall_button, official_button, close_button):
+        for button in (self.install_update_button, uninstall_button, official_button):
             actions.addWidget(button)
 
     def add_rom_action_buttons(self, actions, context_ready):
@@ -725,10 +734,6 @@ class InstallCenterDetailsDialog(QDialog):
         official_button.clicked.connect(self.open_official_page)
         actions.addWidget(official_button)
 
-        close_button = QPushButton("Close")
-        self.prepare_action_button(close_button)
-        close_button.clicked.connect(self.accept)
-        actions.addWidget(close_button)
 
     def choose_rom_install_folder(self):
         default_path = self.rom_install_path or self.item.get("default_install_path") or "/games"
@@ -786,10 +791,6 @@ class InstallCenterDetailsDialog(QDialog):
         official_button.setVisible(bool(self.item.get("official_url")))
         official_button.clicked.connect(self.open_official_page)
         actions.addWidget(official_button)
-        close_button = QPushButton("Close")
-        self.prepare_action_button(close_button)
-        close_button.clicked.connect(self.accept)
-        actions.addWidget(close_button)
 
     def add_script_action_buttons(self, actions, context_ready):
         handler = self.item.get("handler") or self.item.get("id")
@@ -869,10 +870,6 @@ class InstallCenterDetailsDialog(QDialog):
         official_button.clicked.connect(self.open_official_page)
         actions.addWidget(official_button)
 
-        close_button = QPushButton("Close")
-        self.prepare_action_button(close_button)
-        close_button.clicked.connect(self.accept)
-        actions.addWidget(close_button)
 
     def add_extra_action_buttons(self, actions, context_ready):
         handler = self.item.get("handler") or self.item.get("id")
@@ -918,10 +915,6 @@ class InstallCenterDetailsDialog(QDialog):
         official_button.clicked.connect(self.open_official_page)
         actions.addWidget(official_button)
 
-        close_button = QPushButton("Close")
-        self.prepare_action_button(close_button)
-        close_button.clicked.connect(self.accept)
-        actions.addWidget(close_button)
 
     def call_scripts_tab_action(self, method_name):
         scripts_tab = getattr(self.tab.main_window, "scripts_tab", None)
@@ -1598,6 +1591,9 @@ class InstallCenterTab(QWidget):
             "installed": (QColor("#1b7f3a"), QColor("#e7f6ec")),
             "update_available": (QColor("#0b6fcc"), QColor("#e8f2ff")),
             "not_installed": (QColor("#666666"), QColor("#f0f0f0")),
+            "detected": (QColor("#6f42c1"), QColor("#f2eafb")),
+            "needs_connection": (QColor("#b26a00"), QColor("#fff4df")),
+            "needs_sd_card": (QColor("#b26a00"), QColor("#fff4df")),
             "unknown": (QColor("#666666"), QColor("#f0f0f0")),
         }
         fg, pill_bg = colors.get(key, colors["unknown"])
@@ -1901,7 +1897,66 @@ class InstallCenterTab(QWidget):
                 except Exception:
                     pass
 
+    def unavailable_state(self):
+        context = build_context(self.main_window)
+        ready, reason = context_ready(context)
+        state = reason.lower().replace(" ", "_")
+        return ready, {"state": state, "status_text": reason, "installed": False, "update_available": False}
+
+    def apply_unavailable_state(self):
+        if self.load_worker is not None and self.load_worker.isRunning():
+            return
+
+        ready, status = self.unavailable_state()
+        if ready:
+            return
+
+        self.update_filter_available = False
+        self.statuses = {
+            item.get("id"): dict(status)
+            for item in self.catalog.get("items", [])
+            if item.get("id")
+        }
+        self.rebuild_status_filter()
+        self.rebuild_category_filters()
+        self.populate_items()
+        self.refresh_button.setEnabled(True)
+        self.global_check_button.setEnabled(True)
+        self.status_label.setText(f"{self.mode_text()}. Showing {self.item_list.count()}/{len(self.catalog.get('items', []))} item(s).")
+        self.status_label.setStyleSheet("color: gray;")
+        if self.active_details_dialog is not None and self.active_details_dialog.isVisible():
+            try:
+                self.active_details_dialog.refresh_from_current_status()
+            except Exception:
+                pass
+
+    def refresh_theme(self):
+        style = self.category_button_style()
+        for _category_id, button in self.category_buttons:
+            try:
+                button.setStyleSheet(style)
+            except Exception:
+                pass
+        self.item_list.setStyleSheet(
+            "QListWidget { border: none; background: transparent; } "
+            "QListWidget::item { background: transparent; border: 1px solid transparent; border-radius: 8px; } "
+            "QListWidget::item:hover { background: rgba(255, 255, 255, 18); border: 1px solid palette(highlight); }"
+        )
+        self.populate_items()
+        if self.active_details_dialog is not None and self.active_details_dialog.isVisible():
+            try:
+                self.active_details_dialog.refresh_theme()
+            except Exception:
+                pass
+
     def update_connection_state(self, lightweight=True):
+        context = build_context(self.main_window)
+        ready, _reason = context_ready(context)
+
+        if not ready:
+            self.apply_unavailable_state()
+            return
+
         if not lightweight:
             self.refresh_status()
         else:

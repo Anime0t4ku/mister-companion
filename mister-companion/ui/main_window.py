@@ -1489,12 +1489,20 @@ class MainWindow(QMainWindow):
     def refresh_theme(self):
         mode = self.config_data.get("theme_mode", "auto")
         ui_scale_percent = self.get_ui_scale_percent()
-        apply_theme(self.app, mode, ui_scale_percent)
-        self.update_title_bar_logo(mode)
-        self.update_theme_button_text()
-        self.refresh_tab_icons()
-        self.refresh_side_menu_icons()
-        self.update_side_menu_style()
+        self.setUpdatesEnabled(False)
+        try:
+            apply_theme(self.app, mode, ui_scale_percent)
+            self.update_title_bar_logo(mode)
+            self.update_theme_button_text()
+            self.refresh_tab_icons()
+            self.refresh_side_menu_icons()
+            self.update_side_menu_style()
+            current_widget = self.current_content_widget()
+            if current_widget is not None and hasattr(current_widget, "refresh_theme"):
+                current_widget.refresh_theme()
+        finally:
+            self.setUpdatesEnabled(True)
+            self.update()
 
     def on_ui_scale_changed(self, *_):
         if self._closing:
