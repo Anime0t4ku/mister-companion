@@ -102,6 +102,14 @@ from core.extras_paprium_megadrive import (
     uninstall_paprium_megadrive,
     uninstall_paprium_megadrive_local,
 )
+from core.extras_megavgmdrive import (
+    get_megavgmdrive_status,
+    get_megavgmdrive_status_local,
+    install_or_update_megavgmdrive,
+    install_or_update_megavgmdrive_local,
+    uninstall_megavgmdrive,
+    uninstall_megavgmdrive_local,
+)
 from core.extras_ra_cores import (
     get_ra_cores_status,
     get_ra_cores_status_local,
@@ -156,6 +164,7 @@ FALLBACK_ITEMS = [
     ("ra_viewer", "scripts", "script", "ra_viewer", "RA Viewer", "MiSTer community", "RA Viewer shows your RetroAchievements progress directly on the MiSTer, including achievement information for your configured RetroAchievements account."),
     ("mms2_gb_core", "cores", "core", "mms2_gb_core", "MMS2 GB Core", "Heber", "Installs Heber’s custom GB core for MMS2 with physical cartridge support. The core is installed in a separate custom location and adds a MiSTer home screen shortcut for directly loading cartridges."),
     ("paprium_megadrive", "cores", "core", "paprium_megadrive", "Paprium MegaDrive", "Pezz82", "Installs Pezz82’s customized MegaDrive core for running Paprium. This only installs the core and launcher. Provide your own ROM and make sure you use the correct ROM version with WAV files."),
+    ("megavgmdrive", "cores", "core", "megavgmdrive", "MegaVGMDrive", "dai-VGM", "Installs MegaVGMDrive, a MegaDrive/Genesis VGM playback core for MiSTer. This only installs the core, launcher, and game folder structure."),
     ("retroachievement_cores", "cores", "core", "retroachievement_cores", "RetroAchievement Cores", "MiSTer community", "RetroAchievement Cores adds RetroAchievements-enabled MiSTer cores and the required MiSTer_RA support files. It uses MGL launchers so your normal cores remain untouched."),
     ("3s_arm", "extras", "extra", "3s_arm", "3S-ARM", "MiSTer community", "3S-ARM is a MiSTer port/support package for Street Fighter III: Third Strike based on the PS2 version. It installs binaries/support files only, not game files."),
     ("sonic_mania_mister", "extras", "extra", "sonic_mania_mister", "Sonic Mania MiSTer", "MiSTer community", "Sonic Mania MiSTer lets your MiSTer run Sonic Mania using the MiSTer port, with support for the required Data.rsdk game file."),
@@ -199,6 +208,7 @@ EXTRA_HANDLERS = {
     "zaparoo_frontend": (get_zaparoo_launcher_status, get_zaparoo_launcher_status_local, install_or_update_zaparoo_launcher, install_or_update_zaparoo_launcher_local, uninstall_zaparoo_launcher, uninstall_zaparoo_launcher_local),
     "mms2_gb_core": (get_mms2_gb_core_status, get_mms2_gb_core_status_local, install_or_update_mms2_gb_core, install_or_update_mms2_gb_core_local, uninstall_mms2_gb_core, uninstall_mms2_gb_core_local),
     "paprium_megadrive": (get_paprium_megadrive_status, get_paprium_megadrive_status_local, install_or_update_paprium_megadrive, install_or_update_paprium_megadrive_local, uninstall_paprium_megadrive, uninstall_paprium_megadrive_local),
+    "megavgmdrive": (get_megavgmdrive_status, get_megavgmdrive_status_local, install_or_update_megavgmdrive, install_or_update_megavgmdrive_local, uninstall_megavgmdrive, uninstall_megavgmdrive_local),
     "retroachievement_cores": (get_ra_cores_status, get_ra_cores_status_local, install_or_update_ra_cores, install_or_update_ra_cores_local, uninstall_ra_cores, uninstall_ra_cores_local),
 }
 

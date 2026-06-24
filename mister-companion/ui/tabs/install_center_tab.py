@@ -32,6 +32,10 @@ from PyQt6.QtWidgets import (
 from ui.scaling import set_text_button_min_width
 from ui.update_all_runner import handle_update_all_result, prepare_update_all_task
 from core.app_paths import app_base_dir, install_center_cache_dir
+from core.extras_megavgmdrive import (
+    open_megavgmdrive_game_folder_local,
+    open_megavgmdrive_game_folder_on_host,
+)
 from core.install_center import (
     action_supported,
     build_context,
@@ -639,11 +643,19 @@ class InstallCenterDetailsDialog(QDialog):
         text = str(self.status.get("status_text") or clean_status_text(self.status))
         installed_version = self.status.get("installed_version")
         latest_version = self.status.get("latest_version")
+        text_lower = text.lower()
         details = []
-        if installed_version:
+
+        if installed_version and str(installed_version).lower() not in text_lower:
             details.append(f"Installed: {installed_version}")
-        if latest_version:
+
+        if (
+            latest_version
+            and self.status.get("update_available")
+            and str(latest_version).lower() not in text_lower
+        ):
             details.append(f"Latest: {latest_version}")
+
         return f"{text}  ({' / '.join(details)})" if details else text
 
     def clear_actions_layout(self):
@@ -906,6 +918,8 @@ class InstallCenterDetailsDialog(QDialog):
             add_button("Upload Data.rsdk", lambda: self.call_extras_tab_action("upload_sonic_mania_data_rsdk"), enabled=self.status.get("upload_enabled", context_ready), min_width=190)
         elif handler == "paprium_megadrive":
             add_button("Open Game Folder", lambda: self.call_extras_tab_action("open_paprium_game_folder"), enabled=self.status.get("folder_open_enabled", installed), min_width=170)
+        elif handler == "megavgmdrive":
+            add_button("Open Game Folder", self.open_megavgmdrive_game_folder, enabled=self.status.get("folder_open_enabled", installed), min_width=170)
         elif handler == "retroachievement_cores":
             add_button("Edit Config", self.configure, enabled=self.status.get("edit_config_enabled", installed), min_width=170)
 
@@ -929,6 +943,20 @@ class InstallCenterDetailsDialog(QDialog):
         official_button.clicked.connect(self.open_official_page)
         actions.addWidget(official_button)
 
+
+    def open_megavgmdrive_game_folder(self):
+        context = build_context(self.tab.main_window)
+        ready, reason = context_ready(context)
+        if not ready:
+            QMessageBox.warning(self, "Install Center", reason)
+            return
+        try:
+            if context.offline:
+                open_megavgmdrive_game_folder_local(context.sd_root)
+            else:
+                open_megavgmdrive_game_folder_on_host(context.connection.host)
+        except Exception as e:
+            QMessageBox.warning(self, "Install Center", f"Could not open MegaVGMDrive game folder:\n{e}")
 
     def call_scripts_tab_action(self, method_name):
         scripts_tab = getattr(self.tab.main_window, "scripts_tab", None)
