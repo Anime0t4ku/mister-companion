@@ -451,16 +451,24 @@ def _status_from_text(text: str, installed=False, update_available=False) -> dic
     return {"state": state, "status_text": text or "Status unknown", "installed": state in {"installed", "update_available"}, "update_available": update_available or state == "update_available"}
 
 
-def _extra_status(handler: str, context: InstallCenterContext, check_latest: bool) -> dict:
+def _extra_status(handler: str, context: InstallCenterContext, check_latest: bool, log=None) -> dict:
     functions = EXTRA_HANDLERS.get(handler)
     if not functions:
         return {"state": "unknown", "status_text": "Status unknown", "installed": False, "update_available": False}
 
     get_online, get_local = functions[0], functions[1]
+    if log:
+        log(f"Checking {handler.replace('_', ' ')}...\n")
     if context.offline:
-        status = get_local(context.sd_root, check_latest=check_latest)
+        if handler == "retroachievement_cores":
+            status = get_local(context.sd_root, check_latest=check_latest, log=log)
+        else:
+            status = get_local(context.sd_root, check_latest=check_latest)
     else:
-        status = get_online(context.connection, check_latest=check_latest)
+        if handler == "retroachievement_cores":
+            status = get_online(context.connection, check_latest=check_latest, log=log)
+        else:
+            status = get_online(context.connection, check_latest=check_latest)
 
     if not isinstance(status, dict):
         return {"state": "unknown", "status_text": "Status unknown", "installed": False, "update_available": False}
@@ -480,7 +488,7 @@ def _extra_status(handler: str, context: InstallCenterContext, check_latest: boo
     return result
 
 
-def check_item_status(item: dict, context: InstallCenterContext, check_latest: bool = False) -> dict:
+def check_item_status(item: dict, context: InstallCenterContext, check_latest: bool = False, log=None) -> dict:
     ready, reason = context_ready(context)
     if not ready:
         return {"state": reason.lower().replace(" ", "_"), "status_text": reason, "installed": False, "update_available": False}
@@ -491,6 +499,8 @@ def check_item_status(item: dict, context: InstallCenterContext, check_latest: b
     category = item.get("category")
 
     if item_type == "script" or category == "scripts":
+        if log:
+            log(f"Scanning {item.get('name') or handler} script status...\n")
         scripts_status = get_scripts_status_local(context.sd_root) if context.offline else get_scripts_status(context.connection)
         syncthing_status = None
         ra_viewer_status = None
@@ -506,14 +516,18 @@ def check_item_status(item: dict, context: InstallCenterContext, check_latest: b
                 ra_viewer_status = {"status_text": f"Status unknown ({e})"}
         return _script_status_text(handler, scripts_status, syncthing_status, ra_viewer_status)
     if item_type in {"extra", "core"} or category in {"extras", "cores"}:
-        return _extra_status(handler, context, check_latest)
+        return _extra_status(handler, context, check_latest, log=log)
     if item_type == "rom" or category == "roms":
+        if log:
+            log(f"Scanning ROM install manifest for {item.get('name') or item_id}...\n")
         return check_rom_status(item, context)
     if item_type == "wallpaper_pack" or category == "wallpaper_packs":
+        if log:
+            log(f"Scanning wallpaper pack status for {item.get('name') or item_id}...\n")
         return check_wallpaper_status(item, context)
     return {"state": "unknown", "status_text": "Status unknown", "installed": False, "update_available": False}
 
-def check_all_status(catalog: dict, context: InstallCenterContext, check_latest: bool = False) -> dict:
+def check_all_status(catalog: dict, context: InstallCenterContext, check_latest: bool = False, log=None) -> dict:
     ready, reason = context_ready(context)
     results = {}
 
@@ -527,6 +541,8 @@ def check_all_status(catalog: dict, context: InstallCenterContext, check_latest:
     ra_viewer_status = None
 
     if any((item.get("type") == "script" or item.get("category") == "scripts") for item in catalog.get("items", [])):
+        if log:
+            log("Scanning installed scripts once for all script entries...\n")
         scripts_status = get_scripts_status_local(context.sd_root) if context.offline else get_scripts_status(context.connection)
         try:
             syncthing_status = get_syncthing_status_local(context.sd_root) if context.offline else get_syncthing_status(context.connection)
@@ -544,10 +560,13 @@ def check_all_status(catalog: dict, context: InstallCenterContext, check_latest:
         category = item.get("category")
 
         try:
+            item_name = item.get("name") or item_id or "item"
+            if log:
+                log(f"Checking {item_name}...\n")
             if item_type == "script" or category == "scripts":
                 results[item_id] = _script_status_text(handler, scripts_status, syncthing_status, ra_viewer_status)
             elif item_type in {"extra", "core"} or category in {"extras", "cores"}:
-                results[item_id] = _extra_status(handler, context, check_latest)
+                results[item_id] = _extra_status(handler, context, check_latest, log=log)
             elif item_type == "rom" or category == "roms":
                 results[item_id] = check_rom_status(item, context)
             elif item_type == "wallpaper_pack" or category == "wallpaper_packs":

@@ -115,6 +115,11 @@ def read_cached_thumbnail_bytes(catalog):
         if not item_id:
             continue
         for candidate in thumbnail_candidates(catalog, item):
+            local_data = local_asset_bytes(candidate)
+            if local_data:
+                image_bytes[item_id] = local_data
+                break
+
             cache_path = thumbnail_cache_path(item_id, candidate)
             try:
                 if cache_path.exists() and cache_path.is_file():
@@ -200,22 +205,29 @@ def download_thumbnail_bytes(catalog, force_reload=False):
 class InstallCenterLoadWorker(QThread):
     result = pyqtSignal(object)
     error = pyqtSignal(str)
+    progress = pyqtSignal(str)
 
-    def __init__(self, main_window, check_latest=False, force_images=False):
+    def __init__(self, main_window, check_latest=False, force_images=False, skip_image_download=False):
         super().__init__()
         self.main_window = main_window
         self.check_latest = check_latest
         self.force_images = force_images
+        self.skip_image_download = skip_image_download
 
     def run(self):
         try:
             catalog = load_catalog()
             context = build_context(self.main_window)
-            statuses = check_all_status(catalog, context, check_latest=self.check_latest)
+            if self.check_latest:
+                self.progress.emit("Checking for updates...\n")
+            statuses = check_all_status(catalog, context, check_latest=self.check_latest, log=self.progress.emit if self.check_latest else None)
             cached_image_bytes = read_cached_thumbnail_bytes(catalog)
-            self.result.emit({"catalog": catalog, "statuses": statuses, "image_bytes": cached_image_bytes, "check_latest": self.check_latest, "images_loading": True})
+            if self.skip_image_download:
+                self.result.emit({"catalog": catalog, "statuses": statuses, "image_bytes": cached_image_bytes, "check_latest": self.check_latest, "images_loading": False, "skip_image_download": True})
+                return
+            self.result.emit({"catalog": catalog, "statuses": statuses, "image_bytes": cached_image_bytes, "check_latest": self.check_latest, "images_loading": True, "skip_image_download": False})
             image_bytes = download_thumbnail_bytes(catalog, force_reload=self.force_images)
-            self.result.emit({"catalog": catalog, "statuses": statuses, "image_bytes": image_bytes, "check_latest": self.check_latest, "images_loading": False})
+            self.result.emit({"catalog": catalog, "statuses": statuses, "image_bytes": image_bytes, "check_latest": self.check_latest, "images_loading": False, "skip_image_download": False})
         except Exception as e:
             self.error.emit(f"{e}\n\n{traceback.format_exc()}")
 
@@ -223,6 +235,7 @@ class InstallCenterLoadWorker(QThread):
 class InstallCenterItemStatusWorker(QThread):
     result = pyqtSignal(str, object)
     error = pyqtSignal(str)
+    progress = pyqtSignal(str)
 
     def __init__(self, main_window, item):
         super().__init__()
@@ -232,7 +245,8 @@ class InstallCenterItemStatusWorker(QThread):
     def run(self):
         try:
             context = build_context(self.main_window)
-            status = check_item_status(self.item, context, check_latest=True)
+            self.progress.emit(f"Checking {self.item.get('name', 'item')}...\n")
+            status = check_item_status(self.item, context, check_latest=True, log=self.progress.emit)
             self.result.emit(self.item.get("id", ""), status)
         except Exception as e:
             self.error.emit(f"{e}\n\n{traceback.format_exc()}")
@@ -975,7 +989,8 @@ class InstallCenterDetailsDialog(QDialog):
         self.tab.open_wallpaper_folder_selected()
 
     def check_for_updates(self):
-        self.tab.check_item_for_updates(self.item, self.on_update_check_finished)
+        self.mark_active()
+        self.tab.check_item_for_updates(self.item, self.on_update_check_finished, output_widget=self.output)
 
     def on_update_check_finished(self, status):
         self.status = status or {}
@@ -1231,6 +1246,7 @@ class InstallCenterTab(QWidget):
         self.output.setReadOnly(True)
         self.output.setVisible(False)
         main_layout.addWidget(self.output)
+        self.global_check_in_progress = False
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -1272,9 +1288,14 @@ class InstallCenterTab(QWidget):
         self.refresh_button.setEnabled(False)
         self.global_check_button.setEnabled(False)
 
-        self.load_worker = InstallCenterLoadWorker(self.main_window, check_latest=True, force_images=True)
+        self.global_check_in_progress = True
+        self.output.setVisible(True)
+        self.output.clear()
+        self.output.append("Checking for updates...\n")
+        self.load_worker = InstallCenterLoadWorker(self.main_window, check_latest=True, force_images=False, skip_image_download=True)
         self.load_worker.result.connect(self.on_load_result)
         self.load_worker.error.connect(self.on_load_error)
+        self.load_worker.progress.connect(self.output.append)
         self.load_worker.finished.connect(self.on_load_finished)
         self.load_worker.start()
 
@@ -1282,7 +1303,12 @@ class InstallCenterTab(QWidget):
         self.catalog = payload.get("catalog") or {"categories": [], "items": []}
         self.statuses = payload.get("statuses") or {}
         incoming_images = payload.get("image_bytes") or {}
-        if incoming_images or not payload.get("images_loading"):
+        if payload.get("skip_image_download"):
+            if incoming_images:
+                merged_images = dict(self.thumbnail_bytes)
+                merged_images.update(incoming_images)
+                self.thumbnail_bytes = merged_images
+        elif incoming_images or not payload.get("images_loading"):
             self.thumbnail_bytes = incoming_images
         update_count = sum(1 for status in self.statuses.values() if status.get("update_available"))
         self.update_filter_available = bool(payload.get("check_latest") and update_count)
@@ -1322,6 +1348,10 @@ class InstallCenterTab(QWidget):
         self.status_label.setStyleSheet("color: #cc0000; font-weight: bold;")
 
     def on_load_finished(self):
+        if self.global_check_in_progress:
+            self.output.setVisible(False)
+            self.output.clear()
+            self.global_check_in_progress = False
         self.load_worker = None
         self.refresh_button.setEnabled(True)
         self.global_check_button.setEnabled(True)
@@ -1705,7 +1735,7 @@ class InstallCenterTab(QWidget):
             return None
         return item
 
-    def check_item_for_updates(self, item, callback=None):
+    def check_item_for_updates(self, item, callback=None, output_widget=None):
         if self.item_status_worker is not None and self.item_status_worker.isRunning():
             QMessageBox.warning(self, "Busy", "Install Center is already checking an item.")
             return
@@ -1714,8 +1744,13 @@ class InstallCenterTab(QWidget):
         if not ready:
             QMessageBox.warning(self, "Install Center", reason)
             return
-        self.status_label.setText(f"Checking {item.get('name', 'item')} for updates...")
+        item_name = item.get('name', 'item')
+        self.status_label.setText(f"Checking {item_name} for updates...")
         self.status_label.setStyleSheet("color: #1e88e5; font-weight: bold;")
+        target_output = output_widget or self.output
+        if target_output is not None:
+            target_output.setVisible(True)
+            target_output.append("Checking for updates...\n")
         self.item_status_worker = InstallCenterItemStatusWorker(self.main_window, item)
 
         def handle_result(item_id, status):
@@ -1724,12 +1759,17 @@ class InstallCenterTab(QWidget):
                 self.update_filter_available = True
                 self.rebuild_status_filter()
             self.populate_items()
-            self.status_label.setText(f"{item.get('name', 'Item')}: {clean_status_text(status or {})}")
+            final_text = f"{item.get('name', 'Item')}: {clean_status_text(status or {})}"
+            self.status_label.setText(final_text)
             self.status_label.setStyleSheet("color: gray;")
+            if target_output is not None:
+                target_output.append(final_text)
             if callback:
                 callback(status or {})
 
         def handle_error(message):
+            if target_output is not None:
+                target_output.append(message)
             QMessageBox.critical(self, "Install Center Error", message)
 
         def handle_finished():
@@ -1737,6 +1777,8 @@ class InstallCenterTab(QWidget):
 
         self.item_status_worker.result.connect(handle_result)
         self.item_status_worker.error.connect(handle_error)
+        if target_output is not None:
+            self.item_status_worker.progress.connect(target_output.append)
         self.item_status_worker.finished.connect(handle_finished)
         self.item_status_worker.start()
 

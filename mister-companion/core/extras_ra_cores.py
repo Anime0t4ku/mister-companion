@@ -6,6 +6,7 @@ import re
 import shlex
 import shutil
 import zipfile
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from urllib.parse import unquote, urljoin
 
@@ -353,10 +354,18 @@ def _fetch_latest_release_from_html(repo: str) -> dict:
 
 def _fetch_all_latest_releases(log=None) -> dict:
     latest = {}
-    for source in RA_SOURCES:
+
+    def fetch_source(source):
         if log:
             log(f"Checking {source['title']}...\n")
-        latest[source["key"]] = _fetch_latest_release(source["repo"])
+        return source["key"], _fetch_latest_release(source["repo"])
+
+    with ThreadPoolExecutor(max_workers=6) as executor:
+        futures = [executor.submit(fetch_source, source) for source in RA_SOURCES]
+        for future in as_completed(futures):
+            key, release = future.result()
+            latest[key] = release
+
     return latest
 
 
