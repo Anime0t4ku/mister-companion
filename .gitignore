@@ -9,6 +9,8 @@ tools/
 zaplauncher/
 .DS_Store
 ICcache/
+themes/
+
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -231,3 +233,7 @@ __marimo__/
 
 # Agents
 .claude/
+mister-companion/themes/.theme_store/installed.json
+/mister-companion/themes/.theme_store
+mister-companion/themes/.theme_store/installed.json
+mister-companion/themes/.theme_store/installed.json
