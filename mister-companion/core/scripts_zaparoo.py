@@ -1,3 +1,4 @@
+import re
 import shutil
 import zipfile
 from io import BytesIO
@@ -21,6 +22,129 @@ ZAPAROO_STARTUP_PATH = "/media/fat/linux/user-startup.sh"
 ZAPAROO_STARTUP_MARKER = "# mrext/zaparoo"
 ZAPAROO_STARTUP_LINE = "[[ -e /media/fat/Scripts/zaparoo.sh ]] && /media/fat/Scripts/zaparoo.sh -service $1"
 
+
+def _normalize_version(value: str) -> str:
+    match = re.search(r"v?([0-9]+(?:\.[0-9]+){1,3})", str(value or ""), re.IGNORECASE)
+    return match.group(1) if match else ""
+
+
+def _version_tuple(value: str):
+    parts = []
+    for part in _normalize_version(value).split("."):
+        try:
+            parts.append(int(part))
+        except Exception:
+            parts.append(0)
+    while len(parts) < 3:
+        parts.append(0)
+    return tuple(parts[:3])
+
+
+def _fetch_latest_zaparoo_version() -> str:
+    response = requests.get(ZAPAROO_RELEASE_API, timeout=15)
+    response.raise_for_status()
+    data = response.json()
+    return _normalize_version(data.get("tag_name") or data.get("name") or "")
+
+
+def _parse_zaparoo_version_output(output: str) -> str:
+    return _normalize_version(output)
+
+
+def get_zaparoo_update_status(connection, check_latest: bool = False, log=None) -> dict:
+    if connection is None or not connection.is_connected():
+        return {"state": "needs_connection", "status_text": "Needs connection", "installed": False, "update_available": False}
+
+    exists_output = connection.run_command(f"test -f {ZAPAROO_SCRIPT_PATH} && echo EXISTS")
+    installed = "EXISTS" in (exists_output or "")
+    if not installed:
+        return {"state": "not_installed", "status_text": "Not installed", "installed": False, "update_available": False}
+
+    installed_version = ""
+    try:
+        version_output = connection.run_command(f"sh {ZAPAROO_SCRIPT_PATH} --version 2>/dev/null || {ZAPAROO_SCRIPT_PATH} --version 2>/dev/null || true")
+        installed_version = _parse_zaparoo_version_output(version_output)
+    except Exception:
+        installed_version = ""
+
+    latest_version = ""
+    latest_error = ""
+    update_available = False
+
+    if check_latest:
+        if log:
+            log("Checking latest Zaparoo release...\n")
+        try:
+            latest_version = _fetch_latest_zaparoo_version()
+            if latest_version and installed_version:
+                update_available = _version_tuple(installed_version) < _version_tuple(latest_version)
+            elif latest_version and not installed_version:
+                update_available = True
+        except Exception as e:
+            latest_error = str(e)
+
+    service_output = connection.run_command(f"grep 'mrext/zaparoo' {ZAPAROO_STARTUP_PATH} 2>/dev/null || true")
+    service_enabled = bool(service_output and "mrext/zaparoo" in service_output)
+
+    if update_available:
+        status_text = f"Update available ({installed_version or 'unknown'} → {latest_version})"
+        state = "update_available"
+    elif latest_error:
+        status_text = f"Installed ({installed_version or 'unknown'}, update check failed)"
+        state = "installed"
+    elif installed_version:
+        status_text = f"Installed ({installed_version})"
+        state = "installed"
+    else:
+        status_text = "Installed"
+        state = "installed"
+
+    if not service_enabled and not update_available:
+        if installed_version:
+            status_text = f"Installed ({installed_version}), service disabled"
+        else:
+            status_text = "Installed, service disabled"
+
+    return {
+        "state": state,
+        "status_text": status_text,
+        "installed": True,
+        "update_available": update_available,
+        "installed_version": installed_version,
+        "latest_version": latest_version,
+        "latest_error": latest_error,
+        "service_enabled": service_enabled,
+    }
+
+
+def get_zaparoo_update_status_local(sd_root, check_latest: bool = False, log=None) -> dict:
+    script_path = _local_path(sd_root, ZAPAROO_SCRIPT_PATH)
+    installed = script_path.is_file()
+    if not installed:
+        return {"state": "not_installed", "status_text": "Not installed", "installed": False, "update_available": False}
+
+    latest_version = ""
+    latest_error = ""
+    if check_latest:
+        try:
+            latest_version = _fetch_latest_zaparoo_version()
+        except Exception as e:
+            latest_error = str(e)
+
+    status_text = "Installed"
+    if latest_error:
+        status_text = f"Installed (update check failed: {latest_error})"
+
+    return {
+        "state": "installed",
+        "status_text": status_text,
+        "installed": True,
+        "update_available": False,
+        "installed_version": "",
+        "latest_version": latest_version,
+        "latest_error": latest_error,
+        "service_enabled": False,
+    }
 
 def _download_zaparoo_script(log=None):
     if log:

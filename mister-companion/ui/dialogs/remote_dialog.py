@@ -635,16 +635,17 @@ class RemoteDialog(QDialog):
         update_available = bool(getattr(status, "update_available", False))
 
         self.set_status_labels(
-            installed="Update Available" if update_available else ("Installed" if status.installed else "Not Installed"),
+            installed=(f"Update Available ({status.version_label})" if update_available else (f"Installed ({status.version_label})" if status.installed else "Not Installed")),
             running="Running" if status.running else "Not Running",
             startup="Enabled" if status.startup_enabled else "Disabled",
         )
 
         if update_available:
             installed_version = getattr(status, "version_label", "Unknown")
-            bundled_version = getattr(status, "bundled_version", "") or "Unknown"
+            latest_version = getattr(status, "latest_version", "") or "Unknown"
+            latest_source = getattr(status, "latest_source", "") or "remote"
             self.append_log(
-                f"Companion Remote update available. Installed: {installed_version}. Bundled: {bundled_version}."
+                f"Companion Remote update available. Installed: {installed_version}. Latest: {latest_version} ({latest_source})."
             )
         elif status.ready:
             self.append_log("Companion Remote daemon is installed and running.")

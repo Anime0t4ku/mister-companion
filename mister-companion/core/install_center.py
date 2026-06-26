@@ -21,6 +21,8 @@ from core.scripts_actions import (
     install_update_all_local,
     uninstall_update_all,
     uninstall_update_all_local,
+    get_zaparoo_update_status,
+    get_zaparoo_update_status_local,
     install_zaparoo,
     install_zaparoo_local,
     uninstall_zaparoo,
@@ -118,6 +120,8 @@ from core.extras_ra_cores import (
     uninstall_ra_cores,
     uninstall_ra_cores_local,
 )
+
+from core.scripts_version_check import apply_script_update_status, supports_script_update_check
 
 from core.wallpapers import (
     build_install_state,
@@ -419,6 +423,10 @@ def _script_status_text(handler: str, scripts_status, syncthing_status=None, ra_
         return {"state": "not_installed", "status_text": "Not installed", "installed": False, "update_available": False}
 
     if handler == "zaparoo":
+        # Zaparoo has a real version command, so it is handled separately in
+        # check_item_status/check_all_status where the online/offline context is available.
+        if not getattr(scripts_status, "zaparoo_installed", False):
+            return {"state": "not_installed", "status_text": "Not installed", "installed": False, "update_available": False}
         if not getattr(scripts_status, "zaparoo_service_enabled", False):
             return {"state": "installed", "status_text": "Installed, service disabled", "installed": True, "update_available": False}
         return {"state": "installed", "status_text": "Installed", "installed": True, "update_available": False}
@@ -512,6 +520,11 @@ def check_item_status(item: dict, context: InstallCenterContext, check_latest: b
         if log:
             log(f"Scanning {item.get('name') or handler} script status...\n")
         scripts_status = get_scripts_status_local(context.sd_root) if context.offline else get_scripts_status(context.connection)
+        if handler == "zaparoo":
+            try:
+                return get_zaparoo_update_status_local(context.sd_root, check_latest=check_latest, log=log) if context.offline else get_zaparoo_update_status(context.connection, check_latest=check_latest, log=log)
+            except Exception as e:
+                return {"state": "unknown", "status_text": f"Status unknown ({e})", "installed": False, "update_available": False}
         syncthing_status = None
         ra_viewer_status = None
         if handler == "syncthing":
@@ -524,7 +537,16 @@ def check_item_status(item: dict, context: InstallCenterContext, check_latest: b
                 ra_viewer_status = get_ra_viewer_status_local(context.sd_root) if context.offline else get_ra_viewer_status(context.connection)
             except Exception as e:
                 ra_viewer_status = {"status_text": f"Status unknown ({e})"}
-        return _script_status_text(handler, scripts_status, syncthing_status, ra_viewer_status)
+        base_status = _script_status_text(handler, scripts_status, syncthing_status, ra_viewer_status)
+        return apply_script_update_status(
+            handler,
+            base_status,
+            check_latest=check_latest,
+            connection=context.connection,
+            sd_root=context.sd_root,
+            offline=context.offline,
+            log=log,
+        )
     if item_type in {"extra", "core"} or category in {"extras", "cores"}:
         return _extra_status(handler, context, check_latest, log=log)
     if item_type == "rom" or category == "roms":
@@ -574,7 +596,19 @@ def check_all_status(catalog: dict, context: InstallCenterContext, check_latest:
             if log:
                 log(f"Checking {item_name}...\n")
             if item_type == "script" or category == "scripts":
-                results[item_id] = _script_status_text(handler, scripts_status, syncthing_status, ra_viewer_status)
+                if handler == "zaparoo":
+                    results[item_id] = get_zaparoo_update_status_local(context.sd_root, check_latest=check_latest, log=log) if context.offline else get_zaparoo_update_status(context.connection, check_latest=check_latest, log=log)
+                else:
+                    base_status = _script_status_text(handler, scripts_status, syncthing_status, ra_viewer_status)
+                    results[item_id] = apply_script_update_status(
+                        handler,
+                        base_status,
+                        check_latest=check_latest,
+                        connection=context.connection,
+                        sd_root=context.sd_root,
+                        offline=context.offline,
+                        log=log,
+                    )
             elif item_type in {"extra", "core"} or category in {"extras", "cores"}:
                 results[item_id] = _extra_status(handler, context, check_latest, log=log)
             elif item_type == "rom" or category == "roms":

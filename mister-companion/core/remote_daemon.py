@@ -1,7 +1,9 @@
 from dataclasses import dataclass
 import json
+import re
 import sys
 import threading
+import urllib.request
 from pathlib import Path
 from typing import Any, Dict
 
@@ -25,7 +27,37 @@ def app_base_dir() -> Path:
 
 BASE_DIR = app_base_dir()
 LOCAL_REMOTE_SCRIPT_PATH = BASE_DIR / "assets" / "companion_remote.sh"
+REMOTE_SCRIPT_SOURCE_URL = "https://raw.githubusercontent.com/Anime0t4ku/mister-companion/main/mister-companion/assets/companion_remote.sh"
 BUNDLED_REMOTE_SCRIPT_VERSION = "1.0.1"
+
+
+def _parse_remote_script_version(script_text: str) -> str:
+    match = re.search(r'^\s*SCRIPT_VERSION=["\']?([^"\'\r\n]+)', str(script_text or ""), re.MULTILINE)
+    return match.group(1).strip() if match else ""
+
+
+def _fetch_remote_script_text(timeout: int = 15) -> str:
+    request = urllib.request.Request(
+        REMOTE_SCRIPT_SOURCE_URL,
+        headers={
+            "User-Agent": "MiSTer-Companion/Remote-Daemon",
+            "Accept": "text/plain,*/*",
+            "Cache-Control": "no-cache",
+        },
+    )
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        return response.read().decode("utf-8", errors="replace")
+
+
+def get_latest_remote_daemon_script() -> tuple[str, str, str]:
+    try:
+        script_text = _fetch_remote_script_text()
+        version = _parse_remote_script_version(script_text) or BUNDLED_REMOTE_SCRIPT_VERSION
+        return script_text, version, "remote"
+    except Exception:
+        script_text = LOCAL_REMOTE_SCRIPT_PATH.read_text(encoding="utf-8")
+        version = _parse_remote_script_version(script_text) or BUNDLED_REMOTE_SCRIPT_VERSION
+        return script_text, version, "bundled"
 
 
 def _version_tuple(value: str):
@@ -50,7 +82,8 @@ class RemoteDaemonStatus:
     port_listening: bool = False
     startup_enabled: bool = False
     version: str = ""
-    bundled_version: str = BUNDLED_REMOTE_SCRIPT_VERSION
+    latest_version: str = BUNDLED_REMOTE_SCRIPT_VERSION
+    latest_source: str = "bundled"
     raw_output: str = ""
     error: str = ""
 
@@ -76,7 +109,7 @@ class RemoteDaemonStatus:
         if not installed_version:
             return True
 
-        return _version_tuple(installed_version) < _version_tuple(self.bundled_version)
+        return _version_tuple(installed_version) < _version_tuple(self.latest_version)
 
     @property
     def version_label(self) -> str:
@@ -120,7 +153,6 @@ def _parse_status_output(output: str) -> RemoteDaemonStatus:
         port_listening=_parse_bool(_value(values, "port_listening")),
         startup_enabled=_parse_bool(_value(values, "startup_enabled", "start_on_boot")),
         version=_value(values, "version", "script_version", "companion_remote_version"),
-        bundled_version=BUNDLED_REMOTE_SCRIPT_VERSION,
         raw_output=str(output or ""),
     )
 
@@ -184,7 +216,14 @@ echo "version="
 
     try:
         output = connection.run_command(command)
-        return _parse_status_output(output)
+        status = _parse_status_output(output)
+        try:
+            _script_text, latest_version, latest_source = get_latest_remote_daemon_script()
+            status.latest_version = latest_version or BUNDLED_REMOTE_SCRIPT_VERSION
+            status.latest_source = latest_source or "bundled"
+        except Exception:
+            pass
+        return status
     except Exception as e:
         return RemoteDaemonStatus(error=str(e))
 
@@ -236,7 +275,7 @@ def install_remote_daemon(connection) -> str:
             f"Local Companion Remote script not found: {LOCAL_REMOTE_SCRIPT_PATH}"
         )
 
-    script_text = LOCAL_REMOTE_SCRIPT_PATH.read_text(encoding="utf-8")
+    script_text, _latest_version, _latest_source = get_latest_remote_daemon_script()
 
     command = f"""
 mkdir -p /media/fat/Scripts

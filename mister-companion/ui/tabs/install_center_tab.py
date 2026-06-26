@@ -51,6 +51,7 @@ from core.install_center import (
     open_wallpaper_folder,
 )
 from core.file_browser import list_directory, join_remote_path, parent_path, DEFAULT_ROOT
+from core.scripts_version_check import supports_script_update_check
 
 
 HUB_RAW_BASE_URL = "https://raw.githubusercontent.com/Anime0t4ku/mister-companion-hub/main/"
@@ -830,13 +831,22 @@ class InstallCenterDetailsDialog(QDialog):
         def add_button(text, callback, enabled=True, min_width=96):
             return self.add_compact_button(actions, text, callback, enabled=(context_ready and enabled), minimum=min_width)
 
-        add_button("Install", self.install_or_update, enabled=not installed)
+        install_text = "Update" if bool(self.status.get("update_available")) else "Install"
+        self.install_update_button = add_button(
+            install_text,
+            self.install_or_update,
+            enabled=(not installed or bool(self.status.get("update_available"))),
+        )
+
+        if supports_script_update_check(handler):
+            add_button("Check for Updates", self.check_for_updates, enabled=installed, min_width=170)
 
         if handler == "update_all":
             add_button("Uninstall", self.uninstall, enabled=installed)
             add_button("Configure", self.configure, enabled=installed, min_width=190)
             add_button("Run Offline" if self.tab.is_offline_mode() else "Run", self.run_item, enabled=installed, min_width=170)
         elif handler == "zaparoo":
+            add_button("Check for Updates", self.check_for_updates, enabled=installed and online_mode, min_width=170)
             add_button("Enable Start on Boot", lambda: self.call_scripts_tab_action("enable_zaparoo_service"), enabled=installed and "service disabled" in status_lower, min_width=190)
             add_button("Open Web Interface", lambda: self.call_scripts_tab_action("open_zaparoo_web_interface"), enabled=installed and online_mode, min_width=190)
             add_button("Uninstall", self.uninstall, enabled=installed, min_width=170)
@@ -1024,9 +1034,9 @@ class InstallCenterDetailsDialog(QDialog):
         self.status = status or {}
         self.status_label.setText(self.full_status_text())
         self.status_label.setStyleSheet(self.tab.status_style_for(self.status, pill=True))
-        if hasattr(self, "install_update_button"):
-            self.install_update_button.setText("Update" if self.status.get("update_available") else "Install")
-            self.install_update_button.setVisible(action_supported(self.item, self.status, "install_update") and self.tab.has_ready_context())
+        self.clear_actions_layout()
+        self.add_action_buttons(self.actions_layout)
+        self.actions_layout.addStretch(1)
 
     def open_item_url(self, key):
         url = str(self.item.get(key) or "").strip()

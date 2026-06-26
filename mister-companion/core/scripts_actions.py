@@ -35,6 +35,8 @@ from core.scripts_zaparoo import (
     disable_zaparoo_service_local,
     enable_zaparoo_service,
     enable_zaparoo_service_local,
+    get_zaparoo_update_status,
+    get_zaparoo_update_status_local,
     install_zaparoo,
     install_zaparoo_local,
     uninstall_zaparoo,
@@ -179,6 +181,8 @@ __all__ = [
     "uninstall_update_all_local",
     "run_update_all_stream",
 
+    "get_zaparoo_update_status",
+    "get_zaparoo_update_status_local",
     "install_zaparoo",
     "install_zaparoo_local",
     "enable_zaparoo_service",
