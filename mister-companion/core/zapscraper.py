@@ -224,6 +224,79 @@ def extract_screenscraper_quota_info(data: dict[str, Any]) -> dict[str, Any]:
         },
     )
 
+    ko_used = _first_present_int(
+        data,
+        {
+            "kotoday",
+            "ko_today",
+            "koday",
+            "ko_day",
+            "kocount",
+            "ko_count",
+            "kocounttoday",
+            "ko_count_today",
+            "usedko",
+            "usedkotoday",
+            "used_ko",
+            "used_ko_today",
+            "nbko",
+            "nbkotoday",
+            "nb_ko",
+            "nb_ko_today",
+            "nbscrapeko",
+            "nbscrapekotoday",
+            "nbscrapeursko",
+            "nbscrapeurskotoday",
+            "requestskotoday",
+            "requestsko",
+            "scrapekotoday",
+            "scrapeko",
+        },
+    )
+
+    ko_limit = _first_present_int(
+        data,
+        {
+            "maxko",
+            "maxkotoday",
+            "max_ko",
+            "max_ko_today",
+            "kolimit",
+            "ko_limit",
+            "kolimitday",
+            "ko_limit_day",
+            "maxkoday",
+            "max_ko_day",
+            "maxscrapeko",
+            "maxscrapekotoday",
+            "maxnbscrapeko",
+            "maxnbscrapekotoday",
+            "maxrequestskoday",
+            "maxrequestskotoday",
+            "maxrequestskoperday",
+            "max_requests_ko_per_day",
+            "maxrequestskoperjour",
+        },
+    )
+
+    ko_remaining = _first_present_int(
+        data,
+        {
+            "koremaining",
+            "ko_remaining",
+            "koremainingtoday",
+            "ko_remaining_today",
+            "koleft",
+            "ko_left",
+            "kolefttoday",
+            "ko_left_today",
+            "remainingko",
+            "remainingkotoday",
+            "remaining_ko",
+            "remaining_ko_today",
+        },
+    )
+
     minute_used = _first_present_int(
         data,
         {
@@ -270,6 +343,9 @@ def extract_screenscraper_quota_info(data: dict[str, Any]) -> dict[str, Any]:
     if daily_remaining is None and daily_used is not None and daily_limit is not None:
         daily_remaining = max(0, daily_limit - daily_used)
 
+    if ko_remaining is None and ko_used is not None and ko_limit is not None:
+        ko_remaining = max(0, ko_limit - ko_used)
+
     quota = {}
 
     if username:
@@ -283,6 +359,15 @@ def extract_screenscraper_quota_info(data: dict[str, Any]) -> dict[str, Any]:
 
     if daily_remaining is not None:
         quota["daily_remaining"] = daily_remaining
+
+    if ko_used is not None:
+        quota["ko_used"] = ko_used
+
+    if ko_limit is not None:
+        quota["ko_limit"] = ko_limit
+
+    if ko_remaining is not None:
+        quota["ko_remaining"] = ko_remaining
 
     if minute_used is not None:
         quota["minute_used"] = minute_used
@@ -306,6 +391,9 @@ def format_screenscraper_quota_info(quota: dict[str, Any]) -> str:
     daily_used = quota.get("daily_used")
     daily_limit = quota.get("daily_limit")
     daily_remaining = quota.get("daily_remaining")
+    ko_used = quota.get("ko_used")
+    ko_limit = quota.get("ko_limit")
+    ko_remaining = quota.get("ko_remaining")
     minute_used = quota.get("minute_used")
     minute_limit = quota.get("minute_limit")
     parts = []
@@ -318,6 +406,15 @@ def format_screenscraper_quota_info(quota: dict[str, Any]) -> str:
         parts.append(f"Daily quota: {daily_used} requests used today")
     elif daily_limit is not None:
         parts.append(f"Daily quota limit: {daily_limit}")
+
+    if ko_used is not None and ko_limit is not None:
+        parts.append(f"KO count: {ko_used} / {ko_limit} used")
+    elif ko_remaining is not None:
+        parts.append(f"KO count: {ko_remaining} remaining")
+    elif ko_used is not None:
+        parts.append(f"KO count: {ko_used} used today")
+    elif ko_limit is not None:
+        parts.append(f"KO count limit: {ko_limit}")
 
     if minute_used is not None and minute_limit is not None:
         parts.append(f"Minute quota: {minute_used} / {minute_limit} used")

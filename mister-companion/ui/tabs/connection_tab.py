@@ -323,7 +323,7 @@ class ConnectionTab(QWidget):
 
         offline_info_label = QLabel(
             "Offline Mode works directly on the selected MiSTer SD card. "
-            "The selected path is only kept while MiSTer Companion is open."
+            "Enable Remember SD location to keep the latest selected path after closing MiSTer Companion."
         )
         offline_info_label.setWordWrap(True)
         offline_info_label.setStyleSheet("color: gray;")
@@ -344,6 +344,23 @@ class ConnectionTab(QWidget):
         offline_row.addWidget(self.offline_sd_input)
         offline_row.addWidget(self.browse_sd_btn)
         offline_row.addStretch()
+
+        remember_sd_row = QHBoxLayout()
+        remember_sd_row.setSpacing(8)
+        remember_sd_row.addStretch()
+
+        self.remember_sd_location_checkbox = QCheckBox("Remember SD location")
+        self.remember_sd_location_checkbox.setChecked(
+            self.main_window.should_remember_offline_sd_root()
+            if hasattr(self.main_window, "should_remember_offline_sd_root")
+            else False
+        )
+        self.remember_sd_location_checkbox.setToolTip(
+            "When enabled, MiSTer Companion remembers the latest selected Offline Mode SD card path after closing."
+        )
+
+        remember_sd_row.addWidget(self.remember_sd_location_checkbox)
+        remember_sd_row.addStretch()
 
         offline_actions_row = QHBoxLayout()
         offline_actions_row.setSpacing(8)
@@ -368,6 +385,7 @@ class ConnectionTab(QWidget):
 
         offline_layout.addWidget(offline_info_label)
         offline_layout.addLayout(offline_row)
+        offline_layout.addLayout(remember_sd_row)
         offline_layout.addLayout(offline_actions_row)
         offline_layout.addWidget(self.offline_sd_status_label)
 
@@ -461,6 +479,9 @@ class ConnectionTab(QWidget):
         self.open_sd_btn.clicked.connect(self.handle_open_sd_card)
         self.eject_sd_btn.clicked.connect(self.handle_eject_sd_card)
         self.clear_sd_btn.clicked.connect(self.handle_clear_sd_card)
+        self.remember_sd_location_checkbox.toggled.connect(
+            self.handle_remember_sd_location_changed
+        )
 
         self.connect_btn.clicked.connect(self.handle_connect_toggle)
         self.connect_save_btn.clicked.connect(self.handle_connect_and_save)
@@ -977,6 +998,16 @@ class ConnectionTab(QWidget):
         self.main_window.set_offline_sd_root("")
         self.main_window.apply_app_mode_state()
         self.update_mode_state()
+
+    def handle_remember_sd_location_changed(self, checked: bool):
+        if hasattr(self.main_window, "set_remember_offline_sd_root"):
+            current_path = (
+                self.main_window.get_offline_sd_root()
+                or self.offline_sd_input.text().strip()
+            )
+            if checked and current_path:
+                self.main_window.set_offline_sd_root(current_path)
+            self.main_window.set_remember_offline_sd_root(bool(checked))
 
     def handle_connect_toggle(self):
         if self.connection.is_connected():

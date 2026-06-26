@@ -27,7 +27,6 @@ from PyQt6.QtWidgets import (
 from core.config import load_config, save_config
 from core.screenscraper_private import has_dev_credentials
 from core.zapscraper import (
-    format_screenscraper_quota_info,
     load_scan_cache_systems,
     plan_scrape_actions,
     run_scrape_actions,
@@ -63,6 +62,18 @@ ZAPSCRAPER_CACHE_FILENAME = ".zapscraper_cache.json"
 
 IMAGE_SIZE_HDTV = "HDTV Mode"
 IMAGE_SIZE_CRT = "CRT Mode"
+
+
+def _format_quota_pair(label: str, used, limit, remaining=None, used_suffix: str = "used") -> str:
+    if used is not None and limit is not None:
+        return f"{label}: {used} / {limit} {used_suffix}"
+    if remaining is not None:
+        return f"{label}: {remaining} remaining"
+    if used is not None:
+        return f"{label}: {used} {used_suffix} today"
+    if limit is not None:
+        return f"{label} limit: {limit}"
+    return f"{label}: not reported"
 
 
 def _remove_file_if_exists(path: Path):
@@ -813,13 +824,27 @@ class ZapScraperTab(QWidget):
         self.account_status_label = QLabel("")
         self.account_status_label.setWordWrap(True)
 
-        self.quota_label = QLabel("Quota: not reported yet.")
-        self.quota_label.setWordWrap(True)
+        self.quota_widget = QWidget()
+        quota_layout = QHBoxLayout(self.quota_widget)
+        quota_layout.setContentsMargins(0, 0, 0, 0)
+        quota_layout.setSpacing(18)
+
+        self.scrape_quota_label = QLabel("Scrape count: not reported")
+        self.scrape_quota_label.setWordWrap(False)
+        self.ko_quota_label = QLabel("KO count: not reported")
+        self.ko_quota_label.setWordWrap(False)
+
+        quota_layout.addWidget(self.scrape_quota_label)
+        quota_layout.addWidget(self.ko_quota_label)
+        quota_layout.addStretch(1)
+
+        # Kept as an alias for older internal visibility/update checks.
+        self.quota_label = self.quota_widget
 
         account_layout.addWidget(self.login_widget)
         account_layout.addWidget(self.logged_in_widget)
         account_layout.addWidget(self.account_status_label)
-        account_layout.addWidget(self.quota_label)
+        account_layout.addWidget(self.quota_widget)
 
         right_layout.addWidget(account_group)
 
@@ -1201,19 +1226,31 @@ class ZapScraperTab(QWidget):
         self.update_quota_label()
 
     def update_quota_label(self):
-        if not getattr(self, "logged_in", False):
-            if hasattr(self, "quota_label"):
-                self.quota_label.setText("")
+        if not hasattr(self, "scrape_quota_label") or not hasattr(self, "ko_quota_label"):
             return
 
-        message = format_screenscraper_quota_info(getattr(self, "quota_info", {}) or {})
+        if not getattr(self, "logged_in", False):
+            self.scrape_quota_label.setText("")
+            self.ko_quota_label.setText("")
+            return
 
-        if not message or "not reported" in message.lower():
-            message = "Quota: not reported by ScreenScraper yet."
-        elif not message.lower().startswith("quota"):
-            message = f"Quota: {message}"
-
-        self.quota_label.setText(message)
+        quota_info = getattr(self, "quota_info", {}) or {}
+        self.scrape_quota_label.setText(
+            _format_quota_pair(
+                "Scrape count",
+                quota_info.get("daily_used"),
+                quota_info.get("daily_limit"),
+                quota_info.get("daily_remaining"),
+            )
+        )
+        self.ko_quota_label.setText(
+            _format_quota_pair(
+                "KO count",
+                quota_info.get("ko_used"),
+                quota_info.get("ko_limit"),
+                quota_info.get("ko_remaining"),
+            )
+        )
 
     def update_account_status(self):
         if not has_dev_credentials():

@@ -333,7 +333,11 @@ class MainWindow(QMainWindow):
         self.config_data = load_config()
 
         self.app_mode = APP_MODE_ONLINE
-        self.offline_sd_root = ""
+        self.offline_sd_root = (
+            str(self.config_data.get("offline_sd_root", "") or "").strip()
+            if self.config_data.get("remember_offline_sd_root", False)
+            else ""
+        )
 
         self.connection_check_worker = None
         self.connection_fail_count = 0
@@ -1181,8 +1185,28 @@ class MainWindow(QMainWindow):
     def get_offline_sd_root(self) -> str:
         return self.offline_sd_root
 
+    def should_remember_offline_sd_root(self) -> bool:
+        return bool(self.config_data.get("remember_offline_sd_root", False))
+
+    def set_remember_offline_sd_root(self, remember: bool):
+        self.config_data["remember_offline_sd_root"] = bool(remember)
+
+        if remember:
+            self.config_data["offline_sd_root"] = self.offline_sd_root
+        else:
+            self.config_data["offline_sd_root"] = ""
+
+        save_config(self.config_data)
+
     def set_offline_sd_root(self, path: str):
         self.offline_sd_root = str(path or "").strip()
+
+        if self.should_remember_offline_sd_root():
+            self.config_data["offline_sd_root"] = self.offline_sd_root
+        else:
+            self.config_data["offline_sd_root"] = ""
+
+        save_config(self.config_data)
 
     def switch_to_online_mode(self):
         if self._closing:
@@ -1376,6 +1400,10 @@ class MainWindow(QMainWindow):
             pass
 
     def closeEvent(self, event):
+        if not self.should_remember_offline_sd_root():
+            self.config_data["offline_sd_root"] = ""
+            save_config(self.config_data)
+
         self.save_window_geometry()
         self._closing = True
 

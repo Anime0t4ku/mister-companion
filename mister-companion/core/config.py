@@ -22,6 +22,8 @@ DEFAULT_CONFIG = {
     "use_ssh_agent": False,
     "look_for_ssh_keys": False,
     "menu_style": "side_menu",
+    "remember_offline_sd_root": False,
+    "offline_sd_root": "",
 }
 
 
@@ -63,8 +65,12 @@ def normalize_config(data):
     merged["app_version"] = APP_VERSION
     merged["theme_mode"] = normalize_theme_mode(merged.get("theme_mode"))
     merged["menu_style"] = normalize_menu_style(merged.get("menu_style"))
+    merged["remember_offline_sd_root"] = bool(merged.get("remember_offline_sd_root", False))
 
-    merged.pop("offline_sd_root", None)
+    if merged["remember_offline_sd_root"]:
+        merged["offline_sd_root"] = str(merged.get("offline_sd_root", "") or "").strip()
+    else:
+        merged["offline_sd_root"] = ""
 
     return merged
 
