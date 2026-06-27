@@ -509,6 +509,62 @@ def _download_ftp_save_sync_rclone_binary():
     raise RuntimeError("Could not find rclone binary inside the downloaded ZIP.")
 
 
+def _install_ftp_save_sync_rclone_on_mister(connection):
+    command = f"""set -eu
+BASE_DIR="{FTP_SAVE_SYNC_CONFIG_DIR}"
+RCLONE_BIN="{FTP_SAVE_SYNC_RCLONE_PATH}"
+RCLONE_ZIP="/tmp/ftp_save_sync_rclone.zip"
+RCLONE_EXTRACT_DIR="/tmp/ftp_save_sync_rclone_extract"
+RCLONE_URL="{FTP_SAVE_SYNC_RCLONE_URL}"
+DOWNLOAD_LOG="/tmp/ftp_save_sync_rclone_download.log"
+UNZIP_LOG="/tmp/ftp_save_sync_rclone_unzip.log"
+mkdir -p "$BASE_DIR"
+rm -f "$RCLONE_ZIP" "$DOWNLOAD_LOG" "$UNZIP_LOG"
+rm -rf "$RCLONE_EXTRACT_DIR"
+mkdir -p "$RCLONE_EXTRACT_DIR"
+DOWNLOAD_OK=0
+if command -v curl >/dev/null 2>&1; then
+    curl -L --fail "$RCLONE_URL" -o "$RCLONE_ZIP" >"$DOWNLOAD_LOG" 2>&1 && DOWNLOAD_OK=1 || true
+    if [ "$DOWNLOAD_OK" -ne 1 ]; then
+        curl -k -L --fail "$RCLONE_URL" -o "$RCLONE_ZIP" >"$DOWNLOAD_LOG" 2>&1 && DOWNLOAD_OK=1 || true
+    fi
+fi
+if [ "$DOWNLOAD_OK" -ne 1 ] && command -v wget >/dev/null 2>&1; then
+    wget -O "$RCLONE_ZIP" "$RCLONE_URL" >"$DOWNLOAD_LOG" 2>&1 && DOWNLOAD_OK=1 || true
+    if [ "$DOWNLOAD_OK" -ne 1 ]; then
+        wget --no-check-certificate -O "$RCLONE_ZIP" "$RCLONE_URL" >"$DOWNLOAD_LOG" 2>&1 && DOWNLOAD_OK=1 || true
+    fi
+fi
+if [ "$DOWNLOAD_OK" -ne 1 ] || [ ! -s "$RCLONE_ZIP" ]; then
+    echo "Failed to download ftp_save_sync rclone."
+    tail -n 8 "$DOWNLOAD_LOG" 2>/dev/null || true
+    exit 10
+fi
+if command -v unzip >/dev/null 2>&1; then
+    unzip -o "$RCLONE_ZIP" -d "$RCLONE_EXTRACT_DIR" >"$UNZIP_LOG" 2>&1
+elif command -v busybox >/dev/null 2>&1; then
+    busybox unzip -o "$RCLONE_ZIP" -d "$RCLONE_EXTRACT_DIR" >"$UNZIP_LOG" 2>&1
+else
+    echo "No unzip tool found on MiSTer."
+    exit 11
+fi
+BIN_PATH="$(find "$RCLONE_EXTRACT_DIR" -type f -name rclone 2>/dev/null | head -n1)"
+if [ -z "$BIN_PATH" ] || [ ! -f "$BIN_PATH" ]; then
+    echo "Failed to extract ftp_save_sync rclone."
+    tail -n 8 "$UNZIP_LOG" 2>/dev/null || true
+    exit 12
+fi
+cp "$BIN_PATH" "$RCLONE_BIN"
+chmod +x "$RCLONE_BIN"
+"$RCLONE_BIN" version >/dev/null 2>&1
+rm -f "$RCLONE_ZIP" "$DOWNLOAD_LOG" "$UNZIP_LOG"
+rm -rf "$RCLONE_EXTRACT_DIR"
+"""
+    result = connection.run_command(command)
+    if not _remote_command_success(connection, f"{FTP_SAVE_SYNC_RCLONE_PATH} version"):
+        raise RuntimeError(f"ftp_save_sync rclone could not be installed on MiSTer.\n{result or ''}".strip())
+
+
 def _parse_ftp_save_sync_config_text(text):
     config = {}
 
@@ -584,14 +640,8 @@ def ensure_ftp_save_sync_bootstrap(connection, log=None):
     if rclone_ok:
         _log("Existing ftp_save_sync rclone binary is valid, keeping it.\n")
     else:
-        _log("Installing ftp_save_sync rclone binary...\n")
-        rclone_binary = _download_ftp_save_sync_rclone_binary()
-        _write_remote_bytes(connection, FTP_SAVE_SYNC_RCLONE_PATH, rclone_binary)
-        connection.run_command(f"chmod +x {FTP_SAVE_SYNC_RCLONE_PATH}")
-
-        if not _remote_command_success(connection, f"{FTP_SAVE_SYNC_RCLONE_PATH} version"):
-            raise RuntimeError("ftp_save_sync rclone upload succeeded, but the binary is not executable on MiSTer.")
-
+        _log("Installing ftp_save_sync rclone binary on MiSTer...\n")
+        _install_ftp_save_sync_rclone_on_mister(connection)
         _log("ftp_save_sync rclone installed successfully.\n")
 
     _log("Writing ftp_save_sync daemon script...\n")

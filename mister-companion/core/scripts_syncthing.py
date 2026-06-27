@@ -39,6 +39,9 @@ USER_STARTUP_PATH = "/media/fat/linux/user-startup.sh"
 SYNCTHING_STARTUP_BEGIN = "# Start Syncthing"
 SYNCTHING_STARTUP_LINE = f"{SYNCTHING_SERVICE_PATH} start &"
 
+SYNCTHING_INSTALL_LOG = f"{SYNCTHING_BASE_DIR}/install.log"
+SYNCTHING_DOWNLOAD_DEBUG = f"{SYNCTHING_TMP_DIR}/download_debug.txt"
+
 SYNCTHING_SERVICE_SCRIPT = f"""#!/bin/sh
 
 BASE="{SYNCTHING_BASE_DIR}"
@@ -50,68 +53,74 @@ GUI_ADDRESS="0.0.0.0:8384"
 
 mkdir -p "$BASE" "$HOME_DIR"
 
-start_syncthing() {{
-    if [ ! -x "$BIN" ]; then
-        echo "Syncthing binary missing or not executable: $BIN" >> "$LOG_FILE"
-        exit 1
-    fi
-
+is_running() {{
     if [ -f "$PID_FILE" ]; then
-        old_pid="$(cat "$PID_FILE" 2>/dev/null)"
-        if [ -n "$old_pid" ] && kill -0 "$old_pid" 2>/dev/null; then
-            exit 0
+        PID="$(cat "$PID_FILE" 2>/dev/null)"
+        if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
+            return 0
         fi
-        rm -f "$PID_FILE"
     fi
 
-    nohup "$BIN" serve \\
-        --home "$HOME_DIR" \\
-        --no-browser \\
-        --gui-address "$GUI_ADDRESS" \\
-        > "$LOG_FILE" 2>&1 &
-
-    echo "$!" > "$PID_FILE"
-
-    sleep 2
-
-    new_pid="$(cat "$PID_FILE" 2>/dev/null)"
-    if [ -z "$new_pid" ] || ! kill -0 "$new_pid" 2>/dev/null; then
-        rm -f "$PID_FILE"
-        echo "Syncthing failed to stay running after start." >> "$LOG_FILE"
-        exit 1
-    fi
-
-    exit 0
+    ps | grep "$BIN" | grep -v grep >/dev/null 2>&1
 }}
 
-stop_syncthing() {{
+stop_existing() {{
     if [ -f "$PID_FILE" ]; then
-        pid="$(cat "$PID_FILE" 2>/dev/null)"
-        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-            kill "$pid" 2>/dev/null || true
+        PID="$(cat "$PID_FILE" 2>/dev/null)"
+        if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
+            kill "$PID" 2>/dev/null || true
+            rm -f "$PID_FILE"
             sleep 1
-            kill -9 "$pid" 2>/dev/null || true
         fi
-        rm -f "$PID_FILE"
     fi
 
-    pkill -f "$BIN" 2>/dev/null || true
-    exit 0
+    PIDS="$(ps | grep "$BIN" | grep -v grep | cut -d ' ' -f 1)"
+    for PID in $PIDS; do
+        if [ "$PID" != "$$" ]; then
+            kill "$PID" 2>/dev/null || true
+        fi
+    done
 }}
 
 case "$1" in
     start)
-        start_syncthing
+        if [ ! -x "$BIN" ]; then
+            echo "Syncthing binary missing or not executable: $BIN" >> "$LOG_FILE"
+            exit 1
+        fi
+
+        if is_running; then
+            echo "Syncthing is already running."
+            exit 0
+        fi
+
+        nohup "$BIN" serve \
+            --home "$HOME_DIR" \
+            --no-browser \
+            --gui-address "$GUI_ADDRESS" \
+            > "$LOG_FILE" 2>&1 &
+
+        echo $! > "$PID_FILE"
+        echo "Syncthing started."
         ;;
     stop)
-        stop_syncthing
+        stop_existing
+        echo "Syncthing stopped."
         ;;
     restart)
-        stop_syncthing
-        start_syncthing
+        stop_existing
+        "$0" start
+        ;;
+    status)
+        if is_running; then
+            echo "Syncthing is running."
+            exit 0
+        fi
+        echo "Syncthing is not running."
+        exit 1
         ;;
     *)
-        echo "Usage: $0 {{start|stop|restart}}"
+        echo "Usage: $0 {{start|stop|restart|status}}"
         exit 1
         ;;
 esac
@@ -192,6 +201,321 @@ def _download_syncthing_binary():
                 return extracted.read()
 
     raise RuntimeError("Could not find the Syncthing executable inside the downloaded archive.")
+
+
+def _run_remote_syncthing_binary_install(connection, log):
+    remote_installer_path = "/tmp/mc_syncthing_install.sh"
+    success_marker = "MC_SYNCTHING_INSTALL_OK"
+
+    installer_script = """#!/bin/sh
+set -u
+
+BASE="__BASE__"
+BIN_DIR="__BIN_DIR__"
+HOME_DIR="__HOME_DIR__"
+TMP_DIR="__TMP_DIR__"
+LOG_FILE="__LOG_FILE__"
+INSTALL_LOG="__INSTALL_LOG__"
+DOWNLOAD_DEBUG="__DOWNLOAD_DEBUG__"
+PID_FILE="__PID_FILE__"
+VERSION="__VERSION__"
+ARCHIVE="__ARCHIVE__"
+DOWNLOAD_URL="__DOWNLOAD_URL__"
+EXTRACTED_DIR="$TMP_DIR/syncthing-linux-arm-$VERSION"
+BIN="$BIN_DIR/syncthing"
+
+log_line() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null)] $1" >> "$INSTALL_LOG"
+}
+
+fail() {
+    log_line "ERROR: $1"
+    echo "ERROR: $1"
+    echo "Installer log: $INSTALL_LOG"
+    exit 1
+}
+
+has_cmd() {
+    command -v "$1" >/dev/null 2>&1
+}
+
+reset_install_log() {
+    mkdir -p "$BASE" "$BIN_DIR" "$HOME_DIR" "$TMP_DIR"
+    {
+        echo "Syncthing for MiSTer Installer Log"
+        echo "=================================="
+        echo "Started: $(date 2>/dev/null)"
+        echo "Version: $VERSION"
+        echo "Archive: $ARCHIVE"
+        echo "URL: $DOWNLOAD_URL"
+        echo "Base: $BASE"
+        echo ""
+        echo "===== System / command info ====="
+        echo "Date: $(date 2>/dev/null)"
+        echo "uname: $(uname -a 2>/dev/null)"
+        echo "PATH: $PATH"
+        echo "dialog: $(command -v dialog 2>/dev/null)"
+        echo "curl: $(command -v curl 2>/dev/null)"
+        echo "wget: $(command -v wget 2>/dev/null)"
+        echo "tar: $(command -v tar 2>/dev/null)"
+        echo "gzip: $(command -v gzip 2>/dev/null)"
+        echo "find: $(command -v find 2>/dev/null)"
+        echo "================================="
+        echo ""
+    } > "$INSTALL_LOG"
+}
+
+append_download_debug() {
+    {
+        echo ""
+        echo "===== Download debug ====="
+        if [ -f "$DOWNLOAD_DEBUG" ]; then
+            cat "$DOWNLOAD_DEBUG"
+        else
+            echo "File not found: $DOWNLOAD_DEBUG"
+        fi
+        echo "===== End Download debug ====="
+        echo ""
+    } >> "$INSTALL_LOG"
+}
+
+download_file() {
+    URL="$1"
+    OUT="$2"
+    rm -f "$OUT" "$DOWNLOAD_DEBUG"
+    {
+        echo "Download debug"
+        echo "=============="
+        echo "Date: $(date 2>/dev/null)"
+        echo "URL: $URL"
+        echo "Output: $OUT"
+        echo ""
+    } > "$DOWNLOAD_DEBUG"
+
+    if has_cmd curl; then
+        echo "Trying curl..."
+        log_line "Trying curl download."
+        curl -k -L --fail --connect-timeout 20 --max-time 300 -A "MiSTer-Syncthing-Installer" -o "$OUT" "$URL" >> "$DOWNLOAD_DEBUG" 2>&1
+        CURL_RESULT=$?
+        echo "curl exit code: $CURL_RESULT" >> "$DOWNLOAD_DEBUG"
+        if [ -f "$OUT" ]; then
+            SIZE="$(wc -c < "$OUT" 2>/dev/null)"
+            echo "Downloaded size: $SIZE bytes" >> "$DOWNLOAD_DEBUG"
+            log_line "curl downloaded size: $SIZE bytes"
+        fi
+        if [ $CURL_RESULT -eq 0 ] && [ -s "$OUT" ] && gzip -t "$OUT" >/dev/null 2>&1; then
+            log_line "curl download succeeded and gzip validation passed."
+            append_download_debug
+            return 0
+        fi
+    else
+        echo "curl not found." >> "$DOWNLOAD_DEBUG"
+        log_line "curl not found."
+    fi
+
+    if has_cmd wget; then
+        echo "Trying wget..."
+        log_line "Trying wget download."
+        wget --no-check-certificate --timeout=20 --tries=3 -O "$OUT" "$URL" >> "$DOWNLOAD_DEBUG" 2>&1
+        WGET_RESULT=$?
+        echo "wget exit code: $WGET_RESULT" >> "$DOWNLOAD_DEBUG"
+        if [ -f "$OUT" ]; then
+            SIZE="$(wc -c < "$OUT" 2>/dev/null)"
+            echo "Downloaded size: $SIZE bytes" >> "$DOWNLOAD_DEBUG"
+            log_line "wget downloaded size: $SIZE bytes"
+        fi
+        if [ $WGET_RESULT -eq 0 ] && [ -s "$OUT" ] && gzip -t "$OUT" >/dev/null 2>&1; then
+            log_line "wget download succeeded and gzip validation passed."
+            append_download_debug
+            return 0
+        fi
+    else
+        echo "wget not found." >> "$DOWNLOAD_DEBUG"
+        log_line "wget not found."
+    fi
+
+    append_download_debug
+    rm -f "$OUT"
+    return 1
+}
+
+extract_archive() {
+    ARCHIVE_PATH="$1"
+    DEST_DIR="$2"
+    log_line "Extracting archive."
+    tar --no-same-owner --no-same-permissions -xzf "$ARCHIVE_PATH" -C "$DEST_DIR" >> "$INSTALL_LOG" 2>&1
+    RESULT=$?
+    if [ $RESULT -eq 0 ]; then
+        return 0
+    fi
+
+    log_line "tar extraction failed with exit code $RESULT. Trying gzip pipe fallback."
+    gzip -dc "$ARCHIVE_PATH" | tar --no-same-owner --no-same-permissions -xf - -C "$DEST_DIR" >> "$INSTALL_LOG" 2>&1
+    return $?
+}
+
+find_real_binary() {
+    REAL_BIN="$EXTRACTED_DIR/syncthing"
+    if [ -x "$REAL_BIN" ]; then
+        echo "$REAL_BIN"
+        return 0
+    fi
+    if [ -f "$REAL_BIN" ]; then
+        chmod +x "$REAL_BIN"
+        echo "$REAL_BIN"
+        return 0
+    fi
+
+    FOUND="$(find "$TMP_DIR" -type f -name syncthing 2>/dev/null | head -n 1)"
+    if [ -n "$FOUND" ]; then
+        chmod +x "$FOUND" 2>/dev/null || true
+        echo "$FOUND"
+        return 0
+    fi
+
+    return 1
+}
+
+is_running() {
+    if [ -f "$PID_FILE" ]; then
+        PID="$(cat "$PID_FILE" 2>/dev/null)"
+        if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
+            return 0
+        fi
+    fi
+
+    ps | grep "$BIN" | grep -v grep >/dev/null 2>&1
+}
+
+stop_existing_syncthing() {
+    if [ -f "$PID_FILE" ]; then
+        PID="$(cat "$PID_FILE" 2>/dev/null)"
+        if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
+            kill "$PID" 2>/dev/null || true
+            rm -f "$PID_FILE"
+            sleep 1
+        fi
+    fi
+
+    PIDS="$(ps | grep "$BIN" | grep -v grep | cut -d ' ' -f 1)"
+    for PID in $PIDS; do
+        if [ "$PID" != "$$" ]; then
+            kill "$PID" 2>/dev/null || true
+        fi
+    done
+}
+
+reset_install_log
+
+if ! has_cmd tar; then
+    fail "tar was not found on this MiSTer installation."
+fi
+if ! has_cmd gzip; then
+    fail "gzip was not found on this MiSTer installation."
+fi
+if ! has_cmd curl && ! has_cmd wget; then
+    fail "Neither curl nor wget was found, cannot download Syncthing."
+fi
+
+rm -rf "$TMP_DIR"
+mkdir -p "$TMP_DIR" "$BIN_DIR" "$HOME_DIR"
+: > "$LOG_FILE"
+
+ARCHIVE_PATH="$TMP_DIR/$ARCHIVE"
+echo "Step 1/4: Downloading Syncthing $VERSION..."
+if ! download_file "$DOWNLOAD_URL" "$ARCHIVE_PATH"; then
+    fail "Download failed or the archive was invalid."
+fi
+
+echo "Step 2/4: Validating archive..."
+if ! gzip -t "$ARCHIVE_PATH" >/dev/null 2>&1; then
+    fail "Downloaded file is not a valid gzip archive."
+fi
+
+echo "Step 3/4: Extracting Syncthing..."
+if ! extract_archive "$ARCHIVE_PATH" "$TMP_DIR"; then
+    fail "Extraction failed."
+fi
+
+{
+    echo ""
+    echo "===== Extracted file list ====="
+    find "$TMP_DIR" -maxdepth 4 -type f 2>/dev/null
+    echo "===== End extracted file list ====="
+    echo ""
+} >> "$INSTALL_LOG"
+
+FOUND_BIN="$(find_real_binary)"
+if [ -z "$FOUND_BIN" ]; then
+    fail "Could not find the real Syncthing binary after extraction."
+fi
+log_line "Found real binary: $FOUND_BIN"
+
+echo "Step 4/4: Installing Syncthing binary..."
+if is_running; then
+    log_line "Existing Syncthing process is running. Stopping before install."
+    stop_existing_syncthing >> "$INSTALL_LOG" 2>&1
+    sleep 1
+else
+    log_line "No existing Syncthing process detected."
+fi
+
+cp "$FOUND_BIN" "$BIN" >> "$INSTALL_LOG" 2>&1 || fail "Failed to copy Syncthing binary."
+chmod +x "$BIN"
+
+VERSION_TEXT="$($BIN --version 2>>"$INSTALL_LOG" | head -n 1)"
+if [ -z "$VERSION_TEXT" ]; then
+    VERSION_TEXT="$($BIN version 2>>"$INSTALL_LOG" | head -n 1)"
+fi
+if [ -z "$VERSION_TEXT" ]; then
+    fail "Syncthing binary was copied, but the version check failed."
+fi
+
+log_line "Installed binary version: $VERSION_TEXT"
+echo "$VERSION_TEXT"
+echo "__SUCCESS_MARKER__"
+"""
+
+    replacements = {
+        "__BASE__": SYNCTHING_BASE_DIR,
+        "__BIN_DIR__": SYNCTHING_BIN_DIR,
+        "__HOME_DIR__": SYNCTHING_HOME_DIR,
+        "__TMP_DIR__": SYNCTHING_TMP_DIR,
+        "__LOG_FILE__": SYNCTHING_LOG_FILE,
+        "__INSTALL_LOG__": SYNCTHING_INSTALL_LOG,
+        "__DOWNLOAD_DEBUG__": SYNCTHING_DOWNLOAD_DEBUG,
+        "__PID_FILE__": SYNCTHING_PID_FILE,
+        "__VERSION__": SYNCTHING_VERSION,
+        "__ARCHIVE__": SYNCTHING_ARCHIVE_NAME,
+        "__DOWNLOAD_URL__": SYNCTHING_DOWNLOAD_URL,
+        "__SUCCESS_MARKER__": success_marker,
+    }
+    for placeholder, value in replacements.items():
+        installer_script = installer_script.replace(placeholder, value)
+
+    _write_remote_text(connection, remote_installer_path, installer_script)
+    connection.run_command(f"chmod +x {remote_installer_path}")
+
+    output_chunks = []
+
+    def capture_and_log(text):
+        output_chunks.append(text)
+        log(text)
+
+    connection.run_command_stream(
+        f"sh {remote_installer_path}; result=$?; rm -f {remote_installer_path}; exit $result",
+        capture_and_log,
+    )
+
+    output = "".join(output_chunks)
+    if success_marker not in output:
+        tail = _read_remote_tail(connection, SYNCTHING_INSTALL_LOG, lines=80)
+        if tail:
+            raise RuntimeError(
+                "Syncthing install did not complete.\n\n"
+                f"Last installer log output:\n{tail}"
+            )
+        raise RuntimeError("Syncthing install did not complete.")
 
 
 def _ensure_syncthing_local_dirs(sd_root):
@@ -394,17 +718,8 @@ def install_syncthing(connection, log):
     _write_remote_bytes(connection, SYNCTHING_SCRIPT_PATH, script_data)
     connection.run_command(f"chmod +x {SYNCTHING_SCRIPT_PATH}")
 
-    log(f"Downloading Syncthing {SYNCTHING_VERSION} binary...\n")
-    binary_data = _download_syncthing_binary()
-
-    log(f"Uploading binary: {SYNCTHING_BINARY_PATH}\n")
-    _write_remote_bytes(connection, SYNCTHING_BINARY_PATH, binary_data)
-    connection.run_command(f"chmod +x {SYNCTHING_BINARY_PATH}")
-
-    if not _remote_command_success(connection, f"{SYNCTHING_BINARY_PATH} version"):
-        raise RuntimeError(
-            "Syncthing binary upload succeeded, but it is not executable on MiSTer."
-        )
+    log(f"Installing Syncthing {SYNCTHING_VERSION} binary on MiSTer...\n")
+    _run_remote_syncthing_binary_install(connection, log)
 
     log(f"Writing service script: {SYNCTHING_SERVICE_PATH}\n")
     _write_remote_text(connection, SYNCTHING_SERVICE_PATH, SYNCTHING_SERVICE_SCRIPT)
@@ -412,6 +727,11 @@ def install_syncthing(connection, log):
 
     if not _remote_command_success(connection, f"test -x {SYNCTHING_SERVICE_PATH}"):
         raise RuntimeError("Syncthing service script could not be prepared on MiSTer.")
+
+    if not _remote_command_success(connection, f"{SYNCTHING_BINARY_PATH} --version"):
+        raise RuntimeError(
+            "Syncthing binary install completed, but it is not executable on MiSTer."
+        )
 
     log("Starting Syncthing...\n")
     start_syncthing(connection)
@@ -421,7 +741,14 @@ def install_syncthing(connection, log):
         if log_tail:
             raise RuntimeError(
                 "Syncthing was installed, but it failed to start.\n\n"
-                f"Last log output:\n{log_tail}"
+                f"Last runtime log output:\n{log_tail}"
+            )
+
+        install_tail = _read_remote_tail(connection, SYNCTHING_INSTALL_LOG)
+        if install_tail:
+            raise RuntimeError(
+                "Syncthing was installed, but it failed to start.\n\n"
+                f"Last installer log output:\n{install_tail}"
             )
 
         raise RuntimeError("Syncthing was installed, but it failed to start.")

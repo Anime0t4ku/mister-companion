@@ -12,6 +12,8 @@ DOWNLOADER_INI_PATH = "/media/fat/downloader.ini"
 
 DAV_BROWSER_CONFIG_DIR = "/media/fat/Scripts/.config/dav_browser"
 DAV_BROWSER_CONFIG_PATH = "/media/fat/Scripts/.config/dav_browser/dav_browser.ini"
+DAV_BROWSER_RCLONE_PATH = "/media/fat/Scripts/.config/dav_browser/rclone"
+DAV_BROWSER_RCLONE_URL = "https://downloads.rclone.org/rclone-current-linux-arm.zip"
 
 FTP_SAVE_SYNC_CONFIG_DIR = "/media/fat/Scripts/.config/ftp_save_sync"
 FTP_SAVE_SYNC_CONFIG_PATH = "/media/fat/Scripts/.config/ftp_save_sync/ftp_save_sync.ini"
@@ -22,6 +24,10 @@ FTP_SAVE_SYNC_RCLONE_PATH = "/media/fat/Scripts/.config/ftp_save_sync/rclone"
 FTP_SAVE_SYNC_RCLONE_URL = "https://downloads.rclone.org/rclone-current-linux-arm.zip"
 FTP_SAVE_SYNC_LOG_PATH = "/media/fat/Scripts/.config/ftp_save_sync/ftp_save_sync.log"
 FTP_SAVE_SYNC_STATE_PATH = "/media/fat/Scripts/.config/ftp_save_sync/ftp_save_sync_state.db"
+
+CIFS_MOUNT_SCRIPT_PATH = "/media/fat/Scripts/cifs_mount.sh"
+CIFS_UMOUNT_SCRIPT_PATH = "/media/fat/Scripts/cifs_umount.sh"
+CIFS_COMMON_SCRIPT_PATH = "/media/fat/Scripts/cifs_common.sh"
 
 STATIC_WALLPAPER_SCRIPT_PATH = "/media/fat/Scripts/static_wallpaper.sh"
 STATIC_WALLPAPER_CONFIG_DIR = "/media/fat/Scripts/.config/static_wallpaper"
@@ -67,6 +73,9 @@ class ScriptsStatus:
     static_wallpaper_installed: bool
     static_wallpaper_active: bool
     static_wallpaper_saved: bool
+    cifs_common_installed: bool = False
+    cifs_common_required: bool = False
+    cifs_umount_installed: bool = False
 
 
 def empty_scripts_status() -> ScriptsStatus:
@@ -106,6 +115,10 @@ def _local_file_exists(sd_root, remote_path):
         return _local_path(sd_root, remote_path).is_file()
     except Exception:
         return False
+
+
+def _cifs_mount_text_requires_common(text):
+    return "cifs_common.sh" in (text or "")
 
 
 def _local_dir_exists(sd_root, remote_path):
@@ -450,13 +463,25 @@ def get_scripts_status(connection) -> ScriptsStatus:
     migrate_sd_installed = "EXISTS" in (migrate_check or "")
 
     cifs_script_check = connection.run_command(
-        "test -f /media/fat/Scripts/cifs_mount.sh && echo EXISTS"
+        f"test -f {CIFS_MOUNT_SCRIPT_PATH} && echo EXISTS"
+    )
+    cifs_umount_check = connection.run_command(
+        f"test -f {CIFS_UMOUNT_SCRIPT_PATH} && echo EXISTS"
     )
     cifs_ini_check = connection.run_command(
         "test -f /media/fat/Scripts/cifs_mount.ini && echo CONFIG"
     )
+    cifs_common_check = connection.run_command(
+        f"test -f {CIFS_COMMON_SCRIPT_PATH} && echo EXISTS"
+    )
     cifs_installed = "EXISTS" in (cifs_script_check or "")
+    cifs_umount_installed = "EXISTS" in (cifs_umount_check or "")
     cifs_configured = "CONFIG" in (cifs_ini_check or "")
+    cifs_common_installed = "EXISTS" in (cifs_common_check or "")
+    cifs_mount_text = connection.run_command(
+        f"test -f {CIFS_MOUNT_SCRIPT_PATH} && cat {CIFS_MOUNT_SCRIPT_PATH} || true"
+    ) if cifs_installed else ""
+    cifs_common_required = _cifs_mount_text_requires_common(cifs_mount_text)
 
     auto_time_check = connection.run_command(
         "test -f /media/fat/Scripts/auto_time.sh && echo EXISTS"
@@ -504,6 +529,9 @@ def get_scripts_status(connection) -> ScriptsStatus:
         migrate_sd_installed=migrate_sd_installed,
         cifs_installed=cifs_installed,
         cifs_configured=cifs_configured,
+        cifs_common_installed=cifs_common_installed,
+        cifs_common_required=cifs_common_required,
+        cifs_umount_installed=cifs_umount_installed,
         auto_time_installed=auto_time_installed,
         cd_game_organizer_installed=cd_game_organizer_installed,
         dav_browser_installed=dav_browser_installed,
@@ -525,8 +553,11 @@ def get_scripts_status_local(sd_root) -> ScriptsStatus:
         update_all_installed = _local_file_exists(sd_root, "/media/fat/Scripts/update_all.sh")
         zaparoo_installed = _local_file_exists(sd_root, "/media/fat/Scripts/zaparoo.sh")
         migrate_sd_installed = _local_file_exists(sd_root, "/media/fat/Scripts/migrate_sd.sh")
-        cifs_installed = _local_file_exists(sd_root, "/media/fat/Scripts/cifs_mount.sh")
+        cifs_installed = _local_file_exists(sd_root, CIFS_MOUNT_SCRIPT_PATH)
+        cifs_umount_installed = _local_file_exists(sd_root, CIFS_UMOUNT_SCRIPT_PATH)
         cifs_configured = _local_file_exists(sd_root, "/media/fat/Scripts/cifs_mount.ini")
+        cifs_common_installed = _local_file_exists(sd_root, CIFS_COMMON_SCRIPT_PATH)
+        cifs_common_required = _cifs_mount_text_requires_common(_read_local_text(sd_root, CIFS_MOUNT_SCRIPT_PATH)) if cifs_installed else False
         auto_time_installed = _local_file_exists(sd_root, "/media/fat/Scripts/auto_time.sh")
         cd_game_organizer_installed = _local_file_exists(sd_root, "/media/fat/Scripts/cd_game_organizer.sh")
         dav_browser_installed = _local_file_exists(sd_root, "/media/fat/Scripts/dav_browser.sh")
@@ -557,6 +588,9 @@ def get_scripts_status_local(sd_root) -> ScriptsStatus:
             migrate_sd_installed=migrate_sd_installed,
             cifs_installed=cifs_installed,
             cifs_configured=cifs_configured,
+            cifs_common_installed=cifs_common_installed,
+            cifs_common_required=cifs_common_required,
+            cifs_umount_installed=cifs_umount_installed,
             auto_time_installed=auto_time_installed,
             cd_game_organizer_installed=cd_game_organizer_installed,
             dav_browser_installed=dav_browser_installed,

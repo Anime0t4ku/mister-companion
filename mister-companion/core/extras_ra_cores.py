@@ -512,80 +512,118 @@ def _rbf_path_for_source(source: dict) -> str:
     return posixpath.join(RA_CORE_RBF_DIR, f"{source['title']}.rbf")
 
 
-def _expected_core_files_present(connection) -> bool:
-    for source in RA_SOURCES:
-        if source["key"] == "main":
-            continue
-
-        if not _path_exists(connection, _rbf_path_for_source(source)):
-            return False
-
-        if not _path_exists(connection, _mgl_path_for_source(source)):
-            return False
-
-    return True
+def selectable_ra_core_sources() -> list[dict]:
+    return [source for source in RA_SOURCES if source["key"] != "main"]
 
 
-def _expected_core_files_present_local(sd_root: str) -> bool:
-    for source in RA_SOURCES:
-        if source["key"] == "main":
-            continue
+def _normalize_source_keys(source_keys=None) -> list[str]:
+    valid_keys = [source["key"] for source in selectable_ra_core_sources()]
 
-        if not _path_exists_local(sd_root, _rbf_path_for_source(source)):
-            return False
+    if source_keys is None:
+        return valid_keys
 
-        if not _path_exists_local(sd_root, _mgl_path_for_source(source)):
-            return False
+    selected = []
+    for key in source_keys:
+        key = str(key or "").strip()
+        if key in valid_keys and key not in selected:
+            selected.append(key)
 
-    return True
-
-
-def _any_expected_core_files_present(connection) -> bool:
-    for source in RA_SOURCES:
-        if source["key"] == "main":
-            continue
-
-        if _path_exists(connection, _rbf_path_for_source(source)):
-            return True
-
-        if _path_exists(connection, _mgl_path_for_source(source)):
-            return True
-
-    return False
+    return selected
 
 
-def _any_expected_core_files_present_local(sd_root: str) -> bool:
-    for source in RA_SOURCES:
-        if source["key"] == "main":
-            continue
-
-        if _path_exists_local(sd_root, _rbf_path_for_source(source)):
-            return True
-
-        if _path_exists_local(sd_root, _mgl_path_for_source(source)):
-            return True
-
-    return False
+def _component_state_from_exists(rbf_exists: bool, mgl_exists: bool) -> str:
+    if rbf_exists and mgl_exists:
+        return "installed"
+    if rbf_exists or mgl_exists:
+        return "incomplete"
+    return "not_installed"
 
 
-def _is_ra_cores_installed(connection) -> bool:
+def _ra_core_components_status_from_checker(exists_func) -> list[dict]:
+    components = []
+
+    for source in selectable_ra_core_sources():
+        rbf_path = _rbf_path_for_source(source)
+        mgl_path = _mgl_path_for_source(source)
+        rbf_exists = bool(exists_func(rbf_path))
+        mgl_exists = bool(exists_func(mgl_path))
+        components.append(
+            {
+                "key": source["key"],
+                "title": source["title"],
+                "rbf_path": rbf_path,
+                "mgl_path": mgl_path,
+                "rbf_exists": rbf_exists,
+                "mgl_exists": mgl_exists,
+                "state": _component_state_from_exists(rbf_exists, mgl_exists),
+                "installed": rbf_exists and mgl_exists,
+                "incomplete": rbf_exists != mgl_exists,
+            }
+        )
+
+    return components
+
+
+def get_ra_core_components_status(connection) -> list[dict]:
+    if not connection.is_connected():
+        return []
+    return _ra_core_components_status_from_checker(lambda path: _path_exists(connection, path))
+
+
+def get_ra_core_components_status_local(sd_root: str) -> list[dict]:
+    if not sd_root or not _local_root(sd_root).exists():
+        return []
+    return _ra_core_components_status_from_checker(lambda path: _path_exists_local(sd_root, path))
+
+
+def _installed_component_keys(components: list[dict], include_incomplete: bool = True) -> list[str]:
+    keys = []
+    for component in components:
+        if component.get("installed") or (include_incomplete and component.get("incomplete")):
+            keys.append(component.get("key"))
+    return [key for key in keys if key]
+
+
+def _base_ra_files_present(connection) -> bool:
     return (
         _path_exists(connection, RA_MAIN_BINARY_PATH)
         and _path_exists(connection, RA_CONFIG_PATH)
         and _path_exists(connection, RA_SOUND_PATH)
         and _mister_ini_has_ra_block(connection)
-        and _expected_core_files_present(connection)
     )
 
 
-def _is_ra_cores_installed_local(sd_root: str) -> bool:
+def _base_ra_files_present_local(sd_root: str) -> bool:
     return (
         _path_exists_local(sd_root, RA_MAIN_BINARY_PATH)
         and _path_exists_local(sd_root, RA_CONFIG_PATH)
         and _path_exists_local(sd_root, RA_SOUND_PATH)
         and _mister_ini_has_ra_block_local(sd_root)
-        and _expected_core_files_present_local(sd_root)
     )
+
+
+def _any_expected_core_files_present(connection) -> bool:
+    return any(
+        component.get("rbf_exists") or component.get("mgl_exists")
+        for component in get_ra_core_components_status(connection)
+    )
+
+
+def _any_expected_core_files_present_local(sd_root: str) -> bool:
+    return any(
+        component.get("rbf_exists") or component.get("mgl_exists")
+        for component in get_ra_core_components_status_local(sd_root)
+    )
+
+
+def _is_ra_cores_installed(connection) -> bool:
+    components = get_ra_core_components_status(connection)
+    return _base_ra_files_present(connection) and any(component.get("installed") for component in components)
+
+
+def _is_ra_cores_installed_local(sd_root: str) -> bool:
+    components = get_ra_core_components_status_local(sd_root)
+    return _base_ra_files_present_local(sd_root) and any(component.get("installed") for component in components)
 
 
 def _is_ra_cores_partial_install(connection) -> bool:
@@ -628,12 +666,16 @@ def _source_titles_by_key() -> dict:
     return {source["key"]: source["title"] for source in RA_SOURCES}
 
 
-def _get_outdated_sources(installed_versions: dict, latest_versions: dict) -> list[str]:
+def _get_outdated_sources(installed_versions: dict, latest_versions: dict, source_keys=None) -> list[str]:
     outdated = []
     installed_sources = installed_versions.get("sources", {})
+    allowed_keys = set(source_keys) if source_keys is not None else {source["key"] for source in RA_SOURCES}
 
     for source in RA_SOURCES:
         key = source["key"]
+        if key not in allowed_keys:
+            continue
+
         latest_version = (latest_versions.get(key, {}) or {}).get("version", "")
         installed_version = (installed_sources.get(key, {}) or {}).get("version", "")
 
@@ -658,9 +700,18 @@ def get_ra_cores_status(connection, check_latest: bool = False, log=None):
             "install_enabled": False,
             "uninstall_enabled": False,
             "edit_config_enabled": False,
+            "missing_component_keys": [],
+            "incomplete_component_keys": [],
         }
 
-    installed = _is_ra_cores_installed(connection)
+    components = get_ra_core_components_status(connection)
+    installed_component_keys = [component.get("key") for component in components if component.get("installed") and component.get("key")]
+    incomplete_component_keys = [component.get("key") for component in components if component.get("incomplete") and component.get("key")]
+    missing_component_keys = [component.get("key") for component in components if component.get("state") == "not_installed" and component.get("key")]
+    incomplete_components = [component for component in components if component.get("incomplete")]
+    all_components_installed = bool(components) and not missing_component_keys and not incomplete_components
+    base_installed = _base_ra_files_present(connection)
+    installed = base_installed and bool(installed_component_keys) and not incomplete_components
     legacy_installed = False if installed else _is_legacy_ra_cores_installed(connection)
     partial_installed = False if (installed or legacy_installed) else _is_ra_cores_partial_install(connection)
 
@@ -674,10 +725,12 @@ def get_ra_cores_status(connection, check_latest: bool = False, log=None):
     if check_latest:
         try:
             latest_versions = _fetch_all_latest_releases(log=log)
-            if installed:
+            installed_update_keys = ["main"] + installed_component_keys + incomplete_component_keys
+            if installed_update_keys and (installed or incomplete_components):
                 outdated_sources = _get_outdated_sources(
                     installed_versions,
                     latest_versions,
+                    installed_update_keys,
                 )
                 update_available = bool(outdated_sources)
         except Exception as exc:
@@ -686,6 +739,11 @@ def get_ra_cores_status(connection, check_latest: bool = False, log=None):
     if legacy_installed:
         status_text = "▲ Legacy install found"
         install_label = "Migrate"
+        install_enabled = True
+        uninstall_enabled = True
+    elif incomplete_components:
+        status_text = "⚠ Core files missing"
+        install_label = "Update"
         install_enabled = True
         uninstall_enabled = True
     elif partial_installed:
@@ -712,8 +770,8 @@ def get_ra_cores_status(connection, check_latest: bool = False, log=None):
         uninstall_enabled = True
     else:
         status_text = "✓ Installed"
-        install_label = "Installed"
-        install_enabled = False
+        install_label = "Install"
+        install_enabled = bool(missing_component_keys) and not all_components_installed
         uninstall_enabled = True
 
     if installed and latest_error:
@@ -728,13 +786,17 @@ def get_ra_cores_status(connection, check_latest: bool = False, log=None):
         "latest_error": latest_error,
         "update_available": update_available,
         "outdated_sources": outdated_sources,
+        "components": components,
+        "installed_component_keys": installed_component_keys,
+        "incomplete_component_keys": incomplete_component_keys,
+        "missing_component_keys": missing_component_keys,
+        "all_components_installed": all_components_installed,
         "status_text": status_text,
         "install_label": install_label,
         "install_enabled": install_enabled,
         "uninstall_enabled": uninstall_enabled,
         "edit_config_enabled": _path_exists(connection, RA_CONFIG_PATH),
     }
-
 
 def get_ra_cores_status_local(sd_root: str, check_latest: bool = False, log=None):
     if not sd_root or not _local_root(sd_root).exists():
@@ -751,9 +813,18 @@ def get_ra_cores_status_local(sd_root: str, check_latest: bool = False, log=None
             "install_enabled": False,
             "uninstall_enabled": False,
             "edit_config_enabled": False,
+            "missing_component_keys": [],
+            "incomplete_component_keys": [],
         }
 
-    installed = _is_ra_cores_installed_local(sd_root)
+    components = get_ra_core_components_status_local(sd_root)
+    installed_component_keys = [component.get("key") for component in components if component.get("installed") and component.get("key")]
+    incomplete_component_keys = [component.get("key") for component in components if component.get("incomplete") and component.get("key")]
+    missing_component_keys = [component.get("key") for component in components if component.get("state") == "not_installed" and component.get("key")]
+    incomplete_components = [component for component in components if component.get("incomplete")]
+    all_components_installed = bool(components) and not missing_component_keys and not incomplete_components
+    base_installed = _base_ra_files_present_local(sd_root)
+    installed = base_installed and bool(installed_component_keys) and not incomplete_components
     legacy_installed = False if installed else _is_legacy_ra_cores_installed_local(sd_root)
     partial_installed = False if (installed or legacy_installed) else _is_ra_cores_partial_install_local(sd_root)
 
@@ -767,10 +838,12 @@ def get_ra_cores_status_local(sd_root: str, check_latest: bool = False, log=None
     if check_latest:
         try:
             latest_versions = _fetch_all_latest_releases(log=log)
-            if installed:
+            installed_update_keys = ["main"] + installed_component_keys + incomplete_component_keys
+            if installed_update_keys and (installed or incomplete_components):
                 outdated_sources = _get_outdated_sources(
                     installed_versions,
                     latest_versions,
+                    installed_update_keys,
                 )
                 update_available = bool(outdated_sources)
         except Exception as exc:
@@ -779,6 +852,11 @@ def get_ra_cores_status_local(sd_root: str, check_latest: bool = False, log=None
     if legacy_installed:
         status_text = "▲ Legacy install found"
         install_label = "Migrate"
+        install_enabled = True
+        uninstall_enabled = True
+    elif incomplete_components:
+        status_text = "⚠ Core files missing"
+        install_label = "Update"
         install_enabled = True
         uninstall_enabled = True
     elif partial_installed:
@@ -805,8 +883,8 @@ def get_ra_cores_status_local(sd_root: str, check_latest: bool = False, log=None
         uninstall_enabled = True
     else:
         status_text = "✓ Installed"
-        install_label = "Installed"
-        install_enabled = False
+        install_label = "Install"
+        install_enabled = bool(missing_component_keys) and not all_components_installed
         uninstall_enabled = True
 
     if installed and latest_error:
@@ -821,13 +899,17 @@ def get_ra_cores_status_local(sd_root: str, check_latest: bool = False, log=None
         "latest_error": latest_error,
         "update_available": update_available,
         "outdated_sources": outdated_sources,
+        "components": components,
+        "installed_component_keys": installed_component_keys,
+        "incomplete_component_keys": incomplete_component_keys,
+        "missing_component_keys": missing_component_keys,
+        "all_components_installed": all_components_installed,
         "status_text": status_text,
         "install_label": install_label,
         "install_enabled": install_enabled,
         "uninstall_enabled": uninstall_enabled,
         "edit_config_enabled": _path_exists_local(sd_root, RA_CONFIG_PATH),
     }
-
 
 def _install_main_package(connection, release: dict, existing_config_present: bool, log) -> dict:
     asset = _select_zip_asset(release, "Main_MiSTer")
@@ -1234,9 +1316,75 @@ def _install_core_source_local(sd_root: str, source: dict, release: dict, versio
     }
 
 
-def install_or_update_ra_cores(connection, log):
+def _sources_needing_repair(connection, selected_keys: list[str]) -> list[str]:
+    repair = []
+    source_lookup = {source["key"]: source for source in selectable_ra_core_sources()}
+
+    for source_key in selected_keys:
+        source = source_lookup.get(source_key)
+        if not source:
+            continue
+        if not _path_exists(connection, _rbf_path_for_source(source)) or not _path_exists(connection, _mgl_path_for_source(source)):
+            repair.append(source_key)
+
+    return repair
+
+
+def _sources_needing_repair_local(sd_root: str, selected_keys: list[str]) -> list[str]:
+    repair = []
+    source_lookup = {source["key"]: source for source in selectable_ra_core_sources()}
+
+    for source_key in selected_keys:
+        source = source_lookup.get(source_key)
+        if not source:
+            continue
+        if not _path_exists_local(sd_root, _rbf_path_for_source(source)) or not _path_exists_local(sd_root, _mgl_path_for_source(source)):
+            repair.append(source_key)
+
+    return repair
+
+
+def _sources_not_installed(connection, selected_keys: list[str]) -> list[str]:
+    missing = []
+    source_lookup = {source["key"]: source for source in selectable_ra_core_sources()}
+
+    for source_key in selected_keys:
+        source = source_lookup.get(source_key)
+        if not source:
+            continue
+        if (
+            not _path_exists(connection, _rbf_path_for_source(source))
+            and not _path_exists(connection, _mgl_path_for_source(source))
+        ):
+            missing.append(source_key)
+
+    return missing
+
+
+def _sources_not_installed_local(sd_root: str, selected_keys: list[str]) -> list[str]:
+    missing = []
+    source_lookup = {source["key"]: source for source in selectable_ra_core_sources()}
+
+    for source_key in selected_keys:
+        source = source_lookup.get(source_key)
+        if not source:
+            continue
+        if (
+            not _path_exists_local(sd_root, _rbf_path_for_source(source))
+            and not _path_exists_local(sd_root, _mgl_path_for_source(source))
+        ):
+            missing.append(source_key)
+
+    return missing
+
+
+def install_or_update_ra_cores(connection, log, source_keys=None):
     if not connection.is_connected():
         raise RuntimeError("Not connected to MiSTer.")
+
+    selected_keys = _normalize_source_keys(source_keys)
+    if not selected_keys:
+        raise RuntimeError("Select at least one RetroAchievement core.")
 
     _ensure_remote_dir(connection, RA_CORES_DIR)
     _ensure_remote_dir(connection, RA_CORE_RBF_DIR)
@@ -1248,49 +1396,50 @@ def install_or_update_ra_cores(connection, log):
         _migrate_legacy_layout(connection, log)
 
     installed = _is_ra_cores_installed(connection)
+    base_installed = _base_ra_files_present(connection)
     versions = _read_versions(connection)
     versions.setdefault("sources", {})
 
     existing_config_present = _path_exists(connection, RA_CONFIG_PATH)
 
     log("Checking latest RetroAchievement Cores releases...\n")
+    latest_versions = _fetch_all_latest_releases()
 
-    try:
-        latest_versions = _fetch_all_latest_releases()
-    except Exception:
-        if legacy_before and installed:
-            _write_versions(connection, versions)
-            log("Migration completed, but update check failed.\n")
-            log("RetroAchievement Cores were migrated to the MGL method.\n")
-            log("Please refresh later to check for updates.\n")
-            return True
+    main_key = "main"
+    sources_to_install = []
 
-        raise
+    main_installed_version = (versions.get("sources", {}).get(main_key, {}) or {}).get("version", "")
+    main_latest_version = (latest_versions.get(main_key, {}) or {}).get("version", "")
+    if (not base_installed) or (main_latest_version and main_installed_version != main_latest_version):
+        sources_to_install.append(main_key)
 
-    if installed:
-        sources_to_install = _get_outdated_sources(
-            versions,
-            latest_versions,
-        )
+    repair_keys = _sources_needing_repair(connection, selected_keys)
+    missing_keys = _sources_not_installed(connection, selected_keys)
+    outdated_keys = _get_outdated_sources(
+        versions,
+        latest_versions,
+        selected_keys,
+    )
 
-        if not sources_to_install:
-            log("All RetroAchievement Cores sources are already up to date.\n")
-    else:
-        log("RetroAchievement Cores are not fully installed, installing all sources...\n")
-        sources_to_install = [source["key"] for source in RA_SOURCES]
+    for source_key in selected_keys:
+        if source_key in repair_keys or source_key in missing_keys or source_key in outdated_keys or not installed:
+            sources_to_install.append(source_key)
+
+    sources_to_install = list(dict.fromkeys(sources_to_install))
+
+    if not sources_to_install:
+        log("Selected RetroAchievement Cores are already up to date.\n")
 
     source_lookup = {source["key"]: source for source in RA_SOURCES}
     title_lookup = _source_titles_by_key()
 
-    if installed and sources_to_install:
-        readable_sources = ", ".join(
-            title_lookup.get(source_key, source_key)
-            for source_key in sources_to_install
-        )
-        log(f"Sources needing update: {readable_sources}\n")
-
-    main_source = RA_SOURCES[0]
-    main_key = main_source["key"]
+    readable_sources = ", ".join(
+        title_lookup.get(source_key, source_key)
+        for source_key in sources_to_install
+        if source_key != main_key
+    )
+    if readable_sources:
+        log(f"Selected cores to install/update: {readable_sources}\n")
 
     if main_key in sources_to_install:
         main_release = latest_versions[main_key]
@@ -1322,24 +1471,16 @@ def install_or_update_ra_cores(connection, log):
             log,
         )
 
-    skipped_sources = [
-        source
-        for source in RA_SOURCES
-        if source["key"] not in sources_to_install
-    ]
-
-    for source in skipped_sources:
-        if source["key"] == main_key:
+    for source_key in selected_keys:
+        if source_key in sources_to_install:
             continue
-
+        source = source_lookup.get(source_key)
+        if not source:
+            continue
         expected_rbf = _rbf_path_for_source(source)
         expected_mgl = _mgl_path_for_source(source)
-
-        if _path_exists(connection, expected_rbf):
-            if not _path_exists(connection, expected_mgl):
-                _write_mgl_launcher(connection, source, log)
-            else:
-                log(f"{source['title']} is already up to date, skipping download.\n")
+        if _path_exists(connection, expected_rbf) and not _path_exists(connection, expected_mgl):
+            _write_mgl_launcher(connection, source, log)
 
     if _path_exists(connection, RA_LEGACY_INI_PATH):
         _remove_remote_file(connection, RA_LEGACY_INI_PATH)
@@ -1355,9 +1496,13 @@ def install_or_update_ra_cores(connection, log):
     return True
 
 
-def install_or_update_ra_cores_local(sd_root: str, log):
+def install_or_update_ra_cores_local(sd_root: str, log, source_keys=None):
     if not sd_root or not _local_root(sd_root).exists():
         raise RuntimeError("Selected Offline SD Card folder does not exist.")
+
+    selected_keys = _normalize_source_keys(source_keys)
+    if not selected_keys:
+        raise RuntimeError("Select at least one RetroAchievement core.")
 
     _ensure_local_dir(sd_root, RA_CORES_DIR)
     _ensure_local_dir(sd_root, RA_CORE_RBF_DIR)
@@ -1369,49 +1514,50 @@ def install_or_update_ra_cores_local(sd_root: str, log):
         _migrate_legacy_layout_local(sd_root, log)
 
     installed = _is_ra_cores_installed_local(sd_root)
+    base_installed = _base_ra_files_present_local(sd_root)
     versions = _read_versions_local(sd_root)
     versions.setdefault("sources", {})
 
     existing_config_present = _path_exists_local(sd_root, RA_CONFIG_PATH)
 
     log("Checking latest RetroAchievement Cores releases...\n")
+    latest_versions = _fetch_all_latest_releases()
 
-    try:
-        latest_versions = _fetch_all_latest_releases()
-    except Exception:
-        if legacy_before and installed:
-            _write_versions_local(sd_root, versions)
-            log("Migration completed, but update check failed.\n")
-            log("RetroAchievement Cores were migrated to the MGL method.\n")
-            log("Please refresh later to check for updates.\n")
-            return True
+    main_key = "main"
+    sources_to_install = []
 
-        raise
+    main_installed_version = (versions.get("sources", {}).get(main_key, {}) or {}).get("version", "")
+    main_latest_version = (latest_versions.get(main_key, {}) or {}).get("version", "")
+    if (not base_installed) or (main_latest_version and main_installed_version != main_latest_version):
+        sources_to_install.append(main_key)
 
-    if installed:
-        sources_to_install = _get_outdated_sources(
-            versions,
-            latest_versions,
-        )
+    repair_keys = _sources_needing_repair_local(sd_root, selected_keys)
+    missing_keys = _sources_not_installed_local(sd_root, selected_keys)
+    outdated_keys = _get_outdated_sources(
+        versions,
+        latest_versions,
+        selected_keys,
+    )
 
-        if not sources_to_install:
-            log("All RetroAchievement Cores sources are already up to date.\n")
-    else:
-        log("RetroAchievement Cores are not fully installed, installing all sources...\n")
-        sources_to_install = [source["key"] for source in RA_SOURCES]
+    for source_key in selected_keys:
+        if source_key in repair_keys or source_key in missing_keys or source_key in outdated_keys or not installed:
+            sources_to_install.append(source_key)
+
+    sources_to_install = list(dict.fromkeys(sources_to_install))
+
+    if not sources_to_install:
+        log("Selected RetroAchievement Cores are already up to date.\n")
 
     source_lookup = {source["key"]: source for source in RA_SOURCES}
     title_lookup = _source_titles_by_key()
 
-    if installed and sources_to_install:
-        readable_sources = ", ".join(
-            title_lookup.get(source_key, source_key)
-            for source_key in sources_to_install
-        )
-        log(f"Sources needing update: {readable_sources}\n")
-
-    main_source = RA_SOURCES[0]
-    main_key = main_source["key"]
+    readable_sources = ", ".join(
+        title_lookup.get(source_key, source_key)
+        for source_key in sources_to_install
+        if source_key != main_key
+    )
+    if readable_sources:
+        log(f"Selected cores to install/update: {readable_sources}\n")
 
     if main_key in sources_to_install:
         main_release = latest_versions[main_key]
@@ -1443,24 +1589,16 @@ def install_or_update_ra_cores_local(sd_root: str, log):
             log,
         )
 
-    skipped_sources = [
-        source
-        for source in RA_SOURCES
-        if source["key"] not in sources_to_install
-    ]
-
-    for source in skipped_sources:
-        if source["key"] == main_key:
+    for source_key in selected_keys:
+        if source_key in sources_to_install:
             continue
-
+        source = source_lookup.get(source_key)
+        if not source:
+            continue
         expected_rbf = _rbf_path_for_source(source)
         expected_mgl = _mgl_path_for_source(source)
-
-        if _path_exists_local(sd_root, expected_rbf):
-            if not _path_exists_local(sd_root, expected_mgl):
-                _write_mgl_launcher_local(sd_root, source, log)
-            else:
-                log(f"{source['title']} is already up to date, skipping download.\n")
+        if _path_exists_local(sd_root, expected_rbf) and not _path_exists_local(sd_root, expected_mgl):
+            _write_mgl_launcher_local(sd_root, source, log)
 
     if _path_exists_local(sd_root, RA_LEGACY_INI_PATH):
         _remove_local_file(sd_root, RA_LEGACY_INI_PATH)
@@ -1475,13 +1613,25 @@ def install_or_update_ra_cores_local(sd_root: str, log):
 
     return True
 
+def _remove_core_component(connection, source: dict, log):
+    rbf_path = _rbf_path_for_source(source)
+    mgl_path = _mgl_path_for_source(source)
+    _remove_remote_file(connection, rbf_path)
+    _remove_remote_file(connection, mgl_path)
+    log(f"Removed {rbf_path}\n")
+    log(f"Removed {mgl_path}\n")
 
-def uninstall_ra_cores(connection, log):
-    if not connection.is_connected():
-        raise RuntimeError("Not connected to MiSTer.")
 
-    log("Removing RetroAchievement Cores files...\n")
+def _remove_core_component_local(sd_root: str, source: dict, log):
+    rbf_path = _rbf_path_for_source(source)
+    mgl_path = _mgl_path_for_source(source)
+    _remove_local_file(sd_root, rbf_path)
+    _remove_local_file(sd_root, mgl_path)
+    log(f"Removed {rbf_path}\n")
+    log(f"Removed {mgl_path}\n")
 
+
+def _full_uninstall_ra_cores(connection, log):
     _remove_remote_file(connection, RA_MAIN_BINARY_PATH)
     _remove_remote_file(connection, RA_LEGACY_INI_PATH)
     _remove_remote_file(connection, RA_SOUND_PATH)
@@ -1498,15 +1648,8 @@ def uninstall_ra_cores(connection, log):
     log(f"Removed {RA_VERSION_FILE}\n")
     log(f"Kept {RA_CONFIG_PATH}\n")
 
-    return True
 
-
-def uninstall_ra_cores_local(sd_root: str, log):
-    if not sd_root or not _local_root(sd_root).exists():
-        raise RuntimeError("Selected Offline SD Card folder does not exist.")
-
-    log("Removing RetroAchievement Cores files...\n")
-
+def _full_uninstall_ra_cores_local(sd_root: str, log):
     _remove_local_file(sd_root, RA_MAIN_BINARY_PATH)
     _remove_local_file(sd_root, RA_LEGACY_INI_PATH)
     _remove_local_file(sd_root, RA_SOUND_PATH)
@@ -1523,8 +1666,93 @@ def uninstall_ra_cores_local(sd_root: str, log):
     log(f"Removed {RA_VERSION_FILE}\n")
     log(f"Kept {RA_CONFIG_PATH}\n")
 
+
+def uninstall_ra_cores(connection, log, source_keys=None):
+    if not connection.is_connected():
+        raise RuntimeError("Not connected to MiSTer.")
+
+    if source_keys is None or _is_legacy_ra_cores_installed(connection):
+        log("Removing RetroAchievement Cores files...\n")
+        _full_uninstall_ra_cores(connection, log)
+        return True
+
+    selected_keys = _normalize_source_keys(source_keys)
+    if not selected_keys:
+        raise RuntimeError("Select at least one RetroAchievement core to uninstall.")
+
+    components = get_ra_core_components_status(connection)
+    installed_keys = set(_installed_component_keys(components, include_incomplete=True))
+    selected_installed_keys = [key for key in selected_keys if key in installed_keys]
+
+    if not selected_installed_keys:
+        raise RuntimeError("None of the selected RetroAchievement cores are installed.")
+
+    if set(selected_installed_keys) == installed_keys:
+        log("All installed RetroAchievement Cores selected. Performing full uninstall...\n")
+        _full_uninstall_ra_cores(connection, log)
+        return True
+
+    log("Removing selected RetroAchievement Cores...\n")
+    source_lookup = {source["key"]: source for source in selectable_ra_core_sources()}
+    versions = _read_versions(connection)
+    versions.setdefault("sources", {})
+
+    for source_key in selected_installed_keys:
+        source = source_lookup.get(source_key)
+        if not source:
+            continue
+        _remove_core_component(connection, source, log)
+        versions["sources"].pop(source_key, None)
+
+    _write_versions(connection, versions)
+    log("Kept MiSTer_RA, achievement.wav, retroachievements.cfg, and MiSTer.ini RA block.\n")
+    log("Saved RetroAchievement Cores installed version information.\n")
+
     return True
 
+
+def uninstall_ra_cores_local(sd_root: str, log, source_keys=None):
+    if not sd_root or not _local_root(sd_root).exists():
+        raise RuntimeError("Selected Offline SD Card folder does not exist.")
+
+    if source_keys is None or _is_legacy_ra_cores_installed_local(sd_root):
+        log("Removing RetroAchievement Cores files...\n")
+        _full_uninstall_ra_cores_local(sd_root, log)
+        return True
+
+    selected_keys = _normalize_source_keys(source_keys)
+    if not selected_keys:
+        raise RuntimeError("Select at least one RetroAchievement core to uninstall.")
+
+    components = get_ra_core_components_status_local(sd_root)
+    installed_keys = set(_installed_component_keys(components, include_incomplete=True))
+    selected_installed_keys = [key for key in selected_keys if key in installed_keys]
+
+    if not selected_installed_keys:
+        raise RuntimeError("None of the selected RetroAchievement cores are installed.")
+
+    if set(selected_installed_keys) == installed_keys:
+        log("All installed RetroAchievement Cores selected. Performing full uninstall...\n")
+        _full_uninstall_ra_cores_local(sd_root, log)
+        return True
+
+    log("Removing selected RetroAchievement Cores...\n")
+    source_lookup = {source["key"]: source for source in selectable_ra_core_sources()}
+    versions = _read_versions_local(sd_root)
+    versions.setdefault("sources", {})
+
+    for source_key in selected_installed_keys:
+        source = source_lookup.get(source_key)
+        if not source:
+            continue
+        _remove_core_component_local(sd_root, source, log)
+        versions["sources"].pop(source_key, None)
+
+    _write_versions_local(sd_root, versions)
+    log("Kept MiSTer_RA, achievement.wav, retroachievements.cfg, and MiSTer.ini RA block.\n")
+    log("Saved RetroAchievement Cores installed version information.\n")
+
+    return True
 
 def read_ra_config(connection) -> dict:
     text = _read_remote_text(connection, RA_CONFIG_PATH)

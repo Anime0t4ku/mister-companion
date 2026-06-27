@@ -432,6 +432,24 @@ def _script_status_text(handler: str, scripts_status, syncthing_status=None, ra_
         return {"state": "installed", "status_text": "Installed", "installed": True, "update_available": False}
 
     if handler == "cifs_mount":
+        missing_required_files = []
+        if not getattr(scripts_status, "cifs_umount_installed", False):
+            missing_required_files.append("cifs_umount.sh")
+        if (
+            getattr(scripts_status, "cifs_common_required", False)
+            and not getattr(scripts_status, "cifs_common_installed", False)
+        ):
+            missing_required_files.append("cifs_common.sh")
+
+        if missing_required_files:
+            return {
+                "state": "update_available",
+                "status_text": f"Update available, missing {', '.join(missing_required_files)}",
+                "installed": True,
+                "update_available": True,
+                "install_label": "Update",
+                "install_enabled": True,
+            }
         if not getattr(scripts_status, "cifs_configured", False):
             return {"state": "installed", "status_text": "Installed, not configured", "installed": True, "update_available": False}
         return {"state": "installed", "status_text": "Configured", "installed": True, "update_available": False}
@@ -462,10 +480,10 @@ def _status_from_text(text: str, installed=False, update_available=False) -> dic
     state = "unknown"
     if update_available or "update" in lowered:
         state = "update_available"
-    elif installed or "installed" in lowered or "configured" in lowered:
-        state = "installed"
     elif "not installed" in lowered:
         state = "not_installed"
+    elif installed or "installed" in lowered or "configured" in lowered:
+        state = "installed"
     return {"state": state, "status_text": text or "Status unknown", "installed": state in {"installed", "update_available"}, "update_available": update_available or state == "update_available"}
 
 
@@ -499,7 +517,9 @@ def _extra_status(handler: str, context: InstallCenterContext, check_latest: boo
     result["latest_version"] = status.get("latest_version")
     for key in (
         "install_label", "install_enabled", "uninstall_enabled", "upload_enabled",
-        "folder_open_enabled", "edit_config_enabled", "installed", "update_available"
+        "folder_open_enabled", "edit_config_enabled", "installed", "update_available",
+        "components", "installed_component_keys", "incomplete_component_keys",
+        "missing_component_keys", "all_components_installed", "outdated_sources"
     ):
         if key in status:
             result[key] = status.get(key)
@@ -1018,10 +1038,17 @@ def run_install_or_update(item: dict, context: InstallCenterContext, log: Callab
         if not functions:
             raise RuntimeError("This entry does not have an Install Center installer yet.")
         install_online, install_local = functions[2], functions[3]
-        if context.offline:
-            install_local(context.sd_root, log)
+        if handler == "retroachievement_cores":
+            source_keys = item.get("_selected_ra_core_keys")
+            if context.offline:
+                install_local(context.sd_root, log, source_keys=source_keys)
+            else:
+                install_online(context.connection, log, source_keys=source_keys)
         else:
-            install_online(context.connection, log)
+            if context.offline:
+                install_local(context.sd_root, log)
+            else:
+                install_online(context.connection, log)
         return
 
     if item_type == "rom" or category == "roms":
@@ -1063,10 +1090,17 @@ def run_uninstall(item: dict, context: InstallCenterContext, log: Callable[[str]
         if not functions:
             raise RuntimeError("This entry does not have an Install Center uninstaller yet.")
         uninstall_online, uninstall_local = functions[4], functions[5]
-        if context.offline:
-            uninstall_local(context.sd_root, log)
+        if handler == "retroachievement_cores":
+            source_keys = item.get("_selected_ra_core_keys")
+            if context.offline:
+                uninstall_local(context.sd_root, log, source_keys=source_keys)
+            else:
+                uninstall_online(context.connection, log, source_keys=source_keys)
         else:
-            uninstall_online(context.connection, log)
+            if context.offline:
+                uninstall_local(context.sd_root, log)
+            else:
+                uninstall_online(context.connection, log)
         return
 
     if item_type == "rom" or category == "roms":

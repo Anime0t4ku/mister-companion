@@ -13,20 +13,36 @@ from core.scripts_common import (
 
 CIFS_MOUNT_URL = "https://raw.githubusercontent.com/MiSTer-devel/Scripts_MiSTer/master/cifs_mount.sh"
 CIFS_UMOUNT_URL = "https://raw.githubusercontent.com/MiSTer-devel/Scripts_MiSTer/master/cifs_umount.sh"
+CIFS_COMMON_URL = "https://raw.githubusercontent.com/MiSTer-devel/Scripts_MiSTer/master/cifs_common.sh"
 
 CIFS_MOUNT_SCRIPT_PATH = "/media/fat/Scripts/cifs_mount.sh"
 CIFS_UMOUNT_SCRIPT_PATH = "/media/fat/Scripts/cifs_umount.sh"
+CIFS_COMMON_SCRIPT_PATH = "/media/fat/Scripts/cifs_common.sh"
 CIFS_CONFIG_PATH = "/media/fat/Scripts/cifs_mount.ini"
+
+
+def _cifs_mount_needs_common(mount_script):
+    if isinstance(mount_script, bytes):
+        mount_script = mount_script.decode("utf-8", errors="ignore")
+    return "cifs_common.sh" in (mount_script or "")
 
 
 def _download_cifs_scripts():
     mount_response = requests.get(CIFS_MOUNT_URL, timeout=30)
     mount_response.raise_for_status()
+    mount_script = mount_response.content
 
     umount_response = requests.get(CIFS_UMOUNT_URL, timeout=30)
     umount_response.raise_for_status()
+    umount_script = umount_response.content
 
-    return mount_response.content, umount_response.content
+    common_script = None
+    if _cifs_mount_needs_common(mount_script):
+        common_response = requests.get(CIFS_COMMON_URL, timeout=30)
+        common_response.raise_for_status()
+        common_script = common_response.content
+
+    return mount_script, umount_script, common_script
 
 
 def _parse_cifs_config_text(text):
@@ -108,7 +124,7 @@ def _build_cifs_ini(
 
 def install_cifs_mount(connection, log):
     log("Installing cifs_mount scripts...\n")
-    mount_script, umount_script = _download_cifs_scripts()
+    mount_script, umount_script, common_script = _download_cifs_scripts()
 
     ensure_remote_scripts_dir(connection)
 
@@ -118,25 +134,34 @@ def install_cifs_mount(connection, log):
             remote_file.write(mount_script)
         with sftp.open(CIFS_UMOUNT_SCRIPT_PATH, "wb") as remote_file:
             remote_file.write(umount_script)
+        if common_script is not None:
+            with sftp.open(CIFS_COMMON_SCRIPT_PATH, "wb") as remote_file:
+                remote_file.write(common_script)
     finally:
         sftp.close()
 
     connection.run_command(f"chmod +x {CIFS_MOUNT_SCRIPT_PATH}")
     connection.run_command(f"chmod +x {CIFS_UMOUNT_SCRIPT_PATH}")
+    if common_script is not None:
+        connection.run_command(f"chmod +x {CIFS_COMMON_SCRIPT_PATH}")
     log("CIFS scripts installed.\n")
 
 
 def install_cifs_mount_local(sd_root, log):
     log("Installing cifs_mount scripts to Offline SD Card...\n")
-    mount_script, umount_script = _download_cifs_scripts()
+    mount_script, umount_script, common_script = _download_cifs_scripts()
 
     ensure_local_scripts_dir(sd_root)
 
     _write_local_bytes(sd_root, CIFS_MOUNT_SCRIPT_PATH, mount_script)
     _write_local_bytes(sd_root, CIFS_UMOUNT_SCRIPT_PATH, umount_script)
+    if common_script is not None:
+        _write_local_bytes(sd_root, CIFS_COMMON_SCRIPT_PATH, common_script)
 
     _chmod_local_executable(sd_root, CIFS_MOUNT_SCRIPT_PATH)
     _chmod_local_executable(sd_root, CIFS_UMOUNT_SCRIPT_PATH)
+    if common_script is not None:
+        _chmod_local_executable(sd_root, CIFS_COMMON_SCRIPT_PATH)
 
     log("CIFS scripts installed.\n")
     log("Mount and unmount actions require Online / SSH Mode because they execute on a running MiSTer.\n")
@@ -145,12 +170,14 @@ def install_cifs_mount_local(sd_root, log):
 def uninstall_cifs_mount(connection):
     connection.run_command(f"rm -f {CIFS_MOUNT_SCRIPT_PATH}")
     connection.run_command(f"rm -f {CIFS_UMOUNT_SCRIPT_PATH}")
+    connection.run_command(f"rm -f {CIFS_COMMON_SCRIPT_PATH}")
 
 
 def uninstall_cifs_mount_local(sd_root):
     for remote_path in [
         CIFS_MOUNT_SCRIPT_PATH,
         CIFS_UMOUNT_SCRIPT_PATH,
+        CIFS_COMMON_SCRIPT_PATH,
     ]:
         path = _local_path(sd_root, remote_path)
         if path.exists():

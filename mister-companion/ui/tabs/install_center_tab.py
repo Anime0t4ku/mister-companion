@@ -10,6 +10,7 @@ from pathlib import Path
 from PyQt6.QtCore import QThread, Qt, QSize, QTimer, QRect, pyqtSignal
 from PyQt6.QtGui import QColor, QIcon, QImage, QPainter, QPixmap, QPalette
 from PyQt6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QDialog,
     QFileDialog,
@@ -52,6 +53,11 @@ from core.install_center import (
 )
 from core.file_browser import list_directory, join_remote_path, parent_path, DEFAULT_ROOT
 from core.scripts_version_check import supports_script_update_check
+from core.extras_ra_cores import (
+    get_ra_core_components_status,
+    get_ra_core_components_status_local,
+    selectable_ra_core_sources,
+)
 
 
 HUB_RAW_BASE_URL = "https://raw.githubusercontent.com/Anime0t4ku/mister-companion-hub/main/"
@@ -868,8 +874,9 @@ class InstallCenterDetailsDialog(QDialog):
             add_button("Uninstall", self.uninstall, enabled=installed, min_width=140)
         elif handler == "ftp_save_sync":
             add_button("Reconfigure" if configured else "Configure", self.configure, enabled=installed, min_width=140)
-            add_button("Enable Start on Boot", lambda: self.call_scripts_tab_action("enable_ftp_save_sync_service"), enabled=installed and configured and not service_enabled, min_width=170)
-            add_button("Disable Start on Boot", lambda: self.call_scripts_tab_action("disable_ftp_save_sync_service"), enabled=installed and configured and service_enabled, min_width=175)
+            boot_text = "Disable Start on Boot" if service_enabled else "Enable Start on Boot"
+            boot_action = "disable_ftp_save_sync_service" if service_enabled else "enable_ftp_save_sync_service"
+            add_button(boot_text, lambda action=boot_action: self.call_scripts_tab_action(action), enabled=installed and configured, min_width=190)
             add_button("Remove Config", lambda: self.call_scripts_tab_action("remove_ftp_save_sync_config"), enabled=installed and configured, min_width=140)
             add_button("Uninstall", self.uninstall, enabled=installed, min_width=140)
         elif handler == "static_wallpaper":
@@ -1857,6 +1864,108 @@ class InstallCenterTab(QWidget):
         self.refresh_status()
         self.refresh_existing_tabs()
 
+    def _ra_core_components_for_context(self, context):
+        try:
+            if context.offline:
+                return get_ra_core_components_status_local(context.sd_root)
+            return get_ra_core_components_status(context.connection)
+        except Exception:
+            return []
+
+    def _choose_ra_core_keys(self, context, mode):
+        components = self._ra_core_components_for_context(context)
+        component_by_key = {component.get("key"): component for component in components}
+        all_sources = selectable_ra_core_sources()
+
+        if mode == "uninstall":
+            sources = [
+                source for source in all_sources
+                if component_by_key.get(source.get("key"), {}).get("installed")
+                or component_by_key.get(source.get("key"), {}).get("incomplete")
+            ]
+        else:
+            sources = [
+                source for source in all_sources
+                if component_by_key.get(source.get("key"), {}).get("state") == "not_installed"
+            ]
+
+        if not sources:
+            QMessageBox.information(
+                self,
+                "RetroAchievements Cores",
+                "No RetroAchievement cores are installed." if mode == "uninstall" else "All RetroAchievement cores are already installed.",
+            )
+            return None
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("RetroAchievements Cores")
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(18, 18, 18, 18)
+        layout.setSpacing(10)
+
+        quick_row = QHBoxLayout()
+        quick_row.setSpacing(10)
+        select_all_button = QPushButton("Select All")
+        select_none_button = QPushButton("Select None")
+        select_all_button.setMinimumWidth(96)
+        select_none_button.setMinimumWidth(96)
+        quick_row.addWidget(select_all_button)
+        quick_row.addWidget(select_none_button)
+        quick_row.addStretch(1)
+        layout.addLayout(quick_row)
+
+        checkboxes = []
+        for source in sources:
+            key = source.get("key")
+            checkbox = QCheckBox(source.get("title", key))
+            checkbox.setChecked(True)
+            layout.addWidget(checkbox)
+            checkboxes.append((key, checkbox))
+
+        layout.addSpacing(8)
+
+        button_row = QHBoxLayout()
+        button_row.setSpacing(10)
+        button_row.addStretch(1)
+        cancel_button = QPushButton("Cancel")
+        action_button = QPushButton("Install Selected" if mode == "install" else "Uninstall Selected")
+        button_row.addWidget(cancel_button)
+        button_row.addWidget(action_button)
+        layout.addLayout(button_row)
+
+        def set_all(value):
+            for _key, checkbox in checkboxes:
+                checkbox.setChecked(value)
+
+        select_all_button.clicked.connect(lambda: set_all(True))
+        select_none_button.clicked.connect(lambda: set_all(False))
+        cancel_button.clicked.connect(dialog.reject)
+        action_button.clicked.connect(dialog.accept)
+
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return None
+
+        selected = [key for key, checkbox in checkboxes if checkbox.isChecked()]
+        if not selected:
+            QMessageBox.warning(self, "RetroAchievements Cores", "Select at least one core.")
+            return None
+
+        return selected
+
+    def _ra_update_core_keys_from_status(self, status):
+        selected = []
+        for key in status.get("outdated_sources") or []:
+            if key != "main" and key not in selected:
+                selected.append(key)
+        for key in status.get("incomplete_component_keys") or []:
+            if key not in selected:
+                selected.append(key)
+        if not selected:
+            for key in status.get("installed_component_keys") or []:
+                if key not in selected:
+                    selected.append(key)
+        return selected
+
     def install_or_update_selected(self, output_widget=None):
         item = self.selected_item()
         if not item:
@@ -1866,9 +1975,25 @@ class InstallCenterTab(QWidget):
         if not ready:
             QMessageBox.warning(self, "Install Center", reason)
             return
+
+        handler = item.get("handler") or item.get("id")
+        task_item = dict(item)
+        if handler == "retroachievement_cores":
+            status = self.statuses.get(item.get("id"), {}) or {}
+            if status.get("install_label") == "Update" or status.get("update_available"):
+                selected_keys = self._ra_update_core_keys_from_status(status)
+                if not selected_keys:
+                    QMessageBox.information(self, "RetroAchievements Cores", "No installed RetroAchievement cores need an update.")
+                    return
+            else:
+                selected_keys = self._choose_ra_core_keys(context, "install")
+                if selected_keys is None:
+                    return
+            task_item["_selected_ra_core_keys"] = selected_keys
+
         self.start_task(
             f"Installing/updating {item.get('name')}...",
-            lambda log: run_install_or_update(item, context, log),
+            lambda log: run_install_or_update(task_item, context, log),
             f"{item.get('name')} finished successfully.",
             output_widget=output_widget,
         )
@@ -1877,17 +2002,27 @@ class InstallCenterTab(QWidget):
         item = self.selected_item()
         if not item:
             return
-        confirm = QMessageBox.question(self, "Uninstall", f"Uninstall {item.get('name')}?")
-        if confirm != QMessageBox.StandardButton.Yes:
-            return
         context = build_context(self.main_window)
         ready, reason = context_ready(context)
         if not ready:
             QMessageBox.warning(self, "Install Center", reason)
             return
+
+        handler = item.get("handler") or item.get("id")
+        task_item = dict(item)
+        if handler == "retroachievement_cores":
+            selected_keys = self._choose_ra_core_keys(context, "uninstall")
+            if selected_keys is None:
+                return
+            task_item["_selected_ra_core_keys"] = selected_keys
+        else:
+            confirm = QMessageBox.question(self, "Uninstall", f"Uninstall {item.get('name')}?")
+            if confirm != QMessageBox.StandardButton.Yes:
+                return
+
         self.start_task(
             f"Uninstalling {item.get('name')}...",
-            lambda log: run_uninstall(item, context, log),
+            lambda log: run_uninstall(task_item, context, log),
             f"{item.get('name')} was uninstalled.",
             output_widget=output_widget,
         )
