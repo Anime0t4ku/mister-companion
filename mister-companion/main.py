@@ -2,6 +2,7 @@ import sys
 from PyQt6.QtWidgets import QApplication
 
 from core.config import load_config
+from core.runtime_env import configure_packaged_certificates
 from core.theme import apply_theme
 from ui.custom_dialog import install_custom_dialogs
 from ui.custom_message_dialog import install_custom_message_boxes
@@ -9,6 +10,8 @@ from ui.main_window import MainWindow
 
 
 def main():
+    configure_packaged_certificates()
+
     app = QApplication(sys.argv)
 
     config = load_config()
