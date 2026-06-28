@@ -1,7 +1,6 @@
 PyQt6
 paramiko
 requests
-certifi
 websocket-client
 psutil
 pyserial
