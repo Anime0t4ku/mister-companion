@@ -12,8 +12,6 @@ _ORIGINAL_STYLE = None
 _ORIGINAL_PALETTE = None
 _ORIGINAL_FONT = None
 
-MACOS_PACKAGED_UI_SCALE_FACTOR = 0.8
-
 BASE_DIR = Path(__file__).resolve().parent.parent
 ASSETS_DIR = BASE_DIR / "assets"
 
@@ -311,12 +309,23 @@ def normalize_ui_scale_percent(value) -> int:
 
 
 def ui_scale_factor(value) -> float:
-    factor = normalize_ui_scale_percent(value) / 100.0
+    return normalize_ui_scale_percent(value) / 100.0
 
-    if is_macos_packaged_app():
-        factor *= MACOS_PACKAGED_UI_SCALE_FACTOR
 
-    return factor
+def platform_base_font_point_size() -> float:
+    if platform.system() == "Darwin":
+        return 10.0
+
+    return 9.0
+
+
+def scaled_font_point_size(ui_scale_percent=100) -> float:
+    factor = ui_scale_factor(ui_scale_percent)
+    return max(1.0, platform_base_font_point_size() * factor)
+
+
+def qss_base_font_rule(ui_scale_percent=100) -> str:
+    return f"font-size: {scaled_font_point_size(ui_scale_percent):.2f}pt;"
 
 
 def make_scaler(value):
@@ -348,14 +357,7 @@ def apply_font_scale(app: QApplication, ui_scale_percent=100):
     factor = ui_scale_factor(ui_scale_percent)
     font = QFont(_ORIGINAL_FONT)
 
-    if platform.system() == "Darwin":
-        base_point_size = 13.0
-    elif platform.system() == "Windows":
-        base_point_size = 9.0
-    else:
-        base_point_size = 9.0
-
-    font.setPointSizeF(max(1.0, base_point_size * factor))
+    font.setPointSizeF(scaled_font_point_size(ui_scale_percent))
     current = app.font()
     if current.family() != font.family() or abs(current.pointSizeF() - font.pointSizeF()) > 0.01:
         app.setFont(font)
@@ -455,10 +457,12 @@ def light_stylesheet(ui_scale_percent=100) -> str:
     spin_up_path = qss_url(SPIN_UP_DARK_PATH)
     spin_down_path = qss_url(SPIN_DOWN_DARK_PATH)
     linux_button_fix = linux_button_width_fix(ui_scale_percent)
+    base_font_rule = qss_base_font_rule(ui_scale_percent)
     s = make_scaler(ui_scale_percent)
 
     return f"""
     QWidget {{
+        {base_font_rule}
         background-color: #f7f3ff;
         color: #1f1630;
         selection-background-color: #7c3aed;
@@ -931,10 +935,12 @@ def dark_stylesheet(ui_scale_percent=100) -> str:
     spin_up_path = qss_url(SPIN_UP_LIGHT_PATH)
     spin_down_path = qss_url(SPIN_DOWN_LIGHT_PATH)
     linux_button_fix = linux_button_width_fix(ui_scale_percent)
+    base_font_rule = qss_base_font_rule(ui_scale_percent)
     s = make_scaler(ui_scale_percent)
 
     return f"""
     QWidget {{
+        {base_font_rule}
         background-color: #120f1c;
         color: #f2ecff;
         selection-background-color: #8b5cf6;
