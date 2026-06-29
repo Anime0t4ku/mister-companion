@@ -7,6 +7,7 @@ import re
 import runpy
 import shutil
 import signal
+import ssl
 import sys
 import time
 import zipfile
@@ -15,6 +16,11 @@ from pathlib import Path
 from typing import Any, Callable
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+
+try:
+    import certifi
+except Exception:  # pragma: no cover - certifi is optional at runtime
+    certifi = None
 
 
 ProgressCallback = Callable[[str], None]
@@ -79,6 +85,43 @@ class _ProgressStream:
         if self.buffer.strip():
             self.line_callback(self.buffer.strip())
         self.buffer = ""
+
+
+def _certifi_ssl_context():
+    if certifi is None:
+        return ssl.create_default_context()
+
+    return ssl.create_default_context(cafile=certifi.where())
+
+
+class _CertificatePatch:
+    def __init__(self) -> None:
+        self.original_create_default_https_context = ssl._create_default_https_context
+        self.old_env_values: dict[str, str | None] = {
+            "SSL_CERT_FILE": os.environ.get("SSL_CERT_FILE"),
+            "REQUESTS_CA_BUNDLE": os.environ.get("REQUESTS_CA_BUNDLE"),
+        }
+
+    def __enter__(self):
+        if certifi is not None:
+            cafile = certifi.where()
+            os.environ["SSL_CERT_FILE"] = cafile
+            os.environ["REQUESTS_CA_BUNDLE"] = cafile
+            ssl._create_default_https_context = lambda *args, **kwargs: ssl.create_default_context(
+                cafile=cafile,
+            )
+
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        ssl._create_default_https_context = self.original_create_default_https_context
+
+        for key, value in self.old_env_values.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
 
 
 class _SignalPatch:
@@ -213,6 +256,7 @@ class UpdateAllOfflineRunner:
             os.chdir(self.sd_root)
 
             with (
+                _CertificatePatch(),
                 _SignalPatch(),
                 contextlib.redirect_stdout(stdout_stream),
                 contextlib.redirect_stderr(stderr_stream),
@@ -531,7 +575,7 @@ class UpdateAllOfflineRunner:
             if temp_path.exists():
                 temp_path.unlink()
 
-            with urlopen(request, timeout=180) as response:
+            with urlopen(request, timeout=180, context=_certifi_ssl_context()) as response:
                 with temp_path.open("wb") as handle:
                     shutil.copyfileobj(response, handle)
 

@@ -5,3 +5,4 @@ websocket-client
 psutil
 pyserial
 Pillow
+certifi
