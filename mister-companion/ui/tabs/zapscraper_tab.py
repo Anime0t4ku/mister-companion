@@ -799,6 +799,8 @@ class ZapScraperTab(QWidget):
         self.password_edit = QLineEdit()
         self.password_edit.setPlaceholderText("ScreenScraper password")
         self.password_edit.setEchoMode(QLineEdit.EchoMode.Password)
+        self.username_edit.textChanged.connect(self.on_credentials_changed)
+        self.password_edit.textChanged.connect(self.on_credentials_changed)
         password_col.addWidget(self.password_edit)
         login_layout.addLayout(password_col, 1)
 
@@ -1251,6 +1253,18 @@ class ZapScraperTab(QWidget):
                 quota_info.get("ko_remaining"),
             )
         )
+
+    def on_credentials_changed(self):
+        if getattr(self, "_loading_settings", False):
+            return
+
+        if getattr(self, "logged_in", False):
+            self.logged_in = False
+            self.account_name = ""
+            self.quota_info = {}
+
+        self.save_settings()
+        self.update_account_ui()
 
     def update_account_status(self):
         if not has_dev_credentials():
