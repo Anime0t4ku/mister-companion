@@ -44,7 +44,7 @@ class AppSettingsDialog(QDialog):
         self.mc_updater_check_worker = None
         self.mc_updater_latest_version = ""
         self.mc_updater_update_available = False
-        self.show_mc_updater_settings = sys.platform != "darwin"
+        self.show_mc_updater_settings = mc_updater.updater_supported()
 
         self.setWindowTitle("App Settings")
         self.setMinimumWidth(520)

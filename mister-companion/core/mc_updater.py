@@ -3,6 +3,7 @@ import os
 import platform
 import re
 import shutil
+import subprocess
 import tarfile
 import tempfile
 import zipfile
@@ -56,8 +57,16 @@ def is_linux() -> bool:
     return current_platform_name() == "linux"
 
 
+def is_macos() -> bool:
+    return current_platform_name() == "darwin"
+
+
+def is_macos_apple_silicon() -> bool:
+    return is_macos() and platform.machine().lower() in {"arm64", "aarch64"}
+
+
 def updater_supported() -> bool:
-    return is_windows() or is_linux()
+    return is_windows() or is_linux() or is_macos_apple_silicon()
 
 
 def get_config_folder() -> Path:
@@ -67,16 +76,22 @@ def get_config_folder() -> Path:
 def get_executable_filename() -> str:
     if is_windows():
         return "MC-Updater.exe"
+    if is_macos():
+        return "MC-Updater.app"
     return "MC-Updater"
 
 
 def get_executable_path() -> Path:
+    if is_macos():
+        return Path("/Applications") / get_executable_filename()
     return get_config_folder() / get_executable_filename()
 
 
 def get_expected_asset_filename() -> str:
     if is_windows():
         return "MC-Updater-Windows-x86_64.zip"
+    if is_macos():
+        return "MC-Updater-macOS-Apple-Silicon.dmg"
     return "MC-Updater-Linux-x86_64.tar.gz"
 
 
@@ -209,6 +224,13 @@ def _select_asset(download_links: list[str]) -> str:
             if "x86_64" in filename or "amd64" in filename:
                 score += 5
             candidates.append((score, link))
+        elif is_macos() and filename.endswith(".dmg"):
+            score = 1
+            if "macos" in filename or "mac" in filename:
+                score += 10
+            if "apple-silicon" in filename or "arm64" in filename or "aarch64" in filename:
+                score += 5
+            candidates.append((score, link))
 
     if not candidates:
         return ""
@@ -219,7 +241,7 @@ def _select_asset(download_links: list[str]) -> str:
 
 def check_latest_release(timeout: int = 15) -> MCUpdaterReleaseInfo:
     if not updater_supported():
-        raise RuntimeError("MC-Updater is only supported on Windows and Linux.")
+        raise RuntimeError("MC-Updater is only supported on Windows, Linux, and macOS Apple Silicon.")
 
     latest_response = requests.get(
         MC_UPDATER_LATEST_URL,
@@ -351,9 +373,87 @@ def _find_extracted_executable(extract_dir: Path) -> Path:
     raise RuntimeError(f"Could not find {filename} in the downloaded package.")
 
 
+def _run_macos_command(command: list[str]) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        command,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def _parse_attached_volume(output: str) -> Path:
+    for line in output.splitlines():
+        parts = line.split("	")
+        for part in parts:
+            value = part.strip()
+            if value.startswith("/Volumes/"):
+                return Path(value)
+
+    raise RuntimeError("Could not determine the mounted DMG volume.")
+
+
+def _mount_dmg(dmg_path: Path) -> Path:
+    result = _run_macos_command([
+        "hdiutil",
+        "attach",
+        str(dmg_path),
+        "-nobrowse",
+        "-readonly",
+    ])
+    return _parse_attached_volume(result.stdout)
+
+
+def _unmount_dmg(volume_path: Path):
+    try:
+        _run_macos_command(["hdiutil", "detach", str(volume_path), "-quiet"])
+    except Exception:
+        try:
+            _run_macos_command(["hdiutil", "detach", str(volume_path), "-force", "-quiet"])
+        except Exception:
+            pass
+
+
+def _find_app_bundle(root: Path, bundle_name: str) -> Path:
+    direct_path = root / bundle_name
+    if direct_path.exists() and direct_path.is_dir():
+        return direct_path
+
+    for path in root.rglob(bundle_name):
+        if path.exists() and path.is_dir():
+            return path
+
+    raise RuntimeError(f"Could not find {bundle_name} in the mounted DMG.")
+
+
+def _install_macos_dmg(package_path: Path, progress=None):
+    mounted_volume = None
+    try:
+        if progress:
+            progress("Mounting DMG...")
+        mounted_volume = _mount_dmg(package_path)
+
+        source_app = _find_app_bundle(mounted_volume, get_executable_filename())
+        target_app = get_executable_path()
+
+        if progress:
+            progress(f"Installing {target_app.name}...")
+
+        if target_app.exists():
+            shutil.rmtree(target_app)
+
+        target_app.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(source_app, target_app, symlinks=True)
+    finally:
+        if mounted_volume is not None:
+            if progress:
+                progress("Unmounting DMG...")
+            _unmount_dmg(mounted_volume)
+
+
 def install_or_update(config_data: dict, progress=None) -> str:
     if not updater_supported():
-        raise RuntimeError("MC-Updater is only supported on Windows and Linux.")
+        raise RuntimeError("MC-Updater is only supported on Windows, Linux, and macOS Apple Silicon.")
 
     if progress:
         progress("Checking latest release...")
@@ -369,22 +469,25 @@ def install_or_update(config_data: dict, progress=None) -> str:
             progress("Downloading package...")
         _download_file(release.download_url, package_path, progress=progress)
 
-        if progress:
-            progress("Extracting package...")
-        _extract_package(package_path, extract_dir)
-
-        extracted_executable = _find_extracted_executable(extract_dir)
-        target_path = get_executable_path()
-        target_path.parent.mkdir(parents=True, exist_ok=True)
-
-        if progress:
-            progress(f"Installing {target_path.name}...")
-        shutil.copy2(extracted_executable, target_path)
-
-        if is_linux():
+        if is_macos():
+            _install_macos_dmg(package_path, progress=progress)
+        else:
             if progress:
-                progress("Applying executable permissions...")
-            make_executable(target_path)
+                progress("Extracting package...")
+            _extract_package(package_path, extract_dir)
+
+            extracted_executable = _find_extracted_executable(extract_dir)
+            target_path = get_executable_path()
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+
+            if progress:
+                progress(f"Installing {target_path.name}...")
+            shutil.copy2(extracted_executable, target_path)
+
+            if is_linux():
+                if progress:
+                    progress("Applying executable permissions...")
+                make_executable(target_path)
 
     if progress:
         progress("Saving installed version...")
@@ -404,7 +507,10 @@ def remove(config_data: dict, progress=None):
         progress("Removing executable...")
 
     if target_path.exists():
-        target_path.unlink()
+        if target_path.is_dir():
+            shutil.rmtree(target_path)
+        else:
+            target_path.unlink()
 
     if progress:
         progress("Clearing saved version...")

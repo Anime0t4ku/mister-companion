@@ -11,6 +11,7 @@ from core.open_helpers import open_uri
 
 from core.app_info import APP_VERSION, GITHUB_OWNER, GITHUB_REPO
 from core.config import CONFIG_PATH
+from core.app_paths import macos_application_support_dir
 
 
 @dataclass
@@ -79,8 +80,16 @@ def is_linux() -> bool:
     return current_platform_name() == "linux"
 
 
+def is_macos() -> bool:
+    return current_platform_name() == "darwin"
+
+
+def is_macos_apple_silicon() -> bool:
+    return is_macos() and platform.machine().lower() in {"arm64", "aarch64"}
+
+
 def updater_supported() -> bool:
-    return is_windows() or is_linux()
+    return is_windows() or is_linux() or is_macos_apple_silicon()
 
 
 def get_app_folder() -> Path:
@@ -94,17 +103,25 @@ def get_mc_updater_filename() -> str:
     if is_windows():
         return "MC-Updater.exe"
 
-    if is_linux():
-        return "MC-Updater"
+    if is_macos():
+        return "MC-Updater.app"
 
     return "MC-Updater"
 
 
 def get_mc_updater_path() -> Path:
+    if is_macos():
+        return Path("/Applications") / get_mc_updater_filename()
+
     return CONFIG_PATH.resolve().parent / get_mc_updater_filename()
 
 
 def get_update_now_path() -> Path:
+    if is_macos():
+        update_root = macos_application_support_dir()
+        update_root.mkdir(parents=True, exist_ok=True)
+        return update_root / "updatenow.txt"
+
     return get_app_folder() / "updatenow.txt"
 
 
@@ -155,11 +172,18 @@ def launch_mc_updater() -> bool:
     update_now_path = get_update_now_path()
     update_now_path.write_text("", encoding="utf-8")
 
-    subprocess.Popen(
-        [str(updater_path)],
-        cwd=str(updater_path.parent),
-        shell=False,
-    )
+    if is_macos():
+        subprocess.Popen(
+            ["open", str(updater_path)],
+            cwd=str(updater_path.parent),
+            shell=False,
+        )
+    else:
+        subprocess.Popen(
+            [str(updater_path)],
+            cwd=str(updater_path.parent),
+            shell=False,
+        )
 
     return True
 
