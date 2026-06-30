@@ -1165,7 +1165,7 @@ class ZapScraperTab(QWidget):
             return
 
         config = load_config()
-        config["zapscraper"] = {
+        zapscraper_config = {
             "source_mode": self.source_combo.currentText(),
             "custom_games_folder": getattr(self, "custom_games_folder", ""),
             "username": self.username_edit.text().strip(),
@@ -1183,7 +1183,13 @@ class ZapScraperTab(QWidget):
             "crt_mode": self._active_crt_mode(),
             "skip_games_with_metadata_ignore_incomplete_media": self.skip_metadata_incomplete_media_checkbox.isChecked(),
         }
+        config["zapscraper"] = zapscraper_config
         save_config(config)
+
+        main_window_config = getattr(self.main_window, "config_data", None)
+        if isinstance(main_window_config, dict):
+            main_window_config["zapscraper"] = dict(zapscraper_config)
+
         self.update_account_status()
 
     def on_skip_metadata_incomplete_media_changed(self, *_):
