@@ -1415,10 +1415,12 @@ def custom_stylesheet(theme: dict, ui_scale_percent=100) -> str:
     spin_up_path = qss_url(SPIN_UP_LIGHT_PATH if roles["is_dark"] else SPIN_UP_DARK_PATH)
     spin_down_path = qss_url(SPIN_DOWN_LIGHT_PATH if roles["is_dark"] else SPIN_DOWN_DARK_PATH)
     linux_button_fix = linux_button_width_fix(ui_scale_percent)
+    base_font_rule = qss_base_font_rule(ui_scale_percent)
     s = make_scaler(ui_scale_percent)
 
     return f"""
     QWidget {{
+        {base_font_rule}
         background-color: {roles['background']};
         color: {roles['text']};
         selection-background-color: {roles['accent']};

@@ -34,7 +34,7 @@ from core.device_profiles import (
     update_device,
 )
 from core.profile_folder_sync import profile_assigned_to_ip, profile_removed, profile_renamed
-from core.theme import apply_theme, theme_accent_color, theme_logo_mode, theme_text_color
+from core.theme import apply_theme, make_scaler, theme_accent_color, theme_logo_mode, theme_text_color
 from core.updater import (
     check_for_update,
     launch_mc_updater,
@@ -119,15 +119,14 @@ class CustomTitleBar(QWidget):
         self.logo_pixmap = QPixmap()
         self.logo_mode = ""
 
-        self.setFixedHeight(44)
         self.setObjectName("CustomTitleBar")
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(10, 0, 6, 0)
         layout.setSpacing(8)
+        self._layout = layout
 
         self.logo_label = QLabel()
-        self.logo_label.setFixedSize(260, 34)
         self.logo_label.setAlignment(
             Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft
         )
@@ -152,7 +151,6 @@ class CustomTitleBar(QWidget):
             self.maximize_button,
             self.close_button,
         ):
-            button.setFixedSize(36, 28)
             button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
             button.setObjectName("WindowControlButton")
 
@@ -166,37 +164,64 @@ class CustomTitleBar(QWidget):
         self.maximize_button.clicked.connect(self.main_window.toggle_maximize_restore)
         self.close_button.clicked.connect(self.main_window.close)
 
+        self.apply_ui_scale(self.main_window.get_ui_scale_percent())
+
+    def apply_ui_scale(self, ui_scale_percent: int):
+        s = make_scaler(ui_scale_percent)
+
+        self.setFixedHeight(s(44))
+        self._layout.setContentsMargins(s(10), 0, s(6), 0)
+        self._layout.setSpacing(s(8))
+
+        self.logo_label.setFixedSize(s(260), s(34))
+        self.version_label.setMinimumWidth(s(90))
+
+        button_width = max(36, s(36))
+        button_height = max(28, s(28))
+        button_font_size = max(15, s(15))
+        button_radius = max(5, s(5))
+
+        for button in (
+            self.minimize_button,
+            self.maximize_button,
+            self.close_button,
+        ):
+            button.setFixedSize(button_width, button_height)
+
         self.setStyleSheet(
-            """
-            QWidget#CustomTitleBar {
+            f"""
+            QWidget#CustomTitleBar {{
                 background-color: palette(window);
-                border-bottom: 1px solid palette(mid);
-            }
+                border-bottom: {max(1, s(1))}px solid palette(mid);
+            }}
 
-            QPushButton#WindowControlButton {
+            QPushButton#WindowControlButton {{
                 border: none;
-                border-radius: 5px;
-                font-size: 15px;
+                border-radius: {button_radius}px;
+                font-size: {button_font_size}px;
                 font-weight: bold;
-            }
+                padding: 0px;
+            }}
 
-            QPushButton#WindowControlButton:hover {
+            QPushButton#WindowControlButton:hover {{
                 background-color: palette(midlight);
-            }
+            }}
 
-            QPushButton#WindowCloseButton {
+            QPushButton#WindowCloseButton {{
                 border: none;
-                border-radius: 5px;
-                font-size: 15px;
+                border-radius: {button_radius}px;
+                font-size: {button_font_size}px;
                 font-weight: bold;
-            }
+                padding: 0px;
+            }}
 
-            QPushButton#WindowCloseButton:hover {
+            QPushButton#WindowCloseButton:hover {{
                 background-color: #d32f2f;
                 color: white;
-            }
+            }}
             """
         )
+        self.update_logo_pixmap()
 
     def set_logo_mode(self, mode: str):
         mode = (mode or "light").strip().lower()
@@ -1520,6 +1545,8 @@ class MainWindow(QMainWindow):
         self.setUpdatesEnabled(False)
         try:
             apply_theme(self.app, mode, ui_scale_percent)
+            if hasattr(self, "title_bar"):
+                self.title_bar.apply_ui_scale(ui_scale_percent)
             self.update_title_bar_logo(mode)
             self.update_theme_button_text()
             self.refresh_tab_icons()
