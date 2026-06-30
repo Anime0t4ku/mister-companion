@@ -309,10 +309,33 @@ jobs:
         working-directory: mister-companion
         run: pyinstaller --clean --windowed --icon app.icns --add-data "assets:assets" --name MiSTer-Companion main.py
 
-      - name: Ad-hoc Sign App Bundle
+      - name: Import Developer ID Certificate
+        env:
+          MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          CERTIFICATE_PATH=$RUNNER_TEMP/developer_id_application.p12
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+
+          echo "$MACOS_CERTIFICATE_P12" | base64 --decode > "$CERTIFICATE_PATH"
+
+          security create-keychain -p "$MACOS_CERTIFICATE_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$MACOS_CERTIFICATE_PASSWORD" "$KEYCHAIN_PATH"
+
+          security import "$CERTIFICATE_PATH"             -P "$MACOS_CERTIFICATE_PASSWORD"             -A             -t cert             -f pkcs12             -k "$KEYCHAIN_PATH"
+
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+          security default-keychain -s "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$MACOS_CERTIFICATE_PASSWORD" "$KEYCHAIN_PATH"
+
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+
+      - name: Sign App Bundle
         working-directory: mister-companion
         run: |
-          codesign --force --deep --sign - "dist/MiSTer-Companion.app"
+          codesign --force --deep --options runtime --timestamp             --sign "Developer ID Application: Bjorn Logan (SMNGA44VUR)"             "dist/MiSTer-Companion.app"
+
           codesign --verify --deep --strict --verbose=2 "dist/MiSTer-Companion.app"
 
       - name: Create macOS DMG
@@ -322,6 +345,28 @@ jobs:
           cp -R "dist/MiSTer-Companion.app" "dmg-root/"
           ln -s /Applications "dmg-root/Applications"
           hdiutil create -volname "MiSTer Companion" -srcfolder "dmg-root" -ov -format UDZO "dist/MiSTer-Companion-macOS-Apple-Silicon.dmg"
+
+      - name: Sign macOS DMG
+        working-directory: mister-companion
+        run: |
+          codesign --force --timestamp             --sign "Developer ID Application: Bjorn Logan (SMNGA44VUR)"             "dist/MiSTer-Companion-macOS-Apple-Silicon.dmg"
+
+          codesign --verify --verbose=2 "dist/MiSTer-Companion-macOS-Apple-Silicon.dmg"
+
+      - name: Notarize macOS DMG
+        working-directory: mister-companion
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: |
+          xcrun notarytool submit "dist/MiSTer-Companion-macOS-Apple-Silicon.dmg"             --apple-id "$APPLE_ID"             --team-id "$APPLE_TEAM_ID"             --password "$APPLE_APP_SPECIFIC_PASSWORD"             --wait
+
+      - name: Staple macOS DMG
+        working-directory: mister-companion
+        run: |
+          xcrun stapler staple "dist/MiSTer-Companion-macOS-Apple-Silicon.dmg"
+          xcrun stapler validate "dist/MiSTer-Companion-macOS-Apple-Silicon.dmg"
 
       - name: Upload macOS Apple Silicon Artifact
         uses: actions/upload-artifact@v4

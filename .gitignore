@@ -10,7 +10,7 @@ zaplauncher/
 .DS_Store
 ICcache/
 themes/
-
+dmg-root/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -237,3 +237,4 @@ mister-companion/themes/.theme_store/installed.json
 /mister-companion/themes/.theme_store
 mister-companion/themes/.theme_store/installed.json
 mister-companion/themes/.theme_store/installed.json
+mister-companion/app.icns
