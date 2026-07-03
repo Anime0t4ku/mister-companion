@@ -96,7 +96,7 @@ class AppSettingsDialog(QDialog):
             mc_updater_check_row = QHBoxLayout()
             mc_updater_check_row.addStretch()
             self.mc_updater_check_button = QPushButton("Check for MC-Updater Updates")
-            self.mc_updater_check_button.setMinimumWidth(230)
+            self.prepare_mc_updater_button(self.mc_updater_check_button, 230)
             self.mc_updater_check_button.clicked.connect(self.check_mc_updater_updates)
             mc_updater_check_row.addWidget(self.mc_updater_check_button)
             mc_updater_check_row.addStretch()
@@ -106,12 +106,12 @@ class AppSettingsDialog(QDialog):
             mc_updater_action_row.addStretch()
 
             self.mc_updater_install_button = QPushButton("Install MC-Updater")
-            self.mc_updater_install_button.setMinimumWidth(170)
+            self.prepare_mc_updater_button(self.mc_updater_install_button, 170)
             self.mc_updater_install_button.clicked.connect(self.install_or_update_mc_updater)
             mc_updater_action_row.addWidget(self.mc_updater_install_button)
 
             self.mc_updater_remove_button = QPushButton("Remove MC-Updater")
-            self.mc_updater_remove_button.setMinimumWidth(170)
+            self.prepare_mc_updater_button(self.mc_updater_remove_button, 170)
             self.mc_updater_remove_button.clicked.connect(self.remove_mc_updater)
             mc_updater_action_row.addWidget(self.mc_updater_remove_button)
 
@@ -186,6 +186,11 @@ class AppSettingsDialog(QDialog):
         self.buttons.accepted.connect(self.save_and_accept)
         self.buttons.rejected.connect(self.reject)
         main_layout.addWidget(self.buttons)
+
+
+    def prepare_mc_updater_button(self, button: QPushButton, minimum_width: int):
+        button.setMinimumWidth(minimum_width)
+        button.setMinimumHeight(max(34, button.fontMetrics().height() + 16))
 
     def load_values(self):
         self.check_updates_on_startup_check.setChecked(
