@@ -1,10 +1,11 @@
+import platform
 import re
 import sys
 from pathlib import Path
 from core.open_helpers import open_uri
 
-from PyQt6.QtCore import QEvent, QPoint, QRect, QSize, QThread, QTimer, Qt, pyqtSignal
-from PyQt6.QtGui import QIcon, QPalette, QPixmap, QRegion
+from PyQt6.QtCore import QByteArray, QEvent, QPoint, QRect, QSize, QThread, QTimer, Qt, pyqtSignal
+from PyQt6.QtGui import QColor, QIcon, QPainter, QPalette, QPen, QPixmap, QRegion
 from PyQt6.QtWidgets import (
     QApplication,
     QButtonGroup,
@@ -18,7 +19,13 @@ from PyQt6.QtWidgets import (
     QTabWidget,
     QVBoxLayout,
     QWidget,
+    QSizePolicy,
 )
+
+try:
+    from PyQt6.QtSvg import QSvgRenderer
+except Exception:
+    QSvgRenderer = None
 
 from core.app_info import APP_NAME, APP_VERSION
 from core.config import load_config, save_config
@@ -110,6 +117,66 @@ class UpdateCheckWorker(QThread):
             self.error.emit(str(e))
 
 
+class TitleBarButton(QPushButton):
+    def __init__(self, label: str, role: str, parent=None):
+        super().__init__(label, parent)
+        self.role = role
+
+    def paintEvent(self, event):
+        if platform.system() != "Linux":
+            super().paintEvent(event)
+            return
+
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+
+        rect = self.rect()
+        hover = self.underMouse() and self.isEnabled()
+        is_close = self.objectName() == "WindowCloseButton"
+
+        if hover:
+            if is_close:
+                painter.setBrush(QColor("#d32f2f"))
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.drawRoundedRect(rect.adjusted(1, 1, -1, -1), 5, 5)
+                color = QColor("#ffffff")
+            else:
+                painter.setBrush(self.palette().color(QPalette.ColorRole.Midlight))
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.drawRoundedRect(rect.adjusted(1, 1, -1, -1), 5, 5)
+                color = self.palette().color(QPalette.ColorRole.WindowText)
+        else:
+            color = self.palette().color(QPalette.ColorRole.WindowText)
+
+        pen_width = max(2, round(rect.height() / 14))
+        pen = QPen(color, pen_width)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+
+        cx = rect.center().x()
+        cy = rect.center().y()
+        size = max(10, round(min(rect.width(), rect.height()) * 0.38))
+        half = size // 2
+
+        if self.role == "minimize":
+            y = cy + max(2, round(rect.height() * 0.14))
+            painter.drawLine(cx - half, y, cx + half, y)
+        elif self.role == "maximize":
+            if self.text() == "❐":
+                offset = max(3, round(size * 0.22))
+                back = QRect(cx - half + offset, cy - half - offset, size, size)
+                front = QRect(cx - half, cy - half + offset, size, size)
+                painter.drawRect(back)
+                painter.drawRect(front)
+            else:
+                painter.drawRect(QRect(cx - half, cy - half, size, size))
+        else:
+            painter.drawLine(cx - half, cy - half, cx + half, cy + half)
+            painter.drawLine(cx + half, cy - half, cx - half, cy + half)
+
+
 class CustomTitleBar(QWidget):
     def __init__(self, main_window):
         super().__init__(main_window)
@@ -142,9 +209,9 @@ class CustomTitleBar(QWidget):
         self.version_label.setStyleSheet("color: gray; font-weight: bold;")
         layout.addWidget(self.version_label)
 
-        self.minimize_button = QPushButton("−")
-        self.maximize_button = QPushButton("□")
-        self.close_button = QPushButton("×")
+        self.minimize_button = TitleBarButton("−", "minimize")
+        self.maximize_button = TitleBarButton("□", "maximize")
+        self.close_button = TitleBarButton("×", "close")
 
         for button in (
             self.minimize_button,
@@ -455,18 +522,22 @@ class MainWindow(QMainWindow):
         self.check_update_button = None
 
         self.files_button = QPushButton("Files")
+        self.files_button.setObjectName("FooterButton")
         self.files_button.clicked.connect(self.open_files)
         bottom_bar.addWidget(self.files_button)
 
         self.remote_button = QPushButton("Remote")
+        self.remote_button.setObjectName("FooterButton")
         self.remote_button.clicked.connect(self.open_remote)
         bottom_bar.addWidget(self.remote_button)
 
         self.manuals_button = QPushButton("Manuals")
+        self.manuals_button.setObjectName("FooterButton")
         self.manuals_button.clicked.connect(self.open_manuals)
         bottom_bar.addWidget(self.manuals_button)
 
         self.retroachievements_button = QPushButton("RetroAchievements")
+        self.retroachievements_button.setObjectName("FooterButton")
         self.retroachievements_button.clicked.connect(self.open_retroachievements)
         bottom_bar.addWidget(self.retroachievements_button)
 
@@ -477,15 +548,19 @@ class MainWindow(QMainWindow):
         bottom_bar.addWidget(self.scale_combo)
 
         self.theme_button = QPushButton("Theme")
+        self.theme_button.setObjectName("FooterButton")
         self.theme_button.setToolTip("Theme Picker")
         self.theme_button.clicked.connect(self.open_theme_picker)
         bottom_bar.addWidget(self.theme_button)
 
         self.settings_button = QPushButton()
+        self.settings_button.setObjectName("FooterIconButton")
         self.settings_button.setToolTip("App Settings")
         self.settings_button.setFixedWidth(34)
         self.settings_button.clicked.connect(self.open_app_settings)
         bottom_bar.addWidget(self.settings_button)
+
+        self.apply_linux_footer_button_sizing()
 
         content_layout.addLayout(bottom_bar)
 
@@ -904,6 +979,32 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
 
+    def apply_linux_footer_button_sizing(self):
+        if platform.system() != "Linux":
+            return
+
+        s = make_scaler(self.get_ui_scale_percent())
+        footer_buttons = [
+            getattr(self, "files_button", None),
+            getattr(self, "remote_button", None),
+            getattr(self, "manuals_button", None),
+            getattr(self, "retroachievements_button", None),
+            getattr(self, "theme_button", None),
+        ]
+
+        for button in footer_buttons:
+            if button is None:
+                continue
+            button.setMinimumWidth(0)
+            button.setMaximumWidth(16777215)
+            button.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+            button.setMinimumHeight(s(28))
+
+        if hasattr(self, "settings_button"):
+            self.settings_button.setMinimumWidth(0)
+            self.settings_button.setFixedWidth(s(34))
+            self.settings_button.setFixedHeight(s(28))
+
     def update_title_bar_logo(self, mode: str = ""):
         if not hasattr(self, "title_bar"):
             return
@@ -1164,13 +1265,29 @@ class MainWindow(QMainWindow):
         if not path.exists():
             return QIcon()
 
+        color = str(color or "#8b5cf6").strip()
+
         try:
             svg = path.read_text(encoding="utf-8")
-            color = str(color or "#8b5cf6").strip()
             svg = svg.replace("currentColor", color)
             svg = re.sub(r"#[0-9a-fA-F]{6}", color, svg)
+            data = QByteArray(svg.encode("utf-8"))
+
+            if QSvgRenderer is not None:
+                renderer = QSvgRenderer(data)
+                if renderer.isValid():
+                    pixmap = QPixmap(24, 24)
+                    pixmap.fill(Qt.GlobalColor.transparent)
+
+                    painter = QPainter(pixmap)
+                    renderer.render(painter)
+                    painter.end()
+
+                    if not pixmap.isNull():
+                        return QIcon(pixmap)
+
             pixmap = QPixmap()
-            if pixmap.loadFromData(svg.encode("utf-8")):
+            if pixmap.loadFromData(data, "SVG"):
                 return QIcon(pixmap)
         except Exception:
             pass

@@ -367,22 +367,10 @@ def linux_button_width_fix(ui_scale_percent=100) -> str:
     if platform.system() != "Linux":
         return ""
 
-    s = make_scaler(ui_scale_percent)
-
-    return f"""
-    QPushButton {{
-        min-width: {s(96)}px;
-        padding-left: {s(14)}px;
-        padding-right: {s(14)}px;
-    }}
-
-    QPushButton#WindowControlButton,
-    QPushButton#WindowCloseButton {{
-        min-width: 0px;
-        padding-left: 0px;
-        padding-right: 0px;
-    }}
-    """
+    # Match Windows/macOS sizing on Linux too. A broad Linux-only QPushButton
+    # min-width/padding rule made compact footer/titlebar buttons too large
+    # and could cut off text in fixed-width buttons.
+    return ""
 
 
 def make_light_palette() -> QPalette:
