@@ -1,7 +1,7 @@
 #!/bin/sh
 
 TITLE="MiSTer Companion Remote by Anime0t4ku"
-SCRIPT_VERSION="1.1.0"
+SCRIPT_VERSION="1.1.1"
 SCRIPT_PATH="/media/fat/Scripts/companion_remote.sh"
 
 BASE="/media/fat/Scripts/.config/companion_remote"
@@ -102,10 +102,6 @@ EV_ABS = 0x03
 SYN_REPORT = 0
 BUS_USB = 0x03
 
-BTN_DPAD_UP = 544
-BTN_DPAD_DOWN = 545
-BTN_DPAD_LEFT = 546
-BTN_DPAD_RIGHT = 547
 
 BTN_SOUTH = 304
 BTN_EAST = 305
@@ -331,9 +327,6 @@ class RemoteState:
         for code in CONTROLLER_BUTTONS.values():
             self.controller.enable_key(code)
 
-        for code in (BTN_DPAD_UP, BTN_DPAD_DOWN, BTN_DPAD_LEFT, BTN_DPAD_RIGHT):
-            self.controller.enable_key(code)
-
         self.controller.create(0x4D43, 0x0002)
 
     def keyboard_key(self, code, down):
@@ -355,17 +348,20 @@ class RemoteState:
             self.controller.key(code, down)
 
     def set_dpad(self, name, down):
-        dpad_buttons = {
-            "up": BTN_DPAD_UP,
-            "down": BTN_DPAD_DOWN,
-            "left": BTN_DPAD_LEFT,
-            "right": BTN_DPAD_RIGHT,
+        # MiSTer reliably handles these directions as keyboard navigation keys.
+        # The Companion protocol remains controller-based; only the daemon's
+        # local uinput translation changes.
+        dpad_keys = {
+            "up": KEY_CODES["KEY_UP"],
+            "down": KEY_CODES["KEY_DOWN"],
+            "left": KEY_CODES["KEY_LEFT"],
+            "right": KEY_CODES["KEY_RIGHT"],
         }
 
-        if name not in dpad_buttons:
+        if name not in dpad_keys:
             raise ValueError("Unknown D-pad direction: %s" % name)
 
-        self.controller_button(dpad_buttons[name], down)
+        self.keyboard_key(dpad_keys[name], down)
 
     def release_all(self):
         with self.lock:
