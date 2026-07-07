@@ -32,6 +32,7 @@ from PyQt6.QtWidgets import (
 
 from ui.scaling import set_text_button_min_width
 from ui.update_all_runner import handle_update_all_result, prepare_update_all_task
+from ui.install_center_actions import InstallCenterActions
 from core.app_paths import app_base_dir, install_center_cache_dir
 from core.extras_megavgmdrive import (
     open_megavgmdrive_game_folder_local,
@@ -853,16 +854,16 @@ class InstallCenterDetailsDialog(QDialog):
             add_button("Run Offline" if self.tab.is_offline_mode() else "Run", self.run_item, enabled=installed, min_width=170)
         elif handler == "zaparoo":
             add_button("Check for Updates", self.check_for_updates, enabled=installed and online_mode, min_width=170)
-            add_button("Enable Start on Boot", lambda: self.call_scripts_tab_action("enable_zaparoo_service"), enabled=installed and "service disabled" in status_lower, min_width=190)
-            add_button("Open Web Interface", lambda: self.call_scripts_tab_action("open_zaparoo_web_interface"), enabled=installed and online_mode, min_width=190)
+            add_button("Enable Start on Boot", lambda: self.call_install_center_action("enable_zaparoo_service"), enabled=installed and "service disabled" in status_lower, min_width=190)
+            add_button("Open Web Interface", lambda: self.call_install_center_action("open_zaparoo_web_interface"), enabled=installed and online_mode, min_width=190)
             add_button("Uninstall", self.uninstall, enabled=installed, min_width=170)
         elif handler == "migrate_sd":
             add_button("Uninstall", self.uninstall, enabled=installed, min_width=180)
         elif handler == "cifs_mount":
             add_button("Reconfigure" if configured else "Configure", self.configure, enabled=installed, min_width=120)
-            add_button("Mount", lambda: self.call_scripts_tab_action("run_cifs_mount"), enabled=installed and configured and online_mode, min_width=120)
-            add_button("Unmount", lambda: self.call_scripts_tab_action("run_cifs_umount"), enabled=installed and configured and online_mode, min_width=120)
-            add_button("Remove Config", lambda: self.call_scripts_tab_action("remove_cifs_config"), enabled=installed and configured, min_width=130)
+            add_button("Mount", lambda: self.call_install_center_action("run_cifs_mount"), enabled=installed and configured and online_mode, min_width=120)
+            add_button("Unmount", lambda: self.call_install_center_action("run_cifs_umount"), enabled=installed and configured and online_mode, min_width=120)
+            add_button("Remove Config", lambda: self.call_install_center_action("remove_cifs_config"), enabled=installed and configured, min_width=130)
             add_button("Uninstall", self.uninstall, enabled=installed, min_width=120)
         elif handler == "auto_time":
             add_button("Uninstall", self.uninstall, enabled=installed, min_width=140)
@@ -870,14 +871,14 @@ class InstallCenterDetailsDialog(QDialog):
             add_button("Uninstall", self.uninstall, enabled=installed, min_width=140)
         elif handler == "dav_browser":
             add_button("Reconfigure" if configured else "Configure", self.configure, enabled=installed, min_width=140)
-            add_button("Remove Config", lambda: self.call_scripts_tab_action("remove_dav_browser_config"), enabled=installed and configured, min_width=140)
+            add_button("Remove Config", lambda: self.call_install_center_action("remove_dav_browser_config"), enabled=installed and configured, min_width=140)
             add_button("Uninstall", self.uninstall, enabled=installed, min_width=140)
         elif handler == "ftp_save_sync":
             add_button("Reconfigure" if configured else "Configure", self.configure, enabled=installed, min_width=140)
             boot_text = "Disable Start on Boot" if service_enabled else "Enable Start on Boot"
             boot_action = "disable_ftp_save_sync_service" if service_enabled else "enable_ftp_save_sync_service"
-            add_button(boot_text, lambda action=boot_action: self.call_scripts_tab_action(action), enabled=installed and configured, min_width=190)
-            add_button("Remove Config", lambda: self.call_scripts_tab_action("remove_ftp_save_sync_config"), enabled=installed and configured, min_width=140)
+            add_button(boot_text, lambda action=boot_action: self.call_install_center_action(action), enabled=installed and configured, min_width=190)
+            add_button("Remove Config", lambda: self.call_install_center_action("remove_ftp_save_sync_config"), enabled=installed and configured, min_width=140)
             add_button("Uninstall", self.uninstall, enabled=installed, min_width=140)
         elif handler == "static_wallpaper":
             add_button("Uninstall", self.uninstall, enabled=installed, min_width=150)
@@ -885,8 +886,8 @@ class InstallCenterDetailsDialog(QDialog):
             boot_text = self.status.get("boot_label") or ("Disable Start on Boot" if service_enabled else "Enable Start on Boot")
             boot_enabled = self.status.get("boot_enabled") if "boot_enabled" in self.status else installed
             running = bool(self.status.get("running"))
-            add_button(boot_text, lambda: self.call_scripts_tab_action("toggle_syncthing_start_on_boot"), enabled=boot_enabled, min_width=190)
-            add_button("Open Web Config", lambda: self.call_scripts_tab_action("open_syncthing_web_config"), enabled=installed and online_mode and running, min_width=190)
+            add_button(boot_text, lambda: self.call_install_center_action("toggle_syncthing_start_on_boot", boot_text.startswith("Enable")), enabled=boot_enabled, min_width=190)
+            add_button("Open Web Config", lambda: self.call_install_center_action("open_syncthing_web_config"), enabled=installed and online_mode and running, min_width=190)
             add_button("Uninstall", self.uninstall, enabled=installed, min_width=170)
         elif handler == "ra_viewer":
             edit_enabled = self.status.get("edit_config_enabled") if "edit_config_enabled" in self.status else installed
@@ -930,11 +931,11 @@ class InstallCenterDetailsDialog(QDialog):
         add_button("Check for Updates", self.check_for_updates, enabled=installed, min_width=170)
 
         if handler == "3s_arm":
-            add_button("Upload SF33RD.AFS", lambda: self.call_extras_tab_action("upload_sf33rd_afs"), enabled=self.status.get("upload_enabled", context_ready), min_width=190)
+            add_button("Upload SF33RD.AFS", lambda: self.call_install_center_action("upload_sf33rd_afs", self.output), enabled=self.status.get("upload_enabled", context_ready), min_width=190)
         elif handler == "sonic_mania_mister":
-            add_button("Upload Data.rsdk", lambda: self.call_extras_tab_action("upload_sonic_mania_data_rsdk"), enabled=self.status.get("upload_enabled", context_ready), min_width=190)
+            add_button("Upload Data.rsdk", lambda: self.call_install_center_action("upload_sonic_mania_data_rsdk", self.output), enabled=self.status.get("upload_enabled", context_ready), min_width=190)
         elif handler == "paprium_megadrive":
-            add_button("Open Game Folder", lambda: self.call_extras_tab_action("open_paprium_game_folder"), enabled=self.status.get("folder_open_enabled", installed), min_width=170)
+            add_button("Open Game Folder", lambda: self.call_install_center_action("open_paprium_game_folder"), enabled=self.status.get("folder_open_enabled", installed), min_width=170)
         elif handler == "megavgmdrive":
             add_button("Open Game Folder", self.open_megavgmdrive_game_folder, enabled=self.status.get("folder_open_enabled", installed), min_width=170)
         elif handler == "retroachievement_cores":
@@ -975,25 +976,12 @@ class InstallCenterDetailsDialog(QDialog):
         except Exception as e:
             QMessageBox.warning(self, "Install Center", f"Could not open MegaVGMDrive game folder:\n{e}")
 
-    def call_scripts_tab_action(self, method_name):
-        scripts_tab = getattr(self.tab.main_window, "scripts_tab", None)
-        method = getattr(scripts_tab, method_name, None)
+    def call_install_center_action(self, method_name, *args):
+        method = getattr(self.tab.actions, method_name, None)
         if not callable(method):
             QMessageBox.information(self, "Install Center", "This action is not available yet.")
             return
-        method()
-        self.tab.refresh_existing_tabs()
-        self.tab.refresh_status()
-
-    def call_extras_tab_action(self, method_name):
-        extras_tab = getattr(self.tab.main_window, "extras_tab", None)
-        method = getattr(extras_tab, method_name, None)
-        if not callable(method):
-            QMessageBox.information(self, "Install Center", "This action is not available yet.")
-            return
-        method()
-        self.tab.refresh_existing_tabs()
-        self.tab.refresh_status()
+        method(*args)
 
     def append_output(self, text):
         self.output.append(str(text).rstrip())
@@ -1184,6 +1172,7 @@ class InstallCenterTab(QWidget):
     def __init__(self, main_window):
         super().__init__()
         self.main_window = main_window
+        self.actions = InstallCenterActions(main_window, self)
         self.connection = main_window.connection
         self.catalog = {"categories": [], "items": []}
         self.statuses = {}
@@ -2033,19 +2022,18 @@ class InstallCenterTab(QWidget):
             return
         handler = item.get("handler") or item.get("id")
         status = self.statuses.get(item.get("id"), {})
-        if handler == "update_all" and hasattr(self.main_window, "scripts_tab"):
-            self.main_window.scripts_tab.update_all_installed = bool(status.get("installed"))
-            self.main_window.scripts_tab.configure_update_all()
-        elif handler == "cifs_mount" and hasattr(self.main_window, "scripts_tab"):
-            self.main_window.scripts_tab.configure_cifs()
-        elif handler == "dav_browser" and hasattr(self.main_window, "scripts_tab"):
-            self.main_window.scripts_tab.configure_dav_browser()
-        elif handler == "ftp_save_sync" and hasattr(self.main_window, "scripts_tab"):
-            self.main_window.scripts_tab.configure_ftp_save_sync()
-        elif handler == "ra_viewer" and hasattr(self.main_window, "scripts_tab"):
-            self.main_window.scripts_tab.edit_ra_viewer_config()
-        elif handler == "retroachievement_cores" and hasattr(self.main_window, "extras_tab"):
-            self.main_window.extras_tab.edit_ra_cores_config()
+        if handler == "update_all":
+            self.actions.configure_update_all(bool(status.get("installed")))
+        elif handler == "cifs_mount":
+            self.actions.configure_cifs()
+        elif handler == "dav_browser":
+            self.actions.configure_dav_browser()
+        elif handler == "ftp_save_sync":
+            self.actions.configure_ftp_save_sync()
+        elif handler == "ra_viewer":
+            self.actions.edit_ra_viewer_config()
+        elif handler == "retroachievement_cores":
+            self.actions.edit_ra_cores_config()
         else:
             QMessageBox.information(self, "Install Center", "Configuration is not available for this item yet.")
         self.refresh_status()
@@ -2056,9 +2044,8 @@ class InstallCenterTab(QWidget):
             return
         handler = item.get("handler") or item.get("id")
         status = self.statuses.get(item.get("id"), {})
-        if handler == "update_all" and hasattr(self.main_window, "scripts_tab"):
-            self.main_window.scripts_tab.update_all_installed = bool(status.get("installed"))
-            task = prepare_update_all_task(self.main_window, parent=self)
+        if handler == "update_all":
+            task = prepare_update_all_task(self.main_window, parent=self, installed=bool(status.get("installed")))
             if task is None:
                 return
             self.start_task(
@@ -2104,7 +2091,7 @@ class InstallCenterTab(QWidget):
             QMessageBox.critical(self, "Install Center", str(e))
 
     def refresh_existing_tabs(self):
-        for attr in ("scripts_tab", "extras_tab", "wallpapers_tab", "device_tab"):
+        for attr in ("wallpapers_tab", "device_tab"):
             tab = getattr(self.main_window, attr, None)
             if tab is not None and hasattr(tab, "refresh_status"):
                 try:

@@ -63,12 +63,10 @@ from ui.dialogs.file_browser_dialog import FileBrowserDialog
 from ui.dialogs.update_available_dialog import UpdateAvailableDialog
 from ui.tabs.connection_tab import ConnectionTab
 from ui.tabs.device_tab import DeviceTab
-from ui.tabs.extras_tab import ExtrasTab
 from ui.tabs.flash_tab import FlashTab
 from ui.tabs.install_center_tab import InstallCenterTab
 from ui.tabs.mister_settings_tab import MiSTerSettingsTab
 from ui.tabs.savemanager_tab import SaveManagerTab
-from ui.tabs.scripts_tab import ScriptsTab
 from ui.tabs.wallpapers_tab import WallpapersTab
 from ui.tabs.zapscraper_tab import ZapScraperTab
 from ui.tabs.zapscripts_tab import ZapScriptsTab
@@ -618,8 +616,6 @@ class MainWindow(QMainWindow):
             "MiSTer Settings",
         )
 
-        self.scripts_tab = ScriptsTab(self)
-
         self.zapscripts_tab = ZapScriptsTab(self)
         self.tabs.addTab(
             self.zapscripts_tab,
@@ -642,8 +638,6 @@ class MainWindow(QMainWindow):
         )
 
         self.wallpapers_tab = WallpapersTab(self)
-
-        self.extras_tab = ExtrasTab(self)
 
         self.build_side_menu()
         self.tabs.setCurrentWidget(self.connection_tab)
@@ -2159,9 +2153,6 @@ class MainWindow(QMainWindow):
             if self.reboot_reconnect_attempts >= self.reboot_reconnect_max_attempts:
                 self.reboot_reconnect_timer.stop()
 
-                if hasattr(self, "scripts_tab"):
-                    self.scripts_tab.waiting_for_reboot_reconnect = False
-
                 self.set_connection_status("Status: Disconnected")
                 QMessageBox.warning(
                     self,
@@ -2198,9 +2189,6 @@ class MainWindow(QMainWindow):
             self.reboot_reconnect_use_ssh_agent = False
             self.reboot_reconnect_look_for_ssh_keys = False
 
-            if hasattr(self, "scripts_tab"):
-                self.scripts_tab.waiting_for_reboot_reconnect = False
-
             self.set_connection_status(f"Status: Connected to {host}")
             self.connection_tab.apply_connected_state()
             self.apply_app_mode_state()
@@ -2211,9 +2199,6 @@ class MainWindow(QMainWindow):
 
             if self.reboot_reconnect_attempts >= self.reboot_reconnect_max_attempts:
                 self.reboot_reconnect_timer.stop()
-
-                if hasattr(self, "scripts_tab"):
-                    self.scripts_tab.waiting_for_reboot_reconnect = False
 
                 self.set_connection_status("Status: Disconnected")
                 QMessageBox.warning(
@@ -2295,9 +2280,6 @@ class MainWindow(QMainWindow):
         self.reboot_reconnect_password = ""
         self.reboot_reconnect_use_ssh_agent = False
         self.reboot_reconnect_look_for_ssh_keys = False
-
-        if hasattr(self, "scripts_tab"):
-            self.scripts_tab.waiting_for_reboot_reconnect = False
 
         self.connection_fail_count = 0
 

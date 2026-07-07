@@ -818,12 +818,7 @@ class DeviceTab(QWidget):
         self.update_all_status_label.setStyleSheet("color: #00aa00;")
 
     def run_update_all(self):
-        scripts_tab = getattr(self.main_window, "scripts_tab", None)
-        if scripts_tab is None:
-            QMessageBox.warning(self, "Update All", "Scripts backend is not available.")
-            return
-        scripts_tab.update_all_installed = True
-        task = prepare_update_all_task(self.main_window, parent=self)
+        task = prepare_update_all_task(self.main_window, parent=self, installed=True)
         if task is None:
             return
         dialog = UpdateAllOutputDialog(self.main_window, task, parent=self)
@@ -833,12 +828,12 @@ class DeviceTab(QWidget):
         dialog.start()
 
     def configure_update_all(self):
-        scripts_tab = getattr(self.main_window, "scripts_tab", None)
-        if scripts_tab is None:
-            QMessageBox.warning(self, "Update All", "Scripts backend is not available.")
+        install_center = getattr(self.main_window, "install_center_tab", None)
+        actions = getattr(install_center, "actions", None)
+        if actions is None:
+            QMessageBox.warning(self, "Update All", "Install Center backend is not available.")
             return
-        scripts_tab.update_all_installed = True
-        scripts_tab.configure_update_all()
+        actions.configure_update_all(installed=True)
         self.refresh_info()
 
     def refresh_offline_storage(self):

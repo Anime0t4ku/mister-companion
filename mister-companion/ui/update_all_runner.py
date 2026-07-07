@@ -35,8 +35,7 @@ class UpdateAllRunWorker(QThread):
             self.finished_task.emit()
 
 
-def prepare_update_all_task(main_window, parent=None):
-    scripts_tab = getattr(main_window, "scripts_tab", None)
+def prepare_update_all_task(main_window, parent=None, installed=True):
     connection = getattr(main_window, "connection", None)
     is_offline = bool(getattr(main_window, "is_offline_mode", lambda: False)())
 
@@ -46,7 +45,7 @@ def prepare_update_all_task(main_window, parent=None):
             QMessageBox.critical(parent or main_window, "Update All", "Select an Offline SD Card first.")
             return None
 
-        if scripts_tab is not None and not bool(getattr(scripts_tab, "update_all_installed", False)):
+        if not installed:
             QMessageBox.critical(
                 parent or main_window,
                 "update_all not installed",
@@ -84,7 +83,7 @@ def prepare_update_all_task(main_window, parent=None):
         QMessageBox.critical(parent or main_window, "Update All", "Connect to a MiSTer first.")
         return None
 
-    if scripts_tab is not None and not bool(getattr(scripts_tab, "update_all_installed", False)):
+    if not installed:
         QMessageBox.critical(
             parent or main_window,
             "update_all not installed",
