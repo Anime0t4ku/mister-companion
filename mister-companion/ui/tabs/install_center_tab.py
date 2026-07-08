@@ -31,7 +31,7 @@ from PyQt6.QtWidgets import (
 )
 
 from ui.scaling import set_text_button_min_width
-from ui.update_all_runner import handle_update_all_result, prepare_update_all_task
+from ui.update_all_runner import handle_update_all_result, prepare_update_all_task, UpdateAllOutputDialog
 from ui.install_center_actions import InstallCenterActions
 from core.app_paths import app_base_dir, install_center_cache_dir
 from core.extras_megavgmdrive import (
@@ -54,11 +54,7 @@ from core.install_center import (
 )
 from core.file_browser import list_directory, join_remote_path, parent_path, DEFAULT_ROOT
 from core.scripts_version_check import supports_script_update_check
-from core.extras_ra_cores import (
-    get_ra_core_components_status,
-    get_ra_core_components_status_local,
-    selectable_ra_core_sources,
-)
+from core.scripts_actions import get_scripts_status, install_update_all
 
 
 HUB_RAW_BASE_URL = "https://raw.githubusercontent.com/Anime0t4ku/mister-companion-hub/main/"
@@ -934,14 +930,19 @@ class InstallCenterDetailsDialog(QDialog):
             add_button("Upload SF33RD.AFS", lambda: self.call_install_center_action("upload_sf33rd_afs", self.output), enabled=self.status.get("upload_enabled", context_ready), min_width=190)
         elif handler == "sonic_mania_mister":
             add_button("Upload Data.rsdk", lambda: self.call_install_center_action("upload_sonic_mania_data_rsdk", self.output), enabled=self.status.get("upload_enabled", context_ready), min_width=190)
+        elif handler == "mister_quake":
+            add_button("Upload PAK Files", lambda: self.call_install_center_action("upload_mister_quake_paks", self.output), enabled=self.status.get("upload_enabled", context_ready), min_width=190)
         elif handler == "paprium_megadrive":
             add_button("Open Game Folder", lambda: self.call_install_center_action("open_paprium_game_folder"), enabled=self.status.get("folder_open_enabled", installed), min_width=170)
         elif handler == "megavgmdrive":
             add_button("Open Game Folder", self.open_megavgmdrive_game_folder, enabled=self.status.get("folder_open_enabled", installed), min_width=170)
         elif handler == "retroachievement_cores":
             add_button("Edit Config", self.configure, enabled=self.status.get("edit_config_enabled", installed), min_width=170)
+        elif handler == "zaparoo_frontend":
+            add_button("Disable", lambda: self.call_install_center_action("disable_zaparoo_frontend"), enabled=self.status.get("disable_enabled", False), min_width=170)
 
-        add_button("Uninstall", self.uninstall, enabled=self.status.get("uninstall_enabled", installed), min_width=170)
+        if handler != "zaparoo_frontend":
+            add_button("Uninstall", self.uninstall, enabled=self.status.get("uninstall_enabled", installed), min_width=170)
 
         license_button = QPushButton("License")
         self.prepare_action_button(license_button)
@@ -1843,8 +1844,47 @@ class InstallCenterTab(QWidget):
     def on_task_error(self, message, output_widget=None):
         if output_widget is not None:
             output_widget.append(message)
-        else:
+        if "does not support --run-only" in str(message):
+            self.show_downloader_update_required()
+        elif output_widget is None:
             QMessageBox.critical(self, "Install Center Error", message)
+
+    def show_downloader_update_required(self):
+        context = build_context(self.main_window)
+        if context.offline:
+            QMessageBox.critical(self, "Downloader update required", "The offline Downloader package does not support this command. Please try again after updating MiSTer Companion's Downloader cache.")
+            return
+        try:
+            installed = bool(get_scripts_status(context.connection).update_all_installed)
+        except Exception:
+            installed = False
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Icon.Warning)
+        msg.setWindowTitle("Downloader update required")
+        msg.setText("The installed update.sh is too old to manage this Install Center entry. Update All must run once to update Downloader. After it finishes, retry the original action.")
+        action = msg.addButton("Run Update All" if installed else "Download & Run Update All", QMessageBox.ButtonRole.AcceptRole)
+        msg.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+        msg.exec()
+        if msg.clickedButton() is not action:
+            return
+        if installed:
+            self.launch_update_all_after_compatibility()
+            return
+        self.start_task(
+            "Installing update_all...",
+            lambda log: install_update_all(context.connection, log),
+            "update_all installed.",
+            result_handler=lambda _result: QTimer.singleShot(0, self.launch_update_all_after_compatibility),
+        )
+
+    def launch_update_all_after_compatibility(self):
+        task = prepare_update_all_task(self.main_window, parent=self, installed=True)
+        if task is None:
+            return
+        dialog = UpdateAllOutputDialog(self.main_window, task, parent=self)
+        self.update_all_output_dialog = dialog
+        dialog.show()
+        dialog.start()
 
     def on_task_finished(self):
         self.task_worker = None
@@ -1852,108 +1892,6 @@ class InstallCenterTab(QWidget):
         self.global_check_button.setEnabled(True)
         self.refresh_status()
         self.refresh_existing_tabs()
-
-    def _ra_core_components_for_context(self, context):
-        try:
-            if context.offline:
-                return get_ra_core_components_status_local(context.sd_root)
-            return get_ra_core_components_status(context.connection)
-        except Exception:
-            return []
-
-    def _choose_ra_core_keys(self, context, mode):
-        components = self._ra_core_components_for_context(context)
-        component_by_key = {component.get("key"): component for component in components}
-        all_sources = selectable_ra_core_sources()
-
-        if mode == "uninstall":
-            sources = [
-                source for source in all_sources
-                if component_by_key.get(source.get("key"), {}).get("installed")
-                or component_by_key.get(source.get("key"), {}).get("incomplete")
-            ]
-        else:
-            sources = [
-                source for source in all_sources
-                if component_by_key.get(source.get("key"), {}).get("state") == "not_installed"
-            ]
-
-        if not sources:
-            QMessageBox.information(
-                self,
-                "RetroAchievements Cores",
-                "No RetroAchievement cores are installed." if mode == "uninstall" else "All RetroAchievement cores are already installed.",
-            )
-            return None
-
-        dialog = QDialog(self)
-        dialog.setWindowTitle("RetroAchievements Cores")
-        layout = QVBoxLayout(dialog)
-        layout.setContentsMargins(18, 18, 18, 18)
-        layout.setSpacing(10)
-
-        quick_row = QHBoxLayout()
-        quick_row.setSpacing(10)
-        select_all_button = QPushButton("Select All")
-        select_none_button = QPushButton("Select None")
-        select_all_button.setMinimumWidth(96)
-        select_none_button.setMinimumWidth(96)
-        quick_row.addWidget(select_all_button)
-        quick_row.addWidget(select_none_button)
-        quick_row.addStretch(1)
-        layout.addLayout(quick_row)
-
-        checkboxes = []
-        for source in sources:
-            key = source.get("key")
-            checkbox = QCheckBox(source.get("title", key))
-            checkbox.setChecked(True)
-            layout.addWidget(checkbox)
-            checkboxes.append((key, checkbox))
-
-        layout.addSpacing(8)
-
-        button_row = QHBoxLayout()
-        button_row.setSpacing(10)
-        button_row.addStretch(1)
-        cancel_button = QPushButton("Cancel")
-        action_button = QPushButton("Install Selected" if mode == "install" else "Uninstall Selected")
-        button_row.addWidget(cancel_button)
-        button_row.addWidget(action_button)
-        layout.addLayout(button_row)
-
-        def set_all(value):
-            for _key, checkbox in checkboxes:
-                checkbox.setChecked(value)
-
-        select_all_button.clicked.connect(lambda: set_all(True))
-        select_none_button.clicked.connect(lambda: set_all(False))
-        cancel_button.clicked.connect(dialog.reject)
-        action_button.clicked.connect(dialog.accept)
-
-        if dialog.exec() != QDialog.DialogCode.Accepted:
-            return None
-
-        selected = [key for key, checkbox in checkboxes if checkbox.isChecked()]
-        if not selected:
-            QMessageBox.warning(self, "RetroAchievements Cores", "Select at least one core.")
-            return None
-
-        return selected
-
-    def _ra_update_core_keys_from_status(self, status):
-        selected = []
-        for key in status.get("outdated_sources") or []:
-            if key != "main" and key not in selected:
-                selected.append(key)
-        for key in status.get("incomplete_component_keys") or []:
-            if key not in selected:
-                selected.append(key)
-        if not selected:
-            for key in status.get("installed_component_keys") or []:
-                if key not in selected:
-                    selected.append(key)
-        return selected
 
     def install_or_update_selected(self, output_widget=None):
         item = self.selected_item()
@@ -1965,20 +1903,7 @@ class InstallCenterTab(QWidget):
             QMessageBox.warning(self, "Install Center", reason)
             return
 
-        handler = item.get("handler") or item.get("id")
         task_item = dict(item)
-        if handler == "retroachievement_cores":
-            status = self.statuses.get(item.get("id"), {}) or {}
-            if status.get("install_label") == "Update" or status.get("update_available"):
-                selected_keys = self._ra_update_core_keys_from_status(status)
-                if not selected_keys:
-                    QMessageBox.information(self, "RetroAchievements Cores", "No installed RetroAchievement cores need an update.")
-                    return
-            else:
-                selected_keys = self._choose_ra_core_keys(context, "install")
-                if selected_keys is None:
-                    return
-            task_item["_selected_ra_core_keys"] = selected_keys
 
         self.start_task(
             f"Installing/updating {item.get('name')}...",
@@ -1997,17 +1922,10 @@ class InstallCenterTab(QWidget):
             QMessageBox.warning(self, "Install Center", reason)
             return
 
-        handler = item.get("handler") or item.get("id")
         task_item = dict(item)
-        if handler == "retroachievement_cores":
-            selected_keys = self._choose_ra_core_keys(context, "uninstall")
-            if selected_keys is None:
-                return
-            task_item["_selected_ra_core_keys"] = selected_keys
-        else:
-            confirm = QMessageBox.question(self, "Uninstall", f"Uninstall {item.get('name')}?")
-            if confirm != QMessageBox.StandardButton.Yes:
-                return
+        confirm = QMessageBox.question(self, "Uninstall", f"Uninstall {item.get('name')}?")
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
 
         self.start_task(
             f"Uninstalling {item.get('name')}...",

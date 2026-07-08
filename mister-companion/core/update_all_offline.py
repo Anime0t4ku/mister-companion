@@ -41,6 +41,12 @@ class OfflineUpdateResult:
     archives_downloaded: int = 0
     archives_skipped: int = 0
     errors: list[str] = field(default_factory=list)
+    output_lines: list[str] = field(default_factory=list)
+
+
+def run_downloader_offline(sd_root, args=None, progress=None):
+    runner = UpdateAllOfflineRunner(sd_root=sd_root, progress=progress, downloader_args=args or [], full_update=False)
+    return runner.run()
 
 
 def run_update_all_offline(
@@ -148,10 +154,14 @@ class UpdateAllOfflineRunner:
         self,
         sd_root: str | Path,
         progress: ProgressCallback | None = None,
+        downloader_args: list[str] | None = None,
+        full_update: bool = True,
     ) -> None:
         self.sd_root = Path(sd_root).expanduser().resolve()
         self.progress = progress or (lambda message: None)
         self.result = OfflineUpdateResult()
+        self.downloader_args = list(downloader_args or [])
+        self.full_update = bool(full_update)
 
         self.config_dir = self.sd_root / "Scripts" / ".config" / "mister_companion"
         self.cache_dir = self.config_dir / "offline_downloader_cache"
@@ -167,10 +177,10 @@ class UpdateAllOfflineRunner:
             self._log("Starting update_all offline via official Downloader PC flow...")
             self._run_official_downloader()
 
-            self._run_arcade_organizer_if_enabled()
-
-            self.state["last_successful_run"] = int(time.time())
-            self._save_state()
+            if self.full_update:
+                self._run_arcade_organizer_if_enabled()
+                self.state["last_successful_run"] = int(time.time())
+                self._save_state()
 
             self._log("Offline update finished.")
         except Exception as exc:
@@ -243,7 +253,7 @@ class UpdateAllOfflineRunner:
         os.environ["DOWNLOADER_LAUNCHER"] = str(launcher_path)
         os.environ["DOWNLOADER_SOURCE"] = str(downloader_path)
 
-        sys.argv = [str(downloader_path)]
+        sys.argv = [str(downloader_path), *self.downloader_args]
 
         stdout_stream = _ProgressStream(self._handle_downloader_output_line)
         stderr_stream = _ProgressStream(self._handle_downloader_output_line)
@@ -287,6 +297,12 @@ class UpdateAllOfflineRunner:
                     os.environ[key] = value
 
             self._purge_downloader_modules()
+            try:
+                launcher_path.unlink()
+            except FileNotFoundError:
+                pass
+            except Exception:
+                pass
 
         if exit_code != 0:
             self.result.files_failed += 1
@@ -435,6 +451,7 @@ class UpdateAllOfflineRunner:
         if not line:
             return
 
+        self.result.output_lines.append(line)
         self._log(line)
         self._parse_downloader_output_line(line)
 

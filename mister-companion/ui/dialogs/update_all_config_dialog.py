@@ -134,6 +134,7 @@ class UpdateAllConfigDialog(QDialog):
         self.altcores_check = QCheckBox("Alt Cores")
         self.dualram_check = QCheckBox("Dual RAM Console Cores")
         self.mister_frontier_check = QCheckBox("MiSTer Frontier")
+        self.retroachievements_cores_check = QCheckBox("RetroAchievement Cores")
 
         self.mister_frontier_source_combo = QComboBox()
         self.mister_frontier_source_combo.addItems([
@@ -166,6 +167,8 @@ class UpdateAllConfigDialog(QDialog):
         frontier_row.addStretch()
         other_group.layout().addLayout(frontier_row)
         self.mister_frontier_check.toggled.connect(self.update_mister_frontier_state)
+
+        self._add(other_group, self.retroachievements_cores_check)
 
         tools_group = self._group("Tools & Scripts", self.left_column_layout)
         self.arcade_org_check = QCheckBox("Arcade Organizer")
@@ -623,6 +626,9 @@ class UpdateAllConfigDialog(QDialog):
         self.altcores_check.setChecked(data["altcores"])
         self.dualram_check.setChecked(data["dualram"])
         self.mister_frontier_check.setChecked(data["mister_frontier"])
+        self.retroachievements_cores_check.setChecked(
+            data.get("retroachievements_cores", False)
+        )
         self.mister_frontier_source_combo.setCurrentText(
             data.get("mister_frontier_source", "All Frontier Cores")
         )
@@ -673,6 +679,7 @@ class UpdateAllConfigDialog(QDialog):
             "dualram": self.dualram_check.isChecked(),
             "mister_frontier": self.mister_frontier_check.isChecked(),
             "mister_frontier_source": self.mister_frontier_source_combo.currentText(),
+            "retroachievements_cores": self.retroachievements_cores_check.isChecked(),
 
             "arcade_org": self.arcade_org_check.isChecked(),
             "mrext": self.mrext_check.isChecked(),

@@ -1880,3 +1880,107 @@ def write_ra_config_local(sd_root: str, values: dict):
     updated = "\n".join(updated_lines).rstrip("\n") + "\n"
     _write_local_text(sd_root, RA_CONFIG_PATH, updated)
     return True
+# Downloader-backed package management. File-based status/config helpers above remain in use.
+from core.downloader_backend import (
+    RA_CORES_DB_ID,
+    RA_CORES_DB_URL,
+    check_named_database_online,
+    check_named_database_local,
+    ensure_database_source_online,
+    ensure_database_source_local,
+    remove_database_source_online,
+    remove_database_source_local,
+    restore_online,
+    restore_local,
+    run_named_database_online,
+    run_named_database_local,
+)
+
+
+def _apply_downloader_update_status(status: dict, update_available: bool) -> dict:
+    status = dict(status)
+    installed = bool(status.get("installed"))
+    status["update_available"] = bool(installed and update_available)
+    if status["update_available"]:
+        status["status_text"] = "▲ Update available"
+        status["install_label"] = "Update"
+        status["install_enabled"] = True
+    elif installed:
+        status["status_text"] = "✓ Installed"
+        status["install_label"] = "Install"
+        status["install_enabled"] = False
+    return status
+
+
+_original_get_ra_cores_status = get_ra_cores_status
+_original_get_ra_cores_status_local = get_ra_cores_status_local
+
+
+def get_ra_cores_status(connection, check_latest: bool = False, log=None):
+    status = _original_get_ra_cores_status(connection, check_latest=False, log=log)
+    if check_latest and status.get("installed"):
+        try:
+            status = _apply_downloader_update_status(
+                status,
+                check_named_database_online(connection, RA_CORES_DB_ID, log=log),
+            )
+        except Exception as exc:
+            status["latest_error"] = str(exc)
+            status["status_text"] = f"✓ Installed (update check failed: {exc})"
+    return status
+
+
+def get_ra_cores_status_local(sd_root: str, check_latest: bool = False, log=None):
+    status = _original_get_ra_cores_status_local(sd_root, check_latest=False, log=log)
+    if check_latest and status.get("installed"):
+        try:
+            status = _apply_downloader_update_status(
+                status,
+                check_named_database_local(sd_root, RA_CORES_DB_ID, log=log),
+            )
+        except Exception as exc:
+            status["latest_error"] = str(exc)
+            status["status_text"] = f"✓ Installed (update check failed: {exc})"
+    return status
+
+
+def install_or_update_ra_cores(connection, log, source_keys=None):
+    if not connection.is_connected():
+        raise RuntimeError("Not connected to MiSTer.")
+    original = ensure_database_source_online(connection, RA_CORES_DB_ID, RA_CORES_DB_URL)
+    try:
+        run_named_database_online(connection, RA_CORES_DB_ID, log=log)
+    except Exception:
+        restore_online(connection, original)
+        raise
+
+
+def install_or_update_ra_cores_local(sd_root: str, log, source_keys=None):
+    original = ensure_database_source_local(sd_root, RA_CORES_DB_ID, RA_CORES_DB_URL)
+    try:
+        run_named_database_local(sd_root, RA_CORES_DB_ID, log=log)
+    except Exception:
+        restore_local(sd_root, original)
+        raise
+
+
+def uninstall_ra_cores(connection, log, source_keys=None):
+    if not connection.is_connected():
+        raise RuntimeError("Not connected to MiSTer.")
+    original = ensure_database_source_online(connection, RA_CORES_DB_ID, RA_CORES_DB_URL, filter_value="!all")
+    try:
+        run_named_database_online(connection, RA_CORES_DB_ID, log=log)
+        remove_database_source_online(connection, RA_CORES_DB_ID)
+    except Exception:
+        restore_online(connection, original)
+        raise
+
+
+def uninstall_ra_cores_local(sd_root: str, log, source_keys=None):
+    original = ensure_database_source_local(sd_root, RA_CORES_DB_ID, RA_CORES_DB_URL, filter_value="!all")
+    try:
+        run_named_database_local(sd_root, RA_CORES_DB_ID, log=log)
+        remove_database_source_local(sd_root, RA_CORES_DB_ID)
+    except Exception:
+        restore_local(sd_root, original)
+        raise

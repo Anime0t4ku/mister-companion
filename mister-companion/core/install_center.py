@@ -80,6 +80,14 @@ from core.extras_sonic_mania import (
     uninstall_sonic_mania,
     uninstall_sonic_mania_local,
 )
+from core.extras_mister_quake import (
+    get_mister_quake_status,
+    get_mister_quake_status_local,
+    install_or_update_mister_quake,
+    install_or_update_mister_quake_local,
+    uninstall_mister_quake,
+    uninstall_mister_quake_local,
+)
 from core.extras_zaparoo_launcher import (
     get_zaparoo_launcher_status,
     get_zaparoo_launcher_status_local,
@@ -172,7 +180,8 @@ FALLBACK_ITEMS = [
     ("retroachievement_cores", "cores", "core", "retroachievement_cores", "RetroAchievement Cores", "MiSTer community", "RetroAchievement Cores adds RetroAchievements-enabled MiSTer cores and the required MiSTer_RA support files. It uses MGL launchers so your normal cores remain untouched."),
     ("3s_arm", "extras", "extra", "3s_arm", "3S-ARM", "MiSTer community", "3S-ARM is a MiSTer port/support package for Street Fighter III: Third Strike based on the PS2 version. It installs binaries/support files only, not game files."),
     ("sonic_mania_mister", "extras", "extra", "sonic_mania_mister", "Sonic Mania MiSTer", "MiSTer community", "Sonic Mania MiSTer lets your MiSTer run Sonic Mania using the MiSTer port, with support for the required Data.rsdk game file."),
-    ("zaparoo_frontend", "extras", "extra", "zaparoo_frontend", "Zaparoo Frontend", "Zaparoo Project", "Zaparoo Frontend is a MiSTer frontend that provides a controller-friendly interface for browsing and launching your games, media, and other MiSTer content, with artwork support."),
+    ("mister_quake", "extras", "extra", "mister_quake", "MiSTer Quake", "neofreno", "MiSTer Quake installs the Quake port for MiSTer. Provide your own PAK0.PAK and optional PAK1.PAK game data files."),
+    ("zaparoo_frontend", "extras", "extra", "zaparoo_frontend", "Zaparoo Frontend", "Zaparoo Project", "Zaparoo Frontend provides a controller-friendly interface for browsing and launching content. It is installed as part of Zaparoo; uninstall it completely from the main Zaparoo entry."),
     ("ranny_snice_wallpapers", "wallpaper_packs", "wallpaper_pack", "ranny_snice_wallpapers", "Ranny Snice Wallpapers", "Ranny Snice", "A collection of MiSTer menu wallpapers by Ranny Snice, available in both 16:9 and 4:3 versions."),
     ("pcn_challenge_wallpapers", "wallpaper_packs", "wallpaper_pack", "pcn_challenge_wallpapers", "PCN Challenge Wallpapers", "Pixel Cherry Ninja", "Wallpapers created during PCN livestreams based on audience requests."),
     ("pcn_premium_wallpapers", "wallpaper_packs", "wallpaper_pack", "pcn_premium_wallpapers", "PCN Premium Member Wallpapers", "Pixel Cherry Ninja", "A wallpaper pack created for PCN Premium members on YouTube and Patreon."),
@@ -209,6 +218,7 @@ EXTRA_HANDLERS = {
     "3s_arm": (get_3sx_status, get_3sx_status_local, install_or_update_3sx, install_or_update_3sx_local, uninstall_3sx, uninstall_3sx_local),
     "3sx_mister": (get_3sx_status, get_3sx_status_local, install_or_update_3sx, install_or_update_3sx_local, uninstall_3sx, uninstall_3sx_local),
     "sonic_mania_mister": (get_sonic_mania_status, get_sonic_mania_status_local, install_or_update_sonic_mania, install_or_update_sonic_mania_local, uninstall_sonic_mania, uninstall_sonic_mania_local),
+    "mister_quake": (get_mister_quake_status, get_mister_quake_status_local, install_or_update_mister_quake, install_or_update_mister_quake_local, uninstall_mister_quake, uninstall_mister_quake_local),
     "zaparoo_frontend": (get_zaparoo_launcher_status, get_zaparoo_launcher_status_local, install_or_update_zaparoo_launcher, install_or_update_zaparoo_launcher_local, uninstall_zaparoo_launcher, uninstall_zaparoo_launcher_local),
     "mms2_gb_core": (get_mms2_gb_core_status, get_mms2_gb_core_status_local, install_or_update_mms2_gb_core, install_or_update_mms2_gb_core_local, uninstall_mms2_gb_core, uninstall_mms2_gb_core_local),
     "paprium_megadrive": (get_paprium_megadrive_status, get_paprium_megadrive_status_local, install_or_update_paprium_megadrive, install_or_update_paprium_megadrive_local, uninstall_paprium_megadrive, uninstall_paprium_megadrive_local),
@@ -517,7 +527,7 @@ def _extra_status(handler: str, context: InstallCenterContext, check_latest: boo
     result["latest_version"] = status.get("latest_version")
     for key in (
         "install_label", "install_enabled", "uninstall_enabled", "upload_enabled",
-        "folder_open_enabled", "edit_config_enabled", "installed", "update_available",
+        "folder_open_enabled", "edit_config_enabled", "disable_enabled", "installed", "update_available",
         "components", "installed_component_keys", "incomplete_component_keys",
         "missing_component_keys", "all_components_installed", "outdated_sources"
     ):
@@ -1039,11 +1049,10 @@ def run_install_or_update(item: dict, context: InstallCenterContext, log: Callab
             raise RuntimeError("This entry does not have an Install Center installer yet.")
         install_online, install_local = functions[2], functions[3]
         if handler == "retroachievement_cores":
-            source_keys = item.get("_selected_ra_core_keys")
             if context.offline:
-                install_local(context.sd_root, log, source_keys=source_keys)
+                install_local(context.sd_root, log)
             else:
-                install_online(context.connection, log, source_keys=source_keys)
+                install_online(context.connection, log)
         else:
             if context.offline:
                 install_local(context.sd_root, log)
@@ -1091,11 +1100,10 @@ def run_uninstall(item: dict, context: InstallCenterContext, log: Callable[[str]
             raise RuntimeError("This entry does not have an Install Center uninstaller yet.")
         uninstall_online, uninstall_local = functions[4], functions[5]
         if handler == "retroachievement_cores":
-            source_keys = item.get("_selected_ra_core_keys")
             if context.offline:
-                uninstall_local(context.sd_root, log, source_keys=source_keys)
+                uninstall_local(context.sd_root, log)
             else:
-                uninstall_online(context.connection, log, source_keys=source_keys)
+                uninstall_online(context.connection, log)
         else:
             if context.offline:
                 uninstall_local(context.sd_root, log)

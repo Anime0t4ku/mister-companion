@@ -25,6 +25,7 @@ from core.scripts_actions import (
 )
 from core.extras_3s_arm import upload_3sx_afs, upload_3sx_afs_local
 from core.extras_sonic_mania import upload_sonic_mania_data_rsdk, upload_sonic_mania_data_rsdk_local
+from core.extras_mister_quake import upload_mister_quake_paks, upload_mister_quake_paks_local
 from core.extras_paprium_megadrive import open_paprium_game_folder_local, open_paprium_game_folder_on_host
 from ui.dialogs.cifs_config_dialog import CifsConfigDialog
 from ui.dialogs.dav_browser_config_dialog import DavBrowserConfigDialog
@@ -156,6 +157,19 @@ class InstallCenterActions:
             self.refresh()
         except Exception as exc: QMessageBox.critical(self.tab, "Error", str(exc))
 
+
+    def disable_zaparoo_frontend(self):
+        offline = self.is_offline_mode()
+        root = self._require_sd() if offline else None
+        if offline and not root: return
+        if not offline and not self._require_online(): return
+        try:
+            disable_zaparoo_launcher_frontend_local(root) if offline else disable_zaparoo_launcher_frontend(self.connection)
+            QMessageBox.information(self.tab, "Zaparoo Frontend", "Zaparoo Frontend has been disabled.")
+            self.refresh()
+        except Exception as exc:
+            QMessageBox.critical(self.tab, "Error", str(exc))
+
     def open_zaparoo_web_interface(self):
         if self.is_offline_mode() or not self._require_online(): return
         host = self.connection.host
@@ -222,6 +236,20 @@ class InstallCenterActions:
 
     def upload_sonic_mania_data_rsdk(self, output_widget=None):
         self._upload_file("Select Data.rsdk", "Sonic Mania Data File (Data.rsdk *.rsdk *.RSDK);;All Files (*)", upload_sonic_mania_data_rsdk_local, upload_sonic_mania_data_rsdk, "Data.rsdk copied.", "Data.rsdk uploaded.", output_widget)
+
+    def upload_mister_quake_paks(self, output_widget=None):
+        if self.is_offline_mode():
+            root = self._require_sd()
+            if not root: return
+        else:
+            if not self._require_online(): return
+            root = None
+        paths, _ = QFileDialog.getOpenFileNames(self.tab, "Select Quake PAK Files", "", "Quake PAK Files (PAK0.PAK PAK1.PAK *.pak *.PAK);;All Files (*)")
+        if not paths: return
+        def task(log):
+            log("Selected files:\n" + "\n".join(paths) + "\n")
+            return upload_mister_quake_paks_local(root, paths, log) if root else upload_mister_quake_paks(self.connection, paths, log)
+        self.tab.start_task("Uploading Quake PAK files...", task, "Quake PAK files copied." if root else "Quake PAK files uploaded.", output_widget=output_widget)
 
     def _upload_file(self, title, file_filter, local_fn, remote_fn, local_message, remote_message, output_widget):
         if self.is_offline_mode():

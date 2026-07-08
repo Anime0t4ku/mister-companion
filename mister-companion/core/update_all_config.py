@@ -18,6 +18,9 @@ ZAPAROO_DB_URL = "https://raw.githubusercontent.com/ZaparooProject/Zaparoo_MiSTe
 MISTER_FRONTIER_SECTION = "MiSTerOrganize/MiSTer_Frontier"
 MISTER_FRONTIER_DB_URL = "https://raw.githubusercontent.com/MiSTerOrganize/MiSTer_Frontier/db/db.json.zip"
 
+RETROACHIEVEMENTS_CORES_SECTION = "theypsilon/RetroAchievementsDB_MiSTer"
+RETROACHIEVEMENTS_CORES_DB_URL = "https://raw.githubusercontent.com/theypsilon/RetroAchievementsDB_MiSTer/db/db.json.zip"
+
 MANUALSDB_PATH = "/media/fat/downloader_ajgowans_manualsdb.ini"
 
 MISTER_FRONTIER_FILTERS = {
@@ -417,6 +420,7 @@ def _build_config_data(ini_data, json_data, arcade_org_ini, manualsdb_ini="", mi
         "dualram": is_enabled("TheJesusFish/Dual-Ram-Console-Cores"),
         "mister_frontier": is_enabled(MISTER_FRONTIER_SECTION),
         "mister_frontier_source": "All Frontier Cores",
+        "retroachievements_cores": is_enabled(RETROACHIEVEMENTS_CORES_SECTION),
 
         "arcade_org": arcade_org_ini_enabled or json_data.get("introduced_arcade_names_txt", False),
 
@@ -711,6 +715,16 @@ def _prepare_config_lines_and_json(config, main_lines, arcade_lines, bios_lines,
         config.get("mister_frontier", False),
         config.get("mister_frontier_source", "All Frontier Cores"),
         main_lines,
+    )
+
+    main_lines = handle_simple_section(
+        RETROACHIEVEMENTS_CORES_SECTION,
+        config.get("retroachievements_cores", False),
+        main_lines,
+        [
+            f"[{RETROACHIEVEMENTS_CORES_SECTION}]",
+            f"db_url = {RETROACHIEVEMENTS_CORES_DB_URL}",
+        ],
     )
 
     main_lines = handle_simple_section(
