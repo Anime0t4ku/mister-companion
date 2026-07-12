@@ -1950,6 +1950,7 @@ def install_or_update_ra_cores(connection, log, source_keys=None):
     original = ensure_database_source_online(connection, RA_CORES_DB_ID, RA_CORES_DB_URL)
     try:
         run_named_database_online(connection, RA_CORES_DB_ID, log=log)
+        _ensure_ra_mister_ini_block(connection, log)
     except Exception:
         restore_online(connection, original)
         raise
@@ -1959,6 +1960,7 @@ def install_or_update_ra_cores_local(sd_root: str, log, source_keys=None):
     original = ensure_database_source_local(sd_root, RA_CORES_DB_ID, RA_CORES_DB_URL)
     try:
         run_named_database_local(sd_root, RA_CORES_DB_ID, log=log)
+        _ensure_ra_mister_ini_block_local(sd_root, log)
     except Exception:
         restore_local(sd_root, original)
         raise
@@ -1970,6 +1972,7 @@ def uninstall_ra_cores(connection, log, source_keys=None):
     original = ensure_database_source_online(connection, RA_CORES_DB_ID, RA_CORES_DB_URL, filter_value="!all")
     try:
         run_named_database_online(connection, RA_CORES_DB_ID, log=log)
+        _remove_ra_mister_ini_block(connection, log)
         remove_database_source_online(connection, RA_CORES_DB_ID)
     except Exception:
         restore_online(connection, original)
@@ -1980,6 +1983,7 @@ def uninstall_ra_cores_local(sd_root: str, log, source_keys=None):
     original = ensure_database_source_local(sd_root, RA_CORES_DB_ID, RA_CORES_DB_URL, filter_value="!all")
     try:
         run_named_database_local(sd_root, RA_CORES_DB_ID, log=log)
+        _remove_ra_mister_ini_block_local(sd_root, log)
         remove_database_source_local(sd_root, RA_CORES_DB_ID)
     except Exception:
         restore_local(sd_root, original)
