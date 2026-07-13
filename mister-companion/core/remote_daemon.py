@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 import json
+import logging
 import re
 import sys
 import threading
@@ -28,7 +29,12 @@ def app_base_dir() -> Path:
 BASE_DIR = app_base_dir()
 LOCAL_REMOTE_SCRIPT_PATH = BASE_DIR / "assets" / "companion_remote.sh"
 REMOTE_SCRIPT_SOURCE_URL = "https://raw.githubusercontent.com/Anime0t4ku/mister-companion/main/mister-companion/assets/companion_remote.sh"
-BUNDLED_REMOTE_SCRIPT_VERSION = "1.0.1"
+BUNDLED_REMOTE_SCRIPT_VERSION = "2.0.0"
+
+_logger = logging.getLogger(__name__)
+_remote_script_cache_lock = threading.Lock()
+_cached_remote_script_text = ""
+_cached_remote_script_version = ""
 
 
 def _parse_remote_script_version(script_text: str) -> str:
@@ -50,11 +56,28 @@ def _fetch_remote_script_text(timeout: int = 15) -> str:
 
 
 def get_latest_remote_daemon_script() -> tuple[str, str, str]:
+    global _cached_remote_script_text, _cached_remote_script_version
+
     try:
         script_text = _fetch_remote_script_text()
         version = _parse_remote_script_version(script_text) or BUNDLED_REMOTE_SCRIPT_VERSION
+
+        with _remote_script_cache_lock:
+            _cached_remote_script_text = script_text
+            _cached_remote_script_version = version
+
         return script_text, version, "remote"
-    except Exception:
+    except Exception as exc:
+        _logger.warning("Failed to fetch Companion Remote script from GitHub: %s", exc)
+
+        with _remote_script_cache_lock:
+            if _cached_remote_script_text:
+                return (
+                    _cached_remote_script_text,
+                    _cached_remote_script_version or BUNDLED_REMOTE_SCRIPT_VERSION,
+                    "remote",
+                )
+
         script_text = LOCAL_REMOTE_SCRIPT_PATH.read_text(encoding="utf-8")
         version = _parse_remote_script_version(script_text) or BUNDLED_REMOTE_SCRIPT_VERSION
         return script_text, version, "bundled"
