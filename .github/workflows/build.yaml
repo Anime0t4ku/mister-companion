@@ -46,12 +46,21 @@ jobs:
           print("Platform:", platform.platform())
           print("Machine:", platform.machine())
 
+      - name: Install OpenSSL for Windows ARM64
+        if: matrix.arch == 'ARM64'
+        shell: pwsh
+        run: |
+          git clone --depth 1 https://github.com/microsoft/vcpkg.git "$env:RUNNER_TEMP\vcpkg"
+          & "$env:RUNNER_TEMP\vcpkg\bootstrap-vcpkg.bat" -disableMetrics
+          & "$env:RUNNER_TEMP\vcpkg\vcpkg.exe" install openssl:arm64-windows
+          "VCPKG_ROOT=$env:RUNNER_TEMP\vcpkg" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
       - name: Install Dependencies
         working-directory: mister-companion
         run: |
           python -m pip install --upgrade pip
-          pip install pyinstaller
-          pip install -r requirements.txt
+          python -m pip install pyinstaller
+          python -m pip install -r requirements.txt
 
       - name: Generate ScreenScraper private credentials
         working-directory: mister-companion
@@ -113,9 +122,9 @@ jobs:
       - name: Package Windows Build
         shell: pwsh
         run: |
-          Compress-Archive \
-            -Path "mister-companion/dist/MiSTer-Companion.exe" \
-            -DestinationPath "MiSTer-Companion-Windows-${{ matrix.arch }}.zip" \
+          Compress-Archive `
+            -Path "mister-companion/dist/MiSTer-Companion.exe" `
+            -DestinationPath "MiSTer-Companion-Windows-${{ matrix.arch }}.zip" `
             -Force
 
       - name: Upload Windows Artifact
