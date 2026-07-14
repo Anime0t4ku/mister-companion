@@ -61,12 +61,23 @@ def is_macos() -> bool:
     return current_platform_name() == "darwin"
 
 
-def is_macos_apple_silicon() -> bool:
-    return is_macos() and platform.machine().lower() in {"arm64", "aarch64"}
+def current_architecture() -> str:
+    machine = platform.machine().strip().lower()
+
+    if machine in {"arm64", "aarch64"}:
+        return "arm64"
+
+    if machine in {"x86_64", "amd64", "x64"}:
+        return "x86_64"
+
+    return machine
 
 
 def updater_supported() -> bool:
-    return is_windows() or is_linux() or is_macos_apple_silicon()
+    return (is_windows() or is_linux() or is_macos()) and current_architecture() in {
+        "x86_64",
+        "arm64",
+    }
 
 
 def get_config_folder() -> Path:
@@ -88,10 +99,20 @@ def get_executable_path() -> Path:
 
 
 def get_expected_asset_filename() -> str:
+    architecture = current_architecture()
+
     if is_windows():
+        if architecture == "arm64":
+            return "MC-Updater-Windows-ARM64.zip"
         return "MC-Updater-Windows-x86_64.zip"
+
     if is_macos():
-        return "MC-Updater-macOS-Apple-Silicon.dmg"
+        if architecture == "arm64":
+            return "MC-Updater-macOS-Apple-Silicon.dmg"
+        return "MC-Updater-macOS-Intel.dmg"
+
+    if architecture == "arm64":
+        return "MC-Updater-Linux-ARM64.tar.gz"
     return "MC-Updater-Linux-x86_64.tar.gz"
 
 
@@ -205,43 +226,56 @@ def _select_asset(download_links: list[str]) -> str:
         if link.rstrip("/").split("/")[-1].lower() == expected:
             return link
 
+    architecture = current_architecture()
     candidates = []
 
     for link in download_links:
         lower = link.lower()
         filename = lower.rstrip("/").split("/")[-1]
+        score = 0
+
         if is_windows() and filename.endswith(".zip"):
             score = 1
             if "windows" in filename or "win" in filename:
                 score += 10
-            if "x86_64" in filename or "amd64" in filename:
-                score += 5
-            candidates.append((score, link))
         elif is_linux() and filename.endswith(".tar.gz"):
             score = 1
             if "linux" in filename:
                 score += 10
-            if "x86_64" in filename or "amd64" in filename:
-                score += 5
-            candidates.append((score, link))
         elif is_macos() and filename.endswith(".dmg"):
             score = 1
             if "macos" in filename or "mac" in filename:
                 score += 10
-            if "apple-silicon" in filename or "arm64" in filename or "aarch64" in filename:
-                score += 5
-            candidates.append((score, link))
+        else:
+            continue
+
+        is_arm_asset = any(token in filename for token in ("arm64", "aarch64", "apple-silicon"))
+        is_x64_asset = any(token in filename for token in ("x86_64", "amd64", "x64", "intel"))
+
+        if architecture == "arm64":
+            if is_arm_asset:
+                score += 8
+            if is_x64_asset:
+                score -= 20
+        elif architecture == "x86_64":
+            if is_x64_asset:
+                score += 8
+            if is_arm_asset:
+                score -= 20
+
+        candidates.append((score, link))
 
     if not candidates:
         return ""
 
     candidates.sort(key=lambda item: item[0], reverse=True)
-    return candidates[0][1]
+    best_score, best_link = candidates[0]
+    return best_link if best_score > 0 else ""
 
 
 def check_latest_release(timeout: int = 15) -> MCUpdaterReleaseInfo:
     if not updater_supported():
-        raise RuntimeError("MC-Updater is only supported on Windows, Linux, and macOS Apple Silicon.")
+        raise RuntimeError("MC-Updater is only supported on x86_64 and ARM64 versions of Windows, Linux, and macOS.")
 
     latest_response = requests.get(
         MC_UPDATER_LATEST_URL,
@@ -453,7 +487,7 @@ def _install_macos_dmg(package_path: Path, progress=None):
 
 def install_or_update(config_data: dict, progress=None) -> str:
     if not updater_supported():
-        raise RuntimeError("MC-Updater is only supported on Windows, Linux, and macOS Apple Silicon.")
+        raise RuntimeError("MC-Updater is only supported on x86_64 and ARM64 versions of Windows, Linux, and macOS.")
 
     if progress:
         progress("Checking latest release...")

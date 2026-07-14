@@ -84,12 +84,23 @@ def is_macos() -> bool:
     return current_platform_name() == "darwin"
 
 
-def is_macos_apple_silicon() -> bool:
-    return is_macos() and platform.machine().lower() in {"arm64", "aarch64"}
+def current_architecture() -> str:
+    machine = platform.machine().strip().lower()
+
+    if machine in {"arm64", "aarch64"}:
+        return "arm64"
+
+    if machine in {"x86_64", "amd64", "x64"}:
+        return "x86_64"
+
+    return machine
 
 
 def updater_supported() -> bool:
-    return is_windows() or is_linux() or is_macos_apple_silicon()
+    return (is_windows() or is_linux() or is_macos()) and current_architecture() in {
+        "x86_64",
+        "arm64",
+    }
 
 
 def get_app_folder() -> Path:

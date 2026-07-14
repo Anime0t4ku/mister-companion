@@ -15,11 +15,20 @@ permissions:
 jobs:
 
   # ============================================================
-  # Windows Build
+  # Windows Builds (x86_64 + ARM64)
   # ============================================================
   build-windows:
-    name: Build Windows Executable
-    runs-on: windows-latest
+    name: Build Windows ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: windows-latest
+          - arch: ARM64
+            runner: windows-11-arm
 
     steps:
       - name: Checkout Repository
@@ -29,6 +38,13 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      - name: Verify Native Architecture
+        shell: python
+        run: |
+          import platform
+          print("Platform:", platform.platform())
+          print("Machine:", platform.machine())
 
       - name: Install Dependencies
         working-directory: mister-companion
@@ -89,31 +105,41 @@ jobs:
               ]),
               encoding="utf-8",
           )
-
-      - name: List Files
-        working-directory: mister-companion
-        run: |
-          pwd
-          dir
-          dir assets
 
       - name: Build Executable
         working-directory: mister-companion
         run: pyinstaller --clean --onefile --windowed --icon app.ico --add-data "assets;assets" --name MiSTer-Companion main.py
 
+      - name: Package Windows Build
+        shell: pwsh
+        run: |
+          Compress-Archive \
+            -Path "mister-companion/dist/MiSTer-Companion.exe" \
+            -DestinationPath "MiSTer-Companion-Windows-${{ matrix.arch }}.zip" \
+            -Force
+
       - name: Upload Windows Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MiSTer-Companion-Windows-x86_64
-          path: mister-companion/dist/MiSTer-Companion.exe
+          name: MiSTer-Companion-Windows-${{ matrix.arch }}
+          path: MiSTer-Companion-Windows-${{ matrix.arch }}.zip
 
 
   # ============================================================
-  # Linux Build
+  # Linux Builds (x86_64 + ARM64)
   # ============================================================
   build-linux:
-    name: Build Linux Executable
-    runs-on: ubuntu-latest
+    name: Build Linux ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-latest
+          - arch: ARM64
+            runner: ubuntu-24.04-arm
 
     steps:
       - name: Checkout Repository
@@ -123,6 +149,10 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      - name: Verify Native Architecture
+        run: |
+          python -c "import platform; print(platform.platform()); print(platform.machine())"
 
       - name: Install Dependencies
         working-directory: mister-companion
@@ -183,34 +213,40 @@ jobs:
               ]),
               encoding="utf-8",
           )
-
-      - name: List Files
-        working-directory: mister-companion
-        run: |
-          pwd
-          ls -la
-          ls -la assets
 
       - name: Build Executable
         working-directory: mister-companion
         run: pyinstaller --clean --onefile --windowed --add-data "assets:assets" --name MiSTer-Companion main.py
 
-      - name: Make binary executable
+      - name: Make Binary Executable
         run: chmod +x mister-companion/dist/MiSTer-Companion
+
+      - name: Package Linux Build
+        run: |
+          tar -C mister-companion/dist -czvf "MiSTer-Companion-Linux-${{ matrix.arch }}.tar.gz" MiSTer-Companion
 
       - name: Upload Linux Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MiSTer-Companion-Linux-x86_64
-          path: mister-companion/dist/MiSTer-Companion
+          name: MiSTer-Companion-Linux-${{ matrix.arch }}
+          path: MiSTer-Companion-Linux-${{ matrix.arch }}.tar.gz
 
 
   # ============================================================
-  # macOS Apple Silicon Build
+  # macOS Builds (Apple Silicon + Intel)
   # ============================================================
-  build-macos-apple-silicon:
-    name: Build macOS App Bundle Apple Silicon
-    runs-on: macos-15
+  build-macos:
+    name: Build macOS ${{ matrix.package_arch }}
+    runs-on: ${{ matrix.runner }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - package_arch: Apple-Silicon
+            runner: macos-15
+          - package_arch: Intel
+            runner: macos-15-intel
 
     steps:
       - name: Checkout Repository
@@ -220,6 +256,10 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      - name: Verify Native Architecture
+        run: |
+          python -c "import platform; print(platform.platform()); print(platform.machine())"
 
       - name: Install Dependencies
         working-directory: mister-companion
@@ -280,14 +320,6 @@ jobs:
               ]),
               encoding="utf-8",
           )
-
-      - name: List Files
-        working-directory: mister-companion
-        run: |
-          pwd
-          ls -la
-          ls -la assets
-          python -c "import platform; print(platform.platform()); print(platform.machine())"
 
       - name: Create macOS App Icon
         working-directory: mister-companion
@@ -309,13 +341,19 @@ jobs:
         working-directory: mister-companion
         run: pyinstaller --clean --windowed --icon app.icns --add-data "assets:assets" --name MiSTer-Companion main.py
 
+      - name: Verify App Bundle Architecture
+        working-directory: mister-companion
+        run: |
+          file "dist/MiSTer-Companion.app/Contents/MacOS/MiSTer-Companion"
+          lipo -archs "dist/MiSTer-Companion.app/Contents/MacOS/MiSTer-Companion"
+
       - name: Import Developer ID Certificate
         env:
           MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
           MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
         run: |
-          CERTIFICATE_PATH=$RUNNER_TEMP/developer_id_application.p12
-          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+          CERTIFICATE_PATH="$RUNNER_TEMP/developer_id_application.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
 
           echo "$MACOS_CERTIFICATE_P12" | base64 --decode > "$CERTIFICATE_PATH"
 
@@ -323,18 +361,24 @@ jobs:
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
           security unlock-keychain -p "$MACOS_CERTIFICATE_PASSWORD" "$KEYCHAIN_PATH"
 
-          security import "$CERTIFICATE_PATH"             -P "$MACOS_CERTIFICATE_PASSWORD"             -A             -t cert             -f pkcs12             -k "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" \
+            -P "$MACOS_CERTIFICATE_PASSWORD" \
+            -A \
+            -t cert \
+            -f pkcs12 \
+            -k "$KEYCHAIN_PATH"
 
           security list-keychain -d user -s "$KEYCHAIN_PATH"
           security default-keychain -s "$KEYCHAIN_PATH"
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$MACOS_CERTIFICATE_PASSWORD" "$KEYCHAIN_PATH"
-
           security find-identity -v -p codesigning "$KEYCHAIN_PATH"
 
       - name: Sign App Bundle
         working-directory: mister-companion
         run: |
-          codesign --force --deep --options runtime --timestamp             --sign "Developer ID Application: Bjorn Logan (SMNGA44VUR)"             "dist/MiSTer-Companion.app"
+          codesign --force --deep --options runtime --timestamp \
+            --sign "Developer ID Application: Bjorn Logan (SMNGA44VUR)" \
+            "dist/MiSTer-Companion.app"
 
           codesign --verify --deep --strict --verbose=2 "dist/MiSTer-Companion.app"
 
@@ -344,14 +388,21 @@ jobs:
           mkdir -p dmg-root
           cp -R "dist/MiSTer-Companion.app" "dmg-root/"
           ln -s /Applications "dmg-root/Applications"
-          hdiutil create -volname "MiSTer Companion" -srcfolder "dmg-root" -ov -format UDZO "dist/MiSTer-Companion-macOS-Apple-Silicon.dmg"
+          hdiutil create \
+            -volname "MiSTer Companion" \
+            -srcfolder "dmg-root" \
+            -ov \
+            -format UDZO \
+            "dist/MiSTer-Companion-macOS-${{ matrix.package_arch }}.dmg"
 
       - name: Sign macOS DMG
         working-directory: mister-companion
         run: |
-          codesign --force --timestamp             --sign "Developer ID Application: Bjorn Logan (SMNGA44VUR)"             "dist/MiSTer-Companion-macOS-Apple-Silicon.dmg"
+          codesign --force --timestamp \
+            --sign "Developer ID Application: Bjorn Logan (SMNGA44VUR)" \
+            "dist/MiSTer-Companion-macOS-${{ matrix.package_arch }}.dmg"
 
-          codesign --verify --verbose=2 "dist/MiSTer-Companion-macOS-Apple-Silicon.dmg"
+          codesign --verify --verbose=2 "dist/MiSTer-Companion-macOS-${{ matrix.package_arch }}.dmg"
 
       - name: Notarize macOS DMG
         working-directory: mister-companion
@@ -360,19 +411,23 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
         run: |
-          xcrun notarytool submit "dist/MiSTer-Companion-macOS-Apple-Silicon.dmg"             --apple-id "$APPLE_ID"             --team-id "$APPLE_TEAM_ID"             --password "$APPLE_APP_SPECIFIC_PASSWORD"             --wait
+          xcrun notarytool submit "dist/MiSTer-Companion-macOS-${{ matrix.package_arch }}.dmg" \
+            --apple-id "$APPLE_ID" \
+            --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+            --wait
 
       - name: Staple macOS DMG
         working-directory: mister-companion
         run: |
-          xcrun stapler staple "dist/MiSTer-Companion-macOS-Apple-Silicon.dmg"
-          xcrun stapler validate "dist/MiSTer-Companion-macOS-Apple-Silicon.dmg"
+          xcrun stapler staple "dist/MiSTer-Companion-macOS-${{ matrix.package_arch }}.dmg"
+          xcrun stapler validate "dist/MiSTer-Companion-macOS-${{ matrix.package_arch }}.dmg"
 
-      - name: Upload macOS Apple Silicon Artifact
+      - name: Upload macOS Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MiSTer-Companion-macOS-Apple-Silicon
-          path: mister-companion/dist/MiSTer-Companion-macOS-Apple-Silicon.dmg
+          name: MiSTer-Companion-macOS-${{ matrix.package_arch }}
+          path: mister-companion/dist/MiSTer-Companion-macOS-${{ matrix.package_arch }}.dmg
 
 
   # ============================================================
@@ -384,7 +439,7 @@ jobs:
     needs:
       - build-windows
       - build-linux
-      - build-macos-apple-silicon
+      - build-macos
     if: github.ref == 'refs/heads/main'
 
     steps:
@@ -396,35 +451,18 @@ jobs:
       - name: Download Artifacts
         uses: actions/download-artifact@v4
         with:
-          path: dist
+          path: release-assets
           merge-multiple: true
-
-      - name: Verify Downloaded Artifacts
-        run: |
-          ls -la dist
-          test -f dist/MiSTer-Companion.exe
-          test -f dist/MiSTer-Companion
-          test -f dist/MiSTer-Companion-macOS-Apple-Silicon.dmg
-
-      - name: Zip Windows Build
-        run: |
-          cd dist
-          zip ../MiSTer-Companion-Windows-x86_64.zip MiSTer-Companion.exe
-
-      - name: Package Linux Build (.tar.gz)
-        run: |
-          cd dist
-          tar -czvf ../MiSTer-Companion-Linux-x86_64.tar.gz MiSTer-Companion
-
-      - name: Copy macOS DMG
-        run: cp dist/MiSTer-Companion-macOS-Apple-Silicon.dmg ./MiSTer-Companion-macOS-Apple-Silicon.dmg
 
       - name: Verify Release Packages
         run: |
-          test -f MiSTer-Companion-Windows-x86_64.zip
-          test -f MiSTer-Companion-Linux-x86_64.tar.gz
-          test -f MiSTer-Companion-macOS-Apple-Silicon.dmg
-          ls -lh MiSTer-Companion-Windows-x86_64.zip MiSTer-Companion-Linux-x86_64.tar.gz MiSTer-Companion-macOS-Apple-Silicon.dmg
+          ls -lh release-assets
+          test -f release-assets/MiSTer-Companion-Windows-x86_64.zip
+          test -f release-assets/MiSTer-Companion-Windows-ARM64.zip
+          test -f release-assets/MiSTer-Companion-Linux-x86_64.tar.gz
+          test -f release-assets/MiSTer-Companion-Linux-ARM64.tar.gz
+          test -f release-assets/MiSTer-Companion-macOS-Apple-Silicon.dmg
+          test -f release-assets/MiSTer-Companion-macOS-Intel.dmg
 
       - name: Update Git Tag
         run: |
@@ -439,6 +477,9 @@ jobs:
           removeArtifacts: true
           tag: Pre-release
           artifacts: |
-            MiSTer-Companion-Windows-x86_64.zip
-            MiSTer-Companion-Linux-x86_64.tar.gz
-            MiSTer-Companion-macOS-Apple-Silicon.dmg
+            release-assets/MiSTer-Companion-Windows-x86_64.zip
+            release-assets/MiSTer-Companion-Windows-ARM64.zip
+            release-assets/MiSTer-Companion-Linux-x86_64.tar.gz
+            release-assets/MiSTer-Companion-Linux-ARM64.tar.gz
+            release-assets/MiSTer-Companion-macOS-Apple-Silicon.dmg
+            release-assets/MiSTer-Companion-macOS-Intel.dmg
