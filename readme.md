@@ -23,8 +23,11 @@ For a complete overview of MiSTer Companion Desktop features, supported platform
 | Name | Platform | Status | File |
 |------|----------|--------|------|
 | MiSTer Companion | Windows x86-64 | [![Build Status](https://github.com/Anime0t4ku/mister-companion/actions/workflows/build.yaml/badge.svg)](https://github.com/Anime0t4ku/mister-companion/actions/workflows/build.yaml) | [Download](https://github.com/Anime0t4ku/mister-companion/releases/download/Pre-release/MiSTer-Companion-Windows-x86_64.zip) |
+| MiSTer Companion | Windows ARM64 | [![Build Status](https://github.com/Anime0t4ku/mister-companion/actions/workflows/build.yaml/badge.svg)](https://github.com/Anime0t4ku/mister-companion/actions/workflows/build.yaml) | [Download](https://github.com/Anime0t4ku/mister-companion/releases/download/Pre-release/MiSTer-Companion-Windows-ARM64.zip) |
 | MiSTer Companion | Linux x86-64 | [![Build Status](https://github.com/Anime0t4ku/mister-companion/actions/workflows/build.yaml/badge.svg)](https://github.com/Anime0t4ku/mister-companion/actions/workflows/build.yaml) | [Download](https://github.com/Anime0t4ku/mister-companion/releases/download/Pre-release/MiSTer-Companion-Linux-x86_64.tar.gz) |
+| MiSTer Companion | Linux ARM64 | [![Build Status](https://github.com/Anime0t4ku/mister-companion/actions/workflows/build.yaml/badge.svg)](https://github.com/Anime0t4ku/mister-companion/actions/workflows/build.yaml) | [Download](https://github.com/Anime0t4ku/mister-companion/releases/download/Pre-release/MiSTer-Companion-Linux-ARM64.tar.gz) |
 | MiSTer Companion | macOS Apple Silicon | [![Build Status](https://github.com/Anime0t4ku/mister-companion/actions/workflows/build.yaml/badge.svg)](https://github.com/Anime0t4ku/mister-companion/actions/workflows/build.yaml) | [Download](https://github.com/Anime0t4ku/mister-companion/releases/download/Pre-release/MiSTer-Companion-macOS-Apple-Silicon.dmg) |
+| MiSTer Companion | macOS Intel | [![Build Status](https://github.com/Anime0t4ku/mister-companion/actions/workflows/build.yaml/badge.svg)](https://github.com/Anime0t4ku/mister-companion/actions/workflows/build.yaml) | [Download](https://github.com/Anime0t4ku/mister-companion/releases/download/Pre-release/MiSTer-Companion-macOS-Intel.dmg) |
 
 ---
 
@@ -39,8 +42,6 @@ After extracting, make the application executable:
 ## macOS Notes
 
 MiSTer Companion for macOS is signed with an Apple Developer ID certificate and notarized by Apple.
-
-The macOS release is currently available for Apple Silicon Macs.
 
 ---
 
