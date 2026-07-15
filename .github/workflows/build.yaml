@@ -271,12 +271,27 @@ jobs:
         run: |
           python -c "import platform; print(platform.platform()); print(platform.machine())"
 
-      - name: Install Dependencies
+      - name: Install Dependencies (Apple Silicon)
+        if: matrix.package_arch == 'Apple-Silicon'
         working-directory: mister-companion
         run: |
           python -m pip install --upgrade pip
-          pip install pyinstaller
-          pip install -r requirements.txt
+          python -m pip install pyinstaller
+          python -m pip install -r requirements.txt
+
+      - name: Install Dependencies (Intel)
+        if: matrix.package_arch == 'Intel'
+        working-directory: mister-companion
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install --no-cache-dir -r requirements.txt
+          python -m pip install --no-cache-dir --force-reinstall \
+            "cryptography==43.0.3" \
+            "pyinstaller==6.11.1"
+
+          python -m pip check
+          python -c "import platform, ssl, cryptography; print('Architecture:', platform.machine()); print('Python OpenSSL:', ssl.OPENSSL_VERSION); print('cryptography:', cryptography.__version__)"
+          python -c "import paramiko; print('paramiko:', paramiko.__version__)"
 
       - name: Generate ScreenScraper private credentials
         working-directory: mister-companion
@@ -351,11 +366,52 @@ jobs:
         working-directory: mister-companion
         run: pyinstaller --clean --windowed --icon app.icns --add-data "assets:assets" --name MiSTer-Companion main.py
 
-      - name: Verify App Bundle Architecture
+      - name: Verify Intel App Bundle
+        if: matrix.package_arch == 'Intel'
         working-directory: mister-companion
         run: |
-          file "dist/MiSTer-Companion.app/Contents/MacOS/MiSTer-Companion"
-          lipo -archs "dist/MiSTer-Companion.app/Contents/MacOS/MiSTer-Companion"
+          APP="dist/MiSTer-Companion.app"
+          MAIN="$APP/Contents/MacOS/MiSTer-Companion"
+          RUST="$APP/Contents/Frameworks/cryptography/hazmat/bindings/_rust.abi3.so"
+
+          echo "Main executable:"
+          file "$MAIN"
+          lipo -archs "$MAIN"
+
+          echo "cryptography extension:"
+          file "$RUST"
+          lipo -archs "$RUST"
+          otool -L "$RUST"
+
+          if [ -f "$APP/Contents/Frameworks/libssl.3.dylib" ]; then
+            echo "Bundled OpenSSL:"
+            file "$APP/Contents/Frameworks/libssl.3.dylib"
+            file "$APP/Contents/Frameworks/libcrypto.3.dylib"
+            nm -gU "$APP/Contents/Frameworks/libssl.3.dylib" | grep '_SSL_get0_group_name'
+          fi
+
+      - name: Smoke Test Intel App Before Signing
+        if: matrix.package_arch == 'Intel'
+        working-directory: mister-companion
+        run: |
+          APP="dist/MiSTer-Companion.app"
+          MAIN="$APP/Contents/MacOS/MiSTer-Companion"
+          LOG="$RUNNER_TEMP/mister-companion-startup.log"
+
+          "$MAIN" >"$LOG" 2>&1 &
+          PID=$!
+          sleep 8
+
+          if kill -0 "$PID" 2>/dev/null; then
+            kill "$PID" || true
+            wait "$PID" 2>/dev/null || true
+            echo "Application startup test passed."
+          else
+            wait "$PID" || true
+            echo "Application failed during startup:"
+            cat "$LOG"
+            exit 1
+          fi
 
       - name: Import Developer ID Certificate
         env:
