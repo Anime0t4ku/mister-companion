@@ -384,10 +384,10 @@ jobs:
           otool -L "$RUST"
 
           if [ -f "$APP/Contents/Frameworks/libssl.3.dylib" ]; then
-            echo "Bundled OpenSSL:"
+            echo "Bundled OpenSSL libraries (informational only):"
             file "$APP/Contents/Frameworks/libssl.3.dylib"
             file "$APP/Contents/Frameworks/libcrypto.3.dylib"
-            nm -gU "$APP/Contents/Frameworks/libssl.3.dylib" | grep '_SSL_get0_group_name'
+            otool -L "$APP/Contents/Frameworks/libssl.3.dylib"
           fi
 
       - name: Smoke Test Intel App Before Signing
