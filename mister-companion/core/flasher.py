@@ -509,7 +509,11 @@ def _select_balena_asset(release_data: dict) -> dict:
     if platform_key not in {"windows", "linux", "macos"}:
         raise RuntimeError("Flash SD is only supported on Windows, Linux, and macOS.")
 
-    expected_fragment = f"{platform_key}-{arch_key}-standalone.tar.gz"
+    # balena-cli does not publish a native Windows ARM64 standalone package.
+    # Windows ARM64 can run the x64 build through Windows emulation, so use it
+    # as the supported fallback while keeping native ARM64 packages elsewhere.
+    asset_arch_key = "x64" if platform_key == "windows" and arch_key == "arm64" else arch_key
+    expected_fragment = f"{platform_key}-{asset_arch_key}-standalone.tar.gz"
     assets = release_data.get("assets", [])
 
     for asset in assets:
