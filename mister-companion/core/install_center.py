@@ -120,6 +120,14 @@ from core.extras_megavgmdrive import (
     uninstall_megavgmdrive,
     uninstall_megavgmdrive_local,
 )
+from core.extras_dreamster import (
+    get_dreamster_status,
+    get_dreamster_status_local,
+    install_or_update_dreamster,
+    install_or_update_dreamster_local,
+    uninstall_dreamster,
+    uninstall_dreamster_local,
+)
 from core.extras_ra_cores import (
     get_ra_cores_status,
     get_ra_cores_status_local,
@@ -181,6 +189,7 @@ FALLBACK_ITEMS = [
     ("3s_arm", "extras", "extra", "3s_arm", "3S-ARM", "MiSTer community", "3S-ARM is a MiSTer port/support package for Street Fighter III: Third Strike based on the PS2 version. It installs binaries/support files only, not game files."),
     ("sonic_mania_mister", "extras", "extra", "sonic_mania_mister", "Sonic Mania MiSTer", "MiSTer community", "Sonic Mania MiSTer lets your MiSTer run Sonic Mania using the MiSTer port, with support for the required Data.rsdk game file."),
     ("mister_quake", "extras", "extra", "mister_quake", "MiSTer Quake", "neofreno", "MiSTer Quake installs the Quake port for MiSTer. Provide your own PAK0.PAK and optional PAK1.PAK game data files."),
+    ("dreamster", "extras", "extra", "dreamster", "DreamSTer", "skmp", "DreamSTer is an emulation core that uses partial FPGA output to run Dreamcast software on MiSTer. It is currently in pre-release."),
     ("zaparoo_frontend", "extras", "extra", "zaparoo_frontend", "Zaparoo Frontend", "Zaparoo Project", "Zaparoo Frontend provides a controller-friendly interface for browsing and launching content. It is installed as part of Zaparoo; uninstall it completely from the main Zaparoo entry."),
     ("ranny_snice_wallpapers", "wallpaper_packs", "wallpaper_pack", "ranny_snice_wallpapers", "Ranny Snice Wallpapers", "Ranny Snice", "A collection of MiSTer menu wallpapers by Ranny Snice, available in both 16:9 and 4:3 versions."),
     ("pcn_challenge_wallpapers", "wallpaper_packs", "wallpaper_pack", "pcn_challenge_wallpapers", "PCN Challenge Wallpapers", "Pixel Cherry Ninja", "Wallpapers created during PCN livestreams based on audience requests."),
@@ -219,6 +228,7 @@ EXTRA_HANDLERS = {
     "3sx_mister": (get_3sx_status, get_3sx_status_local, install_or_update_3sx, install_or_update_3sx_local, uninstall_3sx, uninstall_3sx_local),
     "sonic_mania_mister": (get_sonic_mania_status, get_sonic_mania_status_local, install_or_update_sonic_mania, install_or_update_sonic_mania_local, uninstall_sonic_mania, uninstall_sonic_mania_local),
     "mister_quake": (get_mister_quake_status, get_mister_quake_status_local, install_or_update_mister_quake, install_or_update_mister_quake_local, uninstall_mister_quake, uninstall_mister_quake_local),
+    "dreamster": (get_dreamster_status, get_dreamster_status_local, install_or_update_dreamster, install_or_update_dreamster_local, uninstall_dreamster, uninstall_dreamster_local),
     "zaparoo_frontend": (get_zaparoo_launcher_status, get_zaparoo_launcher_status_local, install_or_update_zaparoo_launcher, install_or_update_zaparoo_launcher_local, uninstall_zaparoo_launcher, uninstall_zaparoo_launcher_local),
     "mms2_gb_core": (get_mms2_gb_core_status, get_mms2_gb_core_status_local, install_or_update_mms2_gb_core, install_or_update_mms2_gb_core_local, uninstall_mms2_gb_core, uninstall_mms2_gb_core_local),
     "paprium_megadrive": (get_paprium_megadrive_status, get_paprium_megadrive_status_local, install_or_update_paprium_megadrive, install_or_update_paprium_megadrive_local, uninstall_paprium_megadrive, uninstall_paprium_megadrive_local),
