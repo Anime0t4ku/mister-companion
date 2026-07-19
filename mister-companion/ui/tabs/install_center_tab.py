@@ -932,6 +932,10 @@ class InstallCenterDetailsDialog(QDialog):
             add_button("Upload Data.rsdk", lambda: self.call_install_center_action("upload_sonic_mania_data_rsdk", self.output), enabled=self.status.get("upload_enabled", context_ready), min_width=190)
         elif handler == "mister_quake":
             add_button("Upload PAK Files", lambda: self.call_install_center_action("upload_mister_quake_paks", self.output), enabled=self.status.get("upload_enabled", context_ready), min_width=190)
+        elif handler == "mister_duke3d":
+            add_button("Upload DUKE3D.GRP", lambda: self.call_install_center_action("upload_mister_duke3d_grp", self.output), enabled=self.status.get("upload_enabled", False), min_width=190)
+        elif handler == "dreamster":
+            add_button("Upload BIOS Files", lambda: self.call_install_center_action("upload_dreamster_bios", self.output), enabled=self.status.get("upload_enabled", False), min_width=190)
         elif handler == "paprium_megadrive":
             add_button("Open Game Folder", lambda: self.call_install_center_action("open_paprium_game_folder"), enabled=self.status.get("folder_open_enabled", installed), min_width=170)
         elif handler == "megavgmdrive":

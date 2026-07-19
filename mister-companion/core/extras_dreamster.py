@@ -1,5 +1,6 @@
 import io
 import json
+import os
 import posixpath
 import re
 import zipfile
@@ -10,6 +11,7 @@ import requests
 from core.extras_common import (
     _ensure_local_dir,
     _ensure_remote_dir,
+    _copy_local_file_to_sd,
     _local_path,
     _path_exists,
     _path_exists_local,
@@ -31,6 +33,9 @@ REMOTE_SCRIPT = "/media/fat/Scripts/DreamSTer.sh"
 REMOTE_RUNTIME_DIR = "/media/fat/minicast"
 REMOTE_RUNTIME_BINARY = "/media/fat/minicast/minicast.elf"
 REMOTE_MANIFEST = "/media/fat/minicast/.mister_companion_manifest.json"
+REMOTE_GAME_DIR = "/media/fat/games/Dreamcast"
+REMOTE_DC_BOOT = f"{REMOTE_GAME_DIR}/dc_boot.bin"
+REMOTE_DC_FLASH = f"{REMOTE_GAME_DIR}/dc_flash.bin"
 
 
 def _fetch_latest_dreamster_release() -> dict:
@@ -139,16 +144,23 @@ def _is_installed_local(sd_root: str) -> bool:
     return _path_exists_local(sd_root, REMOTE_SCRIPT) and _path_exists_local(sd_root, REMOTE_RUNTIME_BINARY)
 
 
-def _build_status(installed: bool, installed_version: str, latest_version: str, latest_error: str) -> dict:
-    update_available = bool(installed and latest_version and (not installed_version or installed_version != latest_version))
+def _build_status(installed: bool, installed_version: str, latest_version: str, latest_error: str,
+                  manifest_present: bool = False, bios_present: bool = False) -> dict:
+    update_available = bool(
+        installed
+        and (
+            not manifest_present
+            or (latest_version and (not installed_version or installed_version != latest_version))
+        )
+    )
     if not installed:
         status_text, label, enabled = "✗ Not installed", "Install", True
     elif update_available:
-        status_text, label, enabled = (
-            f"▲ Update available ({installed_version or 'unknown'} → {latest_version})",
-            "Update",
-            True,
-        )
+        if not manifest_present:
+            status_text = "▲ Update available (install manifest missing)"
+        else:
+            status_text = f"▲ Update available ({installed_version or 'unknown'} → {latest_version})"
+        label, enabled = "Update", True
     else:
         status_text, label, enabled = f"✓ Installed ({installed_version or 'unknown'})", "Installed", False
 
@@ -164,7 +176,8 @@ def _build_status(installed: bool, installed_version: str, latest_version: str, 
         "status_text": status_text,
         "install_label": label,
         "install_enabled": enabled,
-        "upload_enabled": False,
+        "bios_present": bios_present,
+        "upload_enabled": installed and not bios_present,
         "uninstall_enabled": installed,
     }
 
@@ -184,8 +197,13 @@ def get_dreamster_status(connection, check_latest: bool = False):
             latest_error = str(exc)
 
     installed = _is_installed(connection)
-    installed_version = str(_read_manifest(connection).get("installed_version") or "") if installed else ""
-    return _build_status(installed, installed_version, latest_version, latest_error)
+    manifest_present = installed and _path_exists(connection, REMOTE_MANIFEST)
+    installed_version = str(_read_manifest(connection).get("installed_version") or "") if manifest_present else ""
+    bios_present = (
+        _path_exists(connection, REMOTE_DC_BOOT)
+        and _path_exists(connection, REMOTE_DC_FLASH)
+    ) if installed else False
+    return _build_status(installed, installed_version, latest_version, latest_error, manifest_present, bios_present)
 
 
 def get_dreamster_status_local(sd_root: str, check_latest: bool = False):
@@ -198,8 +216,64 @@ def get_dreamster_status_local(sd_root: str, check_latest: bool = False):
             latest_error = str(exc)
 
     installed = _is_installed_local(sd_root)
-    installed_version = str(_read_manifest_local(sd_root).get("installed_version") or "") if installed else ""
-    return _build_status(installed, installed_version, latest_version, latest_error)
+    manifest_present = installed and _path_exists_local(sd_root, REMOTE_MANIFEST)
+    installed_version = str(_read_manifest_local(sd_root).get("installed_version") or "") if manifest_present else ""
+    bios_present = (
+        _path_exists_local(sd_root, REMOTE_DC_BOOT)
+        and _path_exists_local(sd_root, REMOTE_DC_FLASH)
+    ) if installed else False
+    return _build_status(installed, installed_version, latest_version, latest_error, manifest_present, bios_present)
+
+
+def _validate_bios_paths(local_paths):
+    selected = {}
+    for local_path in local_paths:
+        if not os.path.isfile(local_path):
+            raise RuntimeError(f"Selected BIOS file does not exist: {local_path}")
+        name = os.path.basename(local_path).lower()
+        if name not in {"dc_boot.bin", "dc_flash.bin"}:
+            raise RuntimeError("Select only dc_boot.bin and dc_flash.bin.")
+        selected[name] = local_path
+    if not selected:
+        raise RuntimeError("No Dreamcast BIOS files were selected.")
+    return selected
+
+
+def upload_dreamster_bios(connection, local_paths, log):
+    if not connection.is_connected():
+        raise RuntimeError("Not connected to MiSTer.")
+    if not _is_installed(connection):
+        raise RuntimeError("DreamSTer is not installed.")
+
+    selected = _validate_bios_paths(local_paths)
+    _ensure_remote_dir(connection, REMOTE_GAME_DIR)
+    sftp = connection.client.open_sftp()
+    try:
+        for name, local_path in selected.items():
+            target = posixpath.join(REMOTE_GAME_DIR, name)
+            log(f"Uploading {name} to {target}\n")
+            sftp.put(local_path, target)
+    finally:
+        sftp.close()
+    log("Dreamcast BIOS upload completed.\n")
+    return {"bios_present": _path_exists(connection, REMOTE_DC_BOOT) and _path_exists(connection, REMOTE_DC_FLASH)}
+
+
+def upload_dreamster_bios_local(sd_root: str, local_paths, log):
+    if not _is_installed_local(sd_root):
+        raise RuntimeError("DreamSTer is not installed.")
+
+    selected = _validate_bios_paths(local_paths)
+    _ensure_local_dir(sd_root, REMOTE_GAME_DIR)
+    for name, local_path in selected.items():
+        target = posixpath.join(REMOTE_GAME_DIR, name)
+        log(f"Copying {name} to {target}\n")
+        _copy_local_file_to_sd(sd_root, local_path, target)
+    log("Dreamcast BIOS copy completed.\n")
+    return {
+        "bios_present": _path_exists_local(sd_root, REMOTE_DC_BOOT)
+        and _path_exists_local(sd_root, REMOTE_DC_FLASH)
+    }
 
 
 def _archive_members(zf: zipfile.ZipFile):
@@ -247,6 +321,9 @@ def install_or_update_dreamster(connection, log):
         finally:
             sftp.close()
 
+    _ensure_remote_dir(connection, REMOTE_GAME_DIR)
+    log(f"Ensured Dreamcast game folder exists: {REMOTE_GAME_DIR}\n")
+
     connection.run_command(
         f"chmod +x {_quote(REMOTE_SCRIPT)} "
         f"{_quote('/media/fat/minicast/load_fpga_bitstream')} "
@@ -279,6 +356,9 @@ def install_or_update_dreamster_local(sd_root: str, log):
                     _local_path(sd_root, remote_path).chmod(mode)
                 except OSError:
                     pass
+
+    _ensure_local_dir(sd_root, REMOTE_GAME_DIR)
+    log(f"Ensured Dreamcast game folder exists: {REMOTE_GAME_DIR}\n")
 
     for remote_path in (
         REMOTE_SCRIPT,

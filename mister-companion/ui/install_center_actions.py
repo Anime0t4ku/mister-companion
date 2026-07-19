@@ -26,6 +26,8 @@ from core.scripts_actions import (
 from core.extras_3s_arm import upload_3sx_afs, upload_3sx_afs_local
 from core.extras_sonic_mania import upload_sonic_mania_data_rsdk, upload_sonic_mania_data_rsdk_local
 from core.extras_mister_quake import upload_mister_quake_paks, upload_mister_quake_paks_local
+from core.extras_mister_duke3d import upload_mister_duke3d_grp, upload_mister_duke3d_grp_local
+from core.extras_dreamster import upload_dreamster_bios, upload_dreamster_bios_local
 from core.extras_paprium_megadrive import open_paprium_game_folder_local, open_paprium_game_folder_on_host
 from ui.dialogs.cifs_config_dialog import CifsConfigDialog
 from ui.dialogs.dav_browser_config_dialog import DavBrowserConfigDialog
@@ -250,6 +252,41 @@ class InstallCenterActions:
             log("Selected files:\n" + "\n".join(paths) + "\n")
             return upload_mister_quake_paks_local(root, paths, log) if root else upload_mister_quake_paks(self.connection, paths, log)
         self.tab.start_task("Uploading Quake PAK files...", task, "Quake PAK files copied." if root else "Quake PAK files uploaded.", output_widget=output_widget)
+
+    def upload_mister_duke3d_grp(self, output_widget=None):
+        self._upload_file(
+            "Select DUKE3D.GRP",
+            "Duke Nukem 3D Game Data (DUKE3D.GRP *.grp *.GRP);;All Files (*)",
+            upload_mister_duke3d_grp_local,
+            upload_mister_duke3d_grp,
+            "DUKE3D.GRP copied.",
+            "DUKE3D.GRP uploaded.",
+            output_widget,
+        )
+
+    def upload_dreamster_bios(self, output_widget=None):
+        if self.is_offline_mode():
+            root = self._require_sd()
+            if not root: return
+        else:
+            if not self._require_online(): return
+            root = None
+        paths, _ = QFileDialog.getOpenFileNames(
+            self.tab,
+            "Select DreamSTer BIOS Files",
+            "",
+            "Dreamcast BIOS Files (dc_boot.bin dc_flash.bin *.bin);;All Files (*)",
+        )
+        if not paths: return
+        def task(log):
+            log("Selected files:\n" + "\n".join(paths) + "\n")
+            return upload_dreamster_bios_local(root, paths, log) if root else upload_dreamster_bios(self.connection, paths, log)
+        self.tab.start_task(
+            "Uploading DreamSTer BIOS files...",
+            task,
+            "DreamSTer BIOS files copied." if root else "DreamSTer BIOS files uploaded.",
+            output_widget=output_widget,
+        )
 
     def _upload_file(self, title, file_filter, local_fn, remote_fn, local_message, remote_message, output_widget):
         if self.is_offline_mode():
