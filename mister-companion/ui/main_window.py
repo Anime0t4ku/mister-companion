@@ -66,6 +66,7 @@ from ui.tabs.device_tab import DeviceTab
 from ui.tabs.flash_tab import FlashTab
 from ui.tabs.install_center_tab import InstallCenterTab
 from ui.tabs.mister_settings_tab import MiSTerSettingsTab
+from ui.tabs.romm_tab import RomMTab
 from ui.tabs.savemanager_tab import SaveManagerTab
 from ui.tabs.wallpapers_tab import WallpapersTab
 from ui.tabs.zapscraper_tab import ZapScraperTab
@@ -637,6 +638,13 @@ class MainWindow(QMainWindow):
             "SaveManager",
         )
 
+        self.romm_tab = RomMTab(self)
+        self.tabs.addTab(
+            self.romm_tab,
+            self.tab_icon("zapscripts"),
+            "RomM",
+        )
+
         self.wallpapers_tab = WallpapersTab(self)
 
         self.build_side_menu()
@@ -674,6 +682,7 @@ class MainWindow(QMainWindow):
             ("ZapScripts", "zapscripts"),
             ("ZapScraper", "zapscripts"),
             ("SaveManager", "savemanager"),
+            ("RomM", "zapscripts"),
         ]
 
     def current_menu_style(self) -> str:

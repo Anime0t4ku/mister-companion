@@ -24,7 +24,38 @@ DEFAULT_CONFIG = {
     "menu_style": "side_menu",
     "remember_offline_sd_root": False,
     "offline_sd_root": "",
+    "romm_config": {
+        "url": "",
+        "token": "",
+        "token_id": None,
+        "token_name": "",
+        "user_display": "",
+        "sync_platforms": [],
+        "sync_collections": [],
+        "readonly_platforms": [],
+        "readonly_collections": [],
+        "sync_last_run": "",
+        "sync_last_stats": {},
+        "sync_manifest": {},
+        "auto_sync": False,
+        "sync_saves": False,
+        "core_overrides": {},
+        "mister_root": "/media/fat",
+        "hide_unsupported": True,
+        "hide_empty": True,
+    },
 }
+
+
+def _normalize_mister_root(value) -> str:
+    """MiSTer's game root path. Must be absolute, no trailing slash.
+
+    Common values: /media/fat (SD), /media/usb0..5 (USB), /media/network (CIFS).
+    """
+    raw = str(value or "/media/fat").strip()
+    if not raw.startswith("/"):
+        raw = "/media/fat"
+    return raw.rstrip("/") or "/media/fat"
 
 
 def normalize_theme_mode(value):
@@ -71,6 +102,47 @@ def normalize_config(data):
         merged["offline_sd_root"] = str(merged.get("offline_sd_root", "") or "").strip()
     else:
         merged["offline_sd_root"] = ""
+
+    romm = merged.get("romm_config") or {}
+    if not isinstance(romm, dict):
+        romm = {}
+    token_id = romm.get("token_id")
+    if not isinstance(token_id, int):
+        token_id = None
+
+    def _int_list(v):
+        if not isinstance(v, list):
+            return []
+        out = []
+        for x in v:
+            if isinstance(x, int):
+                out.append(x)
+        return out
+
+    merged["romm_config"] = {
+        "url": str(romm.get("url", "") or "").strip(),
+        "token": str(romm.get("token", "") or ""),
+        "token_id": token_id,
+        "token_name": str(romm.get("token_name", "") or ""),
+        "user_display": str(romm.get("user_display", "") or ""),
+        "sync_platforms": _int_list(romm.get("sync_platforms")),
+        "sync_collections": _int_list(romm.get("sync_collections")),
+        "readonly_platforms": _int_list(romm.get("readonly_platforms")),
+        "readonly_collections": _int_list(romm.get("readonly_collections")),
+        "sync_last_run": str(romm.get("sync_last_run", "") or ""),
+        "sync_last_stats": romm.get("sync_last_stats") if isinstance(romm.get("sync_last_stats"), dict) else {},
+        "sync_manifest": romm.get("sync_manifest") if isinstance(romm.get("sync_manifest"), dict) else {},
+        "auto_sync": bool(romm.get("auto_sync", False)),
+        "sync_saves": bool(romm.get("sync_saves", False)),
+        "core_overrides": {
+            str(k).lower().strip(): str(v or "").strip()
+            for k, v in (romm.get("core_overrides") or {}).items()
+            if k
+        } if isinstance(romm.get("core_overrides"), dict) else {},
+        "mister_root": _normalize_mister_root(romm.get("mister_root")),
+        "hide_unsupported": bool(romm.get("hide_unsupported", True)),
+        "hide_empty": bool(romm.get("hide_empty", True)),
+    }
 
     return merged
 
