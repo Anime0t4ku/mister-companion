@@ -29,6 +29,7 @@ from core.extras_mister_quake import upload_mister_quake_paks, upload_mister_qua
 from core.extras_mister_duke3d import upload_mister_duke3d_grp, upload_mister_duke3d_grp_local
 from core.extras_dreamster import upload_dreamster_bios, upload_dreamster_bios_local
 from core.extras_paprium_megadrive import open_paprium_game_folder_local, open_paprium_game_folder_on_host
+from core.extras_zaparoo_launcher import disable_zaparoo_launcher_frontend, disable_zaparoo_launcher_frontend_local
 from ui.dialogs.cifs_config_dialog import CifsConfigDialog
 from ui.dialogs.dav_browser_config_dialog import DavBrowserConfigDialog
 from ui.dialogs.ftp_save_sync_config_dialog import FtpSaveSyncConfigDialog
