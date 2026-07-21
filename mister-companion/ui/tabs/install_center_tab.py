@@ -48,11 +48,13 @@ from core.install_center import (
     normalize_mister_relative_path,
     run_install_or_update,
     run_uninstall,
+    update_check_result_text,
     install_wallpaper_pack,
     uninstall_wallpaper_pack,
     open_wallpaper_folder,
 )
 from core.file_browser import list_directory, join_remote_path, parent_path, DEFAULT_ROOT
+from core.downloader_backend import DownloaderCommandError, DownloaderMissingDrivesError
 from core.scripts_version_check import supports_script_update_check
 from core.scripts_actions import get_scripts_status, install_update_all
 
@@ -214,6 +216,7 @@ class InstallCenterLoadWorker(QThread):
     result = pyqtSignal(object)
     error = pyqtSignal(str)
     progress = pyqtSignal(str)
+    downloader_update_required = pyqtSignal()
 
     def __init__(self, main_window, check_latest=False, force_images=False, skip_image_download=False):
         super().__init__()
@@ -226,8 +229,6 @@ class InstallCenterLoadWorker(QThread):
         try:
             catalog = load_catalog()
             context = build_context(self.main_window)
-            if self.check_latest:
-                self.progress.emit("Checking for updates...\n")
             statuses = check_all_status(catalog, context, check_latest=self.check_latest, log=self.progress.emit if self.check_latest else None)
             cached_image_bytes = read_cached_thumbnail_bytes(catalog)
             if self.skip_image_download:
@@ -236,6 +237,11 @@ class InstallCenterLoadWorker(QThread):
             self.result.emit({"catalog": catalog, "statuses": statuses, "image_bytes": cached_image_bytes, "check_latest": self.check_latest, "images_loading": True, "skip_image_download": False})
             image_bytes = download_thumbnail_bytes(catalog, force_reload=self.force_images)
             self.result.emit({"catalog": catalog, "statuses": statuses, "image_bytes": image_bytes, "check_latest": self.check_latest, "images_loading": False, "skip_image_download": False})
+        except DownloaderCommandError as e:
+            if e.unsupported:
+                self.downloader_update_required.emit()
+            else:
+                self.error.emit(f"{e}\n\n{traceback.format_exc()}")
         except Exception as e:
             self.error.emit(f"{e}\n\n{traceback.format_exc()}")
 
@@ -253,7 +259,7 @@ class InstallCenterItemStatusWorker(QThread):
     def run(self):
         try:
             context = build_context(self.main_window)
-            self.progress.emit(f"Checking {self.item.get('name', 'item')}...\n")
+            self.progress.emit(f"Checking {self.item.get('name', 'item')} for updates...\n")
             status = check_item_status(self.item, context, check_latest=True, log=self.progress.emit)
             self.result.emit(self.item.get("id", ""), status)
         except Exception as e:
@@ -263,9 +269,10 @@ class InstallCenterItemStatusWorker(QThread):
 class InstallCenterTaskWorker(QThread):
     log_line = pyqtSignal(str)
     success = pyqtSignal(str)
-    error = pyqtSignal(str)
+    error = pyqtSignal(object, str)
     task_result = pyqtSignal(object)
     finished_task = pyqtSignal()
+    item_completed = pyqtSignal(str)
 
     def __init__(self, task_fn, success_message):
         super().__init__()
@@ -281,7 +288,7 @@ class InstallCenterTaskWorker(QThread):
             self.success.emit(self.success_message)
             self.task_result.emit(result)
         except Exception as e:
-            self.error.emit(f"{e}\n\n{traceback.format_exc()}")
+            self.error.emit(e, traceback.format_exc())
         finally:
             self.finished_task.emit()
 
@@ -1068,12 +1075,12 @@ class InstallCenterUpdatesDialog(QDialog):
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(10)
 
-        title = QLabel(f"{len(self.updates)} update(s) available")
-        font = title.font()
+        self.title = QLabel(f"{len(self.updates)} update(s) available")
+        font = self.title.font()
         font.setPointSize(font.pointSize() + 3)
         font.setBold(True)
-        title.setFont(font)
-        layout.addWidget(title)
+        self.title.setFont(font)
+        layout.addWidget(self.title)
 
         self.list_widget = QListWidget()
         for item in self.updates:
@@ -1141,18 +1148,38 @@ class InstallCenterUpdatesDialog(QDialog):
             for item in items:
                 log(f"Updating {item.get('name', item.get('id'))}...\n")
                 run_install_or_update(item, context, log)
+                self.worker.item_completed.emit(str(item.get("id") or ""))
                 log("\n")
 
         self.set_busy(True)
         self.worker = InstallCenterTaskWorker(task, "Updates finished.")
         self.worker.log_line.connect(self.output.append)
         self.worker.success.connect(lambda message: self.output.append(message))
-        self.worker.error.connect(lambda message: self.output.append(message))
+        self.worker.error.connect(lambda error, details: self.output.append(f"{error}\n\n{details}"))
+        self.worker.item_completed.connect(self.remove_completed_update)
         self.worker.finished_task.connect(self.on_updates_finished)
         self.worker.start()
 
+    def remove_completed_update(self, item_id):
+        if not item_id:
+            return
+        self.updates = [item for item in self.updates if item.get("id") != item_id]
+        status = dict(self.tab.statuses.get(item_id) or {})
+        status.update({"state": "installed", "status_text": "Installed", "update_available": False, "install_enabled": False, "install_label": "Installed"})
+        self.tab.statuses[item_id] = status
+        for row in range(self.list_widget.count() - 1, -1, -1):
+            if self.list_widget.item(row).data(Qt.ItemDataRole.UserRole) == item_id:
+                self.list_widget.takeItem(row)
+        self.title.setText(f"{len(self.updates)} update(s) available")
+        self.update_all_button.setEnabled(bool(self.updates) and self.worker is None)
+        self.update_selected_button.setEnabled(bool(self.updates) and self.worker is None)
+
     def on_updates_finished(self):
         self.worker = None
+        if not self.updates:
+            self.accept()
+            self.tab.populate_items()
+            return
         self.set_busy(False)
         self.tab.refresh_status()
 
@@ -1328,15 +1355,32 @@ class InstallCenterTab(QWidget):
         self.global_check_button.setEnabled(False)
 
         self.global_check_in_progress = True
+        self.global_check_started_at = time.monotonic()
+        self.global_check_timer = QTimer(self)
+        self.global_check_timer.timeout.connect(self.update_global_check_elapsed)
+        self.global_check_timer.start(1000)
         self.output.setVisible(True)
         self.output.clear()
         self.output.append("Checking for updates...\n")
         self.load_worker = InstallCenterLoadWorker(self.main_window, check_latest=True, force_images=False, skip_image_download=True)
         self.load_worker.result.connect(self.on_load_result)
         self.load_worker.error.connect(self.on_load_error)
+        self.load_worker.downloader_update_required.connect(self.on_downloader_check_unsupported)
         self.load_worker.progress.connect(self.output.append)
         self.load_worker.finished.connect(self.on_load_finished)
         self.load_worker.start()
+
+    def on_downloader_check_unsupported(self):
+        self.status_label.setText("Downloader update required.")
+        self.status_label.setStyleSheet("color: #cc0000; font-weight: bold;")
+        self.show_downloader_update_required()
+
+    def update_global_check_elapsed(self):
+        if not self.global_check_in_progress:
+            return
+        elapsed = max(0, int(time.monotonic() - getattr(self, "global_check_started_at", time.monotonic())))
+        minutes, seconds = divmod(elapsed, 60)
+        self.status_label.setText(f"Checking Install Center entries for updates... {minutes:02d}:{seconds:02d}")
 
     def on_load_result(self, payload):
         self.catalog = payload.get("catalog") or {"categories": [], "items": []}
@@ -1388,6 +1432,11 @@ class InstallCenterTab(QWidget):
 
     def on_load_finished(self):
         if self.global_check_in_progress:
+            timer = getattr(self, "global_check_timer", None)
+            if timer is not None:
+                timer.stop()
+                timer.deleteLater()
+                self.global_check_timer = None
             self.output.setVisible(False)
             self.output.clear()
             self.global_check_in_progress = False
@@ -1789,7 +1838,6 @@ class InstallCenterTab(QWidget):
         target_output = output_widget or self.output
         if target_output is not None:
             target_output.setVisible(True)
-            target_output.append("Checking for updates...\n")
         self.item_status_worker = InstallCenterItemStatusWorker(self.main_window, item)
 
         def handle_result(item_id, status):
@@ -1798,11 +1846,12 @@ class InstallCenterTab(QWidget):
                 self.update_filter_available = True
                 self.rebuild_status_filter()
             self.populate_items()
-            final_text = f"{item.get('name', 'Item')}: {clean_status_text(status or {})}"
+            result_text = update_check_result_text(status or {})
+            final_text = f"{item.get('name', 'Item')}: {result_text}"
             self.status_label.setText(final_text)
             self.status_label.setStyleSheet("color: gray;")
             if target_output is not None:
-                target_output.append(final_text)
+                target_output.append(result_text)
             if callback:
                 callback(status or {})
 
@@ -1835,7 +1884,7 @@ class InstallCenterTab(QWidget):
         self.task_worker = InstallCenterTaskWorker(task_fn, success_message)
         self.task_worker.log_line.connect(target_output.append)
         self.task_worker.success.connect(lambda message: self.on_task_success(message, target_output))
-        self.task_worker.error.connect(lambda message: self.on_task_error(message, target_output))
+        self.task_worker.error.connect(lambda error, details: self.on_task_error(error, details, target_output))
         if result_handler is not None:
             self.task_worker.task_result.connect(result_handler)
         self.task_worker.finished_task.connect(self.on_task_finished)
@@ -1845,10 +1894,29 @@ class InstallCenterTab(QWidget):
         if message and output_widget is not None:
             output_widget.append(message)
 
-    def on_task_error(self, message, output_widget=None):
+    def on_task_error(self, error, details="", output_widget=None):
+        message = f"{error}\n\n{details}" if details else str(error)
         if output_widget is not None:
             output_widget.append(message)
-        if "does not support --run-only" in str(message):
+        if isinstance(error, DownloaderMissingDrivesError):
+            msg = QMessageBox(self)
+            msg.setIcon(QMessageBox.Icon.Warning)
+            msg.setWindowTitle("External drive not connected")
+            msg.setText(
+                "Some files installed by this database are on a drive that is not currently connected."
+            )
+            msg.setInformativeText(
+                "Reconnect the drive and retry to remove everything, or uninstall anyway to remove only "
+                "the files available on currently connected storage."
+            )
+            if getattr(error, "output", ""):
+                msg.setDetailedText(error.output)
+            force_button = msg.addButton("Uninstall Anyway", QMessageBox.ButtonRole.DestructiveRole)
+            msg.addButton("Cancel and Reconnect Drive", QMessageBox.ButtonRole.RejectRole)
+            msg.exec()
+            if msg.clickedButton() is force_button and getattr(self, "_active_uninstall", None):
+                self._pending_force_uninstall = self._active_uninstall
+        elif isinstance(error, DownloaderCommandError) and error.unsupported:
             self.show_downloader_update_required()
         elif output_widget is None:
             QMessageBox.critical(self, "Install Center Error", message)
@@ -1896,6 +1964,12 @@ class InstallCenterTab(QWidget):
         self.global_check_button.setEnabled(True)
         self.refresh_status()
         self.refresh_existing_tabs()
+        pending = getattr(self, "_pending_force_uninstall", None)
+        self._pending_force_uninstall = None
+        self._active_uninstall = None
+        if pending:
+            item, context, output_widget = pending
+            QTimer.singleShot(0, lambda: self._start_uninstall_task(item, context, output_widget, force=True))
 
     def install_or_update_selected(self, output_widget=None):
         item = self.selected_item()
@@ -1931,10 +2005,15 @@ class InstallCenterTab(QWidget):
         if confirm != QMessageBox.StandardButton.Yes:
             return
 
+        self._start_uninstall_task(task_item, context, output_widget, force=False)
+
+    def _start_uninstall_task(self, task_item, context, output_widget=None, force=False):
+        self._active_uninstall = (task_item, context, output_widget)
+
         self.start_task(
-            f"Uninstalling {item.get('name')}...",
-            lambda log: run_uninstall(task_item, context, log),
-            f"{item.get('name')} was uninstalled.",
+            f"Uninstalling {task_item.get('name')}{' (ignoring disconnected drives)' if force else ''}...",
+            lambda log: run_uninstall(task_item, context, log, force_downloader=force),
+            f"{task_item.get('name')} was uninstalled.",
             output_widget=output_widget,
         )
 

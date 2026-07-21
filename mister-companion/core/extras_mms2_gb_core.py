@@ -311,3 +311,152 @@ def uninstall_mms2_gb_core_local(sd_root: str, log):
     _remove_if_empty_dir_local(sd_root, MMS2_GB_REMOTE_DIR)
     log("MMS2 GB Core files removed.\n")
     return {}
+
+
+# Downloader-backed Install Center implementation.
+from core.downloader_backend import (
+    database_registered_local,
+    database_registered_online,
+    ensure_database_source_local,
+    ensure_database_source_online,
+    remove_database_source_local,
+    remove_database_source_online,
+    restore_local,
+    restore_online,
+    run_named_database_local,
+    run_named_database_online,
+    check_named_database_local,
+    check_named_database_online,
+    uninstall_named_database_local,
+    uninstall_named_database_online,
+)
+
+MMS2_GB_DB_ID = "MultiDatabases/mms2-gb"
+MMS2_GB_DB_URL = "https://raw.githubusercontent.com/theypsilon/MultiDatabases_MiSTer/db/mms2-gb/db.json"
+
+
+def _manual_mms2_gb_install(connection):
+    present = bool(_read_installed_mms2_gb_date(connection) or _path_exists(connection, MMS2_GB_MGL_PATH) or _path_exists(connection, MMS2_GB_CFG_PATH))
+    return bool(present and not database_registered_online(connection, MMS2_GB_DB_ID))
+
+
+def _manual_mms2_gb_install_local(sd_root):
+    present = bool(_read_installed_mms2_gb_date_local(sd_root) or _path_exists_local(sd_root, MMS2_GB_MGL_PATH) or _path_exists_local(sd_root, MMS2_GB_CFG_PATH))
+    return bool(present and not database_registered_local(sd_root, MMS2_GB_DB_ID))
+
+
+def _prepare_manual_mms2_gb_for_downloader(connection, log, manual=None):
+    if manual is None:
+        manual = _manual_mms2_gb_install(connection)
+    if not manual:
+        return False
+    log("Detected a manual Companion installation; preparing it for Downloader...\n")
+    _remove_glob(connection, MMS2_GB_RBF_PATTERN)
+    connection.run_command(f"rm -f {_quote(MMS2_GB_MGL_PATH)} {_quote(MMS2_GB_CFG_PATH)}")
+    log(f"Preserved unrelated user files in {MMS2_GB_REMOTE_DIR}\n")
+    return True
+
+
+def _prepare_manual_mms2_gb_for_downloader_local(sd_root, log, manual=None):
+    if manual is None:
+        manual = _manual_mms2_gb_install_local(sd_root)
+    if not manual:
+        return False
+    log("Detected a manual Companion installation; preparing it for Downloader...\n")
+    _remove_local_glob(sd_root, MMS2_GB_RBF_PATTERN)
+    _remove_local_path(sd_root, MMS2_GB_MGL_PATH)
+    _remove_local_path(sd_root, MMS2_GB_CFG_PATH)
+    log(f"Preserved unrelated user files in {MMS2_GB_REMOTE_DIR}\n")
+    return True
+
+
+_manual_get_mms2_gb_core_status = get_mms2_gb_core_status
+_manual_get_mms2_gb_core_status_local = get_mms2_gb_core_status_local
+
+
+def _apply_mms2_gb_downloader_status(status, manual, update_available=False):
+    status = dict(status)
+    if manual:
+        status.update({"update_available": True, "status_text": "▲ Manual install found", "install_label": "Migrate / Update", "install_enabled": True})
+    elif status.get("installed"):
+        status.update({"installed_version": "", "latest_version": "", "update_available": bool(update_available), "status_text": "▲ Update available" if update_available else "✓ Installed", "install_label": "Update" if update_available else "Installed", "install_enabled": bool(update_available)})
+    return status
+
+
+def get_mms2_gb_core_status(connection, check_latest=False):
+    status = _manual_get_mms2_gb_core_status(connection, check_latest=False)
+    manual = _manual_mms2_gb_install(connection)
+    update = bool(check_latest and status.get("installed") and not manual and check_named_database_online(connection, MMS2_GB_DB_ID))
+    return _apply_mms2_gb_downloader_status(status, manual, update)
+
+
+def get_mms2_gb_core_status_local(sd_root, check_latest=False):
+    status = _manual_get_mms2_gb_core_status_local(sd_root, check_latest=False)
+    manual = _manual_mms2_gb_install_local(sd_root)
+    update = bool(check_latest and status.get("installed") and not manual and check_named_database_local(sd_root, MMS2_GB_DB_ID))
+    return _apply_mms2_gb_downloader_status(status, manual, update)
+
+
+def _soft_reboot_result(uninstall=False):
+    action = "uninstall changes" if uninstall else "changes"
+    return {"soft_reboot_required": True, "soft_reboot_title": "Soft Reboot Required", "soft_reboot_message": f"A soft reboot is required to apply the MMS2 GB Core {action}.\n\nDo you want to soft reboot MiSTer now?"}
+
+
+def install_or_update_mms2_gb_core(connection, log):
+    manual = _manual_mms2_gb_install(connection)
+    original = ensure_database_source_online(connection, MMS2_GB_DB_ID, MMS2_GB_DB_URL)
+    try:
+        _prepare_manual_mms2_gb_for_downloader(connection, log, manual=manual)
+        run_named_database_online(connection, MMS2_GB_DB_ID, log=log)
+    except Exception:
+        restore_online(connection, original)
+        raise
+    return _soft_reboot_result()
+
+
+def install_or_update_mms2_gb_core_local(sd_root, log):
+    manual = _manual_mms2_gb_install_local(sd_root)
+    original = ensure_database_source_local(sd_root, MMS2_GB_DB_ID, MMS2_GB_DB_URL)
+    try:
+        _prepare_manual_mms2_gb_for_downloader_local(sd_root, log, manual=manual)
+        run_named_database_local(sd_root, MMS2_GB_DB_ID, log=log)
+    except Exception:
+        restore_local(sd_root, original)
+        raise
+    return _soft_reboot_result()
+
+
+def uninstall_mms2_gb_core(connection, log, force=False):
+    if _manual_mms2_gb_install(connection):
+        _prepare_manual_mms2_gb_for_downloader(connection, log, manual=True)
+        remove_database_source_online(connection, MMS2_GB_DB_ID)
+        return _soft_reboot_result(uninstall=True)
+    original = ensure_database_source_online(connection, MMS2_GB_DB_ID, MMS2_GB_DB_URL)
+    try:
+        native = uninstall_named_database_online(connection, MMS2_GB_DB_ID, log=log, force=force)
+        if not native:
+            ensure_database_source_online(connection, MMS2_GB_DB_ID, MMS2_GB_DB_URL, filter_value="!all")
+            run_named_database_online(connection, MMS2_GB_DB_ID, log=log)
+            remove_database_source_online(connection, MMS2_GB_DB_ID)
+    except Exception:
+        restore_online(connection, original)
+        raise
+    return _soft_reboot_result(uninstall=True)
+
+
+def uninstall_mms2_gb_core_local(sd_root, log, force=False):
+    if _manual_mms2_gb_install_local(sd_root):
+        _prepare_manual_mms2_gb_for_downloader_local(sd_root, log, manual=True)
+        remove_database_source_local(sd_root, MMS2_GB_DB_ID)
+        return _soft_reboot_result(uninstall=True)
+    original = ensure_database_source_local(sd_root, MMS2_GB_DB_ID, MMS2_GB_DB_URL)
+    try:
+        native = uninstall_named_database_local(sd_root, MMS2_GB_DB_ID, log=log, force=force)
+        if not native:
+            ensure_database_source_local(sd_root, MMS2_GB_DB_ID, MMS2_GB_DB_URL, filter_value="!all")
+            run_named_database_local(sd_root, MMS2_GB_DB_ID, log=log)
+            remove_database_source_local(sd_root, MMS2_GB_DB_ID)
+    except Exception:
+        restore_local(sd_root, original)
+        raise
+    return _soft_reboot_result(uninstall=True)

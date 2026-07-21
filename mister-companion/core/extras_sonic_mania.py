@@ -644,3 +644,171 @@ def uninstall_sonic_mania_local(sd_root: str, log):
         log("No Sonic Mania blocks found in MiSTer.ini\n")
 
     return {"uninstalled": True}
+
+
+# Downloader-backed Install Center implementation.
+from core.downloader_backend import (
+    database_registered_local,
+    database_registered_online,
+    ensure_database_source_local,
+    ensure_database_source_online,
+    remove_database_source_local,
+    remove_database_source_online,
+    restore_local,
+    restore_online,
+    run_named_database_local,
+    run_named_database_online,
+    check_named_database_local,
+    check_named_database_online,
+    uninstall_named_database_local,
+    uninstall_named_database_online,
+)
+
+SONIC_MANIA_DB_ID = "MultiDatabases/sonic-mania"
+SONIC_MANIA_DB_URL = "https://raw.githubusercontent.com/theypsilon/MultiDatabases_MiSTer/db/sonic-mania/db.json"
+SONIC_MANIA_DB_FILES = (
+    SONIC_MANIA_REMOTE_LAUNCHER_PATH,
+    "/media/fat/games/sonic-mania/Data.rsdk.MISSING.txt",
+    "/media/fat/games/sonic-mania/bin/RSDKv5U",
+    "/media/fat/games/sonic-mania/lib/libtheora.so.0",
+    "/media/fat/games/sonic-mania/lib/libtheoradec.so.1",
+    "/media/fat/games/sonic-mania/scripts/run-mania.sh",
+)
+
+
+def _manual_sonic_mania_install(connection):
+    present = bool(_has_sonic_mania_rbf(connection) or _path_exists(connection, SONIC_MANIA_REMOTE_LAUNCHER_PATH))
+    return bool(present and (_path_exists(connection, SONIC_MANIA_REMOTE_VERSION_FILE) or not database_registered_online(connection, SONIC_MANIA_DB_ID)))
+
+
+def _manual_sonic_mania_install_local(sd_root):
+    present = bool(_has_sonic_mania_rbf_local(sd_root) or _path_exists_local(sd_root, SONIC_MANIA_REMOTE_LAUNCHER_PATH))
+    return bool(present and (_path_exists_local(sd_root, SONIC_MANIA_REMOTE_VERSION_FILE) or not database_registered_local(sd_root, SONIC_MANIA_DB_ID)))
+
+
+def _prepare_manual_sonic_mania_for_downloader(connection, log, manual=None):
+    if manual is None:
+        manual = _manual_sonic_mania_install(connection)
+    if not manual:
+        return False
+    log("Detected a manual Companion installation; preparing it for Downloader...\n")
+    _remove_glob(connection, "/media/fat/_Other/Sonic_Mania*.rbf")
+    for path in SONIC_MANIA_DB_FILES:
+        connection.run_command(f"rm -f {_quote(path)}")
+    connection.run_command(f"rm -f {_quote(SONIC_MANIA_REMOTE_VERSION_FILE)}")
+    log(f"Preserved user game data: {SONIC_MANIA_REMOTE_DATA_RSDK_PATH}\n")
+    return True
+
+
+def _prepare_manual_sonic_mania_for_downloader_local(sd_root, log, manual=None):
+    if manual is None:
+        manual = _manual_sonic_mania_install_local(sd_root)
+    if not manual:
+        return False
+    log("Detected a manual Companion installation; preparing it for Downloader...\n")
+    _remove_local_glob(sd_root, "/media/fat/_Other/Sonic_Mania*.rbf")
+    for path in SONIC_MANIA_DB_FILES:
+        _remove_local_path(sd_root, path)
+    _remove_local_path(sd_root, SONIC_MANIA_REMOTE_VERSION_FILE)
+    log(f"Preserved user game data: {SONIC_MANIA_REMOTE_DATA_RSDK_PATH}\n")
+    return True
+
+
+_manual_get_sonic_mania_status = get_sonic_mania_status
+_manual_get_sonic_mania_status_local = get_sonic_mania_status_local
+
+
+def _apply_sonic_mania_downloader_status(status, manual, update_available=False):
+    status = dict(status)
+    if manual:
+        status.update({"update_available": True, "status_text": "▲ Manual install found", "install_label": "Migrate / Update", "install_enabled": True})
+    elif status.get("installed"):
+        status.update({"installed_version": "", "latest_version": "", "update_available": bool(update_available), "status_text": "▲ Update available" if update_available else "✓ Installed", "install_label": "Update" if update_available else "Installed", "install_enabled": bool(update_available)})
+    return status
+
+
+def get_sonic_mania_status(connection, check_latest=False):
+    status = _manual_get_sonic_mania_status(connection, check_latest=False)
+    manual = _manual_sonic_mania_install(connection)
+    update = bool(check_latest and status.get("installed") and not manual and check_named_database_online(connection, SONIC_MANIA_DB_ID))
+    return _apply_sonic_mania_downloader_status(status, manual, update)
+
+
+def get_sonic_mania_status_local(sd_root, check_latest=False):
+    status = _manual_get_sonic_mania_status_local(sd_root, check_latest=False)
+    manual = _manual_sonic_mania_install_local(sd_root)
+    update = bool(check_latest and status.get("installed") and not manual and check_named_database_local(sd_root, SONIC_MANIA_DB_ID))
+    return _apply_sonic_mania_downloader_status(status, manual, update)
+
+
+def install_or_update_sonic_mania(connection, log):
+    if not connection.is_connected():
+        raise RuntimeError("Not connected to MiSTer.")
+    manual = _manual_sonic_mania_install(connection)
+    original = ensure_database_source_online(connection, SONIC_MANIA_DB_ID, SONIC_MANIA_DB_URL)
+    try:
+        _prepare_manual_sonic_mania_for_downloader(connection, log, manual=manual)
+        run_named_database_online(connection, SONIC_MANIA_DB_ID, log=log)
+        connection.run_command(f"chmod +x {_quote(SONIC_MANIA_REMOTE_LAUNCHER_PATH)} {_quote('/media/fat/games/sonic-mania/bin/RSDKv5U')} {_quote('/media/fat/games/sonic-mania/scripts/run-mania.sh')}")
+        _ensure_sonic_mania_ini_blocks(connection)
+        connection.run_command(f"rm -f {_quote(SONIC_MANIA_REMOTE_VERSION_FILE)}")
+    except Exception:
+        restore_online(connection, original)
+        raise
+
+
+def install_or_update_sonic_mania_local(sd_root, log):
+    manual = _manual_sonic_mania_install_local(sd_root)
+    original = ensure_database_source_local(sd_root, SONIC_MANIA_DB_ID, SONIC_MANIA_DB_URL)
+    try:
+        _prepare_manual_sonic_mania_for_downloader_local(sd_root, log, manual=manual)
+        run_named_database_local(sd_root, SONIC_MANIA_DB_ID, log=log)
+        _ensure_sonic_mania_ini_blocks_local(sd_root)
+        _remove_local_path(sd_root, SONIC_MANIA_REMOTE_VERSION_FILE)
+    except Exception:
+        restore_local(sd_root, original)
+        raise
+
+
+def uninstall_sonic_mania(connection, log, force=False):
+    if not connection.is_connected():
+        raise RuntimeError("Not connected to MiSTer.")
+    if _manual_sonic_mania_install(connection):
+        _prepare_manual_sonic_mania_for_downloader(connection, log, manual=True)
+        remove_database_source_online(connection, SONIC_MANIA_DB_ID)
+        _remove_sonic_mania_ini_blocks(connection)
+        return {"uninstalled": True}
+    original = ensure_database_source_online(connection, SONIC_MANIA_DB_ID, SONIC_MANIA_DB_URL)
+    try:
+        native = uninstall_named_database_online(connection, SONIC_MANIA_DB_ID, log=log, force=force)
+        if not native:
+            ensure_database_source_online(connection, SONIC_MANIA_DB_ID, SONIC_MANIA_DB_URL, filter_value="!all")
+            run_named_database_online(connection, SONIC_MANIA_DB_ID, log=log)
+            remove_database_source_online(connection, SONIC_MANIA_DB_ID)
+        _remove_sonic_mania_ini_blocks(connection)
+        connection.run_command(f"rm -f {_quote(SONIC_MANIA_REMOTE_VERSION_FILE)}")
+    except Exception:
+        restore_online(connection, original)
+        raise
+    return {"uninstalled": True}
+
+
+def uninstall_sonic_mania_local(sd_root, log, force=False):
+    if _manual_sonic_mania_install_local(sd_root):
+        _prepare_manual_sonic_mania_for_downloader_local(sd_root, log, manual=True)
+        remove_database_source_local(sd_root, SONIC_MANIA_DB_ID)
+        _remove_sonic_mania_ini_blocks_local(sd_root)
+        return {"uninstalled": True}
+    original = ensure_database_source_local(sd_root, SONIC_MANIA_DB_ID, SONIC_MANIA_DB_URL)
+    try:
+        native = uninstall_named_database_local(sd_root, SONIC_MANIA_DB_ID, log=log, force=force)
+        if not native:
+            ensure_database_source_local(sd_root, SONIC_MANIA_DB_ID, SONIC_MANIA_DB_URL, filter_value="!all")
+            run_named_database_local(sd_root, SONIC_MANIA_DB_ID, log=log)
+            remove_database_source_local(sd_root, SONIC_MANIA_DB_ID)
+        _remove_sonic_mania_ini_blocks_local(sd_root)
+        _remove_local_path(sd_root, SONIC_MANIA_REMOTE_VERSION_FILE)
+    except Exception:
+        restore_local(sd_root, original)
+        raise
+    return {"uninstalled": True}

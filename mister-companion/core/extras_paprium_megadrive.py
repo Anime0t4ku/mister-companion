@@ -390,3 +390,157 @@ def open_paprium_game_folder_local(sd_root: str) -> None:
 
 def open_paprium_game_folder_on_host(ip: str) -> None:
     open_smb_share(ip, "sdcard/games/PapriumMD")
+
+
+# Downloader-backed Install Center implementation.
+from core.downloader_backend import (
+    database_registered_local,
+    database_registered_online,
+    ensure_database_source_local,
+    ensure_database_source_online,
+    remove_database_source_local,
+    remove_database_source_online,
+    restore_local,
+    restore_online,
+    run_named_database_local,
+    run_named_database_online,
+    check_named_database_local,
+    check_named_database_online,
+    uninstall_named_database_local,
+    uninstall_named_database_online,
+)
+
+PAPRIUM_DB_ID = "MultiDatabases/paprium"
+PAPRIUM_DB_URL = "https://raw.githubusercontent.com/theypsilon/MultiDatabases_MiSTer/db/paprium/db.json"
+
+
+def _manual_paprium_install(connection):
+    present = bool(_read_installed_paprium_date(connection) or _path_exists(connection, PAPRIUM_MGL_PATH))
+    return bool(present and not database_registered_online(connection, PAPRIUM_DB_ID))
+
+
+def _manual_paprium_install_local(sd_root):
+    present = bool(_read_installed_paprium_date_local(sd_root) or _path_exists_local(sd_root, PAPRIUM_MGL_PATH))
+    return bool(present and not database_registered_local(sd_root, PAPRIUM_DB_ID))
+
+
+def _prepare_manual_paprium_for_downloader(connection, log, manual=None):
+    if manual is None:
+        manual = _manual_paprium_install(connection)
+    if not manual:
+        return False
+    log("Detected a manual Companion installation; preparing it for Downloader...\n")
+    _remove_glob(connection, PAPRIUM_RBF_PATTERN)
+    connection.run_command(f"rm -f {_quote(PAPRIUM_MGL_PATH)}")
+    log(f"Preserved user ROM and audio files in {PAPRIUM_GAME_DIR}\n")
+    return True
+
+
+def _prepare_manual_paprium_for_downloader_local(sd_root, log, manual=None):
+    if manual is None:
+        manual = _manual_paprium_install_local(sd_root)
+    if not manual:
+        return False
+    log("Detected a manual Companion installation; preparing it for Downloader...\n")
+    _remove_local_glob(sd_root, PAPRIUM_RBF_PATTERN)
+    _remove_local_path(sd_root, PAPRIUM_MGL_PATH)
+    log(f"Preserved user ROM and audio files in {PAPRIUM_GAME_DIR}\n")
+    return True
+
+
+_manual_get_paprium_status = get_paprium_megadrive_status
+_manual_get_paprium_status_local = get_paprium_megadrive_status_local
+
+
+def _apply_paprium_downloader_status(status, manual, update_available=False):
+    status = dict(status)
+    if manual:
+        status.update({"update_available": True, "status_text": "▲ Manual install found", "install_label": "Migrate / Update", "install_enabled": True})
+    elif status.get("installed"):
+        status.update({"installed_version": "", "latest_version": "", "update_available": bool(update_available), "status_text": "▲ Update available" if update_available else "✓ Installed", "install_label": "Update" if update_available else "Installed", "install_enabled": bool(update_available)})
+    return status
+
+
+def get_paprium_megadrive_status(connection, check_latest=False):
+    status = _manual_get_paprium_status(connection, check_latest=False)
+    manual = _manual_paprium_install(connection)
+    update = bool(check_latest and status.get("installed") and not manual and check_named_database_online(connection, PAPRIUM_DB_ID))
+    return _apply_paprium_downloader_status(status, manual, update)
+
+
+def get_paprium_megadrive_status_local(sd_root, check_latest=False):
+    status = _manual_get_paprium_status_local(sd_root, check_latest=False)
+    manual = _manual_paprium_install_local(sd_root)
+    update = bool(check_latest and status.get("installed") and not manual and check_named_database_local(sd_root, PAPRIUM_DB_ID))
+    return _apply_paprium_downloader_status(status, manual, update)
+
+
+def _paprium_reboot_result(uninstall=False):
+    message = "A soft reboot is required to refresh the MiSTer menu after removing Paprium MegaDrive." if uninstall else "A soft reboot is required before the Paprium MegaDrive menu entry becomes visible."
+    return {"soft_reboot_required": True, "soft_reboot_title": "Soft Reboot Required", "soft_reboot_message": message + "\n\nDo you want to soft reboot MiSTer now?"}
+
+
+def install_or_update_paprium_megadrive(connection, log):
+    manual = _manual_paprium_install(connection)
+    original = ensure_database_source_online(connection, PAPRIUM_DB_ID, PAPRIUM_DB_URL)
+    try:
+        _prepare_manual_paprium_for_downloader(connection, log, manual=manual)
+        run_named_database_online(connection, PAPRIUM_DB_ID, log=log)
+        _ensure_remote_dir(connection, PAPRIUM_GAME_DIR)
+    except Exception:
+        restore_online(connection, original)
+        raise
+    return _paprium_reboot_result()
+
+
+def install_or_update_paprium_megadrive_local(sd_root, log):
+    manual = _manual_paprium_install_local(sd_root)
+    original = ensure_database_source_local(sd_root, PAPRIUM_DB_ID, PAPRIUM_DB_URL)
+    try:
+        _prepare_manual_paprium_for_downloader_local(sd_root, log, manual=manual)
+        run_named_database_local(sd_root, PAPRIUM_DB_ID, log=log)
+        _ensure_local_dir(sd_root, PAPRIUM_GAME_DIR)
+    except Exception:
+        restore_local(sd_root, original)
+        raise
+    return _paprium_reboot_result()
+
+
+def uninstall_paprium_megadrive(connection, log, remove_game_folder=False, force=False):
+    if _manual_paprium_install(connection):
+        _prepare_manual_paprium_for_downloader(connection, log, manual=True)
+        remove_database_source_online(connection, PAPRIUM_DB_ID)
+        return _paprium_reboot_result(uninstall=True)
+    original = ensure_database_source_online(connection, PAPRIUM_DB_ID, PAPRIUM_DB_URL)
+    try:
+        native = uninstall_named_database_online(connection, PAPRIUM_DB_ID, log=log, force=force)
+        if not native:
+            ensure_database_source_online(connection, PAPRIUM_DB_ID, PAPRIUM_DB_URL, filter_value="!all")
+            run_named_database_online(connection, PAPRIUM_DB_ID, log=log)
+            remove_database_source_online(connection, PAPRIUM_DB_ID)
+        if remove_game_folder:
+            connection.run_command(f"rm -rf {_quote(PAPRIUM_GAME_DIR)}")
+    except Exception:
+        restore_online(connection, original)
+        raise
+    return _paprium_reboot_result(uninstall=True)
+
+
+def uninstall_paprium_megadrive_local(sd_root, log, remove_game_folder=False, force=False):
+    if _manual_paprium_install_local(sd_root):
+        _prepare_manual_paprium_for_downloader_local(sd_root, log, manual=True)
+        remove_database_source_local(sd_root, PAPRIUM_DB_ID)
+        return _paprium_reboot_result(uninstall=True)
+    original = ensure_database_source_local(sd_root, PAPRIUM_DB_ID, PAPRIUM_DB_URL)
+    try:
+        native = uninstall_named_database_local(sd_root, PAPRIUM_DB_ID, log=log, force=force)
+        if not native:
+            ensure_database_source_local(sd_root, PAPRIUM_DB_ID, PAPRIUM_DB_URL, filter_value="!all")
+            run_named_database_local(sd_root, PAPRIUM_DB_ID, log=log)
+            remove_database_source_local(sd_root, PAPRIUM_DB_ID)
+        if remove_game_folder:
+            _remove_local_path(sd_root, PAPRIUM_GAME_DIR)
+    except Exception:
+        restore_local(sd_root, original)
+        raise
+    return _paprium_reboot_result(uninstall=True)

@@ -2,6 +2,7 @@ import binascii
 import hashlib
 import html
 import json
+import posixpath
 from io import BytesIO
 import re
 import shutil
@@ -945,14 +946,24 @@ def _scan_zip_contents(
     try:
         with zipfile.ZipFile(zip_path, "r") as zf:
             names = zf.namelist()
-            name_set = set(n.lower() for n in names)
+            name_set = {_normalize_archive_path(n) for n in names}
+            referenced_helpers: set[str] = set()
+            for cue_name in names:
+                if Path(cue_name).suffix.lower() != ".cue":
+                    continue
+                try:
+                    cue_text = zf.read(cue_name).decode("utf-8-sig", errors="replace")
+                    referenced_helpers.update(_cue_referenced_archive_paths(cue_text, cue_name))
+                except Exception:
+                    continue
             for inner_name in names:
                 inner_path = Path(inner_name)
                 if not is_supported_rom(system_folder, inner_path):
                     continue
                 if inner_path.suffix.lower() in DISC_HELPER_EXTENSIONS:
-                    cue_name = inner_path.with_suffix(".cue").name.lower()
-                    if any(Path(n).name.lower() == cue_name for n in names):
+                    normalized_name = _normalize_archive_path(inner_name)
+                    same_stem_cue = _normalize_archive_path(str(Path(inner_name).with_suffix(".cue")))
+                    if normalized_name in referenced_helpers or same_stem_cue in name_set:
                         continue
                 info = zf.getinfo(inner_name)
                 results.append(
@@ -984,6 +995,7 @@ def scan_system_folder(
     roms: list[ZapScraperRom] = []
     checked_files = 0
     last_reported_folder = ""
+    referenced_disc_helpers = _cue_referenced_local_paths(system_path)
 
     for path in system_path.rglob("*"):
         if callable(stop_checker) and stop_checker():
@@ -1038,8 +1050,9 @@ def scan_system_folder(
         if not is_supported_rom(system_folder, path):
             continue
 
-        if path.suffix.lower() in DISC_HELPER_EXTENSIONS and _has_matching_cue(path):
-            continue
+        if path.suffix.lower() in DISC_HELPER_EXTENSIONS:
+            if _normalize_local_path(path) in referenced_disc_helpers or _has_matching_cue(path):
+                continue
 
         relative_path = to_recalbox_relative_path(path, system_path)
 
@@ -1297,6 +1310,60 @@ def _has_matching_cue(path: Path) -> bool:
         return path.with_suffix(".cue").exists()
     except Exception:
         return False
+
+
+_CUE_FILE_RE = re.compile(
+    r'^\s*FILE\s+(?:"([^"]+)"|([^\s]+))\s+\S+',
+    flags=re.IGNORECASE | re.MULTILINE,
+)
+
+
+def _cue_file_references(cue_text: str) -> list[str]:
+    references = []
+    for match in _CUE_FILE_RE.finditer(cue_text or ""):
+        value = str(match.group(1) or match.group(2) or "").strip()
+        if value:
+            references.append(value.replace("\\", "/"))
+    return references
+
+
+def _normalize_archive_path(path: str) -> str:
+    return posixpath.normpath(str(path or "").replace("\\", "/")).lstrip("./").casefold()
+
+
+def _cue_referenced_archive_paths(cue_text: str, cue_name: str) -> set[str]:
+    cue_dir = posixpath.dirname(str(cue_name or "").replace("\\", "/"))
+    return {
+        _normalize_archive_path(posixpath.join(cue_dir, reference))
+        for reference in _cue_file_references(cue_text)
+        if Path(reference).suffix.lower() in DISC_HELPER_EXTENSIONS
+    }
+
+
+def _normalize_local_path(path: Path) -> str:
+    try:
+        return path.resolve(strict=False).as_posix().casefold()
+    except Exception:
+        return str(path).replace("\\", "/").casefold()
+
+
+def _cue_referenced_local_paths(system_path: Path) -> set[str]:
+    referenced: set[str] = set()
+    for cue_path in system_path.rglob("*"):
+        if not cue_path.is_file() or cue_path.suffix.lower() != ".cue":
+            continue
+        if _is_inside_media_folder(cue_path, system_path):
+            continue
+        try:
+            cue_text = cue_path.read_text(encoding="utf-8-sig", errors="replace")
+        except Exception:
+            continue
+        for reference in _cue_file_references(cue_text):
+            if Path(reference).suffix.lower() not in DISC_HELPER_EXTENSIONS:
+                continue
+            reference_path = cue_path.parent.joinpath(*reference.split("/"))
+            referenced.add(_normalize_local_path(reference_path))
+    return referenced
 
 
 def to_recalbox_relative_path(path: Path, system_path: Path) -> str:

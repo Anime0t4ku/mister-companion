@@ -144,8 +144,17 @@ from core.extras_ra_cores import (
     uninstall_ra_cores,
     uninstall_ra_cores_local,
 )
+from core.extras_physical_disc import (
+    get_physical_disc_status,
+    get_physical_disc_status_local,
+    install_or_update_physical_disc,
+    install_or_update_physical_disc_local,
+    uninstall_physical_disc,
+    uninstall_physical_disc_local,
+)
 
 from core.scripts_version_check import apply_script_update_status, supports_script_update_check
+from core.downloader_backend import check_named_databases_online, check_named_databases_local
 
 from core.wallpapers import (
     build_install_state,
@@ -170,6 +179,22 @@ HUB_CATALOG_URL = HUB_RAW_BASE_URL + "generated/catalog_full.json"
 HUB_CATALOG_MIN_URL = HUB_RAW_BASE_URL + "generated/catalog_min.json"
 ROM_MANIFEST_REMOTE_PATH = "/media/fat/Scripts/.config/mister_companion/install_center/installed_roms.json"
 
+DOWNLOADER_HANDLER_DATABASES = {
+    "zaparoo": "ZaparooProject/Zaparoo_MiSTer",
+    "zaparoo_frontend": "ZaparooProject/Zaparoo_MiSTer",
+    "retroachievement_cores": "theypsilon/RetroAchievementsDB_MiSTer",
+    "3s_arm": "MultiDatabases/3s-arm",
+    "3sx_mister": "MultiDatabases/3s-arm",
+    "dreamster": "MultiDatabases/dreamster",
+    "mister_duke3d": "MultiDatabases/duke3d",
+    "mister_quake": "MultiDatabases/mister-quake",
+    "mms2_gb_core": "MultiDatabases/mms2-gb",
+    "paprium_megadrive": "MultiDatabases/paprium",
+    "sonic_mania_mister": "MultiDatabases/sonic-mania",
+    "megavgmdrive": "MultiDatabases/megavgmdrive",
+    "physical_disc_cores": "MultiDatabases/physical-disc",
+}
+
 CATEGORY_FALLBACK = [
     {"id": "scripts", "name": "Scripts", "description": "Add extra functionality to your standard MiSTer FPGA setup through useful scripts and utilities.", "sort_order": 10},
     {"id": "cores", "name": "Cores", "description": "Custom and alternative cores that add features, improve compatibility, or offer different behavior from the standard MiSTer cores.", "sort_order": 20},
@@ -193,6 +218,7 @@ FALLBACK_ITEMS = [
     ("mms2_gb_core", "cores", "core", "mms2_gb_core", "MMS2 GB Core", "Heber", "Installs Heber’s custom GB core for MMS2 with physical cartridge support. The core is installed in a separate custom location and adds a MiSTer home screen shortcut for directly loading cartridges."),
     ("paprium_megadrive", "cores", "core", "paprium_megadrive", "Paprium MegaDrive", "Pezz82", "Installs Pezz82’s customized MegaDrive core for running Paprium. This only installs the core and launcher. Provide your own ROM and make sure you use the correct ROM version with WAV files."),
     ("megavgmdrive", "cores", "core", "megavgmdrive", "MegaVGMDrive", "dai-VGM", "Installs MegaVGMDrive, a MegaDrive/Genesis VGM playback core for MiSTer. This only installs the core, launcher, and game folder structure."),
+    ("physical_disc_cores", "cores", "core", "physical_disc_cores", "Physical Disc Cores", "Anime0t4ku", "Adds experimental physical CD support to selected MiSTer cores using compatible external USB CD/DVD drives. This is a work in progress: compatibility and performance vary by drive, and PSX may stutter on many devices. Performance will improve over time, with more cores planned."),
     ("retroachievement_cores", "cores", "core", "retroachievement_cores", "RetroAchievement Cores", "MiSTer community", "RetroAchievement Cores adds RetroAchievements-enabled MiSTer cores and the required MiSTer_RA support files. It uses MGL launchers so your normal cores remain untouched."),
     ("3s_arm", "extras", "extra", "3s_arm", "3S-ARM", "MiSTer community", "3S-ARM is a MiSTer port/support package for Street Fighter III: Third Strike based on the PS2 version. It installs binaries/support files only, not game files."),
     ("sonic_mania_mister", "extras", "extra", "sonic_mania_mister", "Sonic Mania MiSTer", "MiSTer community", "Sonic Mania MiSTer lets your MiSTer run Sonic Mania using the MiSTer port, with support for the required Data.rsdk game file."),
@@ -243,6 +269,7 @@ EXTRA_HANDLERS = {
     "mms2_gb_core": (get_mms2_gb_core_status, get_mms2_gb_core_status_local, install_or_update_mms2_gb_core, install_or_update_mms2_gb_core_local, uninstall_mms2_gb_core, uninstall_mms2_gb_core_local),
     "paprium_megadrive": (get_paprium_megadrive_status, get_paprium_megadrive_status_local, install_or_update_paprium_megadrive, install_or_update_paprium_megadrive_local, uninstall_paprium_megadrive, uninstall_paprium_megadrive_local),
     "megavgmdrive": (get_megavgmdrive_status, get_megavgmdrive_status_local, install_or_update_megavgmdrive, install_or_update_megavgmdrive_local, uninstall_megavgmdrive, uninstall_megavgmdrive_local),
+    "physical_disc_cores": (get_physical_disc_status, get_physical_disc_status_local, install_or_update_physical_disc, install_or_update_physical_disc_local, uninstall_physical_disc, uninstall_physical_disc_local),
     "retroachievement_cores": (get_ra_cores_status, get_ra_cores_status_local, install_or_update_ra_cores, install_or_update_ra_cores_local, uninstall_ra_cores, uninstall_ra_cores_local),
 }
 
@@ -523,8 +550,6 @@ def _extra_status(handler: str, context: InstallCenterContext, check_latest: boo
         return {"state": "unknown", "status_text": "Status unknown", "installed": False, "update_available": False}
 
     get_online, get_local = functions[0], functions[1]
-    if log:
-        log(f"Checking {handler.replace('_', ' ')}...\n")
     if context.offline:
         if handler == "retroachievement_cores":
             status = get_local(context.sd_root, check_latest=check_latest, log=log)
@@ -556,6 +581,22 @@ def _extra_status(handler: str, context: InstallCenterContext, check_latest: boo
     return result
 
 
+def update_check_result_text(status: dict) -> str:
+    status = status or {}
+    status_text = str(status.get("status_text") or "")
+    if status.get("latest_error") or "update check failed" in status_text.lower() or status.get("state") == "unknown":
+        return "Update check failed."
+    if "manual install" in status_text.lower():
+        return "Manual installation found; migration available."
+    if status.get("update_available"):
+        return "Update available."
+    if status.get("installed"):
+        return "No updates available."
+    if "not installed" in status_text.lower():
+        return "Not installed."
+    return status_text or "Update status unavailable."
+
+
 def check_item_status(item: dict, context: InstallCenterContext, check_latest: bool = False, log=None) -> dict:
     ready, reason = context_ready(context)
     if not ready:
@@ -567,8 +608,6 @@ def check_item_status(item: dict, context: InstallCenterContext, check_latest: b
     category = item.get("category")
 
     if item_type == "script" or category == "scripts":
-        if log:
-            log(f"Scanning {item.get('name') or handler} script status...\n")
         scripts_status = get_scripts_status_local(context.sd_root) if context.offline else get_scripts_status(context.connection)
         if handler == "zaparoo":
             try:
@@ -600,12 +639,8 @@ def check_item_status(item: dict, context: InstallCenterContext, check_latest: b
     if item_type in {"extra", "core"} or category in {"extras", "cores"}:
         return _extra_status(handler, context, check_latest, log=log)
     if item_type == "rom" or category == "roms":
-        if log:
-            log(f"Scanning ROM install manifest for {item.get('name') or item_id}...\n")
         return check_rom_status(item, context)
     if item_type == "wallpaper_pack" or category == "wallpaper_packs":
-        if log:
-            log(f"Scanning wallpaper pack status for {item.get('name') or item_id}...\n")
         return check_wallpaper_status(item, context)
     return {"state": "unknown", "status_text": "Status unknown", "installed": False, "update_available": False}
 
@@ -645,22 +680,23 @@ def check_all_status(catalog: dict, context: InstallCenterContext, check_latest:
             item_name = item.get("name") or item_id or "item"
             if log:
                 log(f"Checking {item_name}...\n")
+            item_check_latest = bool(check_latest and handler not in DOWNLOADER_HANDLER_DATABASES)
             if item_type == "script" or category == "scripts":
                 if handler == "zaparoo":
-                    results[item_id] = get_zaparoo_update_status_local(context.sd_root, check_latest=check_latest, log=log) if context.offline else get_zaparoo_update_status(context.connection, check_latest=check_latest, log=log)
+                    results[item_id] = get_zaparoo_update_status_local(context.sd_root, check_latest=item_check_latest, log=log) if context.offline else get_zaparoo_update_status(context.connection, check_latest=item_check_latest, log=log)
                 else:
                     base_status = _script_status_text(handler, scripts_status, syncthing_status, ra_viewer_status)
                     results[item_id] = apply_script_update_status(
                         handler,
                         base_status,
-                        check_latest=check_latest,
+                        check_latest=item_check_latest,
                         connection=context.connection,
                         sd_root=context.sd_root,
                         offline=context.offline,
                         log=log,
                     )
             elif item_type in {"extra", "core"} or category in {"extras", "cores"}:
-                results[item_id] = _extra_status(handler, context, check_latest, log=log)
+                results[item_id] = _extra_status(handler, context, item_check_latest, log=log)
             elif item_type == "rom" or category == "roms":
                 results[item_id] = check_rom_status(item, context)
             elif item_type == "wallpaper_pack" or category == "wallpaper_packs":
@@ -669,6 +705,46 @@ def check_all_status(catalog: dict, context: InstallCenterContext, check_latest:
                 results[item_id] = {"state": "unknown", "status_text": "Status unknown", "installed": False, "update_available": False}
         except Exception as e:
             results[item_id] = {"state": "unknown", "status_text": f"Status unknown ({e})", "installed": False, "update_available": False}
+
+        if check_latest and log and handler not in DOWNLOADER_HANDLER_DATABASES:
+            log(update_check_result_text(results[item_id]) + "\n")
+
+    if check_latest:
+        downloader_items = []
+        for item in catalog.get("items", []):
+            item_id = item.get("id")
+            handler = item.get("handler") or item_id
+            db_id = DOWNLOADER_HANDLER_DATABASES.get(handler)
+            status = results.get(item_id) or {}
+            manual = "manual install" in str(status.get("status_text") or "").lower()
+            if db_id and status.get("installed") and not manual:
+                downloader_items.append((item, db_id))
+
+        if downloader_items:
+            db_ids = list(dict.fromkeys(db_id for _item, db_id in downloader_items))
+            if log:
+                log(f"Checking {len(db_ids)} Downloader database(s) together...\n")
+            checks = check_named_databases_local(context.sd_root, db_ids, log=None) if context.offline else check_named_databases_online(context.connection, db_ids, log=None)
+            for item, db_id in downloader_items:
+                item_id = item.get("id")
+                status = dict(results.get(item_id) or {})
+                available = bool(checks.get(db_id))
+                status.update({
+                    "state": "update_available" if available else "installed",
+                    "status_text": "Update available" if available else "Installed",
+                    "update_available": available,
+                    "install_label": "Update" if available else "Installed",
+                    "install_enabled": available,
+                })
+                results[item_id] = status
+                if log:
+                    log(f"{item.get('name') or item_id}: {update_check_result_text(status)}\n")
+
+        if log:
+            for item in catalog.get("items", []):
+                handler = item.get("handler") or item.get("id")
+                if handler in DOWNLOADER_HANDLER_DATABASES and "manual install" in str((results.get(item.get("id")) or {}).get("status_text") or "").lower():
+                    log(f"{item.get('name') or item.get('id')}: Manual installation found; migration available.\n")
 
     return results
 
@@ -1091,7 +1167,7 @@ def run_install_or_update(item: dict, context: InstallCenterContext, log: Callab
     raise RuntimeError("Install is not available for this entry yet.")
 
 
-def run_uninstall(item: dict, context: InstallCenterContext, log: Callable[[str], None]):
+def run_uninstall(item: dict, context: InstallCenterContext, log: Callable[[str], None], force_downloader: bool = False):
     handler = item.get("handler") or item.get("id")
     category = item.get("category")
     item_type = item.get("type")
@@ -1101,7 +1177,12 @@ def run_uninstall(item: dict, context: InstallCenterContext, log: Callable[[str]
         if not functions:
             raise RuntimeError("This script does not have an Install Center uninstaller yet.")
         uninstall_online, uninstall_local = functions[2], functions[3]
-        if handler in {"syncthing", "ra_viewer"}:
+        if handler == "zaparoo":
+            if context.offline:
+                uninstall_local(context.sd_root, force=force_downloader)
+            else:
+                uninstall_online(context.connection, force=force_downloader)
+        elif handler in {"syncthing", "ra_viewer"}:
             if context.offline:
                 uninstall_local(context.sd_root, log)
             else:
@@ -1119,11 +1200,11 @@ def run_uninstall(item: dict, context: InstallCenterContext, log: Callable[[str]
         if not functions:
             raise RuntimeError("This entry does not have an Install Center uninstaller yet.")
         uninstall_online, uninstall_local = functions[4], functions[5]
-        if handler == "retroachievement_cores":
+        if handler in {"retroachievement_cores", "3s_arm", "3sx_mister", "dreamster", "mister_duke3d", "mister_quake", "mms2_gb_core", "paprium_megadrive", "sonic_mania_mister", "megavgmdrive", "physical_disc_cores"}:
             if context.offline:
-                uninstall_local(context.sd_root, log)
+                uninstall_local(context.sd_root, log, force=force_downloader)
             else:
-                uninstall_online(context.connection, log)
+                uninstall_online(context.connection, log, force=force_downloader)
         else:
             if context.offline:
                 uninstall_local(context.sd_root, log)

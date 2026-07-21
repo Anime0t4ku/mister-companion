@@ -790,3 +790,207 @@ def uninstall_3sx_local(sd_root: str, log):
         log("No 3S-ARM / 3SX block found in MiSTer.ini\n")
 
     return {"uninstalled": True}
+
+
+# Downloader-backed Install Center implementation.
+from core.downloader_backend import (
+    database_registered_local,
+    database_registered_online,
+    ensure_database_source_local,
+    ensure_database_source_online,
+    remove_database_source_local,
+    remove_database_source_online,
+    restore_local,
+    restore_online,
+    run_named_database_local,
+    run_named_database_online,
+    check_named_database_local,
+    check_named_database_online,
+    uninstall_named_database_local,
+    uninstall_named_database_online,
+)
+
+THREE_S_ARM_DB_ID = "MultiDatabases/3s-arm"
+THREE_S_ARM_DB_URL = "https://raw.githubusercontent.com/theypsilon/MultiDatabases_MiSTer/db/3s-arm/db.json"
+
+# These are exactly the files owned by the Downloader database. The user's
+# SF33RD.AFS is deliberately absent and remains untouched during migration.
+THREE_S_ARM_DB_FILES = (
+    "/media/fat/MiSTer_3S-ARM",
+    "/media/fat/_Other/3S-ARM.rbf",
+    "/media/fat/games/3s-arm/bin/3s-arm",
+    "/media/fat/games/3s-arm/lib/libSDL3.so",
+    "/media/fat/games/3s-arm/lib/libSDL3.so.0",
+    "/media/fat/games/3s-arm/lib/libSDL3.so.0.4.0",
+    "/media/fat/games/3s-arm/licenses/LICENSE",
+    "/media/fat/games/3s-arm/licenses/THIRD_PARTY_NOTICES.txt",
+    "/media/fat/games/3s-arm/scripts/launch-osd.sh",
+    "/media/fat/games/3s-arm/scripts/run-3s-arm.sh",
+)
+
+
+def _manual_3sx_install(connection) -> bool:
+    installed = _is_3sx_installed(connection) or _is_old_3sx_installed(connection)
+    return bool(installed and (
+        _path_exists(connection, REMOTE_VERSION_FILE)
+        or _path_exists(connection, OLD_REMOTE_VERSION_FILE)
+        or not database_registered_online(connection, THREE_S_ARM_DB_ID)
+    ))
+
+
+def _manual_3sx_install_local(sd_root: str) -> bool:
+    installed = _is_3sx_installed_local(sd_root) or _is_old_3sx_installed_local(sd_root)
+    return bool(installed and (
+        _path_exists_local(sd_root, REMOTE_VERSION_FILE)
+        or _path_exists_local(sd_root, OLD_REMOTE_VERSION_FILE)
+        or not database_registered_local(sd_root, THREE_S_ARM_DB_ID)
+    ))
+
+
+def _prepare_manual_3sx_for_downloader(connection, log, manual=None):
+    if manual is None:
+        manual = _manual_3sx_install(connection)
+    if not manual:
+        return False
+    _migrate_old_install(connection, log)
+    log("Detected a manual Companion installation; preparing it for Downloader...\n")
+    for path in THREE_S_ARM_DB_FILES:
+        connection.run_command(f"rm -f {_quote(path)}")
+        log(f"Removed legacy managed file: {path}\n")
+    connection.run_command(f"rm -f {_quote(REMOTE_VERSION_FILE)} {_quote(OLD_REMOTE_VERSION_FILE)}")
+    log(f"Preserved user game file when present: {REMOTE_AFS_PATH}\n")
+    return True
+
+
+def _prepare_manual_3sx_for_downloader_local(sd_root: str, log, manual=None):
+    if manual is None:
+        manual = _manual_3sx_install_local(sd_root)
+    if not manual:
+        return False
+    _migrate_old_install_local(sd_root, log)
+    log("Detected a manual Companion installation; preparing it for Downloader...\n")
+    for path in THREE_S_ARM_DB_FILES:
+        _remove_local_path(sd_root, path)
+        log(f"Removed legacy managed file: {path}\n")
+    _remove_local_path(sd_root, REMOTE_VERSION_FILE)
+    _remove_local_path(sd_root, OLD_REMOTE_VERSION_FILE)
+    log(f"Preserved user game file when present: {REMOTE_AFS_PATH}\n")
+    return True
+
+
+_manual_get_3sx_status = get_3sx_status
+_manual_get_3sx_status_local = get_3sx_status_local
+
+
+def _apply_3sx_downloader_status(status: dict, manual: bool, update_available: bool = False) -> dict:
+    status = dict(status)
+    if manual:
+        status.update({
+            "update_available": True,
+            "status_text": "▲ Manual install found",
+            "install_label": "Migrate / Update",
+            "install_enabled": True,
+        })
+    elif status.get("installed"):
+        status.update({
+            "installed_version": "",
+            "latest_version": "",
+            "update_available": bool(update_available),
+            "status_text": "▲ Update available" if update_available else "✓ Installed",
+            "install_label": "Update" if update_available else "Installed",
+            "install_enabled": bool(update_available),
+        })
+    return status
+
+
+def get_3sx_status(connection, check_latest: bool = False):
+    status = _manual_get_3sx_status(connection, check_latest=False)
+    manual = _manual_3sx_install(connection) if status.get("installed") else False
+    update = False
+    if check_latest and status.get("installed") and not manual:
+        update = check_named_database_online(connection, THREE_S_ARM_DB_ID)
+    return _apply_3sx_downloader_status(status, manual, update)
+
+
+def get_3sx_status_local(sd_root: str, check_latest: bool = False):
+    status = _manual_get_3sx_status_local(sd_root, check_latest=False)
+    manual = _manual_3sx_install_local(sd_root) if status.get("installed") else False
+    update = False
+    if check_latest and status.get("installed") and not manual:
+        update = check_named_database_local(sd_root, THREE_S_ARM_DB_ID)
+    return _apply_3sx_downloader_status(status, manual, update)
+
+
+def install_or_update_3sx(connection, log):
+    if not connection.is_connected():
+        raise RuntimeError("Not connected to MiSTer.")
+    manual = _manual_3sx_install(connection)
+    original = ensure_database_source_online(connection, THREE_S_ARM_DB_ID, THREE_S_ARM_DB_URL)
+    try:
+        _prepare_manual_3sx_for_downloader(connection, log, manual=manual)
+        run_named_database_online(connection, THREE_S_ARM_DB_ID, log=log)
+        connection.run_command(f"chmod +x {_quote(REMOTE_LAUNCHER_PATH)}")
+        _ensure_ini_block(connection)
+        connection.run_command(f"rm -f {_quote(REMOTE_VERSION_FILE)} {_quote(OLD_REMOTE_VERSION_FILE)}")
+    except Exception:
+        restore_online(connection, original)
+        raise
+
+
+def install_or_update_3sx_local(sd_root: str, log):
+    manual = _manual_3sx_install_local(sd_root)
+    original = ensure_database_source_local(sd_root, THREE_S_ARM_DB_ID, THREE_S_ARM_DB_URL)
+    try:
+        _prepare_manual_3sx_for_downloader_local(sd_root, log, manual=manual)
+        run_named_database_local(sd_root, THREE_S_ARM_DB_ID, log=log)
+        _ensure_ini_block_local(sd_root)
+        _remove_local_path(sd_root, REMOTE_VERSION_FILE)
+        _remove_local_path(sd_root, OLD_REMOTE_VERSION_FILE)
+    except Exception:
+        restore_local(sd_root, original)
+        raise
+
+
+def uninstall_3sx(connection, log, force=False):
+    if not connection.is_connected():
+        raise RuntimeError("Not connected to MiSTer.")
+    if _manual_3sx_install(connection):
+        _prepare_manual_3sx_for_downloader(connection, log, manual=True)
+        remove_database_source_online(connection, THREE_S_ARM_DB_ID)
+        _remove_ini_block(connection)
+        return {"uninstalled": True}
+    original = ensure_database_source_online(connection, THREE_S_ARM_DB_ID, THREE_S_ARM_DB_URL)
+    try:
+        native = uninstall_named_database_online(connection, THREE_S_ARM_DB_ID, log=log, force=force)
+        if not native:
+            ensure_database_source_online(connection, THREE_S_ARM_DB_ID, THREE_S_ARM_DB_URL, filter_value="!all")
+            run_named_database_online(connection, THREE_S_ARM_DB_ID, log=log)
+            remove_database_source_online(connection, THREE_S_ARM_DB_ID)
+        _remove_ini_block(connection)
+        connection.run_command(f"rm -f {_quote(REMOTE_VERSION_FILE)} {_quote(OLD_REMOTE_VERSION_FILE)}")
+    except Exception:
+        restore_online(connection, original)
+        raise
+    return {"uninstalled": True}
+
+
+def uninstall_3sx_local(sd_root: str, log, force=False):
+    if _manual_3sx_install_local(sd_root):
+        _prepare_manual_3sx_for_downloader_local(sd_root, log, manual=True)
+        remove_database_source_local(sd_root, THREE_S_ARM_DB_ID)
+        _remove_ini_block_local(sd_root)
+        return {"uninstalled": True}
+    original = ensure_database_source_local(sd_root, THREE_S_ARM_DB_ID, THREE_S_ARM_DB_URL)
+    try:
+        native = uninstall_named_database_local(sd_root, THREE_S_ARM_DB_ID, log=log, force=force)
+        if not native:
+            ensure_database_source_local(sd_root, THREE_S_ARM_DB_ID, THREE_S_ARM_DB_URL, filter_value="!all")
+            run_named_database_local(sd_root, THREE_S_ARM_DB_ID, log=log)
+            remove_database_source_local(sd_root, THREE_S_ARM_DB_ID)
+        _remove_ini_block_local(sd_root)
+        _remove_local_path(sd_root, REMOTE_VERSION_FILE)
+        _remove_local_path(sd_root, OLD_REMOTE_VERSION_FILE)
+    except Exception:
+        restore_local(sd_root, original)
+        raise
+    return {"uninstalled": True}

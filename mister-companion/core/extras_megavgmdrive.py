@@ -372,3 +372,214 @@ def open_megavgmdrive_game_folder_local(sd_root: str) -> None:
 
 def open_megavgmdrive_game_folder_on_host(ip: str) -> None:
     open_smb_share(ip, "sdcard/games/MegaVGMDrive")
+
+
+# Downloader-backed Install Center implementation.
+from core.downloader_backend import (
+    database_registered_local,
+    database_registered_online,
+    ensure_database_source_local,
+    ensure_database_source_online,
+    remove_database_source_local,
+    remove_database_source_online,
+    restore_local,
+    restore_online,
+    run_named_database_local,
+    run_named_database_online,
+    check_named_database_local,
+    check_named_database_online,
+    uninstall_named_database_local,
+    uninstall_named_database_online,
+)
+
+MEGAVGMD_DB_ID = "MultiDatabases/megavgmdrive"
+MEGAVGMD_DB_URL = "https://raw.githubusercontent.com/theypsilon/MultiDatabases_MiSTer/db/megavgmdrive/db.json"
+MEGAVGMD_DB_FILES = (MEGAVGMD_RBF_PATH, MEGAVGMD_MGL_PATH)
+
+
+def _megavgmd_managed_files_present(connection) -> bool:
+    return any(_path_exists(connection, path) for path in MEGAVGMD_DB_FILES)
+
+
+def _megavgmd_managed_files_present_local(sd_root) -> bool:
+    return any(_path_exists_local(sd_root, path) for path in MEGAVGMD_DB_FILES)
+
+
+def _manual_megavgmdrive_install(connection) -> bool:
+    return bool(_megavgmd_managed_files_present(connection) and (
+        _path_exists(connection, MEGAVGMD_RELEASE_MARKER_PATH)
+        or not database_registered_online(connection, MEGAVGMD_DB_ID)
+    ))
+
+
+def _manual_megavgmdrive_install_local(sd_root) -> bool:
+    return bool(_megavgmd_managed_files_present_local(sd_root) and (
+        _path_exists_local(sd_root, MEGAVGMD_RELEASE_MARKER_PATH)
+        or not database_registered_local(sd_root, MEGAVGMD_DB_ID)
+    ))
+
+
+def _prepare_manual_megavgmdrive_for_downloader(connection, log, manual=None):
+    if manual is None:
+        manual = _manual_megavgmdrive_install(connection)
+    if not manual:
+        return False
+    log("Detected a manual Companion installation; preparing it for Downloader...\n")
+    for path in MEGAVGMD_DB_FILES:
+        connection.run_command(f"rm -f {_quote(path)}")
+        log(f"Removed legacy managed file: {path}\n")
+    connection.run_command(f"rm -f {_quote(MEGAVGMD_RELEASE_MARKER_PATH)}")
+    _remove_if_empty_dir(connection, MEGAVGMD_CONFIG_DIR)
+    log(f"Preserved user content in {MEGAVGMD_GAME_DIR}\n")
+    return True
+
+
+def _prepare_manual_megavgmdrive_for_downloader_local(sd_root, log, manual=None):
+    if manual is None:
+        manual = _manual_megavgmdrive_install_local(sd_root)
+    if not manual:
+        return False
+    log("Detected a manual Companion installation; preparing it for Downloader...\n")
+    for path in MEGAVGMD_DB_FILES:
+        _remove_local_path(sd_root, path)
+        log(f"Removed legacy managed file: {path}\n")
+    _remove_local_path(sd_root, MEGAVGMD_RELEASE_MARKER_PATH)
+    _remove_if_empty_dir_local(sd_root, MEGAVGMD_CONFIG_DIR)
+    log(f"Preserved user content in {MEGAVGMD_GAME_DIR}\n")
+    return True
+
+
+_manual_get_megavgmdrive_status = get_megavgmdrive_status
+_manual_get_megavgmdrive_status_local = get_megavgmdrive_status_local
+
+
+def _apply_megavgmdrive_downloader_status(status, manual, update_available=False):
+    status = dict(status)
+    if manual:
+        status.update({
+            "update_available": True,
+            "status_text": "▲ Manual install found",
+            "install_label": "Migrate / Update",
+            "install_enabled": True,
+        })
+    elif status.get("installed"):
+        status.update({
+            "installed_version": "",
+            "latest_version": "",
+            "update_available": bool(update_available),
+            "status_text": "▲ Update available" if update_available else "✓ Installed",
+            "install_label": "Update" if update_available else "Installed",
+            "install_enabled": bool(update_available),
+        })
+    return status
+
+
+def get_megavgmdrive_status(connection, check_latest: bool = False) -> dict:
+    status = _manual_get_megavgmdrive_status(connection, check_latest=False)
+    manual = _manual_megavgmdrive_install(connection) if (status.get("installed") or status.get("partial")) else False
+    update = False
+    if check_latest and status.get("installed") and not manual:
+        update = check_named_database_online(connection, MEGAVGMD_DB_ID)
+    return _apply_megavgmdrive_downloader_status(status, manual, update)
+
+
+def get_megavgmdrive_status_local(sd_root: str, check_latest: bool = False) -> dict:
+    status = _manual_get_megavgmdrive_status_local(sd_root, check_latest=False)
+    manual = _manual_megavgmdrive_install_local(sd_root) if (status.get("installed") or status.get("partial")) else False
+    update = False
+    if check_latest and status.get("installed") and not manual:
+        update = check_named_database_local(sd_root, MEGAVGMD_DB_ID)
+    return _apply_megavgmdrive_downloader_status(status, manual, update)
+
+
+def _megavgmdrive_reboot_result():
+    return {
+        "soft_reboot_required": True,
+        "soft_reboot_title": "Soft Reboot Required",
+        "soft_reboot_message": (
+            "A soft reboot is required to refresh the MegaVGMDrive menu entry.\n\n"
+            "Do you want to soft reboot MiSTer now?"
+        ),
+    }
+
+
+def _finish_megavgmdrive_install_online(connection, log):
+    _ensure_remote_dir(connection, MEGAVGMD_GAME_DIR)
+    connection.run_command(f"rm -f {_quote(MEGAVGMD_RELEASE_MARKER_PATH)}")
+    _remove_if_empty_dir(connection, MEGAVGMD_CONFIG_DIR)
+    log(f"Game folder ready at {MEGAVGMD_GAME_DIR}\n")
+
+
+def _finish_megavgmdrive_install_local(sd_root, log):
+    _ensure_local_dir(sd_root, MEGAVGMD_GAME_DIR)
+    _remove_local_path(sd_root, MEGAVGMD_RELEASE_MARKER_PATH)
+    _remove_if_empty_dir_local(sd_root, MEGAVGMD_CONFIG_DIR)
+    log(f"Game folder ready at {MEGAVGMD_GAME_DIR}\n")
+
+
+def install_or_update_megavgmdrive(connection, log):
+    manual = _manual_megavgmdrive_install(connection)
+    original = ensure_database_source_online(connection, MEGAVGMD_DB_ID, MEGAVGMD_DB_URL)
+    try:
+        _prepare_manual_megavgmdrive_for_downloader(connection, log, manual=manual)
+        run_named_database_online(connection, MEGAVGMD_DB_ID, log=log)
+        _finish_megavgmdrive_install_online(connection, log)
+    except Exception:
+        restore_online(connection, original)
+        raise
+    return _megavgmdrive_reboot_result()
+
+
+def install_or_update_megavgmdrive_local(sd_root: str, log):
+    manual = _manual_megavgmdrive_install_local(sd_root)
+    original = ensure_database_source_local(sd_root, MEGAVGMD_DB_ID, MEGAVGMD_DB_URL)
+    try:
+        _prepare_manual_megavgmdrive_for_downloader_local(sd_root, log, manual=manual)
+        run_named_database_local(sd_root, MEGAVGMD_DB_ID, log=log)
+        _finish_megavgmdrive_install_local(sd_root, log)
+    except Exception:
+        restore_local(sd_root, original)
+        raise
+    return _megavgmdrive_reboot_result()
+
+
+def uninstall_megavgmdrive(connection, log, force=False, remove_game_folder=False):
+    if _manual_megavgmdrive_install(connection):
+        _prepare_manual_megavgmdrive_for_downloader(connection, log, manual=True)
+        remove_database_source_online(connection, MEGAVGMD_DB_ID)
+        return _megavgmdrive_reboot_result()
+    original = ensure_database_source_online(connection, MEGAVGMD_DB_ID, MEGAVGMD_DB_URL)
+    try:
+        native = uninstall_named_database_online(connection, MEGAVGMD_DB_ID, log=log, force=force)
+        if not native:
+            ensure_database_source_online(connection, MEGAVGMD_DB_ID, MEGAVGMD_DB_URL, filter_value="!all")
+            run_named_database_online(connection, MEGAVGMD_DB_ID, log=log)
+            remove_database_source_online(connection, MEGAVGMD_DB_ID)
+        connection.run_command(f"rm -f {_quote(MEGAVGMD_RELEASE_MARKER_PATH)}")
+        _remove_if_empty_dir(connection, MEGAVGMD_CONFIG_DIR)
+    except Exception:
+        restore_online(connection, original)
+        raise
+    log(f"Preserved user content in {MEGAVGMD_GAME_DIR}\n")
+    return _megavgmdrive_reboot_result()
+
+
+def uninstall_megavgmdrive_local(sd_root: str, log, force=False, remove_game_folder=False):
+    if _manual_megavgmdrive_install_local(sd_root):
+        _prepare_manual_megavgmdrive_for_downloader_local(sd_root, log, manual=True)
+        remove_database_source_local(sd_root, MEGAVGMD_DB_ID)
+        return _megavgmdrive_reboot_result()
+    original = ensure_database_source_local(sd_root, MEGAVGMD_DB_ID, MEGAVGMD_DB_URL)
+    try:
+        native = uninstall_named_database_local(sd_root, MEGAVGMD_DB_ID, log=log, force=force)
+        if not native:
+            ensure_database_source_local(sd_root, MEGAVGMD_DB_ID, MEGAVGMD_DB_URL, filter_value="!all")
+            run_named_database_local(sd_root, MEGAVGMD_DB_ID, log=log)
+            remove_database_source_local(sd_root, MEGAVGMD_DB_ID)
+        _remove_local_path(sd_root, MEGAVGMD_RELEASE_MARKER_PATH)
+        _remove_if_empty_dir_local(sd_root, MEGAVGMD_CONFIG_DIR)
+    except Exception:
+        restore_local(sd_root, original)
+        raise
+    log(f"Preserved user content in {MEGAVGMD_GAME_DIR}\n")
+    return _megavgmdrive_reboot_result()

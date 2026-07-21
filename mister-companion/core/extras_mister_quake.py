@@ -276,3 +276,178 @@ def uninstall_mister_quake_local(sd_root, log):
     except OSError: pass
     log("Personal files in /media/fat/games/quake/id1 were preserved.\n")
     return {"uninstalled": True}
+
+
+# Downloader-backed Install Center implementation.
+from core.downloader_backend import (
+    database_registered_local,
+    database_registered_online,
+    ensure_database_source_local,
+    ensure_database_source_online,
+    remove_database_source_local,
+    remove_database_source_online,
+    restore_local,
+    restore_online,
+    run_named_database_local,
+    run_named_database_online,
+    check_named_database_local,
+    check_named_database_online,
+    uninstall_named_database_local,
+    uninstall_named_database_online,
+)
+
+QUAKE_DB_ID = "MultiDatabases/mister-quake"
+QUAKE_DB_URL = "https://raw.githubusercontent.com/theypsilon/MultiDatabases_MiSTer/db/mister-quake/db.json"
+
+# Exact files owned by the database. PAK files and the entire id1 directory are
+# intentionally excluded because they belong to the user.
+QUAKE_DB_FILES = (
+    QUAKE_REMOTE_LAUNCHER,
+    QUAKE_REMOTE_RBF,
+    "/media/fat/games/quake/README_INSTALL.txt",
+    QUAKE_REMOTE_BIN,
+    "/media/fat/games/quake/lib/ld-linux-armhf.so.3",
+    "/media/fat/games/quake/lib/libc.so.6",
+    "/media/fat/games/quake/lib/libdl.so.2",
+    "/media/fat/games/quake/lib/libgcc_s.so.1",
+    "/media/fat/games/quake/lib/libm.so.6",
+    "/media/fat/games/quake/lib/libpthread.so.0",
+    "/media/fat/games/quake/lib/librt.so.1",
+    "/media/fat/games/quake/lib/libstdc++.so.6",
+)
+
+
+def _manual_mister_quake_install(connection):
+    present = any(_path_exists(connection, path) for path in (QUAKE_REMOTE_LAUNCHER, QUAKE_REMOTE_RBF, QUAKE_REMOTE_BIN))
+    return bool(present and (_path_exists(connection, QUAKE_REMOTE_VERSION_FILE) or not database_registered_online(connection, QUAKE_DB_ID)))
+
+
+def _manual_mister_quake_install_local(sd_root):
+    present = any(_path_exists_local(sd_root, path) for path in (QUAKE_REMOTE_LAUNCHER, QUAKE_REMOTE_RBF, QUAKE_REMOTE_BIN))
+    return bool(present and (_path_exists_local(sd_root, QUAKE_REMOTE_VERSION_FILE) or not database_registered_local(sd_root, QUAKE_DB_ID)))
+
+
+def _prepare_manual_mister_quake_for_downloader(connection, log, manual=None):
+    if manual is None:
+        manual = _manual_mister_quake_install(connection)
+    if not manual:
+        return False
+    log("Detected a manual Companion installation; preparing it for Downloader...\n")
+    for path in QUAKE_DB_FILES:
+        connection.run_command(f"rm -f {_quote(path)}")
+    connection.run_command(f"rm -f {_quote(QUAKE_REMOTE_VERSION_FILE)}")
+    log(f"Preserved user game data in {QUAKE_REMOTE_ID1_DIR}\n")
+    return True
+
+
+def _prepare_manual_mister_quake_for_downloader_local(sd_root, log, manual=None):
+    if manual is None:
+        manual = _manual_mister_quake_install_local(sd_root)
+    if not manual:
+        return False
+    log("Detected a manual Companion installation; preparing it for Downloader...\n")
+    for path in QUAKE_DB_FILES:
+        _remove_local_path(sd_root, path)
+    _remove_local_path(sd_root, QUAKE_REMOTE_VERSION_FILE)
+    log(f"Preserved user game data in {QUAKE_REMOTE_ID1_DIR}\n")
+    return True
+
+
+_manual_get_mister_quake_status = get_mister_quake_status
+_manual_get_mister_quake_status_local = get_mister_quake_status_local
+
+
+def _apply_quake_downloader_status(status, manual, update_available=False):
+    status = dict(status)
+    if manual:
+        status.update({"update_available": True, "status_text": "▲ Manual install found", "install_label": "Migrate / Update", "install_enabled": True})
+    elif status.get("installed"):
+        status.update({"installed_version": "", "latest_version": "", "update_available": bool(update_available), "status_text": "▲ Update available" if update_available else "✓ Installed", "install_label": "Update" if update_available else "Installed", "install_enabled": bool(update_available)})
+    return status
+
+
+def get_mister_quake_status(connection, check_latest=False):
+    status = _manual_get_mister_quake_status(connection, check_latest=False)
+    manual = _manual_mister_quake_install(connection)
+    update = bool(check_latest and status.get("installed") and not manual and check_named_database_online(connection, QUAKE_DB_ID))
+    return _apply_quake_downloader_status(status, manual, update)
+
+
+def get_mister_quake_status_local(sd_root, check_latest=False):
+    status = _manual_get_mister_quake_status_local(sd_root, check_latest=False)
+    manual = _manual_mister_quake_install_local(sd_root)
+    update = bool(check_latest and status.get("installed") and not manual and check_named_database_local(sd_root, QUAKE_DB_ID))
+    return _apply_quake_downloader_status(status, manual, update)
+
+
+def install_or_update_mister_quake(connection, log):
+    if not connection.is_connected():
+        raise RuntimeError("Not connected to MiSTer.")
+    manual = _manual_mister_quake_install(connection)
+    original = ensure_database_source_online(connection, QUAKE_DB_ID, QUAKE_DB_URL)
+    try:
+        _prepare_manual_mister_quake_for_downloader(connection, log, manual=manual)
+        run_named_database_online(connection, QUAKE_DB_ID, log=log)
+        connection.run_command(f"chmod +x {_quote(QUAKE_REMOTE_LAUNCHER)} {_quote(QUAKE_REMOTE_BIN)}")
+        _write_remote_text(connection, REMOTE_INI_PATH, _upsert_ini_sections(_read_remote_text(connection, REMOTE_INI_PATH)))
+        connection.run_command(f"rm -f {_quote(QUAKE_REMOTE_VERSION_FILE)}")
+    except Exception:
+        restore_online(connection, original)
+        raise
+
+
+def install_or_update_mister_quake_local(sd_root, log):
+    manual = _manual_mister_quake_install_local(sd_root)
+    original = ensure_database_source_local(sd_root, QUAKE_DB_ID, QUAKE_DB_URL)
+    try:
+        _prepare_manual_mister_quake_for_downloader_local(sd_root, log, manual=manual)
+        run_named_database_local(sd_root, QUAKE_DB_ID, log=log)
+        _write_local_text(sd_root, REMOTE_INI_PATH, _upsert_ini_sections(_read_local_text(sd_root, REMOTE_INI_PATH)))
+        _remove_local_path(sd_root, QUAKE_REMOTE_VERSION_FILE)
+    except Exception:
+        restore_local(sd_root, original)
+        raise
+
+
+def uninstall_mister_quake(connection, log, force=False):
+    if not connection.is_connected():
+        raise RuntimeError("Not connected to MiSTer.")
+    if _manual_mister_quake_install(connection):
+        _prepare_manual_mister_quake_for_downloader(connection, log, manual=True)
+        remove_database_source_online(connection, QUAKE_DB_ID)
+        _write_remote_text(connection, REMOTE_INI_PATH, _remove_ini_sections(_read_remote_text(connection, REMOTE_INI_PATH)))
+        return {"uninstalled": True}
+    original = ensure_database_source_online(connection, QUAKE_DB_ID, QUAKE_DB_URL)
+    try:
+        native = uninstall_named_database_online(connection, QUAKE_DB_ID, log=log, force=force)
+        if not native:
+            ensure_database_source_online(connection, QUAKE_DB_ID, QUAKE_DB_URL, filter_value="!all")
+            run_named_database_online(connection, QUAKE_DB_ID, log=log)
+            remove_database_source_online(connection, QUAKE_DB_ID)
+        _write_remote_text(connection, REMOTE_INI_PATH, _remove_ini_sections(_read_remote_text(connection, REMOTE_INI_PATH)))
+        connection.run_command(f"rm -f {_quote(QUAKE_REMOTE_VERSION_FILE)}")
+    except Exception:
+        restore_online(connection, original)
+        raise
+    return {"uninstalled": True}
+
+
+def uninstall_mister_quake_local(sd_root, log, force=False):
+    if _manual_mister_quake_install_local(sd_root):
+        _prepare_manual_mister_quake_for_downloader_local(sd_root, log, manual=True)
+        remove_database_source_local(sd_root, QUAKE_DB_ID)
+        _write_local_text(sd_root, REMOTE_INI_PATH, _remove_ini_sections(_read_local_text(sd_root, REMOTE_INI_PATH)))
+        return {"uninstalled": True}
+    original = ensure_database_source_local(sd_root, QUAKE_DB_ID, QUAKE_DB_URL)
+    try:
+        native = uninstall_named_database_local(sd_root, QUAKE_DB_ID, log=log, force=force)
+        if not native:
+            ensure_database_source_local(sd_root, QUAKE_DB_ID, QUAKE_DB_URL, filter_value="!all")
+            run_named_database_local(sd_root, QUAKE_DB_ID, log=log)
+            remove_database_source_local(sd_root, QUAKE_DB_ID)
+        _write_local_text(sd_root, REMOTE_INI_PATH, _remove_ini_sections(_read_local_text(sd_root, REMOTE_INI_PATH)))
+        _remove_local_path(sd_root, QUAKE_REMOTE_VERSION_FILE)
+    except Exception:
+        restore_local(sd_root, original)
+        raise
+    return {"uninstalled": True}

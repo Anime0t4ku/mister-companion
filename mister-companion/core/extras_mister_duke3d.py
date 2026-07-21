@@ -332,3 +332,217 @@ def uninstall_mister_duke3d_local(sd_root, log):
         pass
     log("Personal files in /media/fat/games/DUKE3D were preserved.\n")
     return {"uninstalled": True}
+
+
+# Downloader-backed Install Center implementation.
+from core.downloader_backend import (
+    database_registered_local,
+    database_registered_online,
+    ensure_database_source_local,
+    ensure_database_source_online,
+    remove_database_source_local,
+    remove_database_source_online,
+    restore_local,
+    restore_online,
+    run_named_database_local,
+    run_named_database_online,
+    check_named_database_local,
+    check_named_database_online,
+    uninstall_named_database_local,
+    uninstall_named_database_online,
+)
+
+DUKE3D_DB_ID = "MultiDatabases/duke3d"
+DUKE3D_DB_URL = "https://raw.githubusercontent.com/theypsilon/MultiDatabases_MiSTer/db/duke3d/db.json"
+DUKE3D_DB_FILES = (
+    "/media/fat/Mister_duke3d",
+    "/media/fat/_Other/DUKE3D.rbf",
+    "/media/fat/games/DUKE3D/README_INSTALL.txt",
+    "/media/fat/games/DUKE3D/bin/duke3d-mister",
+    "/media/fat/games/DUKE3D/lib/ld-linux-armhf.so.3",
+    "/media/fat/games/DUKE3D/lib/libc.so.6",
+    "/media/fat/games/DUKE3D/lib/libdl.so.2",
+    "/media/fat/games/DUKE3D/lib/libgcc_s.so.1",
+    "/media/fat/games/DUKE3D/lib/libm.so.6",
+    "/media/fat/games/DUKE3D/lib/libpthread.so.0",
+    "/media/fat/games/DUKE3D/lib/librt.so.1",
+    "/media/fat/games/DUKE3D/lib/libstdc++.so.6",
+)
+
+
+def _manual_duke3d_install(connection) -> bool:
+    return bool(_is_installed(connection) and (
+        _path_exists(connection, DUKE3D_REMOTE_VERSION_FILE)
+        or not database_registered_online(connection, DUKE3D_DB_ID)
+    ))
+
+
+def _manual_duke3d_install_local(sd_root) -> bool:
+    return bool(_is_installed_local(sd_root) and (
+        _path_exists_local(sd_root, DUKE3D_REMOTE_VERSION_FILE)
+        or not database_registered_local(sd_root, DUKE3D_DB_ID)
+    ))
+
+
+def _prepare_manual_duke3d_for_downloader(connection, log, manual=None):
+    if manual is None:
+        manual = _manual_duke3d_install(connection)
+    if not manual:
+        return False
+    log("Detected a manual Companion installation; preparing it for Downloader...\n")
+    for path in DUKE3D_DB_FILES:
+        connection.run_command(f"rm -f {_quote(path)}")
+        log(f"Removed legacy managed file: {path}\n")
+    connection.run_command(f"rm -f {_quote(DUKE3D_REMOTE_VERSION_FILE)}")
+    log(f"Preserved DUKE3D.GRP and personal files in {DUKE3D_REMOTE_GAME_DIR}\n")
+    return True
+
+
+def _prepare_manual_duke3d_for_downloader_local(sd_root, log, manual=None):
+    if manual is None:
+        manual = _manual_duke3d_install_local(sd_root)
+    if not manual:
+        return False
+    log("Detected a manual Companion installation; preparing it for Downloader...\n")
+    for path in DUKE3D_DB_FILES:
+        _remove_local_path(sd_root, path)
+        log(f"Removed legacy managed file: {path}\n")
+    _remove_local_path(sd_root, DUKE3D_REMOTE_VERSION_FILE)
+    log(f"Preserved DUKE3D.GRP and personal files in {DUKE3D_REMOTE_GAME_DIR}\n")
+    return True
+
+
+_manual_get_mister_duke3d_status = get_mister_duke3d_status
+_manual_get_mister_duke3d_status_local = get_mister_duke3d_status_local
+
+
+def _apply_duke3d_downloader_status(status, manual, update_available=False):
+    status = dict(status)
+    if manual:
+        status.update({
+            "update_available": True,
+            "status_text": "▲ Manual install found",
+            "install_label": "Migrate / Update",
+            "install_enabled": True,
+        })
+    elif status.get("installed"):
+        status.update({
+            "installed_version": "",
+            "latest_version": "",
+            "update_available": bool(update_available),
+            "status_text": "▲ Update available" if update_available else "✓ Installed",
+            "install_label": "Update" if update_available else "Installed",
+            "install_enabled": bool(update_available),
+        })
+    return status
+
+
+def get_mister_duke3d_status(connection, check_latest=False):
+    status = _manual_get_mister_duke3d_status(connection, check_latest=False)
+    manual = _manual_duke3d_install(connection) if status.get("installed") else False
+    update = False
+    if check_latest and status.get("installed") and not manual:
+        update = check_named_database_online(connection, DUKE3D_DB_ID)
+    return _apply_duke3d_downloader_status(status, manual, update)
+
+
+def get_mister_duke3d_status_local(sd_root, check_latest=False):
+    status = _manual_get_mister_duke3d_status_local(sd_root, check_latest=False)
+    manual = _manual_duke3d_install_local(sd_root) if status.get("installed") else False
+    update = False
+    if check_latest and status.get("installed") and not manual:
+        update = check_named_database_local(sd_root, DUKE3D_DB_ID)
+    return _apply_duke3d_downloader_status(status, manual, update)
+
+
+def _finish_duke3d_install_online(connection, log):
+    _ensure_remote_dir(connection, DUKE3D_REMOTE_GAME_DIR)
+    connection.run_command(f"chmod +x {_quote(DUKE3D_REMOTE_LAUNCHER)} {_quote(DUKE3D_REMOTE_BIN)}")
+    _write_remote_text(connection, REMOTE_INI_PATH, _upsert_ini_sections(_read_remote_text(connection, REMOTE_INI_PATH)))
+    connection.run_command(f"rm -f {_quote(DUKE3D_REMOTE_VERSION_FILE)}")
+    log("Added/updated DUKE3D sections in MiSTer.ini\n")
+    log(f"Preserved DUKE3D.GRP and personal files in {DUKE3D_REMOTE_GAME_DIR}\n")
+
+
+def _finish_duke3d_install_local(sd_root, log):
+    _ensure_local_dir(sd_root, DUKE3D_REMOTE_GAME_DIR)
+    for path in (DUKE3D_REMOTE_LAUNCHER, DUKE3D_REMOTE_BIN):
+        try:
+            local_path = _local_path(sd_root, path)
+            local_path.chmod(local_path.stat().st_mode | 0o111)
+        except OSError:
+            pass
+    _write_local_text(sd_root, REMOTE_INI_PATH, _upsert_ini_sections(_read_local_text(sd_root, REMOTE_INI_PATH)))
+    _remove_local_path(sd_root, DUKE3D_REMOTE_VERSION_FILE)
+    log("Added/updated DUKE3D sections in MiSTer.ini\n")
+    log(f"Preserved DUKE3D.GRP and personal files in {DUKE3D_REMOTE_GAME_DIR}\n")
+
+
+def install_or_update_mister_duke3d(connection, log):
+    if not connection.is_connected():
+        raise RuntimeError("Not connected to MiSTer.")
+    manual = _manual_duke3d_install(connection)
+    original = ensure_database_source_online(connection, DUKE3D_DB_ID, DUKE3D_DB_URL)
+    try:
+        _prepare_manual_duke3d_for_downloader(connection, log, manual=manual)
+        run_named_database_online(connection, DUKE3D_DB_ID, log=log)
+        _finish_duke3d_install_online(connection, log)
+    except Exception:
+        restore_online(connection, original)
+        raise
+
+
+def install_or_update_mister_duke3d_local(sd_root, log):
+    manual = _manual_duke3d_install_local(sd_root)
+    original = ensure_database_source_local(sd_root, DUKE3D_DB_ID, DUKE3D_DB_URL)
+    try:
+        _prepare_manual_duke3d_for_downloader_local(sd_root, log, manual=manual)
+        run_named_database_local(sd_root, DUKE3D_DB_ID, log=log)
+        _finish_duke3d_install_local(sd_root, log)
+    except Exception:
+        restore_local(sd_root, original)
+        raise
+
+
+def uninstall_mister_duke3d(connection, log, force=False):
+    if not connection.is_connected():
+        raise RuntimeError("Not connected to MiSTer.")
+    if _manual_duke3d_install(connection):
+        _prepare_manual_duke3d_for_downloader(connection, log, manual=True)
+        remove_database_source_online(connection, DUKE3D_DB_ID)
+        _write_remote_text(connection, REMOTE_INI_PATH, _remove_ini_sections(_read_remote_text(connection, REMOTE_INI_PATH)))
+        return {"uninstalled": True}
+    original = ensure_database_source_online(connection, DUKE3D_DB_ID, DUKE3D_DB_URL)
+    try:
+        native = uninstall_named_database_online(connection, DUKE3D_DB_ID, log=log, force=force)
+        if not native:
+            ensure_database_source_online(connection, DUKE3D_DB_ID, DUKE3D_DB_URL, filter_value="!all")
+            run_named_database_online(connection, DUKE3D_DB_ID, log=log)
+            remove_database_source_online(connection, DUKE3D_DB_ID)
+        _write_remote_text(connection, REMOTE_INI_PATH, _remove_ini_sections(_read_remote_text(connection, REMOTE_INI_PATH)))
+        connection.run_command(f"rm -f {_quote(DUKE3D_REMOTE_VERSION_FILE)}")
+    except Exception:
+        restore_online(connection, original)
+        raise
+    return {"uninstalled": True}
+
+
+def uninstall_mister_duke3d_local(sd_root, log, force=False):
+    if _manual_duke3d_install_local(sd_root):
+        _prepare_manual_duke3d_for_downloader_local(sd_root, log, manual=True)
+        remove_database_source_local(sd_root, DUKE3D_DB_ID)
+        _write_local_text(sd_root, REMOTE_INI_PATH, _remove_ini_sections(_read_local_text(sd_root, REMOTE_INI_PATH)))
+        return {"uninstalled": True}
+    original = ensure_database_source_local(sd_root, DUKE3D_DB_ID, DUKE3D_DB_URL)
+    try:
+        native = uninstall_named_database_local(sd_root, DUKE3D_DB_ID, log=log, force=force)
+        if not native:
+            ensure_database_source_local(sd_root, DUKE3D_DB_ID, DUKE3D_DB_URL, filter_value="!all")
+            run_named_database_local(sd_root, DUKE3D_DB_ID, log=log)
+            remove_database_source_local(sd_root, DUKE3D_DB_ID)
+        _write_local_text(sd_root, REMOTE_INI_PATH, _remove_ini_sections(_read_local_text(sd_root, REMOTE_INI_PATH)))
+        _remove_local_path(sd_root, DUKE3D_REMOTE_VERSION_FILE)
+    except Exception:
+        restore_local(sd_root, original)
+        raise
+    return {"uninstalled": True}

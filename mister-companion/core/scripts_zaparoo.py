@@ -316,9 +316,10 @@ def uninstall_zaparoo_local(sd_root):
         shutil.rmtree(config_dir)
 # Downloader-backed Install Center implementation.
 from core.downloader_backend import (
+    ZAPAROO_DB_ID,
     ensure_source_online, ensure_source_local, run_database_online, run_database_local,
     check_database_online, check_database_local, remove_source_online, remove_source_local,
-    restore_online, restore_local,
+    restore_online, restore_local, uninstall_named_database_online, uninstall_named_database_local,
 )
 
 def get_zaparoo_update_status(connection, check_latest: bool = False, log=None) -> dict:
@@ -328,7 +329,7 @@ def get_zaparoo_update_status(connection, check_latest: bool = False, log=None) 
     if not installed:
         return {"state":"not_installed","status_text":"Not installed","installed":False,"update_available":False}
     service_enabled = "mrext/zaparoo" in (connection.run_command(f"grep 'mrext/zaparoo' {ZAPAROO_STARTUP_PATH} 2>/dev/null || true") or "")
-    update_available = check_database_online(connection, log=log) if check_latest else False
+    update_available = check_database_online(connection, log=None) if check_latest else False
     text = "Update available" if update_available else "Installed"
     if not service_enabled and not update_available: text += ", service disabled"
     return {"state":"update_available" if update_available else "installed","status_text":text,"installed":True,"update_available":update_available,"service_enabled":service_enabled}
@@ -339,7 +340,7 @@ def get_zaparoo_update_status_local(sd_root, check_latest: bool = False, log=Non
         return {"state":"not_installed","status_text":"Not installed","installed":False,"update_available":False}
     startup = _local_path(sd_root, ZAPAROO_STARTUP_PATH)
     service_enabled = startup.exists() and "mrext/zaparoo" in startup.read_text(encoding="utf-8", errors="ignore")
-    update_available = check_database_local(sd_root, log=log) if check_latest else False
+    update_available = check_database_local(sd_root, log=None) if check_latest else False
     text = "Update available" if update_available else "Installed"
     if not service_enabled and not update_available: text += ", service disabled"
     return {"state":"update_available" if update_available else "installed","status_text":text,"installed":True,"update_available":update_available,"service_enabled":service_enabled}
@@ -356,22 +357,28 @@ def install_zaparoo_local(sd_root, log):
     except Exception:
         restore_local(sd_root, original); raise
 
-def uninstall_zaparoo(connection):
-    original = ensure_source_online(connection, filter_value="!all")
+def uninstall_zaparoo(connection, force=False):
+    original = ensure_source_online(connection)
     try:
-        run_database_online(connection)
-        remove_source_online(connection)
+        native = uninstall_named_database_online(connection, ZAPAROO_DB_ID, force=force)
+        if not native:
+            ensure_source_online(connection, filter_value="!all")
+            run_database_online(connection)
+            remove_source_online(connection)
         connection.run_command(f"sed -i '/mrext\\/zaparoo/d' {ZAPAROO_STARTUP_PATH} 2>/dev/null || true")
         from core.extras_zaparoo_launcher import _remove_remote_mister_ini_entries
         _remove_remote_mister_ini_entries(connection, lambda _m: None)
     except Exception:
         restore_online(connection, original); raise
 
-def uninstall_zaparoo_local(sd_root):
-    original = ensure_source_local(sd_root, filter_value="!all")
+def uninstall_zaparoo_local(sd_root, force=False):
+    original = ensure_source_local(sd_root)
     try:
-        run_database_local(sd_root)
-        remove_source_local(sd_root)
+        native = uninstall_named_database_local(sd_root, ZAPAROO_DB_ID, force=force)
+        if not native:
+            ensure_source_local(sd_root, filter_value="!all")
+            run_database_local(sd_root)
+            remove_source_local(sd_root)
         disable_zaparoo_service_local(sd_root)
         from core.extras_zaparoo_launcher import _remove_local_mister_ini_entries
         _remove_local_mister_ini_entries(sd_root, lambda _m: None)

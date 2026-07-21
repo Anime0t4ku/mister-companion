@@ -392,3 +392,213 @@ def uninstall_dreamster_local(sd_root: str, log):
         log(f"Removing {path}\n")
         _remove_local_path(sd_root, path)
     return {"uninstalled": True}
+
+
+# Downloader-backed Install Center implementation.
+from core.downloader_backend import (
+    database_registered_local,
+    database_registered_online,
+    ensure_database_source_local,
+    ensure_database_source_online,
+    remove_database_source_local,
+    remove_database_source_online,
+    restore_local,
+    restore_online,
+    run_named_database_local,
+    run_named_database_online,
+    check_named_database_local,
+    check_named_database_online,
+    uninstall_named_database_local,
+    uninstall_named_database_online,
+)
+
+DREAMSTER_DB_ID = "MultiDatabases/dreamster"
+DREAMSTER_DB_URL = "https://raw.githubusercontent.com/theypsilon/MultiDatabases_MiSTer/db/dreamster/db.json"
+DREAMSTER_DB_FILES = (
+    "/media/fat/Scripts/DreamSTer.sh",
+    "/media/fat/minicast/load_fpga_bitstream",
+    "/media/fat/minicast/mem_wc.ko",
+    "/media/fat/minicast/minicast.elf",
+    "/media/fat/minicast/polly2-rtl.rbf",
+    "/media/fat/minicast/setup_hdmi",
+)
+
+
+def _manual_dreamster_install(connection) -> bool:
+    return bool(_is_installed(connection) and (
+        _path_exists(connection, REMOTE_MANIFEST)
+        or not database_registered_online(connection, DREAMSTER_DB_ID)
+    ))
+
+
+def _manual_dreamster_install_local(sd_root: str) -> bool:
+    return bool(_is_installed_local(sd_root) and (
+        _path_exists_local(sd_root, REMOTE_MANIFEST)
+        or not database_registered_local(sd_root, DREAMSTER_DB_ID)
+    ))
+
+
+def _prepare_manual_dreamster_for_downloader(connection, log, manual=None):
+    if manual is None:
+        manual = _manual_dreamster_install(connection)
+    if not manual:
+        return False
+    log("Detected a manual Companion installation; preparing it for Downloader...\n")
+    for path in DREAMSTER_DB_FILES:
+        connection.run_command(f"rm -f {_quote(path)}")
+        log(f"Removed legacy managed file: {path}\n")
+    connection.run_command(f"rm -f {_quote(REMOTE_MANIFEST)}")
+    log(f"Preserved Dreamcast game folder and BIOS files: {REMOTE_GAME_DIR}\n")
+    return True
+
+
+def _prepare_manual_dreamster_for_downloader_local(sd_root: str, log, manual=None):
+    if manual is None:
+        manual = _manual_dreamster_install_local(sd_root)
+    if not manual:
+        return False
+    log("Detected a manual Companion installation; preparing it for Downloader...\n")
+    for path in DREAMSTER_DB_FILES:
+        _remove_local_path(sd_root, path)
+        log(f"Removed legacy managed file: {path}\n")
+    _remove_local_path(sd_root, REMOTE_MANIFEST)
+    log(f"Preserved Dreamcast game folder and BIOS files: {REMOTE_GAME_DIR}\n")
+    return True
+
+
+_manual_get_dreamster_status = get_dreamster_status
+_manual_get_dreamster_status_local = get_dreamster_status_local
+
+
+def _apply_dreamster_downloader_status(status: dict, manual: bool, update_available: bool = False) -> dict:
+    status = dict(status)
+    if manual:
+        status.update({
+            "update_available": True,
+            "status_text": "▲ Manual install found",
+            "install_label": "Migrate / Update",
+            "install_enabled": True,
+        })
+    elif status.get("installed"):
+        status.update({
+            "installed_version": "",
+            "latest_version": "",
+            "update_available": bool(update_available),
+            "status_text": "▲ Update available" if update_available else "✓ Installed",
+            "install_label": "Update" if update_available else "Installed",
+            "install_enabled": bool(update_available),
+        })
+    return status
+
+
+def get_dreamster_status(connection, check_latest: bool = False):
+    status = _manual_get_dreamster_status(connection, check_latest=False)
+    manual = _manual_dreamster_install(connection) if status.get("installed") else False
+    update = False
+    if check_latest and status.get("installed") and not manual:
+        update = check_named_database_online(connection, DREAMSTER_DB_ID)
+    return _apply_dreamster_downloader_status(status, manual, update)
+
+
+def get_dreamster_status_local(sd_root: str, check_latest: bool = False):
+    status = _manual_get_dreamster_status_local(sd_root, check_latest=False)
+    manual = _manual_dreamster_install_local(sd_root) if status.get("installed") else False
+    update = False
+    if check_latest and status.get("installed") and not manual:
+        update = check_named_database_local(sd_root, DREAMSTER_DB_ID)
+    return _apply_dreamster_downloader_status(status, manual, update)
+
+
+def _finish_dreamster_install_online(connection, log):
+    _ensure_remote_dir(connection, REMOTE_GAME_DIR)
+    connection.run_command(
+        f"chmod +x {_quote(REMOTE_SCRIPT)} "
+        f"{_quote('/media/fat/minicast/load_fpga_bitstream')} "
+        f"{_quote(REMOTE_RUNTIME_BINARY)} "
+        f"{_quote('/media/fat/minicast/setup_hdmi')}"
+    )
+    connection.run_command(f"rm -f {_quote(REMOTE_MANIFEST)}")
+    log(f"Preserved Dreamcast game folder and BIOS files: {REMOTE_GAME_DIR}\n")
+
+
+def _finish_dreamster_install_local(sd_root: str, log):
+    _ensure_local_dir(sd_root, REMOTE_GAME_DIR)
+    for remote_path in (
+        REMOTE_SCRIPT,
+        "/media/fat/minicast/load_fpga_bitstream",
+        REMOTE_RUNTIME_BINARY,
+        "/media/fat/minicast/setup_hdmi",
+    ):
+        try:
+            path = _local_path(sd_root, remote_path)
+            path.chmod(path.stat().st_mode | 0o111)
+        except OSError:
+            pass
+    _remove_local_path(sd_root, REMOTE_MANIFEST)
+    log(f"Preserved Dreamcast game folder and BIOS files: {REMOTE_GAME_DIR}\n")
+
+
+def install_or_update_dreamster(connection, log):
+    if not connection.is_connected():
+        raise RuntimeError("Not connected to MiSTer.")
+    manual = _manual_dreamster_install(connection)
+    original = ensure_database_source_online(connection, DREAMSTER_DB_ID, DREAMSTER_DB_URL)
+    try:
+        _prepare_manual_dreamster_for_downloader(connection, log, manual=manual)
+        run_named_database_online(connection, DREAMSTER_DB_ID, log=log)
+        _finish_dreamster_install_online(connection, log)
+    except Exception:
+        restore_online(connection, original)
+        raise
+
+
+def install_or_update_dreamster_local(sd_root: str, log):
+    manual = _manual_dreamster_install_local(sd_root)
+    original = ensure_database_source_local(sd_root, DREAMSTER_DB_ID, DREAMSTER_DB_URL)
+    try:
+        _prepare_manual_dreamster_for_downloader_local(sd_root, log, manual=manual)
+        run_named_database_local(sd_root, DREAMSTER_DB_ID, log=log)
+        _finish_dreamster_install_local(sd_root, log)
+    except Exception:
+        restore_local(sd_root, original)
+        raise
+
+
+def uninstall_dreamster(connection, log, force=False):
+    if not connection.is_connected():
+        raise RuntimeError("Not connected to MiSTer.")
+    if _manual_dreamster_install(connection):
+        _prepare_manual_dreamster_for_downloader(connection, log, manual=True)
+        remove_database_source_online(connection, DREAMSTER_DB_ID)
+        return {"uninstalled": True}
+    original = ensure_database_source_online(connection, DREAMSTER_DB_ID, DREAMSTER_DB_URL)
+    try:
+        native = uninstall_named_database_online(connection, DREAMSTER_DB_ID, log=log, force=force)
+        if not native:
+            ensure_database_source_online(connection, DREAMSTER_DB_ID, DREAMSTER_DB_URL, filter_value="!all")
+            run_named_database_online(connection, DREAMSTER_DB_ID, log=log)
+            remove_database_source_online(connection, DREAMSTER_DB_ID)
+        connection.run_command(f"rm -f {_quote(REMOTE_MANIFEST)}")
+    except Exception:
+        restore_online(connection, original)
+        raise
+    return {"uninstalled": True}
+
+
+def uninstall_dreamster_local(sd_root: str, log, force=False):
+    if _manual_dreamster_install_local(sd_root):
+        _prepare_manual_dreamster_for_downloader_local(sd_root, log, manual=True)
+        remove_database_source_local(sd_root, DREAMSTER_DB_ID)
+        return {"uninstalled": True}
+    original = ensure_database_source_local(sd_root, DREAMSTER_DB_ID, DREAMSTER_DB_URL)
+    try:
+        native = uninstall_named_database_local(sd_root, DREAMSTER_DB_ID, log=log, force=force)
+        if not native:
+            ensure_database_source_local(sd_root, DREAMSTER_DB_ID, DREAMSTER_DB_URL, filter_value="!all")
+            run_named_database_local(sd_root, DREAMSTER_DB_ID, log=log)
+            remove_database_source_local(sd_root, DREAMSTER_DB_ID)
+        _remove_local_path(sd_root, REMOTE_MANIFEST)
+    except Exception:
+        restore_local(sd_root, original)
+        raise
+    return {"uninstalled": True}

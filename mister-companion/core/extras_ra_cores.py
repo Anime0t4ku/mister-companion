@@ -629,7 +629,6 @@ def _is_ra_cores_installed_local(sd_root: str) -> bool:
 def _is_ra_cores_partial_install(connection) -> bool:
     return (
         _path_exists(connection, RA_MAIN_BINARY_PATH)
-        or _path_exists(connection, RA_CONFIG_PATH)
         or _path_exists(connection, RA_SOUND_PATH)
         or _mister_ini_has_ra_block(connection)
         or _any_expected_core_files_present(connection)
@@ -639,7 +638,6 @@ def _is_ra_cores_partial_install(connection) -> bool:
 def _is_ra_cores_partial_install_local(sd_root: str) -> bool:
     return (
         _path_exists_local(sd_root, RA_MAIN_BINARY_PATH)
-        or _path_exists_local(sd_root, RA_CONFIG_PATH)
         or _path_exists_local(sd_root, RA_SOUND_PATH)
         or _mister_ini_has_ra_block_local(sd_root)
         or _any_expected_core_files_present_local(sd_root)
@@ -1880,10 +1878,30 @@ def write_ra_config_local(sd_root: str, values: dict):
     updated = "\n".join(updated_lines).rstrip("\n") + "\n"
     _write_local_text(sd_root, RA_CONFIG_PATH, updated)
     return True
+
+
+def _ensure_ra_config(connection, log):
+    if _path_exists(connection, RA_CONFIG_PATH):
+        log(f"Keeping existing {RA_CONFIG_PATH}\n")
+        return False
+    _write_remote_text(connection, RA_CONFIG_PATH, RA_CONFIG_DEFAULT)
+    log(f"Created default {RA_CONFIG_PATH}\n")
+    return True
+
+
+def _ensure_ra_config_local(sd_root: str, log):
+    if _path_exists_local(sd_root, RA_CONFIG_PATH):
+        log(f"Keeping existing {RA_CONFIG_PATH}\n")
+        return False
+    _write_local_text(sd_root, RA_CONFIG_PATH, RA_CONFIG_DEFAULT)
+    log(f"Created default {RA_CONFIG_PATH}\n")
+    return True
 # Downloader-backed package management. File-based status/config helpers above remain in use.
 from core.downloader_backend import (
     RA_CORES_DB_ID,
     RA_CORES_DB_URL,
+    database_registered_online,
+    database_registered_local,
     check_named_database_online,
     check_named_database_local,
     ensure_database_source_online,
@@ -1894,12 +1912,59 @@ from core.downloader_backend import (
     restore_local,
     run_named_database_online,
     run_named_database_local,
+    uninstall_named_database_online,
+    uninstall_named_database_local,
 )
 
 
-def _apply_downloader_update_status(status: dict, update_available: bool) -> dict:
+def _manual_ra_cores_install(connection) -> bool:
+    present = _is_ra_cores_installed(connection) or _is_ra_cores_partial_install(connection) or _is_legacy_ra_cores_installed(connection)
+    return bool(present and (_path_exists(connection, RA_VERSION_FILE) or not database_registered_online(connection, RA_CORES_DB_ID)))
+
+
+def _manual_ra_cores_install_local(sd_root: str) -> bool:
+    present = _is_ra_cores_installed_local(sd_root) or _is_ra_cores_partial_install_local(sd_root) or _is_legacy_ra_cores_installed_local(sd_root)
+    return bool(present and (_path_exists_local(sd_root, RA_VERSION_FILE) or not database_registered_local(sd_root, RA_CORES_DB_ID)))
+
+
+def _prepare_manual_ra_cores_for_downloader(connection, log, manual=None):
+    if manual is None:
+        manual = _manual_ra_cores_install(connection)
+    if not manual:
+        return False
+    log("Detected a manual Companion installation; preparing it for Downloader...\n")
+    _remove_remote_file(connection, RA_MAIN_BINARY_PATH)
+    _remove_remote_file(connection, RA_SOUND_PATH)
+    _remove_remote_file(connection, RA_LEGACY_INI_PATH)
+    _remove_remote_file(connection, RA_VERSION_FILE)
+    _remove_remote_dir(connection, RA_CORES_DIR)
+    _remove_remote_dir(connection, RA_LEGACY_CORES_DIR)
+    log(f"Preserved user configuration: {RA_CONFIG_PATH}\n")
+    return True
+
+
+def _prepare_manual_ra_cores_for_downloader_local(sd_root: str, log, manual=None):
+    if manual is None:
+        manual = _manual_ra_cores_install_local(sd_root)
+    if not manual:
+        return False
+    log("Detected a manual Companion installation; preparing it for Downloader...\n")
+    _remove_local_file(sd_root, RA_MAIN_BINARY_PATH)
+    _remove_local_file(sd_root, RA_SOUND_PATH)
+    _remove_local_file(sd_root, RA_LEGACY_INI_PATH)
+    _remove_local_file(sd_root, RA_VERSION_FILE)
+    _remove_local_dir(sd_root, RA_CORES_DIR)
+    _remove_local_dir(sd_root, RA_LEGACY_CORES_DIR)
+    log(f"Preserved user configuration: {RA_CONFIG_PATH}\n")
+    return True
+
+
+def _apply_downloader_update_status(status: dict, update_available: bool, manual: bool = False) -> dict:
     status = dict(status)
     installed = bool(status.get("installed"))
+    if manual:
+        status.update({"update_available": True, "status_text": "▲ Manual install found", "install_label": "Migrate / Update", "install_enabled": True})
+        return status
     status["update_available"] = bool(installed and update_available)
     if status["update_available"]:
         status["status_text"] = "▲ Update available"
@@ -1918,11 +1983,14 @@ _original_get_ra_cores_status_local = get_ra_cores_status_local
 
 def get_ra_cores_status(connection, check_latest: bool = False, log=None):
     status = _original_get_ra_cores_status(connection, check_latest=False, log=log)
-    if check_latest and status.get("installed"):
+    manual = _manual_ra_cores_install(connection)
+    if manual:
+        status = _apply_downloader_update_status(status, False, manual=True)
+    elif check_latest and status.get("installed"):
         try:
             status = _apply_downloader_update_status(
                 status,
-                check_named_database_online(connection, RA_CORES_DB_ID, log=log),
+                check_named_database_online(connection, RA_CORES_DB_ID, log=None),
             )
         except Exception as exc:
             status["latest_error"] = str(exc)
@@ -1932,11 +2000,14 @@ def get_ra_cores_status(connection, check_latest: bool = False, log=None):
 
 def get_ra_cores_status_local(sd_root: str, check_latest: bool = False, log=None):
     status = _original_get_ra_cores_status_local(sd_root, check_latest=False, log=log)
-    if check_latest and status.get("installed"):
+    manual = _manual_ra_cores_install_local(sd_root)
+    if manual:
+        status = _apply_downloader_update_status(status, False, manual=True)
+    elif check_latest and status.get("installed"):
         try:
             status = _apply_downloader_update_status(
                 status,
-                check_named_database_local(sd_root, RA_CORES_DB_ID, log=log),
+                check_named_database_local(sd_root, RA_CORES_DB_ID, log=None),
             )
         except Exception as exc:
             status["latest_error"] = str(exc)
@@ -1947,9 +2018,12 @@ def get_ra_cores_status_local(sd_root: str, check_latest: bool = False, log=None
 def install_or_update_ra_cores(connection, log, source_keys=None):
     if not connection.is_connected():
         raise RuntimeError("Not connected to MiSTer.")
+    manual = _manual_ra_cores_install(connection)
     original = ensure_database_source_online(connection, RA_CORES_DB_ID, RA_CORES_DB_URL)
     try:
+        _prepare_manual_ra_cores_for_downloader(connection, log, manual=manual)
         run_named_database_online(connection, RA_CORES_DB_ID, log=log)
+        _ensure_ra_config(connection, log)
         _ensure_ra_mister_ini_block(connection, log)
     except Exception:
         restore_online(connection, original)
@@ -1957,34 +2031,53 @@ def install_or_update_ra_cores(connection, log, source_keys=None):
 
 
 def install_or_update_ra_cores_local(sd_root: str, log, source_keys=None):
+    manual = _manual_ra_cores_install_local(sd_root)
     original = ensure_database_source_local(sd_root, RA_CORES_DB_ID, RA_CORES_DB_URL)
     try:
+        _prepare_manual_ra_cores_for_downloader_local(sd_root, log, manual=manual)
         run_named_database_local(sd_root, RA_CORES_DB_ID, log=log)
+        _ensure_ra_config_local(sd_root, log)
         _ensure_ra_mister_ini_block_local(sd_root, log)
     except Exception:
         restore_local(sd_root, original)
         raise
 
 
-def uninstall_ra_cores(connection, log, source_keys=None):
+def uninstall_ra_cores(connection, log, source_keys=None, force=False):
     if not connection.is_connected():
         raise RuntimeError("Not connected to MiSTer.")
-    original = ensure_database_source_online(connection, RA_CORES_DB_ID, RA_CORES_DB_URL, filter_value="!all")
-    try:
-        run_named_database_online(connection, RA_CORES_DB_ID, log=log)
-        _remove_ra_mister_ini_block(connection, log)
+    if _manual_ra_cores_install(connection):
+        _prepare_manual_ra_cores_for_downloader(connection, log, manual=True)
         remove_database_source_online(connection, RA_CORES_DB_ID)
+        _remove_ra_mister_ini_block(connection, log)
+        return {"uninstalled": True}
+    original = ensure_database_source_online(connection, RA_CORES_DB_ID, RA_CORES_DB_URL)
+    try:
+        native = uninstall_named_database_online(connection, RA_CORES_DB_ID, log=log, force=force)
+        if not native:
+            ensure_database_source_online(connection, RA_CORES_DB_ID, RA_CORES_DB_URL, filter_value="!all")
+            run_named_database_online(connection, RA_CORES_DB_ID, log=log)
+            remove_database_source_online(connection, RA_CORES_DB_ID)
+        _remove_ra_mister_ini_block(connection, log)
     except Exception:
         restore_online(connection, original)
         raise
 
 
-def uninstall_ra_cores_local(sd_root: str, log, source_keys=None):
-    original = ensure_database_source_local(sd_root, RA_CORES_DB_ID, RA_CORES_DB_URL, filter_value="!all")
-    try:
-        run_named_database_local(sd_root, RA_CORES_DB_ID, log=log)
-        _remove_ra_mister_ini_block_local(sd_root, log)
+def uninstall_ra_cores_local(sd_root: str, log, source_keys=None, force=False):
+    if _manual_ra_cores_install_local(sd_root):
+        _prepare_manual_ra_cores_for_downloader_local(sd_root, log, manual=True)
         remove_database_source_local(sd_root, RA_CORES_DB_ID)
+        _remove_ra_mister_ini_block_local(sd_root, log)
+        return {"uninstalled": True}
+    original = ensure_database_source_local(sd_root, RA_CORES_DB_ID, RA_CORES_DB_URL)
+    try:
+        native = uninstall_named_database_local(sd_root, RA_CORES_DB_ID, log=log, force=force)
+        if not native:
+            ensure_database_source_local(sd_root, RA_CORES_DB_ID, RA_CORES_DB_URL, filter_value="!all")
+            run_named_database_local(sd_root, RA_CORES_DB_ID, log=log)
+            remove_database_source_local(sd_root, RA_CORES_DB_ID)
+        _remove_ra_mister_ini_block_local(sd_root, log)
     except Exception:
         restore_local(sd_root, original)
         raise
