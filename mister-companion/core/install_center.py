@@ -572,7 +572,7 @@ def _extra_status(handler: str, context: InstallCenterContext, check_latest: boo
     result["latest_version"] = status.get("latest_version")
     for key in (
         "install_label", "install_enabled", "uninstall_enabled", "upload_enabled",
-        "folder_open_enabled", "edit_config_enabled", "disable_enabled", "installed", "update_available",
+        "folder_open_enabled", "edit_config_enabled", "disable_enabled", "installed", "update_available", "repair_action",
         "components", "installed_component_keys", "incomplete_component_keys",
         "missing_component_keys", "all_components_installed", "outdated_sources"
     ):
@@ -717,7 +717,7 @@ def check_all_status(catalog: dict, context: InstallCenterContext, check_latest:
             db_id = DOWNLOADER_HANDLER_DATABASES.get(handler)
             status = results.get(item_id) or {}
             manual = "manual install" in str(status.get("status_text") or "").lower()
-            if db_id and status.get("installed") and not manual:
+            if db_id and status.get("installed") and not manual and not status.get("repair_action"):
                 downloader_items.append((item, db_id))
 
         if downloader_items:

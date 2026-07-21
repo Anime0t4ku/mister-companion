@@ -1,4 +1,9 @@
-from core.extras_common import _path_exists, _path_exists_local, _quote, _remove_local_path
+import re
+
+from core.extras_common import (
+    _path_exists, _path_exists_local, _quote, _read_local_text, _read_remote_text,
+    _remove_local_path, _write_local_text, _write_remote_text,
+)
 from core.downloader_backend import (
     database_registered_local,
     database_registered_online,
@@ -19,6 +24,7 @@ from core.downloader_backend import (
 PHYSICAL_DISC_DB_ID = "MultiDatabases/physical-disc"
 PHYSICAL_DISC_DB_URL = "https://raw.githubusercontent.com/theypsilon/MultiDatabases_MiSTer/db/physical-disc/db.json"
 PHYSICAL_DISC_BINARY = "/media/fat/MiSTer_Physical-CD"
+MISTER_INI_PATH = "/media/fat/MiSTer.ini"
 PHYSICAL_DISC_FILES = (
     PHYSICAL_DISC_BINARY,
     "/media/fat/_Physical Disc Cores/CDi.mgl",
@@ -28,6 +34,72 @@ PHYSICAL_DISC_FILES = (
     "/media/fat/_Physical Disc Cores/Saturn.mgl",
     "/media/fat/_Physical Disc Cores/TurboGrafx16-CD.mgl",
 )
+
+
+def _upsert_cd_ini_block(text):
+    normalized = str(text or "").replace("\r\n", "\n")
+    pattern = re.compile(r"(?ms)^(?P<header>[ \t]*\[CD-\*\][^\n]*\n)(?P<body>.*?)(?=^[ \t]*\[|\Z)")
+    match = pattern.search(normalized)
+    if match:
+        lines = match.group("body").rstrip("\n").split("\n") if match.group("body") else []
+        for index, line in enumerate(lines):
+            if re.match(r"^\s*main\s*=", line, flags=re.IGNORECASE):
+                lines[index] = "main=MiSTer_Physical-CD"
+                break
+        else:
+            lines.append("main=MiSTer_Physical-CD")
+        block = "[CD-*]\n" + "\n".join(lines).rstrip("\n") + "\n\n"
+        normalized = normalized[:match.start()] + block + normalized[match.end():]
+    else:
+        normalized = normalized.rstrip()
+        normalized = (normalized + "\n\n" if normalized else "") + "[CD-*]\nmain=MiSTer_Physical-CD\n"
+    return re.sub(r"\n{3,}", "\n\n", normalized).rstrip("\n") + "\n"
+
+
+def _remove_cd_ini_block_text(text):
+    normalized = str(text or "").replace("\r\n", "\n")
+    pattern = re.compile(r"(?ms)(?:^|\n)[ \t]*\[CD-\*\][^\n]*(?:\n|\Z).*?(?=\n[ \t]*\[|\Z)")
+    normalized = pattern.sub("\n", normalized)
+    normalized = re.sub(r"\n{3,}", "\n\n", normalized).strip("\n")
+    return normalized + ("\n" if normalized else "")
+
+
+def _has_cd_ini_entry(text):
+    normalized = str(text or "").replace("\r\n", "\n")
+    section = re.search(r"(?ms)^[ \t]*\[CD-\*\][^\n]*\n(?P<body>.*?)(?=^[ \t]*\[|\Z)", normalized)
+    return bool(section and re.search(r"(?mi)^\s*main\s*=\s*MiSTer_Physical-CD\s*$", section.group("body")))
+
+
+def _ensure_cd_ini_block(connection, log):
+    current = _read_remote_text(connection, MISTER_INI_PATH)
+    updated = _upsert_cd_ini_block(current)
+    if updated != current.replace("\r\n", "\n"):
+        _write_remote_text(connection, MISTER_INI_PATH, updated)
+        log("Added/updated [CD-*] in MiSTer.ini.\n")
+
+
+def _ensure_cd_ini_block_local(sd_root, log):
+    current = _read_local_text(sd_root, MISTER_INI_PATH)
+    updated = _upsert_cd_ini_block(current)
+    if updated != current.replace("\r\n", "\n"):
+        _write_local_text(sd_root, MISTER_INI_PATH, updated)
+        log("Added/updated [CD-*] in MiSTer.ini.\n")
+
+
+def _remove_cd_ini_block(connection, log):
+    current = _read_remote_text(connection, MISTER_INI_PATH)
+    updated = _remove_cd_ini_block_text(current)
+    if updated != current.replace("\r\n", "\n"):
+        _write_remote_text(connection, MISTER_INI_PATH, updated)
+        log("Removed [CD-*] from MiSTer.ini.\n")
+
+
+def _remove_cd_ini_block_local(sd_root, log):
+    current = _read_local_text(sd_root, MISTER_INI_PATH)
+    updated = _remove_cd_ini_block_text(current)
+    if updated != current.replace("\r\n", "\n"):
+        _write_local_text(sd_root, MISTER_INI_PATH, updated)
+        log("Removed [CD-*] from MiSTer.ini.\n")
 
 
 def _presence(exists):
@@ -71,7 +143,7 @@ def _prepare_manual_physical_disc_for_downloader_local(sd_root, log, manual=None
     return True
 
 
-def _status(found, complete, manual, update_available=False, connected=True):
+def _status(found, complete, manual, update_available=False, connected=True, ini_entry_present=True):
     installed = bool(found)
     partial = bool(found and not complete)
     if not connected:
@@ -82,11 +154,13 @@ def _status(found, complete, manual, update_available=False, connected=True):
         text, label, enabled, update = "✗ Not installed", "Install", True, False
     elif partial:
         text, label, enabled, update = "⚠ Missing files", "Install", True, False
+    elif complete and not ini_entry_present:
+        text, label, enabled, update = "⚠ MiSTer.ini entry missing", "Add INI Entry", True, False
     elif update_available:
         text, label, enabled, update = "▲ Update available", "Update", True, True
     else:
         text, label, enabled, update = "✓ Installed", "Installed", False, False
-    return {"installed": installed, "partial": partial, "installed_version": "", "latest_version": "", "latest_error": "", "update_available": update, "status_text": text, "install_label": label, "install_enabled": enabled, "uninstall_enabled": installed}
+    return {"installed": installed, "partial": partial, "installed_version": "", "latest_version": "", "latest_error": "", "update_available": update, "status_text": text, "install_label": label, "install_enabled": enabled, "uninstall_enabled": installed, "repair_action": bool(installed and complete and not manual and not ini_entry_present)}
 
 
 def get_physical_disc_status(connection, check_latest=False):
@@ -94,15 +168,17 @@ def get_physical_disc_status(connection, check_latest=False):
         return _status([], False, False, connected=False)
     found, complete = _presence(lambda path: _path_exists(connection, path))
     manual = bool(found and not database_registered_online(connection, PHYSICAL_DISC_DB_ID))
+    ini_entry_present = _has_cd_ini_entry(_read_remote_text(connection, MISTER_INI_PATH))
     update = bool(check_latest and found and complete and not manual and check_named_database_online(connection, PHYSICAL_DISC_DB_ID))
-    return _status(found, complete, manual, update)
+    return _status(found, complete, manual, update, ini_entry_present=ini_entry_present)
 
 
 def get_physical_disc_status_local(sd_root, check_latest=False):
     found, complete = _presence(lambda path: _path_exists_local(sd_root, path))
     manual = bool(found and not database_registered_local(sd_root, PHYSICAL_DISC_DB_ID))
+    ini_entry_present = _has_cd_ini_entry(_read_local_text(sd_root, MISTER_INI_PATH))
     update = bool(check_latest and found and complete and not manual and check_named_database_local(sd_root, PHYSICAL_DISC_DB_ID))
-    return _status(found, complete, manual, update)
+    return _status(found, complete, manual, update, ini_entry_present=ini_entry_present)
 
 
 def _reboot_result(uninstall=False):
@@ -113,12 +189,17 @@ def _reboot_result(uninstall=False):
 def install_or_update_physical_disc(connection, log):
     if not connection.is_connected():
         raise RuntimeError("Not connected to MiSTer.")
-    manual = _manual_physical_disc_install(connection)
+    found, complete = _presence(lambda path: _path_exists(connection, path))
+    manual = bool(found and not database_registered_online(connection, PHYSICAL_DISC_DB_ID))
+    if complete and not manual and not _has_cd_ini_entry(_read_remote_text(connection, MISTER_INI_PATH)):
+        _ensure_cd_ini_block(connection, log)
+        return _reboot_result()
     original = ensure_database_source_online(connection, PHYSICAL_DISC_DB_ID, PHYSICAL_DISC_DB_URL)
     try:
         _prepare_manual_physical_disc_for_downloader(connection, log, manual=manual)
         run_named_database_online(connection, PHYSICAL_DISC_DB_ID, log=log)
         connection.run_command(f"chmod +x {_quote(PHYSICAL_DISC_BINARY)}")
+        _ensure_cd_ini_block(connection, log)
     except Exception:
         restore_online(connection, original)
         raise
@@ -126,11 +207,16 @@ def install_or_update_physical_disc(connection, log):
 
 
 def install_or_update_physical_disc_local(sd_root, log):
-    manual = _manual_physical_disc_install_local(sd_root)
+    found, complete = _presence(lambda path: _path_exists_local(sd_root, path))
+    manual = bool(found and not database_registered_local(sd_root, PHYSICAL_DISC_DB_ID))
+    if complete and not manual and not _has_cd_ini_entry(_read_local_text(sd_root, MISTER_INI_PATH)):
+        _ensure_cd_ini_block_local(sd_root, log)
+        return _reboot_result()
     original = ensure_database_source_local(sd_root, PHYSICAL_DISC_DB_ID, PHYSICAL_DISC_DB_URL)
     try:
         _prepare_manual_physical_disc_for_downloader_local(sd_root, log, manual=manual)
         run_named_database_local(sd_root, PHYSICAL_DISC_DB_ID, log=log)
+        _ensure_cd_ini_block_local(sd_root, log)
     except Exception:
         restore_local(sd_root, original)
         raise
@@ -143,6 +229,7 @@ def uninstall_physical_disc(connection, log, force=False):
     if _manual_physical_disc_install(connection):
         _prepare_manual_physical_disc_for_downloader(connection, log, manual=True)
         remove_database_source_online(connection, PHYSICAL_DISC_DB_ID)
+        _remove_cd_ini_block(connection, log)
         return _reboot_result(uninstall=True)
     original = ensure_database_source_online(connection, PHYSICAL_DISC_DB_ID, PHYSICAL_DISC_DB_URL)
     try:
@@ -151,6 +238,7 @@ def uninstall_physical_disc(connection, log, force=False):
             ensure_database_source_online(connection, PHYSICAL_DISC_DB_ID, PHYSICAL_DISC_DB_URL, filter_value="!all")
             run_named_database_online(connection, PHYSICAL_DISC_DB_ID, log=log)
             remove_database_source_online(connection, PHYSICAL_DISC_DB_ID)
+        _remove_cd_ini_block(connection, log)
     except Exception:
         restore_online(connection, original)
         raise
@@ -161,6 +249,7 @@ def uninstall_physical_disc_local(sd_root, log, force=False):
     if _manual_physical_disc_install_local(sd_root):
         _prepare_manual_physical_disc_for_downloader_local(sd_root, log, manual=True)
         remove_database_source_local(sd_root, PHYSICAL_DISC_DB_ID)
+        _remove_cd_ini_block_local(sd_root, log)
         return _reboot_result(uninstall=True)
     original = ensure_database_source_local(sd_root, PHYSICAL_DISC_DB_ID, PHYSICAL_DISC_DB_URL)
     try:
@@ -169,6 +258,7 @@ def uninstall_physical_disc_local(sd_root, log, force=False):
             ensure_database_source_local(sd_root, PHYSICAL_DISC_DB_ID, PHYSICAL_DISC_DB_URL, filter_value="!all")
             run_named_database_local(sd_root, PHYSICAL_DISC_DB_ID, log=log)
             remove_database_source_local(sd_root, PHYSICAL_DISC_DB_ID)
+        _remove_cd_ini_block_local(sd_root, log)
     except Exception:
         restore_local(sd_root, original)
         raise
