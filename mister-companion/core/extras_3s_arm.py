@@ -862,6 +862,11 @@ def _prepare_manual_3sx_for_downloader(connection, log, manual=None):
     return True
 
 
+def _ini_block_present(text: str) -> bool:
+    normalized = (text or "").replace("\r\n", "\n")
+    return "[3S-ARM]" in normalized and "main=MiSTer_3S-ARM" in normalized
+
+
 def _prepare_manual_3sx_for_downloader_local(sd_root: str, log, manual=None):
     if manual is None:
         manual = _manual_3sx_install_local(sd_root)
@@ -909,7 +914,10 @@ def get_3sx_status(connection, check_latest: bool = False):
     update = False
     if check_latest and status.get("installed") and not manual:
         update = check_named_database_online(connection, THREE_S_ARM_DB_ID)
-    return _apply_3sx_downloader_status(status, manual, update)
+    status = _apply_3sx_downloader_status(status, manual, update)
+    if status.get("installed") and not manual and not _ini_block_present(_read_remote_text(connection, REMOTE_INI_PATH)):
+        status.update({"status_text": "⚠ MiSTer.ini entry missing", "install_label": "Add INI Entry", "install_enabled": True, "update_available": False, "repair_action": True})
+    return status
 
 
 def get_3sx_status_local(sd_root: str, check_latest: bool = False):
@@ -918,19 +926,25 @@ def get_3sx_status_local(sd_root: str, check_latest: bool = False):
     update = False
     if check_latest and status.get("installed") and not manual:
         update = check_named_database_local(sd_root, THREE_S_ARM_DB_ID)
-    return _apply_3sx_downloader_status(status, manual, update)
+    status = _apply_3sx_downloader_status(status, manual, update)
+    if status.get("installed") and not manual and not _ini_block_present(_read_local_text(sd_root, REMOTE_INI_PATH)):
+        status.update({"status_text": "⚠ MiSTer.ini entry missing", "install_label": "Add INI Entry", "install_enabled": True, "update_available": False, "repair_action": True})
+    return status
 
 
 def install_or_update_3sx(connection, log):
     if not connection.is_connected():
         raise RuntimeError("Not connected to MiSTer.")
     manual = _manual_3sx_install(connection)
+    if not manual and _manual_get_3sx_status(connection, check_latest=False).get("installed") and not _ini_block_present(_read_remote_text(connection, REMOTE_INI_PATH)):
+        _ensure_ini_block(connection)
+        return
     original = ensure_database_source_online(connection, THREE_S_ARM_DB_ID, THREE_S_ARM_DB_URL)
     try:
         _prepare_manual_3sx_for_downloader(connection, log, manual=manual)
+        _ensure_ini_block(connection)
         run_named_database_online(connection, THREE_S_ARM_DB_ID, log=log)
         connection.run_command(f"chmod +x {_quote(REMOTE_LAUNCHER_PATH)}")
-        _ensure_ini_block(connection)
         connection.run_command(f"rm -f {_quote(REMOTE_VERSION_FILE)} {_quote(OLD_REMOTE_VERSION_FILE)}")
     except Exception:
         restore_online(connection, original)
@@ -939,11 +953,14 @@ def install_or_update_3sx(connection, log):
 
 def install_or_update_3sx_local(sd_root: str, log):
     manual = _manual_3sx_install_local(sd_root)
+    if not manual and _manual_get_3sx_status_local(sd_root, check_latest=False).get("installed") and not _ini_block_present(_read_local_text(sd_root, REMOTE_INI_PATH)):
+        _ensure_ini_block_local(sd_root)
+        return
     original = ensure_database_source_local(sd_root, THREE_S_ARM_DB_ID, THREE_S_ARM_DB_URL)
     try:
         _prepare_manual_3sx_for_downloader_local(sd_root, log, manual=manual)
-        run_named_database_local(sd_root, THREE_S_ARM_DB_ID, log=log)
         _ensure_ini_block_local(sd_root)
+        run_named_database_local(sd_root, THREE_S_ARM_DB_ID, log=log)
         _remove_local_path(sd_root, REMOTE_VERSION_FILE)
         _remove_local_path(sd_root, OLD_REMOTE_VERSION_FILE)
     except Exception:
@@ -961,12 +978,12 @@ def uninstall_3sx(connection, log, force=False):
         return {"uninstalled": True}
     original = ensure_database_source_online(connection, THREE_S_ARM_DB_ID, THREE_S_ARM_DB_URL)
     try:
+        _remove_ini_block(connection)
         native = uninstall_named_database_online(connection, THREE_S_ARM_DB_ID, log=log, force=force)
         if not native:
             ensure_database_source_online(connection, THREE_S_ARM_DB_ID, THREE_S_ARM_DB_URL, filter_value="!all")
             run_named_database_online(connection, THREE_S_ARM_DB_ID, log=log)
             remove_database_source_online(connection, THREE_S_ARM_DB_ID)
-        _remove_ini_block(connection)
         connection.run_command(f"rm -f {_quote(REMOTE_VERSION_FILE)} {_quote(OLD_REMOTE_VERSION_FILE)}")
     except Exception:
         restore_online(connection, original)
@@ -982,12 +999,12 @@ def uninstall_3sx_local(sd_root: str, log, force=False):
         return {"uninstalled": True}
     original = ensure_database_source_local(sd_root, THREE_S_ARM_DB_ID, THREE_S_ARM_DB_URL)
     try:
+        _remove_ini_block_local(sd_root)
         native = uninstall_named_database_local(sd_root, THREE_S_ARM_DB_ID, log=log, force=force)
         if not native:
             ensure_database_source_local(sd_root, THREE_S_ARM_DB_ID, THREE_S_ARM_DB_URL, filter_value="!all")
             run_named_database_local(sd_root, THREE_S_ARM_DB_ID, log=log)
             remove_database_source_local(sd_root, THREE_S_ARM_DB_ID)
-        _remove_ini_block_local(sd_root)
         _remove_local_path(sd_root, REMOTE_VERSION_FILE)
         _remove_local_path(sd_root, OLD_REMOTE_VERSION_FILE)
     except Exception:

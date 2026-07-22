@@ -197,9 +197,9 @@ def install_or_update_physical_disc(connection, log):
     original = ensure_database_source_online(connection, PHYSICAL_DISC_DB_ID, PHYSICAL_DISC_DB_URL)
     try:
         _prepare_manual_physical_disc_for_downloader(connection, log, manual=manual)
+        _ensure_cd_ini_block(connection, log)
         run_named_database_online(connection, PHYSICAL_DISC_DB_ID, log=log)
         connection.run_command(f"chmod +x {_quote(PHYSICAL_DISC_BINARY)}")
-        _ensure_cd_ini_block(connection, log)
     except Exception:
         restore_online(connection, original)
         raise
@@ -215,8 +215,8 @@ def install_or_update_physical_disc_local(sd_root, log):
     original = ensure_database_source_local(sd_root, PHYSICAL_DISC_DB_ID, PHYSICAL_DISC_DB_URL)
     try:
         _prepare_manual_physical_disc_for_downloader_local(sd_root, log, manual=manual)
-        run_named_database_local(sd_root, PHYSICAL_DISC_DB_ID, log=log)
         _ensure_cd_ini_block_local(sd_root, log)
+        run_named_database_local(sd_root, PHYSICAL_DISC_DB_ID, log=log)
     except Exception:
         restore_local(sd_root, original)
         raise
@@ -233,12 +233,12 @@ def uninstall_physical_disc(connection, log, force=False):
         return _reboot_result(uninstall=True)
     original = ensure_database_source_online(connection, PHYSICAL_DISC_DB_ID, PHYSICAL_DISC_DB_URL)
     try:
+        _remove_cd_ini_block(connection, log)
         native = uninstall_named_database_online(connection, PHYSICAL_DISC_DB_ID, log=log, force=force)
         if not native:
             ensure_database_source_online(connection, PHYSICAL_DISC_DB_ID, PHYSICAL_DISC_DB_URL, filter_value="!all")
             run_named_database_online(connection, PHYSICAL_DISC_DB_ID, log=log)
             remove_database_source_online(connection, PHYSICAL_DISC_DB_ID)
-        _remove_cd_ini_block(connection, log)
     except Exception:
         restore_online(connection, original)
         raise
@@ -253,12 +253,12 @@ def uninstall_physical_disc_local(sd_root, log, force=False):
         return _reboot_result(uninstall=True)
     original = ensure_database_source_local(sd_root, PHYSICAL_DISC_DB_ID, PHYSICAL_DISC_DB_URL)
     try:
+        _remove_cd_ini_block_local(sd_root, log)
         native = uninstall_named_database_local(sd_root, PHYSICAL_DISC_DB_ID, log=log, force=force)
         if not native:
             ensure_database_source_local(sd_root, PHYSICAL_DISC_DB_ID, PHYSICAL_DISC_DB_URL, filter_value="!all")
             run_named_database_local(sd_root, PHYSICAL_DISC_DB_ID, log=log)
             remove_database_source_local(sd_root, PHYSICAL_DISC_DB_ID)
-        _remove_cd_ini_block_local(sd_root, log)
     except Exception:
         restore_local(sd_root, original)
         raise

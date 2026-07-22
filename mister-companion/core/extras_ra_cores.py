@@ -1079,6 +1079,10 @@ def _ensure_ra_mister_ini_block(connection, log) -> bool:
     return True
 
 
+def _ra_mister_ini_block_present(text: str) -> bool:
+    return bool(re.search(r"(?m)^\[RA_\*\]\s*\nmain\s*=\s*MiSTer_RA\s*$", (text or "").replace("\r\n", "\n")))
+
+
 def _ensure_ra_mister_ini_block_local(sd_root: str, log) -> bool:
     _create_mister_ini_if_missing_local(sd_root, log)
 
@@ -1995,6 +1999,8 @@ def get_ra_cores_status(connection, check_latest: bool = False, log=None):
         except Exception as exc:
             status["latest_error"] = str(exc)
             status["status_text"] = f"✓ Installed (update check failed: {exc})"
+    if status.get("installed") and not manual and not _ra_mister_ini_block_present(_read_remote_text(connection, MISTER_INI_PATH)):
+        status.update({"status_text": "⚠ MiSTer.ini entry missing", "install_label": "Add INI Entry", "install_enabled": True, "update_available": False, "repair_action": True})
     return status
 
 
@@ -2012,6 +2018,8 @@ def get_ra_cores_status_local(sd_root: str, check_latest: bool = False, log=None
         except Exception as exc:
             status["latest_error"] = str(exc)
             status["status_text"] = f"✓ Installed (update check failed: {exc})"
+    if status.get("installed") and not manual and not _ra_mister_ini_block_present(_read_local_text(sd_root, MISTER_INI_PATH)):
+        status.update({"status_text": "⚠ MiSTer.ini entry missing", "install_label": "Add INI Entry", "install_enabled": True, "update_available": False, "repair_action": True})
     return status
 
 
@@ -2019,12 +2027,15 @@ def install_or_update_ra_cores(connection, log, source_keys=None):
     if not connection.is_connected():
         raise RuntimeError("Not connected to MiSTer.")
     manual = _manual_ra_cores_install(connection)
+    if not manual and _original_get_ra_cores_status(connection, check_latest=False, log=log).get("installed") and not _ra_mister_ini_block_present(_read_remote_text(connection, MISTER_INI_PATH)):
+        _ensure_ra_mister_ini_block(connection, log)
+        return
     original = ensure_database_source_online(connection, RA_CORES_DB_ID, RA_CORES_DB_URL)
     try:
         _prepare_manual_ra_cores_for_downloader(connection, log, manual=manual)
+        _ensure_ra_mister_ini_block(connection, log)
         run_named_database_online(connection, RA_CORES_DB_ID, log=log)
         _ensure_ra_config(connection, log)
-        _ensure_ra_mister_ini_block(connection, log)
     except Exception:
         restore_online(connection, original)
         raise
@@ -2032,12 +2043,15 @@ def install_or_update_ra_cores(connection, log, source_keys=None):
 
 def install_or_update_ra_cores_local(sd_root: str, log, source_keys=None):
     manual = _manual_ra_cores_install_local(sd_root)
+    if not manual and _original_get_ra_cores_status_local(sd_root, check_latest=False, log=log).get("installed") and not _ra_mister_ini_block_present(_read_local_text(sd_root, MISTER_INI_PATH)):
+        _ensure_ra_mister_ini_block_local(sd_root, log)
+        return
     original = ensure_database_source_local(sd_root, RA_CORES_DB_ID, RA_CORES_DB_URL)
     try:
         _prepare_manual_ra_cores_for_downloader_local(sd_root, log, manual=manual)
+        _ensure_ra_mister_ini_block_local(sd_root, log)
         run_named_database_local(sd_root, RA_CORES_DB_ID, log=log)
         _ensure_ra_config_local(sd_root, log)
-        _ensure_ra_mister_ini_block_local(sd_root, log)
     except Exception:
         restore_local(sd_root, original)
         raise
@@ -2053,12 +2067,12 @@ def uninstall_ra_cores(connection, log, source_keys=None, force=False):
         return {"uninstalled": True}
     original = ensure_database_source_online(connection, RA_CORES_DB_ID, RA_CORES_DB_URL)
     try:
+        _remove_ra_mister_ini_block(connection, log)
         native = uninstall_named_database_online(connection, RA_CORES_DB_ID, log=log, force=force)
         if not native:
             ensure_database_source_online(connection, RA_CORES_DB_ID, RA_CORES_DB_URL, filter_value="!all")
             run_named_database_online(connection, RA_CORES_DB_ID, log=log)
             remove_database_source_online(connection, RA_CORES_DB_ID)
-        _remove_ra_mister_ini_block(connection, log)
     except Exception:
         restore_online(connection, original)
         raise
@@ -2072,12 +2086,12 @@ def uninstall_ra_cores_local(sd_root: str, log, source_keys=None, force=False):
         return {"uninstalled": True}
     original = ensure_database_source_local(sd_root, RA_CORES_DB_ID, RA_CORES_DB_URL)
     try:
+        _remove_ra_mister_ini_block_local(sd_root, log)
         native = uninstall_named_database_local(sd_root, RA_CORES_DB_ID, log=log, force=force)
         if not native:
             ensure_database_source_local(sd_root, RA_CORES_DB_ID, RA_CORES_DB_URL, filter_value="!all")
             run_named_database_local(sd_root, RA_CORES_DB_ID, log=log)
             remove_database_source_local(sd_root, RA_CORES_DB_ID)
-        _remove_ra_mister_ini_block_local(sd_root, log)
     except Exception:
         restore_local(sd_root, original)
         raise

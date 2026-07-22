@@ -3,6 +3,8 @@ from __future__ import annotations
 import re
 import shlex
 import time
+import threading
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -16,6 +18,19 @@ DOWNLOADER_INI = "/media/fat/downloader.ini"
 UPDATE_SH = "/media/fat/Scripts/update.sh"
 DOWNLOADER_SH = "/media/fat/Scripts/downloader.sh"
 ROOT_DOWNLOADER_SH = "/media/fat/downloader.sh"
+
+_batch_runs = threading.local()
+
+
+@contextmanager
+def defer_named_database_runs():
+    previous = getattr(_batch_runs, "ids", None)
+    ids = []
+    _batch_runs.ids = ids
+    try:
+        yield ids
+    finally:
+        _batch_runs.ids = previous
 
 class DownloaderCommandError(RuntimeError):
     def __init__(self, message, output="", unsupported=False):
@@ -380,6 +395,11 @@ def uninstall_named_database_local(sd_root, db_id: str, log=None, force: bool = 
 
 
 def run_named_database_online(connection, db_id: str, log=None):
+    pending = getattr(_batch_runs, "ids", None)
+    if pending is not None:
+        if db_id not in pending:
+            pending.append(db_id)
+        return ""
     output = _run_remote_streaming(connection, _remote_downloader_command("--run-only", db_id) + " 2>&1", log=log)
     if _unsupported(output):
         raise DownloaderCommandError("Installed update.sh does not support --run-only.", output, unsupported=True)
@@ -389,7 +409,35 @@ def run_named_database_online(connection, db_id: str, log=None):
 
 
 def run_named_database_local(sd_root, db_id: str, log=None):
+    pending = getattr(_batch_runs, "ids", None)
+    if pending is not None:
+        if db_id not in pending:
+            pending.append(db_id)
+        return ""
     result = run_downloader_offline(sd_root, args=["--run-only", db_id], progress=log)
+    output = "\n".join(result.output_lines)
+    if not result.ok:
+        raise DownloaderCommandError(result.errors[-1] if result.errors else "Offline Downloader failed.", output, unsupported=_unsupported(output))
+    return output
+
+
+def run_named_databases_online(connection, db_ids, log=None):
+    ids = list(dict.fromkeys(str(db_id).strip() for db_id in db_ids if str(db_id).strip()))
+    if not ids:
+        return ""
+    output = _run_remote_streaming(connection, _remote_downloader_command("--run-only", *ids) + " 2>&1", log=log)
+    if _unsupported(output):
+        raise DownloaderCommandError("Installed update.sh does not support --run-only.", output, unsupported=True)
+    if any(x in output.lower() for x in ("traceback", "fatal error")):
+        raise DownloaderCommandError("Downloader failed while processing the selected databases.", output)
+    return output
+
+
+def run_named_databases_local(sd_root, db_ids, log=None):
+    ids = list(dict.fromkeys(str(db_id).strip() for db_id in db_ids if str(db_id).strip()))
+    if not ids:
+        return ""
+    result = run_downloader_offline(sd_root, args=["--run-only", *ids], progress=log)
     output = "\n".join(result.output_lines)
     if not result.ok:
         raise DownloaderCommandError(result.errors[-1] if result.errors else "Offline Downloader failed.", output, unsupported=_unsupported(output))

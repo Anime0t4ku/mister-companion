@@ -54,12 +54,71 @@ from core.install_center import (
     open_wallpaper_folder,
 )
 from core.file_browser import list_directory, join_remote_path, parent_path, DEFAULT_ROOT
-from core.downloader_backend import DownloaderCommandError, DownloaderMissingDrivesError
+from core.downloader_backend import (
+    DownloaderCommandError,
+    DownloaderMissingDrivesError,
+    defer_named_database_runs,
+    run_named_databases_online,
+    run_named_databases_local,
+)
 from core.scripts_version_check import supports_script_update_check
 from core.scripts_actions import get_scripts_status, install_update_all
 
 
 HUB_RAW_BASE_URL = "https://raw.githubusercontent.com/Anime0t4ku/mister-companion-hub/main/"
+
+# Kept local so this UI update remains compatible with Desktop baselines that
+# use these handlers but do not export the backend's handler-to-database map.
+DOWNLOADER_UPDATE_HANDLERS = frozenset({
+    "zaparoo",
+    "zaparoo_frontend",
+    "retroachievement_cores",
+    "3s_arm",
+    "3sx_mister",
+    "dreamster",
+    "mister_duke3d",
+    "mister_quake",
+    "mms2_gb_core",
+    "paprium_megadrive",
+    "sonic_mania_mister",
+    "megavgmdrive",
+    "physical_disc_cores",
+})
+
+
+def _install_center_connection_active(context):
+    if context.offline:
+        return True
+    try:
+        connection = context.connection
+        if not connection.is_connected() or not connection.client:
+            return False
+        transport = connection.client.get_transport()
+        return bool(transport and transport.is_active())
+    except Exception:
+        return False
+
+
+def _reboot_reconnect_result(context, log):
+    try:
+        context.connection.mark_disconnected()
+    except Exception:
+        pass
+    log("MiSTer disconnected after the update, likely due to reboot.\n")
+    log("Starting automatic reconnect...\n")
+    return {"action": "reboot_reconnect"}
+
+
+def _watch_for_install_center_reboot(context, log, watch_seconds=10):
+    if context.offline:
+        return {"action": "completed"}
+    log("Checking if a reboot was triggered...\n")
+    for _ in range(watch_seconds):
+        time.sleep(1)
+        if not _install_center_connection_active(context):
+            return _reboot_reconnect_result(context, log)
+    log("No reboot detected after the update.\n")
+    return {"action": "completed"}
 
 
 def resolve_hub_asset_url(path):
@@ -1145,17 +1204,68 @@ class InstallCenterUpdatesDialog(QDialog):
             return
 
         def task(log):
+            regular_items = []
+            downloader_items = []
             for item in items:
+                handler = item.get("handler") or item.get("id")
+                target = downloader_items if handler in DOWNLOADER_UPDATE_HANDLERS else regular_items
+                target.append(item)
+
+            for item in regular_items:
                 log(f"Updating {item.get('name', item.get('id'))}...\n")
                 run_install_or_update(item, context, log)
                 self.worker.item_completed.emit(str(item.get("id") or ""))
                 log("\n")
+
+            if downloader_items:
+                with defer_named_database_runs() as database_ids:
+                    for item in downloader_items:
+                        log(f"Preparing {item.get('name', item.get('id'))}...\n")
+                        run_install_or_update(item, context, log)
+
+                if database_ids:
+                    log(f"Updating {len(database_ids)} Downloader database(s) together...\n")
+                    if context.offline:
+                        downloader_output = run_named_databases_local(context.sd_root, database_ids, log=log)
+                    else:
+                        downloader_output = run_named_databases_online(context.connection, database_ids, log=log)
+
+                    reboot_announced = (
+                        not context.offline
+                        and "rebooting in" in str(downloader_output or "").lower()
+                    )
+
+                    if reboot_announced:
+                        log("Downloader scheduled a reboot; postponing redundant post-update checks.\n")
+                    else:
+                        # Apply entry-specific post-install steps without invoking Downloader again.
+                        try:
+                            with defer_named_database_runs():
+                                for item in downloader_items:
+                                    run_install_or_update(item, context, log)
+                        except Exception:
+                            if not context.offline and not _install_center_connection_active(context):
+                                reboot_announced = True
+                            else:
+                                raise
+
+                for item in downloader_items:
+                    self.worker.item_completed.emit(str(item.get("id") or ""))
+                log("\n")
+
+                if database_ids and reboot_announced:
+                    return _watch_for_install_center_reboot(context, log)
+
+            return _watch_for_install_center_reboot(context, log)
 
         self.set_busy(True)
         self.worker = InstallCenterTaskWorker(task, "Updates finished.")
         self.worker.log_line.connect(self.output.append)
         self.worker.success.connect(lambda message: self.output.append(message))
         self.worker.error.connect(lambda error, details: self.output.append(f"{error}\n\n{details}"))
+        self.worker.task_result.connect(
+            lambda result: handle_update_all_result(self.tab.main_window, result)
+        )
         self.worker.item_completed.connect(self.remove_completed_update)
         self.worker.finished_task.connect(self.on_updates_finished)
         self.worker.start()
@@ -1983,11 +2093,21 @@ class InstallCenterTab(QWidget):
 
         task_item = dict(item)
 
+        def task(log):
+            try:
+                run_install_or_update(task_item, context, log)
+            except Exception:
+                if not context.offline and not _install_center_connection_active(context):
+                    return _reboot_reconnect_result(context, log)
+                raise
+            return _watch_for_install_center_reboot(context, log)
+
         self.start_task(
             f"Installing/updating {item.get('name')}...",
-            lambda log: run_install_or_update(task_item, context, log),
+            task,
             f"{item.get('name')} finished successfully.",
             output_widget=output_widget,
+            result_handler=lambda result: handle_update_all_result(self.main_window, result),
         )
 
     def uninstall_selected(self, output_widget=None):

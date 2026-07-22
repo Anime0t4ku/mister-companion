@@ -700,6 +700,11 @@ def _prepare_manual_sonic_mania_for_downloader(connection, log, manual=None):
     return True
 
 
+def _sonic_mania_ini_present(text: str) -> bool:
+    normalized = (text or "").replace("\r\n", "\n")
+    return all(section in normalized for section in ("[Sonic Mania]", "[Sonic Mania (4:3)]")) and normalized.count("main=MiSTer_SonicMania") >= 2
+
+
 def _prepare_manual_sonic_mania_for_downloader_local(sd_root, log, manual=None):
     if manual is None:
         manual = _manual_sonic_mania_install_local(sd_root)
@@ -731,26 +736,35 @@ def get_sonic_mania_status(connection, check_latest=False):
     status = _manual_get_sonic_mania_status(connection, check_latest=False)
     manual = _manual_sonic_mania_install(connection)
     update = bool(check_latest and status.get("installed") and not manual and check_named_database_online(connection, SONIC_MANIA_DB_ID))
-    return _apply_sonic_mania_downloader_status(status, manual, update)
+    status = _apply_sonic_mania_downloader_status(status, manual, update)
+    if status.get("installed") and not manual and not _sonic_mania_ini_present(_read_remote_text(connection, REMOTE_INI_PATH)):
+        status.update({"status_text": "⚠ MiSTer.ini entry missing", "install_label": "Add INI Entry", "install_enabled": True, "update_available": False, "repair_action": True})
+    return status
 
 
 def get_sonic_mania_status_local(sd_root, check_latest=False):
     status = _manual_get_sonic_mania_status_local(sd_root, check_latest=False)
     manual = _manual_sonic_mania_install_local(sd_root)
     update = bool(check_latest and status.get("installed") and not manual and check_named_database_local(sd_root, SONIC_MANIA_DB_ID))
-    return _apply_sonic_mania_downloader_status(status, manual, update)
+    status = _apply_sonic_mania_downloader_status(status, manual, update)
+    if status.get("installed") and not manual and not _sonic_mania_ini_present(_read_local_text(sd_root, REMOTE_INI_PATH)):
+        status.update({"status_text": "⚠ MiSTer.ini entry missing", "install_label": "Add INI Entry", "install_enabled": True, "update_available": False, "repair_action": True})
+    return status
 
 
 def install_or_update_sonic_mania(connection, log):
     if not connection.is_connected():
         raise RuntimeError("Not connected to MiSTer.")
     manual = _manual_sonic_mania_install(connection)
+    if not manual and _manual_get_sonic_mania_status(connection, check_latest=False).get("installed") and not _sonic_mania_ini_present(_read_remote_text(connection, REMOTE_INI_PATH)):
+        _ensure_sonic_mania_ini_blocks(connection)
+        return
     original = ensure_database_source_online(connection, SONIC_MANIA_DB_ID, SONIC_MANIA_DB_URL)
     try:
         _prepare_manual_sonic_mania_for_downloader(connection, log, manual=manual)
+        _ensure_sonic_mania_ini_blocks(connection)
         run_named_database_online(connection, SONIC_MANIA_DB_ID, log=log)
         connection.run_command(f"chmod +x {_quote(SONIC_MANIA_REMOTE_LAUNCHER_PATH)} {_quote('/media/fat/games/sonic-mania/bin/RSDKv5U')} {_quote('/media/fat/games/sonic-mania/scripts/run-mania.sh')}")
-        _ensure_sonic_mania_ini_blocks(connection)
         connection.run_command(f"rm -f {_quote(SONIC_MANIA_REMOTE_VERSION_FILE)}")
     except Exception:
         restore_online(connection, original)
@@ -759,11 +773,14 @@ def install_or_update_sonic_mania(connection, log):
 
 def install_or_update_sonic_mania_local(sd_root, log):
     manual = _manual_sonic_mania_install_local(sd_root)
+    if not manual and _manual_get_sonic_mania_status_local(sd_root, check_latest=False).get("installed") and not _sonic_mania_ini_present(_read_local_text(sd_root, REMOTE_INI_PATH)):
+        _ensure_sonic_mania_ini_blocks_local(sd_root)
+        return
     original = ensure_database_source_local(sd_root, SONIC_MANIA_DB_ID, SONIC_MANIA_DB_URL)
     try:
         _prepare_manual_sonic_mania_for_downloader_local(sd_root, log, manual=manual)
-        run_named_database_local(sd_root, SONIC_MANIA_DB_ID, log=log)
         _ensure_sonic_mania_ini_blocks_local(sd_root)
+        run_named_database_local(sd_root, SONIC_MANIA_DB_ID, log=log)
         _remove_local_path(sd_root, SONIC_MANIA_REMOTE_VERSION_FILE)
     except Exception:
         restore_local(sd_root, original)
@@ -780,12 +797,12 @@ def uninstall_sonic_mania(connection, log, force=False):
         return {"uninstalled": True}
     original = ensure_database_source_online(connection, SONIC_MANIA_DB_ID, SONIC_MANIA_DB_URL)
     try:
+        _remove_sonic_mania_ini_blocks(connection)
         native = uninstall_named_database_online(connection, SONIC_MANIA_DB_ID, log=log, force=force)
         if not native:
             ensure_database_source_online(connection, SONIC_MANIA_DB_ID, SONIC_MANIA_DB_URL, filter_value="!all")
             run_named_database_online(connection, SONIC_MANIA_DB_ID, log=log)
             remove_database_source_online(connection, SONIC_MANIA_DB_ID)
-        _remove_sonic_mania_ini_blocks(connection)
         connection.run_command(f"rm -f {_quote(SONIC_MANIA_REMOTE_VERSION_FILE)}")
     except Exception:
         restore_online(connection, original)
@@ -801,12 +818,12 @@ def uninstall_sonic_mania_local(sd_root, log, force=False):
         return {"uninstalled": True}
     original = ensure_database_source_local(sd_root, SONIC_MANIA_DB_ID, SONIC_MANIA_DB_URL)
     try:
+        _remove_sonic_mania_ini_blocks_local(sd_root)
         native = uninstall_named_database_local(sd_root, SONIC_MANIA_DB_ID, log=log, force=force)
         if not native:
             ensure_database_source_local(sd_root, SONIC_MANIA_DB_ID, SONIC_MANIA_DB_URL, filter_value="!all")
             run_named_database_local(sd_root, SONIC_MANIA_DB_ID, log=log)
             remove_database_source_local(sd_root, SONIC_MANIA_DB_ID)
-        _remove_sonic_mania_ini_blocks_local(sd_root)
         _remove_local_path(sd_root, SONIC_MANIA_REMOTE_VERSION_FILE)
     except Exception:
         restore_local(sd_root, original)

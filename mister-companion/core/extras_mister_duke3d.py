@@ -191,6 +191,15 @@ def _remove_ini_sections(text):
     return normalized + ("\n" if normalized else "")
 
 
+def _duke3d_ini_present(text):
+    normalized = (text or "").replace("\r\n", "\n")
+    for section, values in DUKE3D_INI_SECTIONS.items():
+        match = re.search(rf"(?ms)^\[{re.escape(section)}\]\n(.*?)(?=^\[|\Z)", normalized)
+        if not match or any(not re.search(rf"(?mi)^\s*{re.escape(key)}\s*=\s*{re.escape(value)}\s*$", match.group(1)) for key, value in values.items()):
+            return False
+    return True
+
+
 def _archive_files(zf):
     files = [member for member in zf.infolist() if not member.is_dir()]
     if not files:
@@ -443,7 +452,10 @@ def get_mister_duke3d_status(connection, check_latest=False):
     update = False
     if check_latest and status.get("installed") and not manual:
         update = check_named_database_online(connection, DUKE3D_DB_ID)
-    return _apply_duke3d_downloader_status(status, manual, update)
+    status = _apply_duke3d_downloader_status(status, manual, update)
+    if status.get("installed") and not manual and not _duke3d_ini_present(_read_remote_text(connection, REMOTE_INI_PATH)):
+        status.update({"status_text": "⚠ MiSTer.ini entry missing", "install_label": "Add INI Entry", "install_enabled": True, "update_available": False, "repair_action": True})
+    return status
 
 
 def get_mister_duke3d_status_local(sd_root, check_latest=False):
@@ -452,7 +464,10 @@ def get_mister_duke3d_status_local(sd_root, check_latest=False):
     update = False
     if check_latest and status.get("installed") and not manual:
         update = check_named_database_local(sd_root, DUKE3D_DB_ID)
-    return _apply_duke3d_downloader_status(status, manual, update)
+    status = _apply_duke3d_downloader_status(status, manual, update)
+    if status.get("installed") and not manual and not _duke3d_ini_present(_read_local_text(sd_root, REMOTE_INI_PATH)):
+        status.update({"status_text": "⚠ MiSTer.ini entry missing", "install_label": "Add INI Entry", "install_enabled": True, "update_available": False, "repair_action": True})
+    return status
 
 
 def _finish_duke3d_install_online(connection, log):
@@ -482,9 +497,13 @@ def install_or_update_mister_duke3d(connection, log):
     if not connection.is_connected():
         raise RuntimeError("Not connected to MiSTer.")
     manual = _manual_duke3d_install(connection)
+    if not manual and _manual_get_mister_duke3d_status(connection, check_latest=False).get("installed") and not _duke3d_ini_present(_read_remote_text(connection, REMOTE_INI_PATH)):
+        _write_remote_text(connection, REMOTE_INI_PATH, _upsert_ini_sections(_read_remote_text(connection, REMOTE_INI_PATH)))
+        return
     original = ensure_database_source_online(connection, DUKE3D_DB_ID, DUKE3D_DB_URL)
     try:
         _prepare_manual_duke3d_for_downloader(connection, log, manual=manual)
+        _write_remote_text(connection, REMOTE_INI_PATH, _upsert_ini_sections(_read_remote_text(connection, REMOTE_INI_PATH)))
         run_named_database_online(connection, DUKE3D_DB_ID, log=log)
         _finish_duke3d_install_online(connection, log)
     except Exception:
@@ -494,9 +513,13 @@ def install_or_update_mister_duke3d(connection, log):
 
 def install_or_update_mister_duke3d_local(sd_root, log):
     manual = _manual_duke3d_install_local(sd_root)
+    if not manual and _manual_get_mister_duke3d_status_local(sd_root, check_latest=False).get("installed") and not _duke3d_ini_present(_read_local_text(sd_root, REMOTE_INI_PATH)):
+        _write_local_text(sd_root, REMOTE_INI_PATH, _upsert_ini_sections(_read_local_text(sd_root, REMOTE_INI_PATH)))
+        return
     original = ensure_database_source_local(sd_root, DUKE3D_DB_ID, DUKE3D_DB_URL)
     try:
         _prepare_manual_duke3d_for_downloader_local(sd_root, log, manual=manual)
+        _write_local_text(sd_root, REMOTE_INI_PATH, _upsert_ini_sections(_read_local_text(sd_root, REMOTE_INI_PATH)))
         run_named_database_local(sd_root, DUKE3D_DB_ID, log=log)
         _finish_duke3d_install_local(sd_root, log)
     except Exception:
@@ -514,12 +537,12 @@ def uninstall_mister_duke3d(connection, log, force=False):
         return {"uninstalled": True}
     original = ensure_database_source_online(connection, DUKE3D_DB_ID, DUKE3D_DB_URL)
     try:
+        _write_remote_text(connection, REMOTE_INI_PATH, _remove_ini_sections(_read_remote_text(connection, REMOTE_INI_PATH)))
         native = uninstall_named_database_online(connection, DUKE3D_DB_ID, log=log, force=force)
         if not native:
             ensure_database_source_online(connection, DUKE3D_DB_ID, DUKE3D_DB_URL, filter_value="!all")
             run_named_database_online(connection, DUKE3D_DB_ID, log=log)
             remove_database_source_online(connection, DUKE3D_DB_ID)
-        _write_remote_text(connection, REMOTE_INI_PATH, _remove_ini_sections(_read_remote_text(connection, REMOTE_INI_PATH)))
         connection.run_command(f"rm -f {_quote(DUKE3D_REMOTE_VERSION_FILE)}")
     except Exception:
         restore_online(connection, original)
@@ -535,12 +558,12 @@ def uninstall_mister_duke3d_local(sd_root, log, force=False):
         return {"uninstalled": True}
     original = ensure_database_source_local(sd_root, DUKE3D_DB_ID, DUKE3D_DB_URL)
     try:
+        _write_local_text(sd_root, REMOTE_INI_PATH, _remove_ini_sections(_read_local_text(sd_root, REMOTE_INI_PATH)))
         native = uninstall_named_database_local(sd_root, DUKE3D_DB_ID, log=log, force=force)
         if not native:
             ensure_database_source_local(sd_root, DUKE3D_DB_ID, DUKE3D_DB_URL, filter_value="!all")
             run_named_database_local(sd_root, DUKE3D_DB_ID, log=log)
             remove_database_source_local(sd_root, DUKE3D_DB_ID)
-        _write_local_text(sd_root, REMOTE_INI_PATH, _remove_ini_sections(_read_local_text(sd_root, REMOTE_INI_PATH)))
         _remove_local_path(sd_root, DUKE3D_REMOTE_VERSION_FILE)
     except Exception:
         restore_local(sd_root, original)
