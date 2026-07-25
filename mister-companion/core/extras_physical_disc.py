@@ -27,11 +27,14 @@ PHYSICAL_DISC_BINARY = "/media/fat/MiSTer_Physical-CD"
 MISTER_INI_PATH = "/media/fat/MiSTer.ini"
 PHYSICAL_DISC_FILES = (
     PHYSICAL_DISC_BINARY,
+    "/media/fat/_Physical Disc Cores/3DO.mgl",
     "/media/fat/_Physical Disc Cores/CDi.mgl",
-    "/media/fat/_Physical Disc Cores/Cores/CDi.rbf",
+    "/media/fat/_Physical Disc Cores/Cores/3DO.rbf",
     "/media/fat/_Physical Disc Cores/MegaCD.mgl",
+    "/media/fat/_Physical Disc Cores/NeoGeoCD.mgl",
     "/media/fat/_Physical Disc Cores/PSX.mgl",
     "/media/fat/_Physical Disc Cores/Saturn.mgl",
+    "/media/fat/_Physical Disc Cores/SNES-MSU1.mgl",
     "/media/fat/_Physical Disc Cores/TurboGrafx16-CD.mgl",
 )
 

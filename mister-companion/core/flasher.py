@@ -1294,57 +1294,73 @@ def flash_image(
         return_code = process.wait()
         combined_output = "\n".join(output_lines).lower()
 
-        error_markers = [
+        symbol_error_markers = ["symbol lookup error", "undefined symbol"]
+        bad_drive_markers = ["couldn't clean the drive", "could not clean the drive"]
+        password_error_markers = [
+            "incorrect password attempt",
+            "no password was provided",
+            "sorry, try again",
+        ]
+        permission_error_markers = [
             "eacces",
-            "couldn't clean the drive",
-            "could not clean the drive",
             "try running this command with elevated privileges",
             "administrator privileges",
             "access is denied",
             "permission denied",
-            "symbol lookup error",
-            "undefined symbol",
-            "error:",
         ]
+        generic_error_markers = ["error:"]
+
+        if any(marker in combined_output for marker in symbol_error_markers):
+            raise RuntimeError(
+                "Flash failed because an external Linux system command could not start correctly.\n\n"
+                "This is usually caused by a bundled PyInstaller library conflicting with a system library.\n"
+                "MiSTer Companion tried to use a cleaned subprocess environment, but balena CLI still failed.\n\n"
+                f"Exit code: {return_code}"
+            )
+
+        if any(marker in combined_output for marker in bad_drive_markers):
+            raise RuntimeError(
+                "Flash failed: the drive could not be prepared for flashing.\n\n"
+                "This usually means the SD card or card reader is faulty, write-protected, or in a bad "
+                "state. Try a different SD card or a different USB card reader, then try again."
+            )
+
+        if platform.system() == "Darwin" and any(
+            marker in combined_output for marker in password_error_markers
+        ):
+            raise RuntimeError(
+                "Incorrect password.\n\n"
+                "MiSTer Companion could not authenticate with the password you entered. Please try "
+                "again and make sure it's your macOS login password."
+            )
+
+        if any(marker in combined_output for marker in permission_error_markers):
+            if platform.system() == "Windows":
+                raise RuntimeError(
+                    "Administrator privileges are required.\n\n"
+                    "Please restart MiSTer Companion as Administrator and try again."
+                )
+            if platform.system() == "Linux":
+                raise RuntimeError(
+                    "Root privileges are required.\n\n"
+                    "Please run MiSTer Companion with sudo or pkexec and try again."
+                )
+            if platform.system() == "Darwin":
+                raise RuntimeError(
+                    "Full Disk Access is required.\n\n"
+                    "macOS blocked access to the drive. Open System Settings → Privacy & Security → "
+                    "Full Disk Access, enable it for MiSTer Companion (or Terminal, if running from "
+                    "source), then try again."
+                )
+            raise RuntimeError("Flash failed. balena CLI reported a permission or drive access error.")
+
+        if any(marker in combined_output for marker in generic_error_markers):
+            raise RuntimeError(
+                "Flash failed. balena CLI reported an error.\n\nCheck the log above for details."
+            )
 
         if return_code != 0:
-            if "symbol lookup error" in combined_output or "undefined symbol" in combined_output:
-                raise RuntimeError(
-                    "Flash failed because an external Linux system command could not start correctly.\n\n"
-                    "This is usually caused by a bundled PyInstaller library conflicting with a system library.\n"
-                    "MiSTer Companion tried to use a cleaned subprocess environment, but balena CLI still failed.\n\n"
-                    f"Exit code: {return_code}"
-                )
-
             raise RuntimeError(f"Flash failed with exit code {return_code}.")
-
-        for marker in error_markers:
-            if marker in combined_output:
-                if platform.system() == "Windows":
-                    raise RuntimeError(
-                        "Flash failed. balena CLI reported a permission or drive access error.\n\n"
-                        "Run MiSTer Companion as Administrator and try again."
-                    )
-                if platform.system() == "Linux":
-                    if marker in {"symbol lookup error", "undefined symbol"}:
-                        raise RuntimeError(
-                            "Flash failed because an external Linux system command could not start correctly.\n\n"
-                            "This is usually caused by a bundled PyInstaller library conflicting with a system library."
-                        )
-
-                    raise RuntimeError(
-                        "Flash failed. balena CLI reported a permission or drive access error.\n\n"
-                        "Run MiSTer Companion with sudo or pkexec and try again."
-                    )
-                if platform.system() == "Darwin":
-                    raise RuntimeError(
-                        "Flash failed. balena CLI reported a permission or drive access error.\n\n"
-                        "macOS may have blocked access to the drive. Check System Settings → "
-                        "Privacy & Security → Full Disk Access and ensure balena CLI is permitted."
-                    )
-                raise RuntimeError(
-                    "Flash failed. balena CLI reported a permission or drive access error."
-                )
 
         _log(log_callback, "Flash completed successfully.")
 

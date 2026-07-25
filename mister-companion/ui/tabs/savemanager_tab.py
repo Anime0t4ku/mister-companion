@@ -230,7 +230,7 @@ class SaveManagerTab(QWidget):
         self.retention_label = QLabel("Backups to keep per device:")
         self.retention_spin = QSpinBox()
         self.retention_spin.setRange(1, 100)
-        self.retention_spin.setFixedWidth(80)
+        self.retention_spin.setMinimumWidth(80)
         self.retention_spin.setValue(int(self.main_window.config_data.get("backup_retention", 10)))
         self.retention_spin.valueChanged.connect(self.on_retention_changed)
 

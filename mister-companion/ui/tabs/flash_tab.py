@@ -142,8 +142,8 @@ class FlashWorker(QThread):
                 self.success.emit(self.success_message)
 
         except Exception as e:
-            detail = traceback.format_exc()
-            self.error.emit(f"{str(e)}\n\n{detail}")
+            self.log_line.emit(traceback.format_exc())
+            self.error.emit(str(e))
         finally:
             self.finished_task.emit()
 
