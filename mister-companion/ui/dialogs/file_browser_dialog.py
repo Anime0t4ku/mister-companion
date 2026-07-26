@@ -48,7 +48,7 @@ class FileBrowserWorker(QThread):
     result = pyqtSignal(str, object)
     error = pyqtSignal(str)
     progress = pyqtSignal(str)
-    transfer_progress = pyqtSignal(int, int)
+    transfer_progress = pyqtSignal(object, object)
 
     def __init__(self, connection, action, **kwargs):
         super().__init__()
@@ -693,8 +693,10 @@ class FileBrowserDialog(QDialog):
             self.load_path(pending_path)
 
     def on_transfer_progress(self, transferred, total):
+        transferred = max(0, int(transferred or 0))
+        total = max(0, int(total or 0))
         if total > 0:
-            percent = int((transferred / total) * 100)
+            percent = min(100, int((transferred / total) * 100))
             if percent == 100 or percent - self.last_transfer_percent >= 10:
                 self.last_transfer_percent = percent
                 self.append_output(f"Progress: {percent}% ({format_size(transferred)} / {format_size(total)})")
