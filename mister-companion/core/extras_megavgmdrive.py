@@ -35,6 +35,7 @@ MEGAVGMD_CORES_DIR = "/media/fat/_Custom Cores/Cores"
 MEGAVGMD_GAME_DIR = "/media/fat/games/MegaVGMDrive"
 MEGAVGMD_MGL_PATH = "/media/fat/_Custom Cores/MegaVGMDrive.mgl"
 MEGAVGMD_RBF_PATH = "/media/fat/_Custom Cores/Cores/VGM_MD_MiSTer.rbf"
+MEGAVGMD_RBF_PREFIX = "MegaVGMdrive_MiSTer"
 MEGAVGMD_CONFIG_DIR = "/media/fat/Scripts/.config/MegaVGMDrive"
 MEGAVGMD_RELEASE_MARKER_PATH = "/media/fat/Scripts/.config/MegaVGMDrive/release.json"
 
@@ -154,6 +155,49 @@ def _is_smb_enabled(connection) -> bool:
     return "EXISTS" in (result or "")
 
 
+def _megavgmd_rbf_paths(connection) -> list[str]:
+    command = (
+        f"find {_quote(MEGAVGMD_CORES_DIR)} -maxdepth 1 -type f "
+        f"\\( -iname {_quote(MEGAVGMD_RBF_FILENAME)} -o -iname {_quote(MEGAVGMD_RBF_PREFIX + '*.rbf')} \\) "
+        "-print 2>/dev/null || true"
+    )
+    return [line.strip() for line in (connection.run_command(command) or "").splitlines() if line.strip()]
+
+
+def _megavgmd_rbf_paths_local(sd_root: str) -> list[Path]:
+    directory = _local_path(sd_root, MEGAVGMD_CORES_DIR)
+    if not directory.exists() or not directory.is_dir():
+        return []
+    legacy = MEGAVGMD_RBF_FILENAME.lower()
+    prefix = MEGAVGMD_RBF_PREFIX.lower()
+    return [
+        path for path in directory.iterdir()
+        if path.is_file() and (path.name.lower() == legacy or (path.name.lower().startswith(prefix) and path.suffix.lower() == ".rbf"))
+    ]
+
+
+def _megavgmd_rbf_exists(connection) -> bool:
+    return bool(_megavgmd_rbf_paths(connection))
+
+
+def _megavgmd_rbf_exists_local(sd_root: str) -> bool:
+    return bool(_megavgmd_rbf_paths_local(sd_root))
+
+
+def _remove_megavgmd_rbfs(connection, log=None):
+    for path in _megavgmd_rbf_paths(connection):
+        connection.run_command(f"rm -f {_quote(path)}")
+        if log:
+            log(f"Removed legacy managed file: {path}\n")
+
+
+def _remove_megavgmd_rbfs_local(sd_root: str, log=None):
+    for path in _megavgmd_rbf_paths_local(sd_root):
+        path.unlink(missing_ok=True)
+        if log:
+            log(f"Removed legacy managed file: /media/fat/_Custom Cores/Cores/{path.name}\n")
+
+
 def _build_status(
     rbf_exists: bool,
     mgl_exists: bool,
@@ -214,7 +258,7 @@ def _build_status(
 
 
 def get_megavgmdrive_status(connection, check_latest: bool = False) -> dict:
-    rbf_exists = _path_exists(connection, MEGAVGMD_RBF_PATH)
+    rbf_exists = _megavgmd_rbf_exists(connection)
     mgl_exists = _path_exists(connection, MEGAVGMD_MGL_PATH)
     game_dir_exists = _path_exists(connection, MEGAVGMD_GAME_DIR)
     installed_version = _marker_version(_read_marker(connection))
@@ -230,7 +274,7 @@ def get_megavgmdrive_status(connection, check_latest: bool = False) -> dict:
 
 
 def get_megavgmdrive_status_local(sd_root: str, check_latest: bool = False) -> dict:
-    rbf_exists = _path_exists_local(sd_root, MEGAVGMD_RBF_PATH)
+    rbf_exists = _megavgmd_rbf_exists_local(sd_root)
     mgl_exists = _path_exists_local(sd_root, MEGAVGMD_MGL_PATH)
     game_dir_exists = _path_exists_local(sd_root, MEGAVGMD_GAME_DIR)
     installed_version = _marker_version(_read_marker_local(sd_root))
@@ -394,15 +438,15 @@ from core.downloader_backend import (
 
 MEGAVGMD_DB_ID = "MultiDatabases/megavgmdrive"
 MEGAVGMD_DB_URL = "https://raw.githubusercontent.com/theypsilon/MultiDatabases_MiSTer/db/megavgmdrive/db.json"
-MEGAVGMD_DB_FILES = (MEGAVGMD_RBF_PATH, MEGAVGMD_MGL_PATH)
+MEGAVGMD_DB_FILES = (MEGAVGMD_MGL_PATH,)
 
 
 def _megavgmd_managed_files_present(connection) -> bool:
-    return any(_path_exists(connection, path) for path in MEGAVGMD_DB_FILES)
+    return bool(_megavgmd_rbf_exists(connection) or any(_path_exists(connection, path) for path in MEGAVGMD_DB_FILES))
 
 
 def _megavgmd_managed_files_present_local(sd_root) -> bool:
-    return any(_path_exists_local(sd_root, path) for path in MEGAVGMD_DB_FILES)
+    return bool(_megavgmd_rbf_exists_local(sd_root) or any(_path_exists_local(sd_root, path) for path in MEGAVGMD_DB_FILES))
 
 
 def _manual_megavgmdrive_install(connection) -> bool:
@@ -425,6 +469,7 @@ def _prepare_manual_megavgmdrive_for_downloader(connection, log, manual=None):
     if not manual:
         return False
     log("Detected a manual Companion installation; preparing it for Downloader...\n")
+    _remove_megavgmd_rbfs(connection, log=log)
     for path in MEGAVGMD_DB_FILES:
         connection.run_command(f"rm -f {_quote(path)}")
         log(f"Removed legacy managed file: {path}\n")
@@ -440,6 +485,7 @@ def _prepare_manual_megavgmdrive_for_downloader_local(sd_root, log, manual=None)
     if not manual:
         return False
     log("Detected a manual Companion installation; preparing it for Downloader...\n")
+    _remove_megavgmd_rbfs_local(sd_root, log=log)
     for path in MEGAVGMD_DB_FILES:
         _remove_local_path(sd_root, path)
         log(f"Removed legacy managed file: {path}\n")

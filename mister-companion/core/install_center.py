@@ -154,7 +154,14 @@ from core.extras_physical_disc import (
 )
 
 from core.scripts_version_check import apply_script_update_status, supports_script_update_check
-from core.downloader_backend import check_named_databases_online, check_named_databases_local
+from core.downloader_backend import (
+    check_named_databases_online,
+    check_named_databases_local,
+    inspect_named_databases_online,
+    inspect_named_databases_local,
+    cache_database_registration_online,
+    cache_database_registration_local,
+)
 
 from core.wallpapers import (
     build_install_state,
@@ -656,6 +663,23 @@ def check_all_status(catalog: dict, context: InstallCenterContext, check_latest:
     scripts_status = None
     syncthing_status = None
     ra_viewer_status = None
+    downloader_install_states = {}
+
+    if not check_latest:
+        downloader_db_ids = list(dict.fromkeys(
+            DOWNLOADER_HANDLER_DATABASES.get(item.get("handler") or item.get("id"))
+            for item in catalog.get("items", [])
+            if DOWNLOADER_HANDLER_DATABASES.get(item.get("handler") or item.get("id"))
+        ))
+        if downloader_db_ids:
+            try:
+                downloader_install_states = (
+                    inspect_named_databases_local(context.sd_root, downloader_db_ids, log=None)
+                    if context.offline
+                    else inspect_named_databases_online(context.connection, downloader_db_ids, log=None)
+                )
+            except Exception:
+                downloader_install_states = {}
 
     if any((item.get("type") == "script" or item.get("category") == "scripts") for item in catalog.get("items", [])):
         if log:
@@ -670,44 +694,78 @@ def check_all_status(catalog: dict, context: InstallCenterContext, check_latest:
         except Exception as e:
             ra_viewer_status = {"status_text": f"Status unknown ({e})"}
 
-    for item in catalog.get("items", []):
-        item_id = item.get("id")
-        handler = item.get("handler") or item_id
-        item_type = item.get("type") or item.get("category")
-        category = item.get("category")
+    registration_cache = (
+        cache_database_registration_local(context.sd_root)
+        if context.offline
+        else cache_database_registration_online(context.connection)
+    )
+    with registration_cache:
+        for item in catalog.get("items", []):
+            item_id = item.get("id")
+            handler = item.get("handler") or item_id
+            item_type = item.get("type") or item.get("category")
+            category = item.get("category")
 
-        try:
-            item_name = item.get("name") or item_id or "item"
-            if log:
-                log(f"Checking {item_name}...\n")
-            item_check_latest = bool(check_latest and handler not in DOWNLOADER_HANDLER_DATABASES)
-            if item_type == "script" or category == "scripts":
-                if handler == "zaparoo":
-                    results[item_id] = get_zaparoo_update_status_local(context.sd_root, check_latest=item_check_latest, log=log) if context.offline else get_zaparoo_update_status(context.connection, check_latest=item_check_latest, log=log)
+            try:
+                item_name = item.get("name") or item_id or "item"
+                if log:
+                    log(f"Checking {item_name}...\n")
+                item_check_latest = bool(check_latest and handler not in DOWNLOADER_HANDLER_DATABASES)
+                if item_type == "script" or category == "scripts":
+                    if handler == "zaparoo":
+                        results[item_id] = get_zaparoo_update_status_local(context.sd_root, check_latest=item_check_latest, log=log) if context.offline else get_zaparoo_update_status(context.connection, check_latest=item_check_latest, log=log)
+                    else:
+                        base_status = _script_status_text(handler, scripts_status, syncthing_status, ra_viewer_status)
+                        results[item_id] = apply_script_update_status(
+                            handler,
+                            base_status,
+                            check_latest=item_check_latest,
+                            connection=context.connection,
+                            sd_root=context.sd_root,
+                            offline=context.offline,
+                            log=log,
+                        )
+                elif item_type in {"extra", "core"} or category in {"extras", "cores"}:
+                    results[item_id] = _extra_status(handler, context, item_check_latest, log=log)
+                elif item_type == "rom" or category == "roms":
+                    results[item_id] = check_rom_status(item, context)
+                elif item_type == "wallpaper_pack" or category == "wallpaper_packs":
+                    results[item_id] = check_wallpaper_status(item, context)
                 else:
-                    base_status = _script_status_text(handler, scripts_status, syncthing_status, ra_viewer_status)
-                    results[item_id] = apply_script_update_status(
-                        handler,
-                        base_status,
-                        check_latest=item_check_latest,
-                        connection=context.connection,
-                        sd_root=context.sd_root,
-                        offline=context.offline,
-                        log=log,
-                    )
-            elif item_type in {"extra", "core"} or category in {"extras", "cores"}:
-                results[item_id] = _extra_status(handler, context, item_check_latest, log=log)
-            elif item_type == "rom" or category == "roms":
-                results[item_id] = check_rom_status(item, context)
-            elif item_type == "wallpaper_pack" or category == "wallpaper_packs":
-                results[item_id] = check_wallpaper_status(item, context)
-            else:
-                results[item_id] = {"state": "unknown", "status_text": "Status unknown", "installed": False, "update_available": False}
-        except Exception as e:
-            results[item_id] = {"state": "unknown", "status_text": f"Status unknown ({e})", "installed": False, "update_available": False}
+                    results[item_id] = {"state": "unknown", "status_text": "Status unknown", "installed": False, "update_available": False}
+            except Exception as e:
+                results[item_id] = {"state": "unknown", "status_text": f"Status unknown ({e})", "installed": False, "update_available": False}
 
-        if check_latest and log and handler not in DOWNLOADER_HANDLER_DATABASES:
-            log(update_check_result_text(results[item_id]) + "\n")
+            if not check_latest:
+                db_id = DOWNLOADER_HANDLER_DATABASES.get(handler)
+                downloader_state = downloader_install_states.get(db_id) if db_id else None
+                status = dict(results.get(item_id) or {})
+                manual = "manual install" in str(status.get("status_text") or "").lower()
+                if downloader_state and downloader_state.get("recognized") and not manual:
+                    installed = bool(downloader_state.get("installed"))
+                    status["installed"] = installed
+                    status["update_available"] = False
+                    if installed:
+                        status["state"] = "installed"
+                        status.setdefault("uninstall_enabled", True)
+                        if not status.get("repair_action") and status.get("state") != "unknown":
+                            current_text = str(status.get("status_text") or "")
+                            if "not installed" in current_text.lower() or "missing files" in current_text.lower():
+                                status["status_text"] = "Installed"
+                                status["install_label"] = "Installed"
+                                status["install_enabled"] = False
+                    else:
+                        status.update({
+                            "state": "not_installed",
+                            "status_text": "Not installed",
+                            "install_label": "Install",
+                            "install_enabled": True,
+                            "uninstall_enabled": False,
+                        })
+                    results[item_id] = status
+
+            if check_latest and log and handler not in DOWNLOADER_HANDLER_DATABASES:
+                log(update_check_result_text(results[item_id]) + "\n")
 
     if check_latest:
         downloader_items = []

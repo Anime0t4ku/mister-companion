@@ -20,6 +20,7 @@ DOWNLOADER_SH = "/media/fat/Scripts/downloader.sh"
 ROOT_DOWNLOADER_SH = "/media/fat/downloader.sh"
 
 _batch_runs = threading.local()
+_registration_cache = threading.local()
 
 
 @contextmanager
@@ -166,11 +167,37 @@ def _find_section_files(files: dict[str, str], db_id: str) -> list[str]:
 
 
 def database_registered_online(connection, db_id: str) -> bool:
-    return bool(_find_section_files(_read_remote_ini_files(connection), db_id))
+    files = getattr(_registration_cache, "online_files", None)
+    if files is None:
+        files = _read_remote_ini_files(connection)
+    return bool(_find_section_files(files, db_id))
 
 
 def database_registered_local(sd_root, db_id: str) -> bool:
-    return bool(_find_section_files(_read_local_ini_files(sd_root), db_id))
+    files = getattr(_registration_cache, "local_files", None)
+    if files is None:
+        files = _read_local_ini_files(sd_root)
+    return bool(_find_section_files(files, db_id))
+
+
+@contextmanager
+def cache_database_registration_online(connection):
+    previous = getattr(_registration_cache, "online_files", None)
+    _registration_cache.online_files = _read_remote_ini_files(connection)
+    try:
+        yield
+    finally:
+        _registration_cache.online_files = previous
+
+
+@contextmanager
+def cache_database_registration_local(sd_root):
+    previous = getattr(_registration_cache, "local_files", None)
+    _registration_cache.local_files = _read_local_ini_files(sd_root)
+    try:
+        yield
+    finally:
+        _registration_cache.local_files = previous
 
 
 def _target_for_database(files: dict[str, str], db_id: str, default_path: str) -> str:
@@ -463,8 +490,8 @@ def check_named_database_local(sd_root, db_id: str, log=None):
     return parse_named_check(output, db_id)
 
 
-def check_named_databases_online(connection, db_ids, log=None):
-    """Check several databases with one Downloader invocation."""
+def inspect_named_databases_online(connection, db_ids, log=None):
+    """Inspect several databases with one Downloader invocation."""
     ids = list(dict.fromkeys(str(db_id).strip() for db_id in db_ids if str(db_id).strip()))
     if not ids:
         return {}
@@ -473,11 +500,11 @@ def check_named_databases_online(connection, db_ids, log=None):
     output = _run_remote_streaming(connection, _remote_downloader_command(*args) + " 2>&1", log=log)
     if _unsupported(output):
         raise DownloaderCommandError("Installed update.sh does not support --check.", output, unsupported=True)
-    return {db_id: parse_named_check(output, db_id) for db_id in ids}
+    return {db_id: parse_named_check_state(output, db_id) for db_id in ids}
 
 
-def check_named_databases_local(sd_root, db_ids, log=None):
-    """Check several databases with one offline Downloader invocation."""
+def inspect_named_databases_local(sd_root, db_ids, log=None):
+    """Inspect several databases with one offline Downloader invocation."""
     ids = list(dict.fromkeys(str(db_id).strip() for db_id in db_ids if str(db_id).strip()))
     if not ids:
         return {}
@@ -487,17 +514,51 @@ def check_named_databases_local(sd_root, db_ids, log=None):
     output = "\n".join(result.output_lines)
     if not result.ok:
         raise DownloaderCommandError(result.errors[-1] if result.errors else "Offline Downloader check failed.", output, unsupported=_unsupported(output))
-    return {db_id: parse_named_check(output, db_id) for db_id in ids}
+    return {db_id: parse_named_check_state(output, db_id) for db_id in ids}
+
+
+def check_named_databases_online(connection, db_ids, log=None):
+    return {db_id: bool(state.get("update_available")) for db_id, state in inspect_named_databases_online(connection, db_ids, log=log).items()}
+
+
+def check_named_databases_local(sd_root, db_ids, log=None):
+    return {db_id: bool(state.get("update_available")) for db_id, state in inspect_named_databases_local(sd_root, db_ids, log=log).items()}
+
+
+def parse_named_check_state(output: str, db_id: str) -> dict:
+    aliases = {db_id.lower()}
+    short_id = db_id.rsplit("/", 1)[-1].strip().lower()
+    if short_id:
+        aliases.add(short_id)
+    normalized_short = re.sub(r"[^a-z0-9]+", "", short_id)
+
+    relevant = []
+    for line in (output or "").splitlines():
+        lowered = line.lower()
+        normalized_line = re.sub(r"[^a-z0-9]+", "", lowered)
+        if any(alias in lowered for alias in aliases) or (normalized_short and normalized_short in normalized_line):
+            relevant.append(lowered)
+    text = "\n".join(relevant)
+    not_installed = any(x in text for x in (
+        "not installed", "isn't installed", "is not installed", "missing installation",
+        "no installed files", "installation missing",
+    ))
+    update_available = any(x in text for x in (
+        "update available", "outdated", "not up to date", "needs update",
+    ))
+    installed = not not_installed and any(x in text for x in (
+        "installed", "up to date", "up-to-date", "current", "update available",
+        "outdated", "not up to date", "needs update",
+    ))
+    return {
+        "installed": installed,
+        "update_available": update_available,
+        "recognized": bool(text) and (installed or not_installed),
+    }
 
 
 def parse_named_check(output: str, db_id: str) -> bool:
-    relevant = [line.lower() for line in (output or "").splitlines() if db_id.lower() in line.lower()]
-    text = "\n".join(relevant)
-    if any(x in text for x in ("update available", "outdated", "not up to date", "needs update")):
-        return True
-    if any(x in text for x in ("up to date", "up-to-date", "current")):
-        return False
-    return False
+    return bool(parse_named_check_state(output, db_id).get("update_available"))
 
 
 def run_database_online(connection, log=None):
