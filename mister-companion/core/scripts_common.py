@@ -440,108 +440,72 @@ def get_scripts_status(connection) -> ScriptsStatus:
     if not connection.is_connected():
         return empty_scripts_status()
 
-    update_check = connection.run_command(
-        "test -f /media/fat/Scripts/update_all.sh && echo EXISTS"
-    )
-    update_all_installed = "EXISTS" in (update_check or "")
+    checks = [
+        ("update_all_installed", "/media/fat/Scripts/update_all.sh"),
+        ("update_all_initialized", UPDATE_ALL_JSON_PATH),
+        ("zaparoo_installed", "/media/fat/Scripts/zaparoo.sh"),
+        ("migrate_sd_installed", "/media/fat/Scripts/migrate_sd.sh"),
+        ("cifs_installed", CIFS_MOUNT_SCRIPT_PATH),
+        ("cifs_umount_installed", CIFS_UMOUNT_SCRIPT_PATH),
+        ("cifs_configured", "/media/fat/Scripts/cifs_mount.ini"),
+        ("cifs_common_installed", CIFS_COMMON_SCRIPT_PATH),
+        ("auto_time_installed", "/media/fat/Scripts/auto_time.sh"),
+        ("cd_game_organizer_installed", "/media/fat/Scripts/cd_game_organizer.sh"),
+        ("dav_browser_installed", "/media/fat/Scripts/dav_browser.sh"),
+        ("dav_browser_configured", DAV_BROWSER_CONFIG_PATH),
+        ("ftp_save_sync_installed", "/media/fat/Scripts/ftp_save_sync.sh"),
+        ("ftp_save_sync_configured", FTP_SAVE_SYNC_CONFIG_PATH),
+        ("static_wallpaper_installed", STATIC_WALLPAPER_SCRIPT_PATH),
+        ("static_wallpaper_saved", STATIC_WALLPAPER_CONFIG_PATH),
+        ("static_wallpaper_jpg", STATIC_WALLPAPER_TARGET_JPG),
+        ("static_wallpaper_png", STATIC_WALLPAPER_TARGET_PNG),
+    ]
 
-    zaparoo_check = connection.run_command(
-        "test -f /media/fat/Scripts/zaparoo.sh && echo EXISTS"
-    )
-    zaparoo_installed = "EXISTS" in (zaparoo_check or "")
+    command_parts = [
+        f"test -f '{path}' && printf '{key}=1\n' || printf '{key}=0\n'"
+        for key, path in checks
+    ]
+    command_parts.extend([
+        "grep -q 'mrext/zaparoo' /media/fat/linux/user-startup.sh 2>/dev/null "
+        "&& printf 'zaparoo_service_enabled=1\n' || printf 'zaparoo_service_enabled=0\n'",
+        f"grep -Fq '{FTP_SAVE_SYNC_DAEMON_LINE}' {FTP_SAVE_SYNC_STARTUP_PATH} 2>/dev/null "
+        "&& printf 'ftp_save_sync_service_enabled=1\n' || printf 'ftp_save_sync_service_enabled=0\n'",
+        f"grep -q 'cifs_common.sh' {CIFS_MOUNT_SCRIPT_PATH} 2>/dev/null "
+        "&& printf 'cifs_common_required=1\n' || printf 'cifs_common_required=0\n'",
+    ])
 
-    zaparoo_service_check = connection.run_command(
-        "grep 'mrext/zaparoo' /media/fat/linux/user-startup.sh 2>/dev/null"
-    )
-    zaparoo_service_enabled = bool(
-        zaparoo_service_check and "mrext/zaparoo" in zaparoo_service_check
-    )
+    output = connection.run_command("; ".join(command_parts)) or ""
+    values = {}
+    for line in output.splitlines():
+        key, separator, value = line.partition("=")
+        if separator and value in {"0", "1"}:
+            values[key.strip()] = value == "1"
 
-    migrate_check = connection.run_command(
-        "test -f /media/fat/Scripts/migrate_sd.sh && echo EXISTS"
+    static_wallpaper_active = bool(
+        values.get("static_wallpaper_jpg") or values.get("static_wallpaper_png")
     )
-    migrate_sd_installed = "EXISTS" in (migrate_check or "")
-
-    cifs_script_check = connection.run_command(
-        f"test -f {CIFS_MOUNT_SCRIPT_PATH} && echo EXISTS"
-    )
-    cifs_umount_check = connection.run_command(
-        f"test -f {CIFS_UMOUNT_SCRIPT_PATH} && echo EXISTS"
-    )
-    cifs_ini_check = connection.run_command(
-        "test -f /media/fat/Scripts/cifs_mount.ini && echo CONFIG"
-    )
-    cifs_common_check = connection.run_command(
-        f"test -f {CIFS_COMMON_SCRIPT_PATH} && echo EXISTS"
-    )
-    cifs_installed = "EXISTS" in (cifs_script_check or "")
-    cifs_umount_installed = "EXISTS" in (cifs_umount_check or "")
-    cifs_configured = "CONFIG" in (cifs_ini_check or "")
-    cifs_common_installed = "EXISTS" in (cifs_common_check or "")
-    cifs_mount_text = connection.run_command(
-        f"test -f {CIFS_MOUNT_SCRIPT_PATH} && cat {CIFS_MOUNT_SCRIPT_PATH} || true"
-    ) if cifs_installed else ""
-    cifs_common_required = _cifs_mount_text_requires_common(cifs_mount_text)
-
-    auto_time_check = connection.run_command(
-        "test -f /media/fat/Scripts/auto_time.sh && echo EXISTS"
-    )
-    auto_time_installed = "EXISTS" in (auto_time_check or "")
-
-    cd_game_organizer_check = connection.run_command(
-        "test -f /media/fat/Scripts/cd_game_organizer.sh && echo EXISTS"
-    )
-    cd_game_organizer_installed = "EXISTS" in (cd_game_organizer_check or "")
-
-    dav_browser_script_check = connection.run_command(
-        "test -f /media/fat/Scripts/dav_browser.sh && echo EXISTS"
-    )
-    dav_browser_ini_check = connection.run_command(
-        f"test -f {DAV_BROWSER_CONFIG_PATH} && echo CONFIG"
-    )
-    dav_browser_installed = "EXISTS" in (dav_browser_script_check or "")
-    dav_browser_configured = "CONFIG" in (dav_browser_ini_check or "")
-
-    ftp_save_sync_script_check = connection.run_command(
-        "test -f /media/fat/Scripts/ftp_save_sync.sh && echo EXISTS"
-    )
-    ftp_save_sync_ini_check = connection.run_command(
-        f"test -f {FTP_SAVE_SYNC_CONFIG_PATH} && echo CONFIG"
-    )
-    ftp_save_sync_installed = "EXISTS" in (ftp_save_sync_script_check or "")
-    ftp_save_sync_configured = "CONFIG" in (ftp_save_sync_ini_check or "")
-    ftp_save_sync_service_enabled = (
-        is_ftp_save_sync_service_enabled(connection) if ftp_save_sync_installed else False
-    )
-
-    static_wallpaper_script_check = connection.run_command(
-        f"test -f {STATIC_WALLPAPER_SCRIPT_PATH} && echo EXISTS"
-    )
-    static_wallpaper_installed = "EXISTS" in (static_wallpaper_script_check or "")
-    static_wallpaper_active = is_static_wallpaper_active(connection)
-    static_wallpaper_saved = has_static_wallpaper_saved_selection(connection)
 
     return ScriptsStatus(
-        update_all_installed=update_all_installed,
-        update_all_initialized=check_update_all_initialized(connection) if update_all_installed else False,
-        zaparoo_installed=zaparoo_installed,
-        zaparoo_service_enabled=zaparoo_service_enabled,
-        migrate_sd_installed=migrate_sd_installed,
-        cifs_installed=cifs_installed,
-        cifs_configured=cifs_configured,
-        cifs_common_installed=cifs_common_installed,
-        cifs_common_required=cifs_common_required,
-        cifs_umount_installed=cifs_umount_installed,
-        auto_time_installed=auto_time_installed,
-        cd_game_organizer_installed=cd_game_organizer_installed,
-        dav_browser_installed=dav_browser_installed,
-        dav_browser_configured=dav_browser_configured,
-        ftp_save_sync_installed=ftp_save_sync_installed,
-        ftp_save_sync_configured=ftp_save_sync_configured,
-        ftp_save_sync_service_enabled=ftp_save_sync_service_enabled,
-        static_wallpaper_installed=static_wallpaper_installed,
+        update_all_installed=values.get("update_all_installed", False),
+        update_all_initialized=values.get("update_all_initialized", False),
+        zaparoo_installed=values.get("zaparoo_installed", False),
+        zaparoo_service_enabled=values.get("zaparoo_service_enabled", False),
+        migrate_sd_installed=values.get("migrate_sd_installed", False),
+        cifs_installed=values.get("cifs_installed", False),
+        cifs_configured=values.get("cifs_configured", False),
+        cifs_common_installed=values.get("cifs_common_installed", False),
+        cifs_common_required=values.get("cifs_common_required", False),
+        cifs_umount_installed=values.get("cifs_umount_installed", False),
+        auto_time_installed=values.get("auto_time_installed", False),
+        cd_game_organizer_installed=values.get("cd_game_organizer_installed", False),
+        dav_browser_installed=values.get("dav_browser_installed", False),
+        dav_browser_configured=values.get("dav_browser_configured", False),
+        ftp_save_sync_installed=values.get("ftp_save_sync_installed", False),
+        ftp_save_sync_configured=values.get("ftp_save_sync_configured", False),
+        ftp_save_sync_service_enabled=values.get("ftp_save_sync_service_enabled", False),
+        static_wallpaper_installed=values.get("static_wallpaper_installed", False),
         static_wallpaper_active=static_wallpaper_active,
-        static_wallpaper_saved=static_wallpaper_saved,
+        static_wallpaper_saved=values.get("static_wallpaper_saved", False),
     )
 
 

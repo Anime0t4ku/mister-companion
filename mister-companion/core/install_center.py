@@ -4,6 +4,7 @@ import urllib.request
 import ssl
 import tempfile
 import zipfile
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -153,6 +154,27 @@ from core.extras_physical_disc import (
     uninstall_physical_disc_local,
 )
 
+from core.scripts_misterfin import (
+    install_or_update_misterfin,
+    install_or_update_misterfin_local,
+    uninstall_misterfin,
+    uninstall_misterfin_local,
+)
+from core.scripts_user_profiles import (
+    install_or_update_user_profiles,
+    install_or_update_user_profiles_local,
+    uninstall_user_profiles,
+    uninstall_user_profiles_local,
+)
+from core.extras_solarus import (
+    get_solarus_status,
+    get_solarus_status_local,
+    install_or_update_solarus,
+    install_or_update_solarus_local,
+    uninstall_solarus,
+    uninstall_solarus_local,
+)
+
 from core.scripts_version_check import apply_script_update_status, supports_script_update_check
 from core.downloader_backend import (
     check_named_databases_online,
@@ -161,6 +183,8 @@ from core.downloader_backend import (
     inspect_named_databases_local,
     cache_database_registration_online,
     cache_database_registration_local,
+    database_registered_online,
+    database_registered_local,
 )
 
 from core.wallpapers import (
@@ -200,6 +224,9 @@ DOWNLOADER_HANDLER_DATABASES = {
     "sonic_mania_mister": "MultiDatabases/sonic-mania",
     "megavgmdrive": "MultiDatabases/megavgmdrive",
     "physical_disc_cores": "MultiDatabases/physical-disc",
+    "misterfin": "MultiDatabases/misterfin",
+    "user_profiles": "BertSVG/MiSTer_FPGA_User_Profiles",
+    "solarus": "MultiDatabases/solarus",
 }
 
 CATEGORY_FALLBACK = [
@@ -212,6 +239,8 @@ CATEGORY_FALLBACK = [
 
 FALLBACK_ITEMS = [
     ("update_all", "scripts", "script", "update_all", "update_all", "theypsilon", "update_all keeps your MiSTer FPGA setup up to date by downloading cores, scripts, databases, tools, and optional community content from configured update sources."),
+    ("misterfin", "scripts", "script", "misterfin", "MiSTerFin", "MiSTerFin project", "MiSTerFin is a Jellyfin media client for MiSTer. It runs as ARM software from the Scripts menu on the standard menu core, uses the regular MiSTer framebuffer, and plays server-transcoded media through its bundled mplayer-arm."),
+    ("user_profiles", "scripts", "script", "user_profiles", "User Profiles", "BertSVG", "Adds user profiles to the MiSTer FPGA Project."),
     ("zaparoo", "scripts", "script", "zaparoo", "Zaparoo", "Zaparoo Project", "Zaparoo lets you launch games, media, scripts, and other MiSTer content by scanning NFC cards, tags, barcodes, or other supported readers. It also allows MiSTer Companion to launch games remotely from the ZapScripts tab."),
     ("migrate_sd", "scripts", "script", "migrate_sd", "migrate_sd", "theypsilon", "migrate_sd helps migrate an existing MiSTer SD card setup to another SD card, such as when moving to a larger card."),
     ("cifs_mount", "scripts", "script", "cifs_mount", "cifs_mount", "MiSTer community", "cifs_mount connects your MiSTer to a shared network folder, such as a NAS or PC share, so games and files can be accessed over your local network."),
@@ -232,6 +261,7 @@ FALLBACK_ITEMS = [
     ("mister_quake", "extras", "extra", "mister_quake", "MiSTer Quake", "neofreno", "MiSTer Quake installs the Quake port for MiSTer. Provide your own PAK0.PAK and optional PAK1.PAK game data files."),
     ("mister_duke3d", "extras", "extra", "mister_duke3d", "MiSTer Duke3D", "neofreno", "MiSTer Duke3D installs the Duke Nukem 3D port for MiSTer. Provide your own DUKE3D.GRP game data file."),
     ("dreamster", "extras", "extra", "dreamster", "DreamSTer", "skmp", "DreamSTer is an emulation core that uses partial FPGA output to run Dreamcast software on MiSTer. It is currently in pre-release."),
+    ("solarus", "extras", "extra", "solarus", "Solarus", "Solarus Team", "A port of the Solarus 2D action-RPG engine to MiSTer FPGA, supporting Zelda-like games such as The Legend of Zelda: Mystery of Solarus DX, Ocean's Heart, Yarntown, and many more."),
     ("zaparoo_frontend", "extras", "extra", "zaparoo_frontend", "Zaparoo Frontend", "Zaparoo Project", "Zaparoo Frontend provides a controller-friendly interface for browsing and launching content. It is installed as part of Zaparoo; uninstall it completely from the main Zaparoo entry."),
     ("ranny_snice_wallpapers", "wallpaper_packs", "wallpaper_pack", "ranny_snice_wallpapers", "Ranny Snice Wallpapers", "Ranny Snice", "A collection of MiSTer menu wallpapers by Ranny Snice, available in both 16:9 and 4:3 versions."),
     ("pcn_challenge_wallpapers", "wallpaper_packs", "wallpaper_pack", "pcn_challenge_wallpapers", "PCN Challenge Wallpapers", "Pixel Cherry Ninja", "Wallpapers created during PCN livestreams based on audience requests."),
@@ -253,6 +283,8 @@ SCRIPT_STATUS_ATTRS = {
 
 SCRIPT_INSTALLERS = {
     "update_all": (install_update_all, install_update_all_local, uninstall_update_all, uninstall_update_all_local),
+    "misterfin": (install_or_update_misterfin, install_or_update_misterfin_local, uninstall_misterfin, uninstall_misterfin_local),
+    "user_profiles": (install_or_update_user_profiles, install_or_update_user_profiles_local, uninstall_user_profiles, uninstall_user_profiles_local),
     "zaparoo": (install_zaparoo, install_zaparoo_local, uninstall_zaparoo, uninstall_zaparoo_local),
     "migrate_sd": (install_migrate_sd, install_migrate_sd_local, uninstall_migrate_sd, uninstall_migrate_sd_local),
     "cifs_mount": (install_cifs_mount, install_cifs_mount_local, uninstall_cifs_mount, uninstall_cifs_mount_local),
@@ -278,6 +310,7 @@ EXTRA_HANDLERS = {
     "megavgmdrive": (get_megavgmdrive_status, get_megavgmdrive_status_local, install_or_update_megavgmdrive, install_or_update_megavgmdrive_local, uninstall_megavgmdrive, uninstall_megavgmdrive_local),
     "physical_disc_cores": (get_physical_disc_status, get_physical_disc_status_local, install_or_update_physical_disc, install_or_update_physical_disc_local, uninstall_physical_disc, uninstall_physical_disc_local),
     "retroachievement_cores": (get_ra_cores_status, get_ra_cores_status_local, install_or_update_ra_cores, install_or_update_ra_cores_local, uninstall_ra_cores, uninstall_ra_cores_local),
+    "solarus": (get_solarus_status, get_solarus_status_local, install_or_update_solarus, install_or_update_solarus_local, uninstall_solarus, uninstall_solarus_local),
 }
 
 @dataclass
@@ -615,6 +648,21 @@ def check_item_status(item: dict, context: InstallCenterContext, check_latest: b
     category = item.get("category")
 
     if item_type == "script" or category == "scripts":
+        if handler in DOWNLOADER_HANDLER_DATABASES:
+            db_id = DOWNLOADER_HANDLER_DATABASES[handler]
+            states = inspect_named_databases_local(context.sd_root, [db_id], log=None) if context.offline else inspect_named_databases_online(context.connection, [db_id], log=None)
+            state = states.get(db_id) or {}
+            installed = bool(state.get("installed"))
+            update_available = bool(state.get("update_available")) if check_latest else False
+            return {
+                "state": "update_available" if update_available else "installed" if installed else "not_installed",
+                "status_text": "Update available" if update_available else "Installed" if installed else "Not installed",
+                "installed": installed,
+                "update_available": update_available,
+                "install_label": "Update" if update_available else "Installed" if installed else "Install",
+                "install_enabled": update_available or not installed,
+                "uninstall_enabled": installed,
+            }
         scripts_status = get_scripts_status_local(context.sd_root) if context.offline else get_scripts_status(context.connection)
         if handler == "zaparoo":
             try:
@@ -665,34 +713,75 @@ def check_all_status(catalog: dict, context: InstallCenterContext, check_latest:
     ra_viewer_status = None
     downloader_install_states = {}
 
+    downloader_db_ids = []
     if not check_latest:
         downloader_db_ids = list(dict.fromkeys(
             DOWNLOADER_HANDLER_DATABASES.get(item.get("handler") or item.get("id"))
             for item in catalog.get("items", [])
             if DOWNLOADER_HANDLER_DATABASES.get(item.get("handler") or item.get("id"))
         ))
+
+    has_script_items = any(
+        item.get("type") == "script" or item.get("category") == "scripts"
+        for item in catalog.get("items", [])
+    )
+
+    def scan_downloader_install_states():
+        if not downloader_db_ids:
+            return {}
+        return (
+            inspect_named_databases_local(context.sd_root, downloader_db_ids, log=None)
+            if context.offline
+            else inspect_named_databases_online(context.connection, downloader_db_ids, log=None)
+        )
+
+    def scan_scripts_status():
+        if not has_script_items:
+            return None
+        return get_scripts_status_local(context.sd_root) if context.offline else get_scripts_status(context.connection)
+
+    def scan_syncthing_status():
+        if not has_script_items:
+            return None
+        return get_syncthing_status_local(context.sd_root) if context.offline else get_syncthing_status(context.connection)
+
+    def scan_ra_viewer_status():
+        if not has_script_items:
+            return None
+        return get_ra_viewer_status_local(context.sd_root) if context.offline else get_ra_viewer_status(context.connection)
+
+    if has_script_items and log:
+        log("Scanning installed scripts once for all script entries...\n")
+
+    jobs = {}
+    with ThreadPoolExecutor(max_workers=4) as executor:
         if downloader_db_ids:
+            jobs["downloader"] = executor.submit(scan_downloader_install_states)
+        if has_script_items:
+            jobs["scripts"] = executor.submit(scan_scripts_status)
+            jobs["syncthing"] = executor.submit(scan_syncthing_status)
+            jobs["ra_viewer"] = executor.submit(scan_ra_viewer_status)
+
+        if "downloader" in jobs:
             try:
-                downloader_install_states = (
-                    inspect_named_databases_local(context.sd_root, downloader_db_ids, log=None)
-                    if context.offline
-                    else inspect_named_databases_online(context.connection, downloader_db_ids, log=None)
-                )
+                downloader_install_states = jobs["downloader"].result()
             except Exception:
                 downloader_install_states = {}
-
-    if any((item.get("type") == "script" or item.get("category") == "scripts") for item in catalog.get("items", [])):
-        if log:
-            log("Scanning installed scripts once for all script entries...\n")
-        scripts_status = get_scripts_status_local(context.sd_root) if context.offline else get_scripts_status(context.connection)
-        try:
-            syncthing_status = get_syncthing_status_local(context.sd_root) if context.offline else get_syncthing_status(context.connection)
-        except Exception as e:
-            syncthing_status = {"status_text": f"Status unknown ({e})"}
-        try:
-            ra_viewer_status = get_ra_viewer_status_local(context.sd_root) if context.offline else get_ra_viewer_status(context.connection)
-        except Exception as e:
-            ra_viewer_status = {"status_text": f"Status unknown ({e})"}
+        if "scripts" in jobs:
+            try:
+                scripts_status = jobs["scripts"].result()
+            except Exception:
+                scripts_status = None
+        if "syncthing" in jobs:
+            try:
+                syncthing_status = jobs["syncthing"].result()
+            except Exception as e:
+                syncthing_status = {"status_text": f"Status unknown ({e})"}
+        if "ra_viewer" in jobs:
+            try:
+                ra_viewer_status = jobs["ra_viewer"].result()
+            except Exception as e:
+                ra_viewer_status = {"status_text": f"Status unknown ({e})"}
 
     registration_cache = (
         cache_database_registration_local(context.sd_root)
@@ -712,7 +801,18 @@ def check_all_status(catalog: dict, context: InstallCenterContext, check_latest:
                     log(f"Checking {item_name}...\n")
                 item_check_latest = bool(check_latest and handler not in DOWNLOADER_HANDLER_DATABASES)
                 if item_type == "script" or category == "scripts":
-                    if handler == "zaparoo":
+                    if handler in {"misterfin", "user_profiles"} and check_latest:
+                        registered = database_registered_local(context.sd_root, DOWNLOADER_HANDLER_DATABASES[handler]) if context.offline else database_registered_online(context.connection, DOWNLOADER_HANDLER_DATABASES[handler])
+                        results[item_id] = {
+                            "state": "installed" if registered else "not_installed",
+                            "status_text": "Installed" if registered else "Not installed",
+                            "installed": registered,
+                            "update_available": False,
+                            "install_label": "Installed" if registered else "Install",
+                            "install_enabled": not registered,
+                            "uninstall_enabled": registered,
+                        }
+                    elif handler == "zaparoo":
                         results[item_id] = get_zaparoo_update_status_local(context.sd_root, check_latest=item_check_latest, log=log) if context.offline else get_zaparoo_update_status(context.connection, check_latest=item_check_latest, log=log)
                     else:
                         base_status = _script_status_text(handler, scripts_status, syncthing_status, ra_viewer_status)
@@ -1240,6 +1340,11 @@ def run_uninstall(item: dict, context: InstallCenterContext, log: Callable[[str]
                 uninstall_local(context.sd_root, force=force_downloader)
             else:
                 uninstall_online(context.connection, force=force_downloader)
+        elif handler in {"misterfin", "user_profiles"}:
+            if context.offline:
+                uninstall_local(context.sd_root, log, force=force_downloader)
+            else:
+                uninstall_online(context.connection, log, force=force_downloader)
         elif handler in {"syncthing", "ra_viewer"}:
             if context.offline:
                 uninstall_local(context.sd_root, log)
@@ -1258,7 +1363,7 @@ def run_uninstall(item: dict, context: InstallCenterContext, log: Callable[[str]
         if not functions:
             raise RuntimeError("This entry does not have an Install Center uninstaller yet.")
         uninstall_online, uninstall_local = functions[4], functions[5]
-        if handler in {"retroachievement_cores", "3s_arm", "3sx_mister", "dreamster", "mister_duke3d", "mister_quake", "mms2_gb_core", "paprium_megadrive", "sonic_mania_mister", "megavgmdrive", "physical_disc_cores"}:
+        if handler in {"retroachievement_cores", "3s_arm", "3sx_mister", "dreamster", "mister_duke3d", "mister_quake", "mms2_gb_core", "paprium_megadrive", "sonic_mania_mister", "megavgmdrive", "physical_disc_cores", "solarus"}:
             if context.offline:
                 uninstall_local(context.sd_root, log, force=force_downloader)
             else:
