@@ -614,7 +614,8 @@ def _extra_status(handler: str, context: InstallCenterContext, check_latest: boo
         "install_label", "install_enabled", "uninstall_enabled", "upload_enabled",
         "folder_open_enabled", "edit_config_enabled", "disable_enabled", "installed", "update_available", "repair_action",
         "components", "installed_component_keys", "incomplete_component_keys",
-        "missing_component_keys", "all_components_installed", "outdated_sources"
+        "missing_component_keys", "all_components_installed", "outdated_sources",
+        "auto_disc_detection_enabled", "auto_disc_detection_current_main"
     ):
         if key in status:
             result[key] = status.get(key)

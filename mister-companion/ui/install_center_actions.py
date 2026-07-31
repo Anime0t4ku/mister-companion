@@ -28,6 +28,11 @@ from core.extras_sonic_mania import upload_sonic_mania_data_rsdk, upload_sonic_m
 from core.extras_mister_quake import upload_mister_quake_paks, upload_mister_quake_paks_local
 from core.extras_mister_duke3d import upload_mister_duke3d_grp, upload_mister_duke3d_grp_local
 from core.extras_dreamster import upload_dreamster_bios, upload_dreamster_bios_local
+from core.extras_physical_disc import (
+    enable_auto_disc_detection, disable_auto_disc_detection,
+    enable_auto_disc_detection_local, disable_auto_disc_detection_local,
+)
+from core.device_actions import return_to_menu_remote
 from core.extras_paprium_megadrive import open_paprium_game_folder_local, open_paprium_game_folder_on_host
 from core.extras_zaparoo_launcher import disable_zaparoo_launcher_frontend, disable_zaparoo_launcher_frontend_local
 from ui.dialogs.cifs_config_dialog import CifsConfigDialog
@@ -71,6 +76,42 @@ class InstallCenterActions:
             QMessageBox.critical(self.tab, "Error", "Connect to a MiSTer first.")
             return False
         return True
+
+
+    def toggle_physical_disc_auto_detection(self, enabled):
+        offline = self.is_offline_mode()
+        root = self._require_sd() if offline else None
+        if offline and not root:
+            return
+        if not offline and not self._require_online():
+            return
+        try:
+            if enabled:
+                result = disable_auto_disc_detection_local(root) if offline else disable_auto_disc_detection(self.connection)
+            else:
+                result = enable_auto_disc_detection_local(root) if offline else enable_auto_disc_detection(self.connection)
+                conflict = str(result.get("conflict") or "")
+                if conflict:
+                    reply = QMessageBox.question(
+                        self.tab,
+                        "Replace Existing Menu Core",
+                        "Auto disc detection requires replacing the existing MiSTer.ini setting:\n\n"
+                        f"{conflict}\n\n"
+                        "Replace it with main=MiSTer_Physical-CD?",
+                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                        QMessageBox.StandardButton.No,
+                    )
+                    if reply != QMessageBox.StandardButton.Yes:
+                        return
+                    result = enable_auto_disc_detection_local(root, replace_existing=True) if offline else enable_auto_disc_detection(self.connection, replace_existing=True)
+            if not result.get("changed"):
+                self.refresh()
+                return
+            if not offline:
+                return_to_menu_remote(self.connection)
+            self.refresh()
+        except Exception as exc:
+            QMessageBox.critical(self.tab, "Auto Disc Detection", str(exc))
 
     def configure_update_all(self, installed=True):
         if not installed:

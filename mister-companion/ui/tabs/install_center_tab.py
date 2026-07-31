@@ -1008,6 +1008,15 @@ class InstallCenterDetailsDialog(QDialog):
             add_button("Open Game Folder", self.open_megavgmdrive_game_folder, enabled=self.status.get("folder_open_enabled", installed), min_width=170)
         elif handler == "retroachievement_cores":
             add_button("Edit Config", self.configure, enabled=self.status.get("edit_config_enabled", installed), min_width=170)
+        elif handler == "physical_disc_cores":
+            auto_enabled = bool(self.status.get("auto_disc_detection_enabled"))
+            auto_text = "Disable Auto Disc Detection" if auto_enabled else "Enable Auto Disc Detection"
+            add_button(
+                auto_text,
+                lambda checked=False, state=auto_enabled: self.call_install_center_action("toggle_physical_disc_auto_detection", state),
+                enabled=installed,
+                min_width=220,
+            )
         elif handler == "zaparoo_frontend":
             add_button("Disable", lambda: self.call_install_center_action("disable_zaparoo_frontend"), enabled=self.status.get("disable_enabled", False), min_width=170)
 

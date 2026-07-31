@@ -39,6 +39,151 @@ PHYSICAL_DISC_FILES = (
 )
 
 
+
+def _normalize_ini_text(text):
+    return str(text or "").replace("\r\n", "\n").replace("\r", "\n")
+
+
+def _menu_sections(text):
+    normalized = _normalize_ini_text(text)
+    return list(re.finditer(
+        r"(?ims)^[ \t]*\[menu\][^\n]*(?:\n|$)(?P<body>.*?)(?=^[ \t]*\[|\Z)",
+        normalized,
+    ))
+
+
+def _menu_section(text):
+    sections = _menu_sections(text)
+    return sections[0] if sections else None
+
+
+def _main_setting(body):
+    return re.search(r"(?mi)^[ \t]*main[ \t]*=[ \t]*(?P<value>[^\n;#]*?)[ \t]*(?:[;#].*)?$", body)
+
+
+def _is_auto_disc_main(value):
+    return str(value or "").strip().lower() == "mister_physical-cd"
+
+
+def _auto_disc_detection_state_from_text(current):
+    current_main = ""
+    for section in _menu_sections(current):
+        main_match = _main_setting(section.group("body"))
+        if not main_match:
+            continue
+        line = main_match.group(0).strip()
+        if not current_main:
+            current_main = line
+        if _is_auto_disc_main(main_match.group("value")):
+            return {"enabled": True, "current_main": line}
+    return {"enabled": False, "current_main": current_main}
+
+
+def get_auto_disc_detection_state(connection):
+    return _auto_disc_detection_state_from_text(_read_remote_text(connection, MISTER_INI_PATH))
+
+
+def get_auto_disc_detection_state_local(sd_root):
+    return _auto_disc_detection_state_from_text(_read_local_text(sd_root, MISTER_INI_PATH))
+
+
+def _enable_auto_disc_detection_text(text, replace_existing=False):
+    normalized = _normalize_ini_text(text)
+    sections = _menu_sections(normalized)
+
+    for section in sections:
+        main_match = _main_setting(section.group("body"))
+        if main_match and _is_auto_disc_main(main_match.group("value")):
+            return normalized, ""
+
+    if sections:
+        section = sections[0]
+        body = section.group("body")
+        main_match = _main_setting(body)
+        if main_match:
+            if not replace_existing:
+                return normalized, main_match.group(0).strip()
+            new_body = body[:main_match.start()] + "main=MiSTer_Physical-CD" + body[main_match.end():]
+        else:
+            new_body = "main=MiSTer_Physical-CD\n" + body
+        updated = normalized[:section.start("body")] + new_body + normalized[section.end("body"):]
+    else:
+        updated = normalized.rstrip()
+        updated = (updated + "\n\n" if updated else "") + "[menu]\nmain=MiSTer_Physical-CD\n"
+    return re.sub(r"\n{3,}", "\n\n", updated).rstrip("\n") + "\n", ""
+
+
+def _disable_auto_disc_detection_text(text):
+    normalized = _normalize_ini_text(text)
+    sections = _menu_sections(normalized)
+    if not sections:
+        return normalized
+
+    updated = normalized
+    changed = False
+    for section in reversed(sections):
+        body = section.group("body")
+        matches = list(re.finditer(
+            r"(?mi)^[ \t]*main[ \t]*=[ \t]*MiSTer_Physical-CD[ \t]*(?:[;#].*)?(?:\n|$)",
+            body,
+        ))
+        if not matches:
+            continue
+        new_body = body
+        for match in reversed(matches):
+            new_body = new_body[:match.start()] + new_body[match.end():]
+        updated = updated[:section.start("body")] + new_body + updated[section.end("body"):]
+        changed = True
+
+    if not changed:
+        return normalized
+    return re.sub(r"\n{3,}", "\n\n", updated).rstrip("\n") + "\n"
+
+
+def enable_auto_disc_detection(connection, replace_existing=False):
+    if not connection.is_connected():
+        raise RuntimeError("Not connected to MiSTer.")
+    current = _read_remote_text(connection, MISTER_INI_PATH)
+    updated, conflict = _enable_auto_disc_detection_text(current, replace_existing=replace_existing)
+    if conflict:
+        return {"changed": False, "conflict": conflict}
+    changed = updated != _normalize_ini_text(current)
+    if changed:
+        _write_remote_text(connection, MISTER_INI_PATH, updated)
+    return {"changed": changed, "conflict": ""}
+
+
+def enable_auto_disc_detection_local(sd_root, replace_existing=False):
+    current = _read_local_text(sd_root, MISTER_INI_PATH)
+    updated, conflict = _enable_auto_disc_detection_text(current, replace_existing=replace_existing)
+    if conflict:
+        return {"changed": False, "conflict": conflict}
+    changed = updated != _normalize_ini_text(current)
+    if changed:
+        _write_local_text(sd_root, MISTER_INI_PATH, updated)
+    return {"changed": changed, "conflict": ""}
+
+
+def disable_auto_disc_detection_local(sd_root):
+    current = _read_local_text(sd_root, MISTER_INI_PATH)
+    updated = _disable_auto_disc_detection_text(current)
+    changed = updated != _normalize_ini_text(current)
+    if changed:
+        _write_local_text(sd_root, MISTER_INI_PATH, updated)
+    return {"changed": changed}
+
+
+def disable_auto_disc_detection(connection):
+    if not connection.is_connected():
+        raise RuntimeError("Not connected to MiSTer.")
+    current = _read_remote_text(connection, MISTER_INI_PATH)
+    updated = _disable_auto_disc_detection_text(current)
+    changed = updated != _normalize_ini_text(current)
+    if changed:
+        _write_remote_text(connection, MISTER_INI_PATH, updated)
+    return {"changed": changed}
+
+
 def _upsert_cd_ini_block(text):
     normalized = str(text or "").replace("\r\n", "\n")
     pattern = re.compile(r"(?ms)^(?P<header>[ \t]*\[CD-\*\][^\n]*\n)(?P<body>.*?)(?=^[ \t]*\[|\Z)")
@@ -150,7 +295,7 @@ def _status(found, complete, manual, update_available=False, connected=True, ini
     installed = bool(found)
     partial = bool(found and not complete)
     if not connected:
-        return {"installed": False, "partial": False, "update_available": False, "status_text": "Unknown", "install_label": "Install", "install_enabled": False, "uninstall_enabled": False}
+        return {"installed": False, "partial": False, "update_available": False, "status_text": "Unknown", "install_label": "Install", "install_enabled": False, "uninstall_enabled": False, "auto_disc_detection_enabled": False, "auto_disc_detection_current_main": ""}
     if manual:
         text, label, enabled, update = "▲ Manual install found", "Migrate / Update", True, True
     elif not installed:
@@ -173,7 +318,11 @@ def get_physical_disc_status(connection, check_latest=False):
     manual = bool(found and not database_registered_online(connection, PHYSICAL_DISC_DB_ID))
     ini_entry_present = _has_cd_ini_entry(_read_remote_text(connection, MISTER_INI_PATH))
     update = bool(check_latest and found and complete and not manual and check_named_database_online(connection, PHYSICAL_DISC_DB_ID))
-    return _status(found, complete, manual, update, ini_entry_present=ini_entry_present)
+    status = _status(found, complete, manual, update, ini_entry_present=ini_entry_present)
+    auto_state = get_auto_disc_detection_state(connection)
+    status["auto_disc_detection_enabled"] = auto_state["enabled"]
+    status["auto_disc_detection_current_main"] = auto_state["current_main"]
+    return status
 
 
 def get_physical_disc_status_local(sd_root, check_latest=False):
@@ -181,7 +330,11 @@ def get_physical_disc_status_local(sd_root, check_latest=False):
     manual = bool(found and not database_registered_local(sd_root, PHYSICAL_DISC_DB_ID))
     ini_entry_present = _has_cd_ini_entry(_read_local_text(sd_root, MISTER_INI_PATH))
     update = bool(check_latest and found and complete and not manual and check_named_database_local(sd_root, PHYSICAL_DISC_DB_ID))
-    return _status(found, complete, manual, update, ini_entry_present=ini_entry_present)
+    status = _status(found, complete, manual, update, ini_entry_present=ini_entry_present)
+    auto_state = get_auto_disc_detection_state_local(sd_root)
+    status["auto_disc_detection_enabled"] = auto_state["enabled"]
+    status["auto_disc_detection_current_main"] = auto_state["current_main"]
+    return status
 
 
 def _reboot_result(uninstall=False):
