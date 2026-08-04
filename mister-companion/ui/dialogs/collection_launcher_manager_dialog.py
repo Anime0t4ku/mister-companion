@@ -14,8 +14,8 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import (
     QComboBox, QDialog, QFileDialog, QFormLayout, QFrame, QHBoxLayout, QLabel,
-    QLineEdit, QListWidget, QListWidgetItem, QMessageBox, QPushButton, QScrollArea,
-    QVBoxLayout, QWidget, QInputDialog
+    QApplication, QLineEdit, QListWidget, QListWidgetItem, QMessageBox, QPushButton, QScrollArea,
+    QTextEdit, QVBoxLayout, QWidget, QInputDialog
 )
 
 COLLECTIONS_REL = Path("Scripts/.config/CollectionLauncher/Collections")
@@ -111,6 +111,27 @@ def _sftp_remove_tree(sftp, path):
             sftp.remove(child)
     sftp.rmdir(path)
 
+
+
+
+class TransferOutputDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Transferring Collection to MiSTer")
+        self.resize(560, 320)
+        self.setModal(True)
+        layout = QVBoxLayout(self)
+        label = QLabel("Transferring collection files to MiSTer...")
+        layout.addWidget(label)
+        self.output = QTextEdit()
+        self.output.setReadOnly(True)
+        layout.addWidget(self.output, 1)
+
+    def write(self, text):
+        self.output.append(str(text))
+        bar = self.output.verticalScrollBar()
+        bar.setValue(bar.maximum())
+        QApplication.processEvents()
 
 class RemoteGameBrowserDialog(QDialog):
     def __init__(self, connection, extensions=None, parent=None, roots=None):
@@ -420,6 +441,7 @@ class GameEntryDialog(QDialog):
         self.ram = QComboBox()
         self.ram.addItems(["none", "1MB", "4MB"])
         self.form.addRow("Saturn RAM", self.ram)
+        self.ram_label = self.form.labelForField(self.ram)
         self.artwork = AssetField("Artwork", "artwork", required=True)
         self.form.addRow("Artwork", self.artwork)
         self.art_note = QLabel("Automatically scaled to fit within 500×500 while preserving aspect ratio.")
@@ -459,7 +481,10 @@ class GameEntryDialog(QDialog):
         existing_files = launch.get("files") or []
         if launch.get("path"):
             existing_files = [{"role": variants[0]["role"] if variants else "game", "path": launch["path"]}]
-        self.ram.setVisible(system == "Saturn")
+        show_saturn_ram = system == "Saturn"
+        self.ram.setVisible(show_saturn_ram)
+        if self.ram_label:
+            self.ram_label.setVisible(show_saturn_ram)
         # One row per distinct role. This mirrors Collection Launcher's accepted role set.
         seen = set()
         for variant in variants:
@@ -762,11 +787,30 @@ class CollectionLauncherManagerDialog(QDialog):
                 p=root/rel;p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(blob)
             (root/'collection.json').write_bytes(raw_json)
         else:
-            sftp=self.connection.client.open_sftp()
+            transfer = TransferOutputDialog(self)
+            transfer.show()
+            QApplication.processEvents()
+            sftp = None
             try:
-                root=posixpath.join(COLLECTIONS_REMOTE,folder);_sftp_mkdirs(sftp,root);_sftp_mkdirs(sftp,posixpath.join(root,'artwork'))
+                transfer.write("Connecting to MiSTer...")
+                sftp=self.connection.client.open_sftp()
+                root=posixpath.join(COLLECTIONS_REMOTE,folder)
+                transfer.write(f"Preparing {root}")
+                _sftp_mkdirs(sftp,root);_sftp_mkdirs(sftp,posixpath.join(root,'artwork'))
                 for rel,blob in assets:
                     target=posixpath.join(root,rel);_sftp_mkdirs(sftp,posixpath.dirname(target))
+                    transfer.write(f"Uploading {rel} ({len(blob):,} bytes)...")
                     with sftp.open(target,'wb') as f:f.write(blob)
+                    transfer.write(f"Finished {rel}")
+                transfer.write(f"Uploading collection.json ({len(raw_json):,} bytes)...")
                 with sftp.open(posixpath.join(root,'collection.json'),'wb') as f:f.write(raw_json)
-            finally:sftp.close()
+                transfer.write("Transfer complete.")
+            except Exception as exc:
+                transfer.write(f"ERROR: {exc}")
+                transfer.setWindowTitle("Collection Transfer Failed")
+                transfer.setModal(False)
+                raise
+            finally:
+                if sftp is not None:
+                    sftp.close()
+            transfer.accept()
