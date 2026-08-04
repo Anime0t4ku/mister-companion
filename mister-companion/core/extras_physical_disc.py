@@ -256,14 +256,10 @@ def _presence(exists):
 
 
 def _manual_physical_disc_install(connection):
-    found, _complete = _presence(lambda path: _path_exists(connection, path))
-    return bool(found and not database_registered_online(connection, PHYSICAL_DISC_DB_ID))
-
+    return False
 
 def _manual_physical_disc_install_local(sd_root):
-    found, _complete = _presence(lambda path: _path_exists_local(sd_root, path))
-    return bool(found and not database_registered_local(sd_root, PHYSICAL_DISC_DB_ID))
-
+    return False
 
 def _prepare_manual_physical_disc_for_downloader(connection, log, manual=None):
     if manual is None:
@@ -315,7 +311,7 @@ def get_physical_disc_status(connection, check_latest=False):
     if not connection.is_connected():
         return _status([], False, False, connected=False)
     found, complete = _presence(lambda path: _path_exists(connection, path))
-    manual = bool(found and not database_registered_online(connection, PHYSICAL_DISC_DB_ID))
+    manual = False
     ini_entry_present = _has_cd_ini_entry(_read_remote_text(connection, MISTER_INI_PATH))
     update = bool(check_latest and found and complete and not manual and check_named_database_online(connection, PHYSICAL_DISC_DB_ID))
     status = _status(found, complete, manual, update, ini_entry_present=ini_entry_present)
@@ -327,7 +323,7 @@ def get_physical_disc_status(connection, check_latest=False):
 
 def get_physical_disc_status_local(sd_root, check_latest=False):
     found, complete = _presence(lambda path: _path_exists_local(sd_root, path))
-    manual = bool(found and not database_registered_local(sd_root, PHYSICAL_DISC_DB_ID))
+    manual = False
     ini_entry_present = _has_cd_ini_entry(_read_local_text(sd_root, MISTER_INI_PATH))
     update = bool(check_latest and found and complete and not manual and check_named_database_local(sd_root, PHYSICAL_DISC_DB_ID))
     status = _status(found, complete, manual, update, ini_entry_present=ini_entry_present)
@@ -346,7 +342,7 @@ def install_or_update_physical_disc(connection, log):
     if not connection.is_connected():
         raise RuntimeError("Not connected to MiSTer.")
     found, complete = _presence(lambda path: _path_exists(connection, path))
-    manual = bool(found and not database_registered_online(connection, PHYSICAL_DISC_DB_ID))
+    manual = False
     if complete and not manual and not _has_cd_ini_entry(_read_remote_text(connection, MISTER_INI_PATH)):
         _ensure_cd_ini_block(connection, log)
         return _reboot_result()
@@ -364,7 +360,7 @@ def install_or_update_physical_disc(connection, log):
 
 def install_or_update_physical_disc_local(sd_root, log):
     found, complete = _presence(lambda path: _path_exists_local(sd_root, path))
-    manual = bool(found and not database_registered_local(sd_root, PHYSICAL_DISC_DB_ID))
+    manual = False
     if complete and not manual and not _has_cd_ini_entry(_read_local_text(sd_root, MISTER_INI_PATH)):
         _ensure_cd_ini_block_local(sd_root, log)
         return _reboot_result()

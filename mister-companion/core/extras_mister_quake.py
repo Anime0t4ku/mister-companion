@@ -327,14 +327,10 @@ QUAKE_DB_FILES = (
 
 
 def _manual_mister_quake_install(connection):
-    present = any(_path_exists(connection, path) for path in (QUAKE_REMOTE_LAUNCHER, QUAKE_REMOTE_RBF, QUAKE_REMOTE_BIN))
-    return bool(present and (_path_exists(connection, QUAKE_REMOTE_VERSION_FILE) or not database_registered_online(connection, QUAKE_DB_ID)))
-
+    return False
 
 def _manual_mister_quake_install_local(sd_root):
-    present = any(_path_exists_local(sd_root, path) for path in (QUAKE_REMOTE_LAUNCHER, QUAKE_REMOTE_RBF, QUAKE_REMOTE_BIN))
-    return bool(present and (_path_exists_local(sd_root, QUAKE_REMOTE_VERSION_FILE) or not database_registered_local(sd_root, QUAKE_DB_ID)))
-
+    return False
 
 def _prepare_manual_mister_quake_for_downloader(connection, log, manual=None):
     if manual is None:

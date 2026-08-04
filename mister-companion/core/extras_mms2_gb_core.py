@@ -336,14 +336,10 @@ MMS2_GB_DB_URL = "https://raw.githubusercontent.com/theypsilon/MultiDatabases_Mi
 
 
 def _manual_mms2_gb_install(connection):
-    present = bool(_read_installed_mms2_gb_date(connection) or _path_exists(connection, MMS2_GB_MGL_PATH) or _path_exists(connection, MMS2_GB_CFG_PATH))
-    return bool(present and not database_registered_online(connection, MMS2_GB_DB_ID))
-
+    return False
 
 def _manual_mms2_gb_install_local(sd_root):
-    present = bool(_read_installed_mms2_gb_date_local(sd_root) or _path_exists_local(sd_root, MMS2_GB_MGL_PATH) or _path_exists_local(sd_root, MMS2_GB_CFG_PATH))
-    return bool(present and not database_registered_local(sd_root, MMS2_GB_DB_ID))
-
+    return False
 
 def _prepare_manual_mms2_gb_for_downloader(connection, log, manual=None):
     if manual is None:

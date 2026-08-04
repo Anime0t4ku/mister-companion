@@ -380,18 +380,10 @@ DUKE3D_DB_FILES = (
 
 
 def _manual_duke3d_install(connection) -> bool:
-    return bool(_is_installed(connection) and (
-        _path_exists(connection, DUKE3D_REMOTE_VERSION_FILE)
-        or not database_registered_online(connection, DUKE3D_DB_ID)
-    ))
-
+    return False
 
 def _manual_duke3d_install_local(sd_root) -> bool:
-    return bool(_is_installed_local(sd_root) and (
-        _path_exists_local(sd_root, DUKE3D_REMOTE_VERSION_FILE)
-        or not database_registered_local(sd_root, DUKE3D_DB_ID)
-    ))
-
+    return False
 
 def _prepare_manual_duke3d_for_downloader(connection, log, manual=None):
     if manual is None:

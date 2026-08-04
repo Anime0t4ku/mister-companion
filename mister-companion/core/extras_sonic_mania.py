@@ -677,14 +677,10 @@ SONIC_MANIA_DB_FILES = (
 
 
 def _manual_sonic_mania_install(connection):
-    present = bool(_has_sonic_mania_rbf(connection) or _path_exists(connection, SONIC_MANIA_REMOTE_LAUNCHER_PATH))
-    return bool(present and (_path_exists(connection, SONIC_MANIA_REMOTE_VERSION_FILE) or not database_registered_online(connection, SONIC_MANIA_DB_ID)))
-
+    return False
 
 def _manual_sonic_mania_install_local(sd_root):
-    present = bool(_has_sonic_mania_rbf_local(sd_root) or _path_exists_local(sd_root, SONIC_MANIA_REMOTE_LAUNCHER_PATH))
-    return bool(present and (_path_exists_local(sd_root, SONIC_MANIA_REMOTE_VERSION_FILE) or not database_registered_local(sd_root, SONIC_MANIA_DB_ID)))
-
+    return False
 
 def _prepare_manual_sonic_mania_for_downloader(connection, log, manual=None):
     if manual is None:

@@ -450,18 +450,10 @@ def _megavgmd_managed_files_present_local(sd_root) -> bool:
 
 
 def _manual_megavgmdrive_install(connection) -> bool:
-    return bool(_megavgmd_managed_files_present(connection) and (
-        _path_exists(connection, MEGAVGMD_RELEASE_MARKER_PATH)
-        or not database_registered_online(connection, MEGAVGMD_DB_ID)
-    ))
-
+    return False
 
 def _manual_megavgmdrive_install_local(sd_root) -> bool:
-    return bool(_megavgmd_managed_files_present_local(sd_root) and (
-        _path_exists_local(sd_root, MEGAVGMD_RELEASE_MARKER_PATH)
-        or not database_registered_local(sd_root, MEGAVGMD_DB_ID)
-    ))
-
+    return False
 
 def _prepare_manual_megavgmdrive_for_downloader(connection, log, manual=None):
     if manual is None:

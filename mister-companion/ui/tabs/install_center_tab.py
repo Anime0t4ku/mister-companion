@@ -83,6 +83,11 @@ DOWNLOADER_UPDATE_HANDLERS = frozenset({
     "sonic_mania_mister",
     "megavgmdrive",
     "physical_disc_cores",
+    "misterfin",
+    "user_profiles",
+    "collection_launcher",
+    "mister_hifi",
+    "solarus",
 })
 
 
@@ -907,7 +912,7 @@ class InstallCenterDetailsDialog(QDialog):
             enabled=(not installed or bool(self.status.get("update_available"))),
         )
 
-        if supports_script_update_check(handler):
+        if supports_script_update_check(handler) or handler in DOWNLOADER_UPDATE_HANDLERS:
             add_button("Check for Updates", self.check_for_updates, enabled=installed, min_width=170)
 
         if handler == "update_all":
@@ -955,6 +960,13 @@ class InstallCenterDetailsDialog(QDialog):
             edit_enabled = self.status.get("edit_config_enabled") if "edit_config_enabled" in self.status else installed
             add_button("Edit Config", self.configure, enabled=edit_enabled, min_width=170)
             add_button("Uninstall", self.uninstall, enabled=installed, min_width=170)
+        elif handler == "collection_launcher":
+            add_button("Add / Manage Collections", self.open_collection_launcher_manager, enabled=installed, min_width=210)
+            add_button("Uninstall", self.uninstall, enabled=installed, min_width=170)
+        elif handler == "mister_hifi":
+            smb_text = "Manage SMB Shares" if self.mister_hifi_smb_config_exists() else "Add SMB Share"
+            self.mister_hifi_smb_button = add_button(smb_text, self.open_mister_hifi_smb_manager, enabled=installed, min_width=190)
+            add_button("Uninstall", self.uninstall, enabled=installed, min_width=170)
         else:
             add_button("Uninstall", self.uninstall, enabled=installed)
 
@@ -975,6 +987,41 @@ class InstallCenterDetailsDialog(QDialog):
         official_button.setVisible(bool(self.item.get("official_url")))
         official_button.clicked.connect(self.open_official_page)
         actions.addWidget(official_button)
+
+
+    def open_collection_launcher_manager(self):
+        try:
+            from ui.dialogs.collection_launcher_manager_dialog import CollectionLauncherManagerDialog
+            dialog = CollectionLauncherManagerDialog(self.tab.main_window, self)
+            dialog.exec()
+        except Exception as exc:
+            QMessageBox.critical(self, "Collection Launcher", f"Unable to open the Collection Manager.\n\n{exc}")
+
+    def mister_hifi_smb_config_exists(self):
+        try:
+            from ui.dialogs.mister_hifi_smb_dialog import smb_config_exists
+            if self.tab.is_offline_mode():
+                sd_root = self.tab.main_window.get_offline_sd_root() if hasattr(self.tab.main_window, "get_offline_sd_root") else ""
+                return smb_config_exists(sd_root=sd_root)
+            return smb_config_exists(connection=self.tab.connection)
+        except Exception:
+            return False
+
+    def open_mister_hifi_smb_manager(self):
+        try:
+            from ui.dialogs.mister_hifi_smb_dialog import MisterHiFiSMBDialog
+            sd_root = None
+            connection = self.tab.connection
+            if self.tab.is_offline_mode():
+                sd_root = self.tab.main_window.get_offline_sd_root() if hasattr(self.tab.main_window, "get_offline_sd_root") else ""
+                connection = None
+            dialog = MisterHiFiSMBDialog(connection=connection, parent=self, sd_root=sd_root)
+            dialog.exec()
+            if hasattr(self, "mister_hifi_smb_button"):
+                text = "Manage SMB Shares" if self.mister_hifi_smb_config_exists() else "Add SMB Share"
+                self.mister_hifi_smb_button.setText(text)
+        except Exception as exc:
+            QMessageBox.critical(self, "MiSTer Hi-Fi", f"Unable to open the SMB Share Manager.\n\n{exc}")
 
 
     def add_extra_action_buttons(self, actions, context_ready):

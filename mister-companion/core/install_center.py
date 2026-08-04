@@ -1,4 +1,6 @@
+import io
 import json
+import shlex
 import time
 import urllib.request
 import ssl
@@ -166,6 +168,18 @@ from core.scripts_user_profiles import (
     uninstall_user_profiles,
     uninstall_user_profiles_local,
 )
+from core.scripts_collection_launcher import (
+    install_or_update_collection_launcher,
+    install_or_update_collection_launcher_local,
+    uninstall_collection_launcher,
+    uninstall_collection_launcher_local,
+)
+from core.scripts_mister_hifi import (
+    install_or_update_mister_hifi,
+    install_or_update_mister_hifi_local,
+    uninstall_mister_hifi,
+    uninstall_mister_hifi_local,
+)
 from core.extras_solarus import (
     get_solarus_status,
     get_solarus_status_local,
@@ -185,6 +199,8 @@ from core.downloader_backend import (
     cache_database_registration_local,
     database_registered_online,
     database_registered_local,
+    adopt_database_source_online,
+    adopt_database_source_local,
 )
 
 from core.wallpapers import (
@@ -226,8 +242,164 @@ DOWNLOADER_HANDLER_DATABASES = {
     "physical_disc_cores": "MultiDatabases/physical-disc",
     "misterfin": "MultiDatabases/misterfin",
     "user_profiles": "BertSVG/MiSTer_FPGA_User_Profiles",
+    "collection_launcher": "MultiDatabases/collection-launcher",
+    "mister_hifi": "MultiDatabases/mister-hifi",
     "solarus": "MultiDatabases/solarus",
 }
+
+
+_DOWNLOADER_MARKER_CACHE = {}
+
+
+def _downloader_database_url(db_id: str) -> str | None:
+    db_id = str(db_id or "").strip()
+    if db_id.startswith("MultiDatabases/"):
+        slug = db_id.split("/", 1)[1]
+        return f"https://raw.githubusercontent.com/theypsilon/MultiDatabases_MiSTer/db/{slug}/db.json"
+    if db_id == "ZaparooProject/Zaparoo_MiSTer":
+        return "https://raw.githubusercontent.com/ZaparooProject/Zaparoo_MiSTer/db/db.json.zip"
+    if db_id == "theypsilon/RetroAchievementsDB_MiSTer":
+        return "https://raw.githubusercontent.com/theypsilon/RetroAchievementsDB_MiSTer/db/db.json.zip"
+    if db_id == "BertSVG/MiSTer_FPGA_User_Profiles":
+        return "https://raw.githubusercontent.com/BertSVG/MiSTer_FPGA_User_Profiles/db/db.json.zip"
+    return None
+
+
+def _adopt_downloader_database_if_missing(context: "InstallCenterContext", db_id: str) -> bool:
+    db_url = _downloader_database_url(db_id)
+    if not db_url:
+        return False
+    if context.offline:
+        return adopt_database_source_local(context.sd_root, db_id, db_url)
+    return adopt_database_source_online(context.connection, db_id, db_url)
+
+
+def _read_downloader_database(url: str, timeout: int = 8) -> dict:
+    headers = {
+        "User-Agent": "MiSTer-Companion/Install-Center",
+        "Accept": "application/json,application/zip,application/octet-stream,*/*",
+    }
+    request = urllib.request.Request(url, headers=headers)
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            data = response.read()
+    except Exception:
+        context = ssl._create_unverified_context()
+        with urllib.request.urlopen(request, timeout=timeout, context=context) as response:
+            data = response.read()
+    if url.lower().endswith(".zip"):
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            names = [name for name in archive.namelist() if name.lower().endswith(".json")]
+            if not names:
+                raise ValueError("Downloader database archive contains no JSON file")
+            data = archive.read(names[0])
+    return json.loads(data.decode("utf-8"))
+
+
+def _downloader_database_file_paths(payload: dict) -> list[str]:
+    paths = []
+    files = payload.get("files") or {}
+    if isinstance(files, dict):
+        paths.extend(str(path) for path in files.keys())
+    archives = payload.get("archives") or {}
+    if isinstance(archives, dict):
+        for archive in archives.values():
+            if not isinstance(archive, dict):
+                continue
+            summary = archive.get("summary_inline") or {}
+            archive_files = summary.get("files") or {}
+            if isinstance(archive_files, dict):
+                paths.extend(str(path) for path in archive_files.keys())
+    cleaned = []
+    seen = set()
+    for raw_path in paths:
+        path = raw_path.replace("\\", "/").lstrip("/")
+        if path.startswith("media/fat/"):
+            path = path[len("media/fat/"):]
+        if not path or path in seen:
+            continue
+        seen.add(path)
+        cleaned.append(path)
+    return cleaned
+
+
+def _downloader_presence_markers(db_id: str) -> list[str]:
+    if db_id in _DOWNLOADER_MARKER_CACHE:
+        return list(_DOWNLOADER_MARKER_CACHE[db_id])
+    url = _downloader_database_url(db_id)
+    if not url:
+        _DOWNLOADER_MARKER_CACHE[db_id] = []
+        return []
+    payload = _read_downloader_database(url)
+    candidates = _downloader_database_file_paths(payload)
+    ignored_names = {"readme", "readme.md", "license", "license.txt", "changelog", "changelog.md"}
+    useful = [
+        path for path in candidates
+        if Path(path).name.lower() not in ignored_names
+        and not Path(path).name.lower().endswith((".example", ".example.json", ".sample", ".sample.json"))
+    ] or candidates
+    useful.sort(key=lambda path: (path.count("/"), len(path), path.lower()))
+    markers = useful[:3]
+    _DOWNLOADER_MARKER_CACHE[db_id] = markers
+    return list(markers)
+
+
+def _load_downloader_presence_markers(db_ids) -> dict[str, list[str]]:
+    ids = list(dict.fromkeys(str(db_id).strip() for db_id in db_ids if str(db_id).strip()))
+    result = {}
+    if not ids:
+        return result
+    with ThreadPoolExecutor(max_workers=min(8, len(ids))) as executor:
+        jobs = {db_id: executor.submit(_downloader_presence_markers, db_id) for db_id in ids}
+        for db_id, job in jobs.items():
+            try:
+                result[db_id] = job.result()
+            except Exception:
+                result[db_id] = []
+    return result
+
+
+def _cheap_downloader_presence_online(connection, db_ids) -> dict:
+    markers_by_db = _load_downloader_presence_markers(db_ids)
+    commands = []
+    indexed_ids = []
+    for db_id in db_ids:
+        markers = markers_by_db.get(db_id) or []
+        if not markers:
+            continue
+        remote_paths = ["/media/fat/" + marker.lstrip("/") for marker in markers]
+        tests = " || ".join(f"[ -e {shlex.quote(path)} ]" for path in remote_paths)
+        index = len(indexed_ids)
+        indexed_ids.append(db_id)
+        commands.append(f"if {tests}; then printf 'MCDB\\t{index}\\t1\\n'; else printf 'MCDB\\t{index}\\t0\\n'; fi")
+    states = {db_id: {"installed": False, "update_available": False, "recognized": False} for db_id in db_ids}
+    if not commands:
+        return states
+    output = connection.run_command("; ".join(commands)) or ""
+    for line in str(output).splitlines():
+        parts = line.strip().split("\t")
+        if len(parts) != 3 or parts[0] != "MCDB":
+            continue
+        try:
+            db_id = indexed_ids[int(parts[1])]
+        except (ValueError, IndexError):
+            continue
+        states[db_id] = {"installed": parts[2] == "1", "update_available": False, "recognized": True}
+    return states
+
+
+def _cheap_downloader_presence_local(sd_root, db_ids) -> dict:
+    root = Path(sd_root).expanduser().resolve()
+    markers_by_db = _load_downloader_presence_markers(db_ids)
+    states = {}
+    for db_id in db_ids:
+        markers = markers_by_db.get(db_id) or []
+        if not markers:
+            states[db_id] = {"installed": False, "update_available": False, "recognized": False}
+            continue
+        installed = any((root / marker).exists() for marker in markers)
+        states[db_id] = {"installed": installed, "update_available": False, "recognized": True}
+    return states
 
 CATEGORY_FALLBACK = [
     {"id": "scripts", "name": "Scripts", "description": "Add extra functionality to your standard MiSTer FPGA setup through useful scripts and utilities.", "sort_order": 10},
@@ -241,6 +413,8 @@ FALLBACK_ITEMS = [
     ("update_all", "scripts", "script", "update_all", "update_all", "theypsilon", "update_all keeps your MiSTer FPGA setup up to date by downloading cores, scripts, databases, tools, and optional community content from configured update sources."),
     ("misterfin", "scripts", "script", "misterfin", "MiSTerFin", "MiSTerFin project", "MiSTerFin is a Jellyfin media client for MiSTer. It runs as ARM software from the Scripts menu on the standard menu core, uses the regular MiSTer framebuffer, and plays server-transcoded media through its bundled mplayer-arm."),
     ("user_profiles", "scripts", "script", "user_profiles", "User Profiles", "BertSVG", "Adds user profiles to the MiSTer FPGA Project."),
+    ("collection_launcher", "scripts", "script", "collection_launcher", "Collection Launcher", "Anime0t4ku", "Launch a GUI for user defined Game Collections."),
+    ("mister_hifi", "scripts", "script", "mister_hifi", "MiSTer Hi-Fi", "Anime0t4ku", "A Music Player with lossless audio formats support for MiSTer FPGA."),
     ("zaparoo", "scripts", "script", "zaparoo", "Zaparoo", "Zaparoo Project", "Zaparoo lets you launch games, media, scripts, and other MiSTer content by scanning NFC cards, tags, barcodes, or other supported readers. It also allows MiSTer Companion to launch games remotely from the ZapScripts tab."),
     ("migrate_sd", "scripts", "script", "migrate_sd", "migrate_sd", "theypsilon", "migrate_sd helps migrate an existing MiSTer SD card setup to another SD card, such as when moving to a larger card."),
     ("cifs_mount", "scripts", "script", "cifs_mount", "cifs_mount", "MiSTer community", "cifs_mount connects your MiSTer to a shared network folder, such as a NAS or PC share, so games and files can be accessed over your local network."),
@@ -285,6 +459,8 @@ SCRIPT_INSTALLERS = {
     "update_all": (install_update_all, install_update_all_local, uninstall_update_all, uninstall_update_all_local),
     "misterfin": (install_or_update_misterfin, install_or_update_misterfin_local, uninstall_misterfin, uninstall_misterfin_local),
     "user_profiles": (install_or_update_user_profiles, install_or_update_user_profiles_local, uninstall_user_profiles, uninstall_user_profiles_local),
+    "collection_launcher": (install_or_update_collection_launcher, install_or_update_collection_launcher_local, uninstall_collection_launcher, uninstall_collection_launcher_local),
+    "mister_hifi": (install_or_update_mister_hifi, install_or_update_mister_hifi_local, uninstall_mister_hifi, uninstall_mister_hifi_local),
     "zaparoo": (install_zaparoo, install_zaparoo_local, uninstall_zaparoo, uninstall_zaparoo_local),
     "migrate_sd": (install_migrate_sd, install_migrate_sd_local, uninstall_migrate_sd, uninstall_migrate_sd_local),
     "cifs_mount": (install_cifs_mount, install_cifs_mount_local, uninstall_cifs_mount, uninstall_cifs_mount_local),
@@ -627,8 +803,6 @@ def update_check_result_text(status: dict) -> str:
     status_text = str(status.get("status_text") or "")
     if status.get("latest_error") or "update check failed" in status_text.lower() or status.get("state") == "unknown":
         return "Update check failed."
-    if "manual install" in status_text.lower():
-        return "Manual installation found; migration available."
     if status.get("update_available"):
         return "Update available."
     if status.get("installed"):
@@ -651,6 +825,10 @@ def check_item_status(item: dict, context: InstallCenterContext, check_latest: b
     if item_type == "script" or category == "scripts":
         if handler in DOWNLOADER_HANDLER_DATABASES:
             db_id = DOWNLOADER_HANDLER_DATABASES[handler]
+            if check_latest:
+                present = (_cheap_downloader_presence_local(context.sd_root, [db_id]) if context.offline else _cheap_downloader_presence_online(context.connection, [db_id])).get(db_id, False)
+                if present:
+                    _adopt_downloader_database_if_missing(context, db_id)
             states = inspect_named_databases_local(context.sd_root, [db_id], log=None) if context.offline else inspect_named_databases_online(context.connection, [db_id], log=None)
             state = states.get(db_id) or {}
             installed = bool(state.get("installed"))
@@ -714,13 +892,11 @@ def check_all_status(catalog: dict, context: InstallCenterContext, check_latest:
     ra_viewer_status = None
     downloader_install_states = {}
 
-    downloader_db_ids = []
-    if not check_latest:
-        downloader_db_ids = list(dict.fromkeys(
-            DOWNLOADER_HANDLER_DATABASES.get(item.get("handler") or item.get("id"))
-            for item in catalog.get("items", [])
-            if DOWNLOADER_HANDLER_DATABASES.get(item.get("handler") or item.get("id"))
-        ))
+    downloader_db_ids = list(dict.fromkeys(
+        DOWNLOADER_HANDLER_DATABASES.get(item.get("handler") or item.get("id"))
+        for item in catalog.get("items", [])
+        if DOWNLOADER_HANDLER_DATABASES.get(item.get("handler") or item.get("id"))
+    ))
 
     has_script_items = any(
         item.get("type") == "script" or item.get("category") == "scripts"
@@ -731,9 +907,9 @@ def check_all_status(catalog: dict, context: InstallCenterContext, check_latest:
         if not downloader_db_ids:
             return {}
         return (
-            inspect_named_databases_local(context.sd_root, downloader_db_ids, log=None)
+            _cheap_downloader_presence_local(context.sd_root, downloader_db_ids)
             if context.offline
-            else inspect_named_databases_online(context.connection, downloader_db_ids, log=None)
+            else _cheap_downloader_presence_online(context.connection, downloader_db_ids)
         )
 
     def scan_scripts_status():
@@ -802,18 +978,7 @@ def check_all_status(catalog: dict, context: InstallCenterContext, check_latest:
                     log(f"Checking {item_name}...\n")
                 item_check_latest = bool(check_latest and handler not in DOWNLOADER_HANDLER_DATABASES)
                 if item_type == "script" or category == "scripts":
-                    if handler in {"misterfin", "user_profiles"} and check_latest:
-                        registered = database_registered_local(context.sd_root, DOWNLOADER_HANDLER_DATABASES[handler]) if context.offline else database_registered_online(context.connection, DOWNLOADER_HANDLER_DATABASES[handler])
-                        results[item_id] = {
-                            "state": "installed" if registered else "not_installed",
-                            "status_text": "Installed" if registered else "Not installed",
-                            "installed": registered,
-                            "update_available": False,
-                            "install_label": "Installed" if registered else "Install",
-                            "install_enabled": not registered,
-                            "uninstall_enabled": registered,
-                        }
-                    elif handler == "zaparoo":
+                    if handler == "zaparoo":
                         results[item_id] = get_zaparoo_update_status_local(context.sd_root, check_latest=item_check_latest, log=log) if context.offline else get_zaparoo_update_status(context.connection, check_latest=item_check_latest, log=log)
                     else:
                         base_status = _script_status_text(handler, scripts_status, syncthing_status, ra_viewer_status)
@@ -837,33 +1002,31 @@ def check_all_status(catalog: dict, context: InstallCenterContext, check_latest:
             except Exception as e:
                 results[item_id] = {"state": "unknown", "status_text": f"Status unknown ({e})", "installed": False, "update_available": False}
 
-            if not check_latest:
-                db_id = DOWNLOADER_HANDLER_DATABASES.get(handler)
-                downloader_state = downloader_install_states.get(db_id) if db_id else None
-                status = dict(results.get(item_id) or {})
-                manual = "manual install" in str(status.get("status_text") or "").lower()
-                if downloader_state and downloader_state.get("recognized") and not manual:
-                    installed = bool(downloader_state.get("installed"))
-                    status["installed"] = installed
-                    status["update_available"] = False
-                    if installed:
-                        status["state"] = "installed"
-                        status.setdefault("uninstall_enabled", True)
-                        if not status.get("repair_action") and status.get("state") != "unknown":
-                            current_text = str(status.get("status_text") or "")
-                            if "not installed" in current_text.lower() or "missing files" in current_text.lower():
-                                status["status_text"] = "Installed"
-                                status["install_label"] = "Installed"
-                                status["install_enabled"] = False
-                    else:
-                        status.update({
-                            "state": "not_installed",
-                            "status_text": "Not installed",
-                            "install_label": "Install",
-                            "install_enabled": True,
-                            "uninstall_enabled": False,
-                        })
-                    results[item_id] = status
+            db_id = DOWNLOADER_HANDLER_DATABASES.get(handler)
+            downloader_state = downloader_install_states.get(db_id) if db_id else None
+            status = dict(results.get(item_id) or {})
+            if downloader_state and downloader_state.get("recognized"):
+                installed = bool(downloader_state.get("installed"))
+                status["installed"] = installed
+                status["update_available"] = False
+                if installed:
+                    status["state"] = "installed"
+                    status.setdefault("uninstall_enabled", True)
+                    if not status.get("repair_action") and status.get("state") != "unknown":
+                        current_text = str(status.get("status_text") or "")
+                        if "not installed" in current_text.lower() or "missing files" in current_text.lower():
+                            status["status_text"] = "Installed"
+                            status["install_label"] = "Installed"
+                            status["install_enabled"] = False
+                else:
+                    status.update({
+                        "state": "not_installed",
+                        "status_text": "Not installed",
+                        "install_label": "Install",
+                        "install_enabled": True,
+                        "uninstall_enabled": False,
+                    })
+                results[item_id] = status
 
             if check_latest and log and handler not in DOWNLOADER_HANDLER_DATABASES:
                 log(update_check_result_text(results[item_id]) + "\n")
@@ -875,12 +1038,13 @@ def check_all_status(catalog: dict, context: InstallCenterContext, check_latest:
             handler = item.get("handler") or item_id
             db_id = DOWNLOADER_HANDLER_DATABASES.get(handler)
             status = results.get(item_id) or {}
-            manual = "manual install" in str(status.get("status_text") or "").lower()
-            if db_id and status.get("installed") and not manual and not status.get("repair_action"):
+            if db_id and status.get("installed") and not status.get("repair_action"):
                 downloader_items.append((item, db_id))
 
         if downloader_items:
             db_ids = list(dict.fromkeys(db_id for _item, db_id in downloader_items))
+            for db_id in db_ids:
+                _adopt_downloader_database_if_missing(context, db_id)
             if log:
                 log(f"Checking {len(db_ids)} Downloader database(s) together...\n")
             checks = check_named_databases_local(context.sd_root, db_ids, log=None) if context.offline else check_named_databases_online(context.connection, db_ids, log=None)
@@ -898,12 +1062,6 @@ def check_all_status(catalog: dict, context: InstallCenterContext, check_latest:
                 results[item_id] = status
                 if log:
                     log(f"{item.get('name') or item_id}: {update_check_result_text(status)}\n")
-
-        if log:
-            for item in catalog.get("items", []):
-                handler = item.get("handler") or item.get("id")
-                if handler in DOWNLOADER_HANDLER_DATABASES and "manual install" in str((results.get(item.get("id")) or {}).get("status_text") or "").lower():
-                    log(f"{item.get('name') or item.get('id')}: Manual installation found; migration available.\n")
 
     return results
 
@@ -1341,7 +1499,7 @@ def run_uninstall(item: dict, context: InstallCenterContext, log: Callable[[str]
                 uninstall_local(context.sd_root, force=force_downloader)
             else:
                 uninstall_online(context.connection, force=force_downloader)
-        elif handler in {"misterfin", "user_profiles"}:
+        elif handler in {"misterfin", "user_profiles", "collection_launcher", "mister_hifi"}:
             if context.offline:
                 uninstall_local(context.sd_root, log, force=force_downloader)
             else:

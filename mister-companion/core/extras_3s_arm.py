@@ -54,12 +54,7 @@ def _is_3sx_installed(connection) -> bool:
 
 
 def _is_old_3sx_installed(connection) -> bool:
-    return (
-        _path_exists(connection, OLD_REMOTE_RBF_PATH)
-        and _path_exists(connection, OLD_REMOTE_GAME_DIR)
-        and _path_exists(connection, OLD_REMOTE_LAUNCHER_PATH)
-    )
-
+    return False
 
 def _is_3sx_installed_local(sd_root: str) -> bool:
     return (
@@ -70,12 +65,7 @@ def _is_3sx_installed_local(sd_root: str) -> bool:
 
 
 def _is_old_3sx_installed_local(sd_root: str) -> bool:
-    return (
-        _path_exists_local(sd_root, OLD_REMOTE_RBF_PATH)
-        and _path_exists_local(sd_root, OLD_REMOTE_GAME_DIR)
-        and _path_exists_local(sd_root, OLD_REMOTE_LAUNCHER_PATH)
-    )
-
+    return False
 
 def _fetch_latest_release():
     return _fetch_latest_zip_release(
@@ -830,22 +820,10 @@ THREE_S_ARM_DB_FILES = (
 
 
 def _manual_3sx_install(connection) -> bool:
-    installed = _is_3sx_installed(connection) or _is_old_3sx_installed(connection)
-    return bool(installed and (
-        _path_exists(connection, REMOTE_VERSION_FILE)
-        or _path_exists(connection, OLD_REMOTE_VERSION_FILE)
-        or not database_registered_online(connection, THREE_S_ARM_DB_ID)
-    ))
-
+    return False
 
 def _manual_3sx_install_local(sd_root: str) -> bool:
-    installed = _is_3sx_installed_local(sd_root) or _is_old_3sx_installed_local(sd_root)
-    return bool(installed and (
-        _path_exists_local(sd_root, REMOTE_VERSION_FILE)
-        or _path_exists_local(sd_root, OLD_REMOTE_VERSION_FILE)
-        or not database_registered_local(sd_root, THREE_S_ARM_DB_ID)
-    ))
-
+    return False
 
 def _prepare_manual_3sx_for_downloader(connection, log, manual=None):
     if manual is None:

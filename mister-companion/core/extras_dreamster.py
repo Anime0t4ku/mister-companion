@@ -425,18 +425,10 @@ DREAMSTER_DB_FILES = (
 
 
 def _manual_dreamster_install(connection) -> bool:
-    return bool(_is_installed(connection) and (
-        _path_exists(connection, REMOTE_MANIFEST)
-        or not database_registered_online(connection, DREAMSTER_DB_ID)
-    ))
-
+    return False
 
 def _manual_dreamster_install_local(sd_root: str) -> bool:
-    return bool(_is_installed_local(sd_root) and (
-        _path_exists_local(sd_root, REMOTE_MANIFEST)
-        or not database_registered_local(sd_root, DREAMSTER_DB_ID)
-    ))
-
+    return False
 
 def _prepare_manual_dreamster_for_downloader(connection, log, manual=None):
     if manual is None:

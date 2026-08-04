@@ -645,20 +645,10 @@ def _is_ra_cores_partial_install_local(sd_root: str) -> bool:
 
 
 def _is_legacy_ra_cores_installed(connection) -> bool:
-    return (
-        _path_exists(connection, RA_MAIN_BINARY_PATH)
-        and _path_exists(connection, RA_LEGACY_INI_PATH)
-        and _glob_exists(connection, f"{_quote(RA_LEGACY_CORES_DIR)}/*.rbf")
-    )
-
+    return False
 
 def _is_legacy_ra_cores_installed_local(sd_root: str) -> bool:
-    return (
-        _path_exists_local(sd_root, RA_MAIN_BINARY_PATH)
-        and _path_exists_local(sd_root, RA_LEGACY_INI_PATH)
-        and _glob_exists_local(sd_root, "_RA Cores/*.rbf")
-    )
-
+    return False
 
 def _source_titles_by_key() -> dict:
     return {source["key"]: source["title"] for source in RA_SOURCES}
@@ -1922,14 +1912,10 @@ from core.downloader_backend import (
 
 
 def _manual_ra_cores_install(connection) -> bool:
-    present = _is_ra_cores_installed(connection) or _is_ra_cores_partial_install(connection) or _is_legacy_ra_cores_installed(connection)
-    return bool(present and (_path_exists(connection, RA_VERSION_FILE) or not database_registered_online(connection, RA_CORES_DB_ID)))
-
+    return False
 
 def _manual_ra_cores_install_local(sd_root: str) -> bool:
-    present = _is_ra_cores_installed_local(sd_root) or _is_ra_cores_partial_install_local(sd_root) or _is_legacy_ra_cores_installed_local(sd_root)
-    return bool(present and (_path_exists_local(sd_root, RA_VERSION_FILE) or not database_registered_local(sd_root, RA_CORES_DB_ID)))
-
+    return False
 
 def _prepare_manual_ra_cores_for_downloader(connection, log, manual=None):
     if manual is None:
