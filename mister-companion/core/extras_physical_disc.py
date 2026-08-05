@@ -184,9 +184,9 @@ def disable_auto_disc_detection(connection):
     return {"changed": changed}
 
 
-def _upsert_cd_ini_block(text):
-    normalized = str(text or "").replace("\r\n", "\n")
-    pattern = re.compile(r"(?ms)^(?P<header>[ \t]*\[CD-\*\][^\n]*\n)(?P<body>.*?)(?=^[ \t]*\[|\Z)")
+def _upsert_physical_disc_ini_block(text):
+    normalized = _normalize_ini_text(text)
+    pattern = re.compile(r"(?ms)^(?P<header>[ \t]*\[A0CD-\*\][^\n]*\n)(?P<body>.*?)(?=^[ \t]*\[|\Z)")
     match = pattern.search(normalized)
     if match:
         lines = match.group("body").rstrip("\n").split("\n") if match.group("body") else []
@@ -196,59 +196,90 @@ def _upsert_cd_ini_block(text):
                 break
         else:
             lines.append("main=MiSTer_Physical-CD")
-        block = "[CD-*]\n" + "\n".join(lines).rstrip("\n") + "\n\n"
+        block = "[A0CD-*]\n" + "\n".join(lines).rstrip("\n") + "\n\n"
         normalized = normalized[:match.start()] + block + normalized[match.end():]
     else:
         normalized = normalized.rstrip()
-        normalized = (normalized + "\n\n" if normalized else "") + "[CD-*]\nmain=MiSTer_Physical-CD\n"
+        normalized = (normalized + "\n\n" if normalized else "") + "[A0CD-*]\nmain=MiSTer_Physical-CD\n"
     return re.sub(r"\n{3,}", "\n\n", normalized).rstrip("\n") + "\n"
 
 
-def _remove_cd_ini_block_text(text):
-    normalized = str(text or "").replace("\r\n", "\n")
-    pattern = re.compile(r"(?ms)(?:^|\n)[ \t]*\[CD-\*\][^\n]*(?:\n|\Z).*?(?=\n[ \t]*\[|\Z)")
+def _remove_physical_disc_ini_block_text(text, header):
+    normalized = _normalize_ini_text(text)
+    escaped = re.escape(header)
+    pattern = re.compile(rf"(?ms)(?:^|\n)[ \t]*\[{escaped}\][^\n]*(?:\n|\Z).*?(?=\n[ \t]*\[|\Z)")
     normalized = pattern.sub("\n", normalized)
     normalized = re.sub(r"\n{3,}", "\n\n", normalized).strip("\n")
     return normalized + ("\n" if normalized else "")
 
 
-def _has_cd_ini_entry(text):
-    normalized = str(text or "").replace("\r\n", "\n")
-    section = re.search(r"(?ms)^[ \t]*\[CD-\*\][^\n]*\n(?P<body>.*?)(?=^[ \t]*\[|\Z)", normalized)
+def _has_physical_disc_ini_entry(text, header):
+    normalized = _normalize_ini_text(text)
+    escaped = re.escape(header)
+    section = re.search(rf"(?ms)^[ \t]*\[{escaped}\][^\n]*\n(?P<body>.*?)(?=^[ \t]*\[|\Z)", normalized)
     return bool(section and re.search(r"(?mi)^\s*main\s*=\s*MiSTer_Physical-CD\s*$", section.group("body")))
 
 
-def _ensure_cd_ini_block(connection, log):
+def _physical_disc_ini_state(text):
+    return {
+        "legacy": _has_physical_disc_ini_entry(text, "CD-*"),
+        "current": _has_physical_disc_ini_entry(text, "A0CD-*"),
+    }
+
+
+def _migrate_physical_disc_ini_text(text):
+    normalized = _remove_physical_disc_ini_block_text(text, "CD-*")
+    return _upsert_physical_disc_ini_block(normalized)
+
+
+def _ensure_physical_disc_ini_block(connection, log):
     current = _read_remote_text(connection, MISTER_INI_PATH)
-    updated = _upsert_cd_ini_block(current)
-    if updated != current.replace("\r\n", "\n"):
+    updated = _upsert_physical_disc_ini_block(current)
+    if updated != _normalize_ini_text(current):
         _write_remote_text(connection, MISTER_INI_PATH, updated)
-        log("Added/updated [CD-*] in MiSTer.ini.\n")
+        log("Added/updated [A0CD-*] in MiSTer.ini.\n")
 
 
-def _ensure_cd_ini_block_local(sd_root, log):
+def _ensure_physical_disc_ini_block_local(sd_root, log):
     current = _read_local_text(sd_root, MISTER_INI_PATH)
-    updated = _upsert_cd_ini_block(current)
-    if updated != current.replace("\r\n", "\n"):
+    updated = _upsert_physical_disc_ini_block(current)
+    if updated != _normalize_ini_text(current):
         _write_local_text(sd_root, MISTER_INI_PATH, updated)
-        log("Added/updated [CD-*] in MiSTer.ini.\n")
+        log("Added/updated [A0CD-*] in MiSTer.ini.\n")
 
 
-def _remove_cd_ini_block(connection, log):
+def _migrate_physical_disc_ini(connection, log):
     current = _read_remote_text(connection, MISTER_INI_PATH)
-    updated = _remove_cd_ini_block_text(current)
-    if updated != current.replace("\r\n", "\n"):
+    updated = _migrate_physical_disc_ini_text(current)
+    if updated != _normalize_ini_text(current):
         _write_remote_text(connection, MISTER_INI_PATH, updated)
-        log("Removed [CD-*] from MiSTer.ini.\n")
+        log("Migrated MiSTer.ini from [CD-*] to [A0CD-*].\n")
 
 
-def _remove_cd_ini_block_local(sd_root, log):
+def _migrate_physical_disc_ini_local(sd_root, log):
     current = _read_local_text(sd_root, MISTER_INI_PATH)
-    updated = _remove_cd_ini_block_text(current)
-    if updated != current.replace("\r\n", "\n"):
+    updated = _migrate_physical_disc_ini_text(current)
+    if updated != _normalize_ini_text(current):
         _write_local_text(sd_root, MISTER_INI_PATH, updated)
-        log("Removed [CD-*] from MiSTer.ini.\n")
+        log("Migrated MiSTer.ini from [CD-*] to [A0CD-*].\n")
 
+
+def _remove_physical_disc_ini_blocks(connection, log):
+    current = _read_remote_text(connection, MISTER_INI_PATH)
+    updated = _remove_physical_disc_ini_block_text(current, "CD-*")
+    updated = _remove_physical_disc_ini_block_text(updated, "A0CD-*")
+    if updated != _normalize_ini_text(current):
+        _write_remote_text(connection, MISTER_INI_PATH, updated)
+        log("Removed Physical Disc entries from MiSTer.ini.\n")
+
+
+def _remove_physical_disc_ini_blocks_local(sd_root, log):
+    current = _read_local_text(sd_root, MISTER_INI_PATH)
+    updated = _remove_physical_disc_ini_block_text(current, "CD-*")
+    updated = _remove_physical_disc_ini_block_text(updated, "A0CD-*")
+    if updated != _normalize_ini_text(current):
+        _write_local_text(sd_root, MISTER_INI_PATH, updated)
+        log("Removed Physical Disc entries from MiSTer.ini.\n")
 
 def _presence(exists):
     found = [path for path in PHYSICAL_DISC_FILES if exists(path)]
@@ -287,7 +318,7 @@ def _prepare_manual_physical_disc_for_downloader_local(sd_root, log, manual=None
     return True
 
 
-def _status(found, complete, manual, update_available=False, connected=True, ini_entry_present=True):
+def _status(found, complete, manual, update_available=False, connected=True, ini_entry_present=True, ini_migration_required=False):
     installed = bool(found)
     partial = bool(found and not complete)
     if not connected:
@@ -298,13 +329,15 @@ def _status(found, complete, manual, update_available=False, connected=True, ini
         text, label, enabled, update = "✗ Not installed", "Install", True, False
     elif partial:
         text, label, enabled, update = "⚠ Missing files", "Install", True, False
+    elif ini_migration_required:
+        text, label, enabled, update = "▲ Update available", "Update", True, True
     elif complete and not ini_entry_present:
         text, label, enabled, update = "⚠ MiSTer.ini entry missing", "Add INI Entry", True, False
     elif update_available:
         text, label, enabled, update = "▲ Update available", "Update", True, True
     else:
         text, label, enabled, update = "✓ Installed", "Installed", False, False
-    return {"installed": installed, "partial": partial, "installed_version": "", "latest_version": "", "latest_error": "", "update_available": update, "status_text": text, "install_label": label, "install_enabled": enabled, "uninstall_enabled": installed, "repair_action": bool(installed and complete and not manual and not ini_entry_present)}
+    return {"installed": installed, "partial": partial, "installed_version": "", "latest_version": "", "latest_error": "", "update_available": update, "status_text": text, "install_label": label, "install_enabled": enabled, "uninstall_enabled": installed, "repair_action": bool(installed and complete and not manual and not ini_entry_present and not ini_migration_required), "ini_migration_required": bool(ini_migration_required)}
 
 
 def get_physical_disc_status(connection, check_latest=False):
@@ -312,9 +345,11 @@ def get_physical_disc_status(connection, check_latest=False):
         return _status([], False, False, connected=False)
     found, complete = _presence(lambda path: _path_exists(connection, path))
     manual = False
-    ini_entry_present = _has_cd_ini_entry(_read_remote_text(connection, MISTER_INI_PATH))
+    ini_state = _physical_disc_ini_state(_read_remote_text(connection, MISTER_INI_PATH))
+    ini_entry_present = ini_state["current"]
+    ini_migration_required = ini_state["legacy"]
     update = bool(check_latest and found and complete and not manual and check_named_database_online(connection, PHYSICAL_DISC_DB_ID))
-    status = _status(found, complete, manual, update, ini_entry_present=ini_entry_present)
+    status = _status(found, complete, manual, update, ini_entry_present=ini_entry_present, ini_migration_required=ini_migration_required)
     auto_state = get_auto_disc_detection_state(connection)
     status["auto_disc_detection_enabled"] = auto_state["enabled"]
     status["auto_disc_detection_current_main"] = auto_state["current_main"]
@@ -324,9 +359,11 @@ def get_physical_disc_status(connection, check_latest=False):
 def get_physical_disc_status_local(sd_root, check_latest=False):
     found, complete = _presence(lambda path: _path_exists_local(sd_root, path))
     manual = False
-    ini_entry_present = _has_cd_ini_entry(_read_local_text(sd_root, MISTER_INI_PATH))
+    ini_state = _physical_disc_ini_state(_read_local_text(sd_root, MISTER_INI_PATH))
+    ini_entry_present = ini_state["current"]
+    ini_migration_required = ini_state["legacy"]
     update = bool(check_latest and found and complete and not manual and check_named_database_local(sd_root, PHYSICAL_DISC_DB_ID))
-    status = _status(found, complete, manual, update, ini_entry_present=ini_entry_present)
+    status = _status(found, complete, manual, update, ini_entry_present=ini_entry_present, ini_migration_required=ini_migration_required)
     auto_state = get_auto_disc_detection_state_local(sd_root)
     status["auto_disc_detection_enabled"] = auto_state["enabled"]
     status["auto_disc_detection_current_main"] = auto_state["current_main"]
@@ -343,13 +380,17 @@ def install_or_update_physical_disc(connection, log):
         raise RuntimeError("Not connected to MiSTer.")
     found, complete = _presence(lambda path: _path_exists(connection, path))
     manual = False
-    if complete and not manual and not _has_cd_ini_entry(_read_remote_text(connection, MISTER_INI_PATH)):
-        _ensure_cd_ini_block(connection, log)
+    ini_state = _physical_disc_ini_state(_read_remote_text(connection, MISTER_INI_PATH))
+    if complete and not manual and not ini_state["current"] and not ini_state["legacy"]:
+        _ensure_physical_disc_ini_block(connection, log)
         return _reboot_result()
     original = ensure_database_source_online(connection, PHYSICAL_DISC_DB_ID, PHYSICAL_DISC_DB_URL)
     try:
         _prepare_manual_physical_disc_for_downloader(connection, log, manual=manual)
-        _ensure_cd_ini_block(connection, log)
+        if ini_state["legacy"]:
+            _migrate_physical_disc_ini(connection, log)
+        else:
+            _ensure_physical_disc_ini_block(connection, log)
         run_named_database_online(connection, PHYSICAL_DISC_DB_ID, log=log)
         connection.run_command(f"chmod +x {_quote(PHYSICAL_DISC_BINARY)}")
     except Exception:
@@ -361,13 +402,17 @@ def install_or_update_physical_disc(connection, log):
 def install_or_update_physical_disc_local(sd_root, log):
     found, complete = _presence(lambda path: _path_exists_local(sd_root, path))
     manual = False
-    if complete and not manual and not _has_cd_ini_entry(_read_local_text(sd_root, MISTER_INI_PATH)):
-        _ensure_cd_ini_block_local(sd_root, log)
+    ini_state = _physical_disc_ini_state(_read_local_text(sd_root, MISTER_INI_PATH))
+    if complete and not manual and not ini_state["current"] and not ini_state["legacy"]:
+        _ensure_physical_disc_ini_block_local(sd_root, log)
         return _reboot_result()
     original = ensure_database_source_local(sd_root, PHYSICAL_DISC_DB_ID, PHYSICAL_DISC_DB_URL)
     try:
         _prepare_manual_physical_disc_for_downloader_local(sd_root, log, manual=manual)
-        _ensure_cd_ini_block_local(sd_root, log)
+        if ini_state["legacy"]:
+            _migrate_physical_disc_ini_local(sd_root, log)
+        else:
+            _ensure_physical_disc_ini_block_local(sd_root, log)
         run_named_database_local(sd_root, PHYSICAL_DISC_DB_ID, log=log)
     except Exception:
         restore_local(sd_root, original)
@@ -381,11 +426,11 @@ def uninstall_physical_disc(connection, log, force=False):
     if _manual_physical_disc_install(connection):
         _prepare_manual_physical_disc_for_downloader(connection, log, manual=True)
         remove_database_source_online(connection, PHYSICAL_DISC_DB_ID)
-        _remove_cd_ini_block(connection, log)
+        _remove_physical_disc_ini_blocks(connection, log)
         return _reboot_result(uninstall=True)
     original = ensure_database_source_online(connection, PHYSICAL_DISC_DB_ID, PHYSICAL_DISC_DB_URL)
     try:
-        _remove_cd_ini_block(connection, log)
+        _remove_physical_disc_ini_blocks(connection, log)
         native = uninstall_named_database_online(connection, PHYSICAL_DISC_DB_ID, log=log, force=force)
         if not native:
             ensure_database_source_online(connection, PHYSICAL_DISC_DB_ID, PHYSICAL_DISC_DB_URL, filter_value="!all")
@@ -401,11 +446,11 @@ def uninstall_physical_disc_local(sd_root, log, force=False):
     if _manual_physical_disc_install_local(sd_root):
         _prepare_manual_physical_disc_for_downloader_local(sd_root, log, manual=True)
         remove_database_source_local(sd_root, PHYSICAL_DISC_DB_ID)
-        _remove_cd_ini_block_local(sd_root, log)
+        _remove_physical_disc_ini_blocks_local(sd_root, log)
         return _reboot_result(uninstall=True)
     original = ensure_database_source_local(sd_root, PHYSICAL_DISC_DB_ID, PHYSICAL_DISC_DB_URL)
     try:
-        _remove_cd_ini_block_local(sd_root, log)
+        _remove_physical_disc_ini_blocks_local(sd_root, log)
         native = uninstall_named_database_local(sd_root, PHYSICAL_DISC_DB_ID, log=log, force=force)
         if not native:
             ensure_database_source_local(sd_root, PHYSICAL_DISC_DB_ID, PHYSICAL_DISC_DB_URL, filter_value="!all")

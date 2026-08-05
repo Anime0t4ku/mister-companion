@@ -1051,7 +1051,7 @@ def check_all_status(catalog: dict, context: InstallCenterContext, check_latest:
             for item, db_id in downloader_items:
                 item_id = item.get("id")
                 status = dict(results.get(item_id) or {})
-                available = bool(checks.get(db_id))
+                available = bool(checks.get(db_id)) or bool(status.get("ini_migration_required"))
                 status.update({
                     "state": "update_available" if available else "installed",
                     "status_text": "Update available" if available else "Installed",
