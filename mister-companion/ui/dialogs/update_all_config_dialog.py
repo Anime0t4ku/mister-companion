@@ -133,8 +133,42 @@ class UpdateAllConfigDialog(QDialog):
         self.agg23_check = QCheckBox("agg23’s MiSTer Cores")
         self.altcores_check = QCheckBox("Alt Cores")
         self.dualram_check = QCheckBox("Dual RAM Console Cores")
-        self.mister_frontier_check = QCheckBox("MiSTer Frontier")
         self.retroachievements_cores_check = QCheckBox("RetroAchievement Cores")
+
+        for widget in [
+            self.coinop_check,
+            self.arcade_offset_check,
+            self.llapi_check,
+            self.unofficial_check,
+            self.yc_check,
+            self.agg23_check,
+            self.altcores_check,
+            self.dualram_check,
+            self.retroachievements_cores_check,
+        ]:
+            self._add(other_group, widget)
+
+        extra_cores_group = self._group("Extra Cores", self.left_column_layout)
+        self.physical_disc_check = QCheckBox("Physical CD Support")
+        self.paprium_megadrive_check = QCheckBox("Paprium MegaDrive")
+        self.mms2_gb_core_check = QCheckBox("MMS2 GB Core")
+        self.megavgmdrive_check = QCheckBox("MegaVGMDrive")
+        for widget in [
+            self.physical_disc_check,
+            self.paprium_megadrive_check,
+            self.mms2_gb_core_check,
+            self.megavgmdrive_check,
+        ]:
+            self._add(extra_cores_group, widget)
+
+        hybrid_group = self._group("Hybrid Cores", self.left_column_layout)
+        self.dreamster_check = QCheckBox("DreamSTer")
+        self.sonic_mania_mister_check = QCheckBox("Sonic Mania MiSTer")
+        self.mister_duke3d_check = QCheckBox("MiSTer Duke3D")
+        self.mister_quake_check = QCheckBox("MiSTer Quake")
+        self.solarus_mister_check = QCheckBox("Solarus MiSTer")
+        self.three_s_arm_check = QCheckBox("3S-ARM")
+        self.mister_frontier_check = QCheckBox("MiSTer Frontier")
 
         self.mister_frontier_source_combo = QComboBox()
         self.mister_frontier_source_combo.addItems([
@@ -148,27 +182,23 @@ class UpdateAllConfigDialog(QDialog):
         ])
 
         for widget in [
-            self.coinop_check,
-            self.arcade_offset_check,
-            self.llapi_check,
-            self.unofficial_check,
-            self.yc_check,
-            self.agg23_check,
-            self.altcores_check,
-            self.dualram_check,
+            self.dreamster_check,
+            self.sonic_mania_mister_check,
+            self.mister_duke3d_check,
+            self.mister_quake_check,
+            self.solarus_mister_check,
+            self.three_s_arm_check,
             self.mister_frontier_check,
         ]:
-            self._add(other_group, widget)
+            self._add(hybrid_group, widget)
 
         frontier_row = QHBoxLayout()
         frontier_row.addSpacing(20)
         frontier_row.addWidget(QLabel("Filter:"))
         frontier_row.addWidget(self.mister_frontier_source_combo)
         frontier_row.addStretch()
-        other_group.layout().addLayout(frontier_row)
+        hybrid_group.layout().addLayout(frontier_row)
         self.mister_frontier_check.toggled.connect(self.update_mister_frontier_state)
-
-        self._add(other_group, self.retroachievements_cores_check)
 
         tools_group = self._group("Tools & Scripts", self.left_column_layout)
         self.arcade_org_check = QCheckBox("Arcade Organizer")
@@ -180,6 +210,9 @@ class UpdateAllConfigDialog(QDialog):
         self.zaparoo_check = QCheckBox("Zaparoo")
         self.zaparoo_frontend_check = QCheckBox("Enable Zaparoo Frontend")
         self.anime0t4ku_mister_scripts_check = QCheckBox("Anime0t4ku MiSTer Scripts")
+        self.test_suite_240p_check = QCheckBox("240P Test Suites")
+        self.mister_hifi_check = QCheckBox("MiSTer Hi-Fi")
+        self.misterfin_check = QCheckBox("MiSTerFin")
 
         for widget in [
             self.arcade_org_check,
@@ -194,6 +227,9 @@ class UpdateAllConfigDialog(QDialog):
 
         self._add(tools_group, self.zaparoo_frontend_check, indent=True)
         self._add(tools_group, self.anime0t4ku_mister_scripts_check)
+        self._add(tools_group, self.test_suite_240p_check)
+        self._add(tools_group, self.mister_hifi_check)
+        self._add(tools_group, self.misterfin_check)
 
         extra_group = self._group("Extra Content", self.left_column_layout)
         self.bios_check = QCheckBox("BIOS Database")
@@ -240,16 +276,6 @@ class UpdateAllConfigDialog(QDialog):
 
         self.manualsdb_check.toggled.connect(self.update_manualsdb_state)
         self.manualsdb_config_button.clicked.connect(self.on_manualsdb_configure)
-
-        community_group = self._group("Community Sources", self.left_column_layout)
-        self.insert_coin_check = QCheckBox("Insert-Coin")
-        self.pcn_premium_wallpapers_check = QCheckBox("PCN Premium Member Wallpapers")
-
-        for widget in [
-            self.insert_coin_check,
-            self.pcn_premium_wallpapers_check,
-        ]:
-            self._add(community_group, widget)
 
         retro_group = self._group("RetroAccount", self.right_column_layout)
 
@@ -625,10 +651,20 @@ class UpdateAllConfigDialog(QDialog):
         self.agg23_check.setChecked(data["agg23"])
         self.altcores_check.setChecked(data["altcores"])
         self.dualram_check.setChecked(data["dualram"])
-        self.mister_frontier_check.setChecked(data["mister_frontier"])
         self.retroachievements_cores_check.setChecked(
             data.get("retroachievements_cores", False)
         )
+        self.physical_disc_check.setChecked(data.get("physical_disc", False))
+        self.paprium_megadrive_check.setChecked(data.get("paprium_megadrive", False))
+        self.mms2_gb_core_check.setChecked(data.get("mms2_gb_core", False))
+        self.megavgmdrive_check.setChecked(data.get("megavgmdrive", False))
+        self.dreamster_check.setChecked(data.get("dreamster", False))
+        self.sonic_mania_mister_check.setChecked(data.get("sonic_mania_mister", False))
+        self.mister_duke3d_check.setChecked(data.get("mister_duke3d", False))
+        self.mister_quake_check.setChecked(data.get("mister_quake", False))
+        self.solarus_mister_check.setChecked(data.get("solarus_mister", False))
+        self.three_s_arm_check.setChecked(data.get("three_s_arm", False))
+        self.mister_frontier_check.setChecked(data["mister_frontier"])
         self.mister_frontier_source_combo.setCurrentText(
             data.get("mister_frontier_source", "All Frontier Cores")
         )
@@ -642,15 +678,16 @@ class UpdateAllConfigDialog(QDialog):
         self.zaparoo_check.setChecked(data.get("zaparoo", False))
         self.zaparoo_frontend_check.setChecked(data.get("zaparoo_frontend", False))
         self.anime0t4ku_mister_scripts_check.setChecked(data["anime0t4ku_mister_scripts"])
+        self.test_suite_240p_check.setChecked(data.get("test_suite_240p", False))
+        self.mister_hifi_check.setChecked(data.get("mister_hifi", False))
+        self.misterfin_check.setChecked(data.get("misterfin", False))
 
         self.bios_check.setChecked(data["bios"])
         self.arcade_roms_check.setChecked(data["arcade_roms"])
         self.bootroms_check.setChecked(data["bootroms"])
         self.gba_borders_check.setChecked(data["gbaborders"])
-        self.insert_coin_check.setChecked(data["insert_coin"])
         self.anime0t4ku_wallpapers_check.setChecked(data["anime0t4ku_wallpapers"])
         self.pcn_challenge_wallpapers_check.setChecked(data["pcn_challenge_wallpapers"])
-        self.pcn_premium_wallpapers_check.setChecked(data["pcn_premium_wallpapers"])
         self.ranny_wallpapers_check.setChecked(data["ranny_wallpapers"])
         self.ranny_wallpapers_source_combo.setCurrentText(data["ranny_wallpapers_source"])
 
@@ -677,9 +714,19 @@ class UpdateAllConfigDialog(QDialog):
             "agg23": self.agg23_check.isChecked(),
             "altcores": self.altcores_check.isChecked(),
             "dualram": self.dualram_check.isChecked(),
+            "retroachievements_cores": self.retroachievements_cores_check.isChecked(),
+            "physical_disc": self.physical_disc_check.isChecked(),
+            "paprium_megadrive": self.paprium_megadrive_check.isChecked(),
+            "mms2_gb_core": self.mms2_gb_core_check.isChecked(),
+            "megavgmdrive": self.megavgmdrive_check.isChecked(),
+            "dreamster": self.dreamster_check.isChecked(),
+            "sonic_mania_mister": self.sonic_mania_mister_check.isChecked(),
+            "mister_duke3d": self.mister_duke3d_check.isChecked(),
+            "mister_quake": self.mister_quake_check.isChecked(),
+            "solarus_mister": self.solarus_mister_check.isChecked(),
+            "three_s_arm": self.three_s_arm_check.isChecked(),
             "mister_frontier": self.mister_frontier_check.isChecked(),
             "mister_frontier_source": self.mister_frontier_source_combo.currentText(),
-            "retroachievements_cores": self.retroachievements_cores_check.isChecked(),
 
             "arcade_org": self.arcade_org_check.isChecked(),
             "mrext": self.mrext_check.isChecked(),
@@ -690,15 +737,16 @@ class UpdateAllConfigDialog(QDialog):
             "zaparoo": self.zaparoo_check.isChecked(),
             "zaparoo_frontend": self.zaparoo_frontend_check.isChecked(),
             "anime0t4ku_mister_scripts": self.anime0t4ku_mister_scripts_check.isChecked(),
+            "test_suite_240p": self.test_suite_240p_check.isChecked(),
+            "mister_hifi": self.mister_hifi_check.isChecked(),
+            "misterfin": self.misterfin_check.isChecked(),
 
             "bios": self.bios_check.isChecked(),
             "arcade_roms": self.arcade_roms_check.isChecked(),
             "bootroms": self.bootroms_check.isChecked(),
             "gbaborders": self.gba_borders_check.isChecked(),
-            "insert_coin": self.insert_coin_check.isChecked(),
             "anime0t4ku_wallpapers": self.anime0t4ku_wallpapers_check.isChecked(),
             "pcn_challenge_wallpapers": self.pcn_challenge_wallpapers_check.isChecked(),
-            "pcn_premium_wallpapers": self.pcn_premium_wallpapers_check.isChecked(),
             "ranny_wallpapers": self.ranny_wallpapers_check.isChecked(),
             "ranny_wallpapers_source": self.ranny_wallpapers_source_combo.currentText(),
             "manualsdb": self.manualsdb_check.isChecked(),

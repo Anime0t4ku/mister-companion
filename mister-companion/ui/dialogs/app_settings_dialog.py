@@ -5,13 +5,11 @@ from PyQt6.QtWidgets import (
     QCheckBox,
     QDialog,
     QDialogButtonBox,
-    QButtonGroup,
     QGroupBox,
     QHBoxLayout,
     QLabel,
     QMessageBox,
     QPushButton,
-    QRadioButton,
     QVBoxLayout,
 )
 
@@ -121,23 +119,6 @@ class AppSettingsDialog(QDialog):
             updates_layout.addWidget(mc_updater_group)
         main_layout.addWidget(updates_group)
 
-        menu_style_group = QGroupBox("Menu style")
-        menu_style_layout = QVBoxLayout(menu_style_group)
-        menu_style_layout.setSpacing(8)
-
-        menu_style_row = QHBoxLayout()
-        self.menu_style_group = QButtonGroup(self)
-        self.menu_style_side_menu_radio = QRadioButton("Side menu")
-        self.menu_style_tabs_radio = QRadioButton("Tabs")
-        self.menu_style_group.addButton(self.menu_style_side_menu_radio)
-        self.menu_style_group.addButton(self.menu_style_tabs_radio)
-        menu_style_row.addWidget(self.menu_style_side_menu_radio)
-        menu_style_row.addWidget(self.menu_style_tabs_radio)
-        menu_style_row.addStretch()
-        menu_style_layout.addLayout(menu_style_row)
-
-        main_layout.addWidget(menu_style_group)
-
         notices_group = QGroupBox("Notices")
         notices_layout = QVBoxLayout(notices_group)
         notices_layout.setSpacing(8)
@@ -145,10 +126,12 @@ class AppSettingsDialog(QDialog):
         self.show_setup_notice_check = QCheckBox("Show setup notice")
         self.show_update_all_warning_check = QCheckBox("Show Update All warning")
         self.show_zapscripts_scan_notice_check = QCheckBox("Show ZapScripts scan notice")
+        self.show_support_message_check = QCheckBox("Show support message")
 
         notices_layout.addWidget(self.show_setup_notice_check)
         notices_layout.addWidget(self.show_update_all_warning_check)
         notices_layout.addWidget(self.show_zapscripts_scan_notice_check)
+        notices_layout.addWidget(self.show_support_message_check)
 
         main_layout.addWidget(notices_group)
 
@@ -205,19 +188,9 @@ class AppSettingsDialog(QDialog):
         self.show_zapscripts_scan_notice_check.setChecked(
             not bool(self.config_data.get("hide_zapscripts_scan_notice", False))
         )
-
-        menu_style = str(self.config_data.get("menu_style", "side_menu") or "side_menu").strip().lower()
-        if menu_style == "overlay":
-            menu_style = "side_menu"
-        if menu_style == "tabs":
-            self.menu_style_tabs_radio.setChecked(True)
-        else:
-            self.menu_style_side_menu_radio.setChecked(True)
-
-    def get_selected_menu_style(self):
-        if self.menu_style_tabs_radio.isChecked():
-            return "tabs"
-        return "side_menu"
+        self.show_support_message_check.setChecked(
+            bool(self.config_data.get("show_support_message", True))
+        )
 
     def refresh_mc_updater_state(self, latest_status=None):
         local_status = mc_updater.get_local_status(self.config_data)
@@ -291,11 +264,12 @@ class AppSettingsDialog(QDialog):
         self.config_data["hide_setup_notice"] = not self.show_setup_notice_check.isChecked()
         self.config_data["hide_update_all_warning"] = not self.show_update_all_warning_check.isChecked()
         self.config_data["hide_zapscripts_scan_notice"] = not self.show_zapscripts_scan_notice_check.isChecked()
-        self.config_data["menu_style"] = self.get_selected_menu_style()
+        self.config_data["show_support_message"] = self.show_support_message_check.isChecked()
         save_config(self.config_data)
         self.main_window.config_data = self.config_data
-        if hasattr(self.main_window, "apply_menu_style"):
-            self.main_window.apply_menu_style()
+        connection_tab = getattr(self.main_window, "connection_tab", None)
+        if connection_tab is not None and hasattr(connection_tab, "apply_support_message_preference"):
+            connection_tab.apply_support_message_preference()
         self.accept()
 
     def check_for_updates_now(self):
@@ -383,8 +357,6 @@ class AppSettingsDialog(QDialog):
         self.config_data["hide_setup_notice"] = not self.show_setup_notice_check.isChecked()
         self.config_data["hide_update_all_warning"] = not self.show_update_all_warning_check.isChecked()
         self.config_data["hide_zapscripts_scan_notice"] = not self.show_zapscripts_scan_notice_check.isChecked()
-        self.config_data["menu_style"] = self.get_selected_menu_style()
+        self.config_data["show_support_message"] = self.show_support_message_check.isChecked()
         save_config(self.config_data)
         self.main_window.config_data = self.config_data
-        if hasattr(self.main_window, "apply_menu_style"):
-            self.main_window.apply_menu_style()

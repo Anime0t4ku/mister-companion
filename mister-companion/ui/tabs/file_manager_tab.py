@@ -1,12 +1,13 @@
 from datetime import datetime
+import os
+import shutil
 from pathlib import Path
 
-from PyQt6.QtCore import QEvent, QPoint, QRect, QThread, QTimer, Qt, pyqtSignal
-from PyQt6.QtGui import QAction, QCursor, QKeySequence, QShortcut
+from PyQt6.QtCore import QThread, QTimer, Qt, pyqtSignal
+from PyQt6.QtGui import QAction, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
-    QDialog,
     QFileDialog,
     QFrame,
     QHBoxLayout,
@@ -44,20 +45,127 @@ from core.file_browser import (
 )
 
 
-class FileBrowserWorker(QThread):
+def _offline_local_path(sd_root, virtual_path):
+    root = Path(str(sd_root or "")).expanduser().resolve()
+    if not root.exists() or not root.is_dir():
+        raise FileNotFoundError("Select a valid Offline SD Card folder first.")
+    virtual_path = clamp_to_root(virtual_path or DEFAULT_ROOT, DEFAULT_ROOT)
+    rel = virtual_path[len(DEFAULT_ROOT):].lstrip("/")
+    target = (root / rel).resolve()
+    try:
+        target.relative_to(root)
+    except ValueError as exc:
+        raise ValueError("Path is outside the selected SD Card root.") from exc
+    return target
+
+
+def _offline_virtual_path(sd_root, local_path):
+    root = Path(str(sd_root or "")).expanduser().resolve()
+    target = Path(local_path).resolve()
+    rel = target.relative_to(root)
+    if not rel.parts:
+        return DEFAULT_ROOT
+    return join_remote_path(DEFAULT_ROOT, rel.as_posix())
+
+
+def _offline_list_directory(sd_root, virtual_path):
+    local_dir = _offline_local_path(sd_root, virtual_path)
+    if not local_dir.exists() or not local_dir.is_dir():
+        raise FileNotFoundError(f"Folder not found: {virtual_path}")
+    entries = []
+    for child in local_dir.iterdir():
+        try:
+            info = child.stat()
+        except OSError:
+            continue
+        is_dir = child.is_dir()
+        entries.append({
+            "name": child.name,
+            "path": _offline_virtual_path(sd_root, child),
+            "is_dir": is_dir,
+            "type": "Folder" if is_dir else "File",
+            "size": 0 if is_dir else int(info.st_size or 0),
+            "mtime": int(info.st_mtime or 0),
+        })
+    entries.sort(key=lambda item: (not item["is_dir"], item["name"].casefold()))
+    return {"path": clamp_to_root(virtual_path or DEFAULT_ROOT, DEFAULT_ROOT), "entries": entries}
+
+
+def _remove_local_target(path):
+    path = Path(path)
+    if not path.exists():
+        return
+    if path.is_dir():
+        shutil.rmtree(path)
+    else:
+        path.unlink()
+
+
+def _copy_local_file(source, target, progress_callback=None, message_callback=None):
+    source = Path(source)
+    target = Path(target)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    total = int(source.stat().st_size or 0)
+    done = 0
+    if message_callback:
+        message_callback(f"Copying {source.name}...")
+    with source.open("rb") as src, target.open("wb") as dst:
+        while True:
+            chunk = src.read(1024 * 1024)
+            if not chunk:
+                break
+            dst.write(chunk)
+            done += len(chunk)
+            if progress_callback:
+                progress_callback(done, total)
+    try:
+        shutil.copystat(source, target)
+    except OSError:
+        pass
+
+
+def _copy_local_item(source, target, progress_callback=None, message_callback=None):
+    source = Path(source)
+    target = Path(target)
+    if source.is_dir():
+        target.mkdir(parents=True, exist_ok=True)
+        for root, dirs, files in os.walk(source):
+            root_path = Path(root)
+            rel = root_path.relative_to(source)
+            dst_root = target if str(rel) == "." else target / rel
+            dst_root.mkdir(parents=True, exist_ok=True)
+            for dirname in dirs:
+                (dst_root / dirname).mkdir(parents=True, exist_ok=True)
+            for filename in files:
+                _copy_local_file(root_path / filename, dst_root / filename, progress_callback, message_callback)
+    else:
+        _copy_local_file(source, target, progress_callback, message_callback)
+
+
+def _offline_target(sd_root, virtual_dir, target_name):
+    directory = _offline_local_path(sd_root, virtual_dir)
+    return directory / str(target_name or "")
+
+
+class FileManagerWorker(QThread):
     result = pyqtSignal(str, object)
     error = pyqtSignal(str)
     progress = pyqtSignal(str)
     transfer_progress = pyqtSignal(object, object)
 
-    def __init__(self, connection, action, **kwargs):
+    def __init__(self, connection, action, offline_mode=False, sd_root="", **kwargs):
         super().__init__()
         self.connection = connection
         self.action = action
+        self.offline_mode = bool(offline_mode)
+        self.sd_root = str(sd_root or "")
         self.kwargs = kwargs
 
     def run(self):
         try:
+            if self.offline_mode:
+                self.run_offline()
+                return
             if self.action == "roots":
                 self.result.emit(self.action, available_roots(self.connection))
                 return
@@ -146,6 +254,84 @@ class FileBrowserWorker(QThread):
         except Exception as e:
             self.error.emit(str(e))
 
+    def run_offline(self):
+        action = self.action
+        if action == "roots":
+            _offline_local_path(self.sd_root, DEFAULT_ROOT)
+            self.result.emit(action, [{"name": "SD Card", "path": DEFAULT_ROOT, "available": True}])
+            return
+        if action == "list":
+            self.result.emit(action, _offline_list_directory(self.sd_root, self.kwargs.get("path", DEFAULT_ROOT)))
+            return
+        if action == "upload":
+            uploaded = []
+            for item in self.kwargs.get("upload_items", []):
+                source = Path(item.get("local_path"))
+                target = _offline_target(self.sd_root, item.get("remote_dir", DEFAULT_ROOT), item.get("target_name") or source.name)
+                if target.exists():
+                    if not item.get("overwrite", False):
+                        raise FileExistsError(f"Target already exists: {target}")
+                    _remove_local_target(target)
+                _copy_local_item(source, target, self.on_transfer_progress, self.progress.emit)
+                uploaded.append(_offline_virtual_path(self.sd_root, target))
+            self.result.emit(action, uploaded)
+            return
+        if action == "download":
+            source = _offline_local_path(self.sd_root, self.kwargs.get("remote_path"))
+            local_dir = Path(self.kwargs.get("local_dir"))
+            local_dir.mkdir(parents=True, exist_ok=True)
+            target = local_dir / (self.kwargs.get("target_name") or source.name)
+            if target.exists():
+                if not self.kwargs.get("overwrite", False):
+                    raise FileExistsError(f"Target already exists: {target}")
+                _remove_local_target(target)
+            _copy_local_item(source, target, self.on_transfer_progress, self.progress.emit)
+            self.result.emit(action, str(target))
+            return
+        if action == "mkdir":
+            target = _offline_local_path(self.sd_root, self.kwargs.get("path"))
+            target.mkdir()
+            self.result.emit(action, self.kwargs.get("path"))
+            return
+        if action == "rename":
+            old_path = _offline_local_path(self.sd_root, self.kwargs.get("old_path"))
+            new_path = _offline_local_path(self.sd_root, self.kwargs.get("new_path"))
+            if new_path.exists():
+                if not self.kwargs.get("overwrite", False):
+                    raise FileExistsError(f"Target already exists: {new_path}")
+                _remove_local_target(new_path)
+            old_path.rename(new_path)
+            self.result.emit(action, self.kwargs.get("new_path"))
+            return
+        if action in {"copy", "move"}:
+            source = _offline_local_path(self.sd_root, self.kwargs.get("source_path"))
+            target_dir = _offline_local_path(self.sd_root, self.kwargs.get("target_dir"))
+            target = target_dir / (self.kwargs.get("target_name") or source.name)
+            if source.resolve() == target.resolve():
+                raise ValueError("Source and destination are the same.")
+            if target.exists():
+                if not self.kwargs.get("overwrite", False):
+                    raise FileExistsError(f"Target already exists: {target}")
+                _remove_local_target(target)
+            if action == "move":
+                try:
+                    shutil.move(str(source), str(target))
+                except Exception:
+                    _copy_local_item(source, target, self.on_transfer_progress, self.progress.emit)
+                    _remove_local_target(source)
+            else:
+                _copy_local_item(source, target, self.on_transfer_progress, self.progress.emit)
+            self.result.emit(action, _offline_virtual_path(self.sd_root, target))
+            return
+        if action == "delete":
+            target = _offline_local_path(self.sd_root, self.kwargs.get("path"))
+            if target.resolve() == Path(self.sd_root).expanduser().resolve():
+                raise ValueError("The SD Card root cannot be deleted.")
+            _remove_local_target(target)
+            self.result.emit(action, self.kwargs.get("path"))
+            return
+        raise ValueError(f"Unknown file manager action: {action}")
+
     def on_transfer_progress(self, transferred, total):
         self.transfer_progress.emit(int(transferred or 0), int(total or 0))
 
@@ -191,14 +377,12 @@ class FileTreeWidget(QTreeWidget):
         super().dropEvent(event)
 
 
-class FileBrowserDialog(QDialog):
+class FileManagerTab(QWidget):
     CONFLICT_OVERWRITE = "overwrite"
     CONFLICT_KEEP_BOTH = "keep_both"
     CONFLICT_CANCEL = "cancel"
     SORT_COLUMNS = {0: "name", 1: "size", 2: "modified"}
-    DEFAULT_FILE_BROWSER_CONFIG = {
-        "window_width": 980,
-        "window_height": 720,
+    DEFAULT_FILE_MANAGER_CONFIG = {
         "columns": {
             "name": 520,
             "size": 120,
@@ -213,7 +397,7 @@ class FileBrowserDialog(QDialog):
         self.main_window = parent
         self.connection = getattr(parent, "connection", None)
         self.config_data = load_config()
-        self.file_browser_config = self.load_file_browser_config()
+        self.file_manager_config = self.load_file_manager_config()
         self.worker = None
         self.current_path = DEFAULT_ROOT
         self.current_root = DEFAULT_ROOT
@@ -224,152 +408,20 @@ class FileBrowserDialog(QDialog):
         self.last_transfer_percent = -1
         self.clipboard_entry = None
         self.clipboard_action = ""
-        self.sort_column = self.file_browser_config.get("sort_column", "name")
-        self.sort_descending = bool(self.file_browser_config.get("sort_descending", False))
+        self.sort_column = self.file_manager_config.get("sort_column", "name")
+        self.sort_descending = bool(self.file_manager_config.get("sort_descending", False))
         self._restoring_columns = False
         self._save_columns_timer = QTimer(self)
         self._save_columns_timer.setSingleShot(True)
-        self._save_columns_timer.timeout.connect(self.save_file_browser_config)
-        self._resize_margin = 8
-        self._resize_edges = Qt.Edge(0)
-        self._resize_start_pos = QPoint()
-        self._resize_start_geometry = QRect()
-        self._resizing_window = False
-
-        self.setWindowTitle("MiSTer File Browser")
-        self.resize(
-            int(self.file_browser_config.get("window_width", 980)),
-            int(self.file_browser_config.get("window_height", 720)),
-        )
-        self.setMinimumSize(820, 560)
-        self.setSizeGripEnabled(False)
-        self.setMouseTracking(True)
-        self.installEventFilter(self)
+        self._save_columns_timer.timeout.connect(self.save_file_manager_config)
+        self._mode_signature = None
+        self._initialized = False
+        self._reset_after_worker = False
 
         self.build_ui()
-        self.install_resize_event_filters()
         self.bind_shortcuts()
         self.update_action_buttons()
         self.append_output("Ready")
-        self.refresh_roots()
-
-    def install_resize_event_filters(self):
-        for widget in self.findChildren(QWidget):
-            if hasattr(widget, "installEventFilter") and hasattr(widget, "setMouseTracking"):
-                try:
-                    widget.setMouseTracking(True)
-                    widget.installEventFilter(self)
-                except Exception:
-                    pass
-
-    def eventFilter(self, watched, event):
-        if event.type() == QEvent.Type.MouseButtonPress:
-            if self._handle_resize_press(event):
-                return True
-
-        if event.type() == QEvent.Type.MouseMove:
-            if self._handle_resize_move(event):
-                return True
-
-        if event.type() == QEvent.Type.MouseButtonRelease:
-            if self._resizing_window:
-                self._resizing_window = False
-                self._resize_edges = Qt.Edge(0)
-                self.unsetCursor()
-                event.accept()
-                return True
-
-        if event.type() in (QEvent.Type.Show, QEvent.Type.ChildAdded):
-            QTimer.singleShot(0, self.install_resize_event_filters)
-
-        return super().eventFilter(watched, event)
-
-    def _resize_hit_edges(self, global_pos):
-        if getattr(self, "_mister_dialog_maximized", False):
-            return Qt.Edge(0)
-
-        geometry = self.geometry()
-        margin = int(self._resize_margin)
-        edges = Qt.Edge(0)
-
-        if abs(global_pos.x() - geometry.left()) <= margin:
-            edges |= Qt.Edge.LeftEdge
-        elif abs(global_pos.x() - geometry.right()) <= margin:
-            edges |= Qt.Edge.RightEdge
-
-        if abs(global_pos.y() - geometry.top()) <= margin:
-            edges |= Qt.Edge.TopEdge
-        elif abs(global_pos.y() - geometry.bottom()) <= margin:
-            edges |= Qt.Edge.BottomEdge
-
-        return edges
-
-    def _resize_cursor_for_edges(self, edges):
-        if edges in (Qt.Edge.LeftEdge | Qt.Edge.TopEdge, Qt.Edge.RightEdge | Qt.Edge.BottomEdge):
-            return Qt.CursorShape.SizeFDiagCursor
-        if edges in (Qt.Edge.RightEdge | Qt.Edge.TopEdge, Qt.Edge.LeftEdge | Qt.Edge.BottomEdge):
-            return Qt.CursorShape.SizeBDiagCursor
-        if edges in (Qt.Edge.LeftEdge, Qt.Edge.RightEdge):
-            return Qt.CursorShape.SizeHorCursor
-        if edges in (Qt.Edge.TopEdge, Qt.Edge.BottomEdge):
-            return Qt.CursorShape.SizeVerCursor
-        return Qt.CursorShape.ArrowCursor
-
-    def _handle_resize_press(self, event):
-        if event.button() != Qt.MouseButton.LeftButton:
-            return False
-
-        edges = self._resize_hit_edges(event.globalPosition().toPoint())
-        if not edges:
-            return False
-
-        self._resizing_window = True
-        self._resize_edges = edges
-        self._resize_start_pos = event.globalPosition().toPoint()
-        self._resize_start_geometry = self.geometry()
-        self.setCursor(QCursor(self._resize_cursor_for_edges(edges)))
-        event.accept()
-        return True
-
-    def _handle_resize_move(self, event):
-        global_pos = event.globalPosition().toPoint()
-
-        if self._resizing_window and event.buttons() & Qt.MouseButton.LeftButton:
-            delta = global_pos - self._resize_start_pos
-            geometry = QRect(self._resize_start_geometry)
-            minimum = self.minimumSize()
-
-            if self._resize_edges & Qt.Edge.LeftEdge:
-                new_left = geometry.left() + delta.x()
-                if geometry.right() - new_left + 1 >= minimum.width():
-                    geometry.setLeft(new_left)
-
-            if self._resize_edges & Qt.Edge.RightEdge:
-                new_right = geometry.right() + delta.x()
-                if new_right - geometry.left() + 1 >= minimum.width():
-                    geometry.setRight(new_right)
-
-            if self._resize_edges & Qt.Edge.TopEdge:
-                new_top = geometry.top() + delta.y()
-                if geometry.bottom() - new_top + 1 >= minimum.height():
-                    geometry.setTop(new_top)
-
-            if self._resize_edges & Qt.Edge.BottomEdge:
-                new_bottom = geometry.bottom() + delta.y()
-                if new_bottom - geometry.top() + 1 >= minimum.height():
-                    geometry.setBottom(new_bottom)
-
-            self.setGeometry(geometry)
-            event.accept()
-            return True
-
-        edges = self._resize_hit_edges(global_pos)
-        if edges:
-            self.setCursor(QCursor(self._resize_cursor_for_edges(edges)))
-        else:
-            self.unsetCursor()
-
-        return False
 
     def build_ui(self):
         root_layout = QVBoxLayout(self)
@@ -492,24 +544,19 @@ class FileBrowserDialog(QDialog):
         self.output_edit.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         root_layout.addWidget(self.output_edit)
 
-    def load_file_browser_config(self):
-        config = dict(self.DEFAULT_FILE_BROWSER_CONFIG)
-        stored = self.config_data.get("file_browser")
+    def load_file_manager_config(self):
+        config = dict(self.DEFAULT_FILE_MANAGER_CONFIG)
+        stored = self.config_data.get("file_manager")
+        if not isinstance(stored, dict):
+            stored = self.config_data.get("file_browser")
 
         if isinstance(stored, dict):
             config.update({key: value for key, value in stored.items() if key != "columns"})
             stored_columns = stored.get("columns")
             if isinstance(stored_columns, dict):
-                columns = dict(self.DEFAULT_FILE_BROWSER_CONFIG["columns"])
+                columns = dict(self.DEFAULT_FILE_MANAGER_CONFIG["columns"])
                 columns.update(stored_columns)
                 config["columns"] = columns
-
-        try:
-            config["window_width"] = max(820, int(config.get("window_width", 980)))
-            config["window_height"] = max(560, int(config.get("window_height", 720)))
-        except Exception:
-            config["window_width"] = 980
-            config["window_height"] = 720
 
         if config.get("sort_column") not in {"name", "size", "modified"}:
             config["sort_column"] = "name"
@@ -517,30 +564,29 @@ class FileBrowserDialog(QDialog):
         config["sort_descending"] = bool(config.get("sort_descending", False))
         return config
 
-    def save_file_browser_config(self):
+    def save_file_manager_config(self):
         if not hasattr(self, "file_tree"):
             return
 
-        columns = self.file_browser_config.get("columns", {})
+        columns = self.file_manager_config.get("columns", {})
         header = self.file_tree.header()
         for column, name in self.SORT_COLUMNS.items():
             columns[name] = max(40, int(header.sectionSize(column)))
 
-        self.file_browser_config["columns"] = columns
-        self.file_browser_config["window_width"] = max(820, int(self.width()))
-        self.file_browser_config["window_height"] = max(560, int(self.height()))
-        self.file_browser_config["sort_column"] = self.sort_column
-        self.file_browser_config["sort_descending"] = bool(self.sort_descending)
+        self.file_manager_config["columns"] = columns
+        self.file_manager_config["sort_column"] = self.sort_column
+        self.file_manager_config["sort_descending"] = bool(self.sort_descending)
 
         config = load_config()
-        config["file_browser"] = self.file_browser_config
+        config["file_manager"] = self.file_manager_config
+        config.pop("file_browser", None)
         save_config(config)
         self.config_data = config
 
     def restore_file_tree_columns(self):
         self._restoring_columns = True
-        columns = self.file_browser_config.get("columns", {})
-        defaults = self.DEFAULT_FILE_BROWSER_CONFIG["columns"]
+        columns = self.file_manager_config.get("columns", {})
+        defaults = self.DEFAULT_FILE_MANAGER_CONFIG["columns"]
         for column, name in self.SORT_COLUMNS.items():
             try:
                 width = int(columns.get(name, defaults.get(name, 120)))
@@ -549,9 +595,16 @@ class FileBrowserDialog(QDialog):
             self.file_tree.setColumnWidth(column, max(40, width))
         self._restoring_columns = False
 
-    def closeEvent(self, event):
-        self.save_file_browser_config()
-        super().closeEvent(event)
+    def shutdown(self):
+        self.save_file_manager_config()
+        self.reset_session(clear_output=False)
+        worker = self.worker
+        if worker is not None and worker.isRunning():
+            try:
+                worker.requestInterruption()
+                worker.wait(1500)
+            except Exception:
+                pass
 
     def bind_shortcuts(self):
         QShortcut(QKeySequence.StandardKey.Refresh, self, activated=self.refresh_current_path)
@@ -604,15 +657,45 @@ class FileBrowserDialog(QDialog):
 
         self.paste_button.setEnabled(enabled and has_clipboard)
 
+    def is_offline_mode(self):
+        return bool(self.main_window and hasattr(self.main_window, "is_offline_mode") and self.main_window.is_offline_mode())
+
+    def offline_sd_root(self):
+        if self.main_window and hasattr(self.main_window, "get_offline_sd_root"):
+            return str(self.main_window.get_offline_sd_root() or "")
+        return ""
+
+    def mode_available(self):
+        if self.is_offline_mode():
+            root = self.offline_sd_root()
+            return bool(root and Path(root).exists() and Path(root).is_dir())
+        return bool(self.connection and self.connection.is_connected())
+
+    def current_mode_signature(self):
+        if self.is_offline_mode():
+            return ("offline", self.offline_sd_root())
+        if self.connection and self.connection.is_connected():
+            return ("online", str(getattr(self.connection, "host", "") or ""))
+        return ("online", "")
+
     def start_worker(self, action, **kwargs):
         if self.busy:
             return
-        if not self.connection or not self.connection.is_connected():
-            QMessageBox.information(self, "Files", "Connect to a MiSTer first before using Files.")
+        if not self.mode_available():
+            if self.is_offline_mode():
+                QMessageBox.information(self, "File Manager", "Select an Offline SD Card folder first.")
+            else:
+                QMessageBox.information(self, "File Manager", "Connect to a MiSTer first before using File Manager.")
             return
 
         self.set_busy(True)
-        self.worker = FileBrowserWorker(self.connection, action, **kwargs)
+        self.worker = FileManagerWorker(
+            self.connection,
+            action,
+            offline_mode=self.is_offline_mode(),
+            sd_root=self.offline_sd_root(),
+            **kwargs,
+        )
         self.worker.result.connect(self.on_worker_result)
         self.worker.error.connect(self.on_worker_error)
         self.worker.progress.connect(self.append_output)
@@ -621,8 +704,80 @@ class FileBrowserDialog(QDialog):
         self.worker.start()
 
     def refresh_roots(self):
+        if not self.mode_available():
+            self.show_unavailable_state()
+            return
         self.append_output("Checking storage...")
         self.start_worker("roots")
+
+    def refresh(self, force=False):
+        signature = self.current_mode_signature()
+        if signature != self._mode_signature:
+            self.reset_session(clear_output=False)
+            self._mode_signature = signature
+        if not self.mode_available():
+            self.show_unavailable_state()
+            return
+        if not self._initialized or force:
+            self.refresh_roots()
+
+    def update_connection_state(self, lightweight=True):
+        signature = self.current_mode_signature()
+        if signature != self._mode_signature:
+            self.reset_session(clear_output=False)
+            self._mode_signature = signature
+        available = self.mode_available()
+        if not available and not self.busy:
+            self.show_unavailable_state()
+        self.update_action_buttons()
+
+    def show_unavailable_state(self):
+        if self.busy:
+            return
+        self._initialized = False
+        self.roots = []
+        self.entries = []
+        self.storage_combo.blockSignals(True)
+        self.storage_combo.clear()
+        self.storage_combo.blockSignals(False)
+        self.file_tree.clear()
+        self.current_root = DEFAULT_ROOT
+        self.current_path = DEFAULT_ROOT
+        self.path_label.setText(DEFAULT_ROOT)
+        self.up_button.setEnabled(False)
+        self.refresh_button.setEnabled(False)
+        self.upload_button.setEnabled(False)
+        self.upload_folder_button.setEnabled(False)
+        self.new_folder_button.setEnabled(False)
+        for button in self.quick_buttons:
+            button.setEnabled(False)
+        self.update_action_buttons()
+
+    def reset_session(self, clear_output=False):
+        self.current_path = DEFAULT_ROOT
+        self.current_root = DEFAULT_ROOT
+        self.roots = []
+        self.entries = []
+        self.pending_load_path = None
+        self.clipboard_entry = None
+        self.clipboard_action = ""
+        self._initialized = False
+        if self.worker is not None and self.worker.isRunning():
+            self._reset_after_worker = True
+        else:
+            self._reset_after_worker = False
+            if hasattr(self, "storage_combo"):
+                self.storage_combo.blockSignals(True)
+                self.storage_combo.clear()
+                self.storage_combo.blockSignals(False)
+            if hasattr(self, "file_tree"):
+                self.file_tree.clear()
+            if hasattr(self, "path_label"):
+                self.path_label.setText(DEFAULT_ROOT)
+        if clear_output and hasattr(self, "output_edit"):
+            self.output_edit.clear()
+            self.append_output("Ready")
+        self.update_action_buttons()
 
     def refresh_current_path(self):
         self.load_path(self.current_path)
@@ -682,14 +837,19 @@ class FileBrowserDialog(QDialog):
 
     def on_worker_error(self, message):
         self.append_output(f"Error: {message}")
-        QMessageBox.warning(self, "Files", message)
+        QMessageBox.warning(self, "File Manager", message)
 
     def on_worker_finished(self):
         self.set_busy(False)
         self.worker = None
+        if self._reset_after_worker:
+            self._reset_after_worker = False
+            self.reset_session(clear_output=False)
+            self.update_connection_state(lightweight=True)
+            return
         pending_path = self.pending_load_path
         self.pending_load_path = None
-        if pending_path:
+        if pending_path and self.mode_available():
             self.load_path(pending_path)
 
     def on_transfer_progress(self, transferred, total):
@@ -702,7 +862,14 @@ class FileBrowserDialog(QDialog):
                 self.append_output(f"Progress: {percent}% ({format_size(transferred)} / {format_size(total)})")
 
     def apply_roots(self, roots):
+        self._initialized = True
         self.roots = roots or [{"name": "SD Card", "path": DEFAULT_ROOT, "available": True}]
+        for button in self.quick_buttons:
+            button.setEnabled(True)
+        self.refresh_button.setEnabled(True)
+        self.upload_button.setEnabled(True)
+        self.upload_folder_button.setEnabled(True)
+        self.new_folder_button.setEnabled(True)
         self.storage_combo.blockSignals(True)
         self.storage_combo.clear()
         for root in self.roots:
@@ -793,7 +960,7 @@ class FileBrowserDialog(QDialog):
 
         self.update_sort_indicator()
         self.populate_file_tree()
-        self.save_file_browser_config()
+        self.save_file_manager_config()
 
     def update_sort_indicator(self):
         if not hasattr(self, "file_tree"):
@@ -939,7 +1106,7 @@ class FileBrowserDialog(QDialog):
     def download_selected(self):
         entry = self.selected_entry()
         if not entry or entry.get("up"):
-            QMessageBox.information(self, "Files", "Select a file or folder to download.")
+            QMessageBox.information(self, "File Manager", "Select a file or folder to download.")
             return
 
         local_dir = QFileDialog.getExistingDirectory(self, "Choose Download Folder")
@@ -991,10 +1158,10 @@ class FileBrowserDialog(QDialog):
         if not ok or not name:
             return
         if "/" in name or "\\" in name:
-            QMessageBox.warning(self, "Files", "Folder name cannot contain slashes.")
+            QMessageBox.warning(self, "File Manager", "Folder name cannot contain slashes.")
             return
         if name in self.existing_names():
-            QMessageBox.warning(self, "Files", "A file or folder with that name already exists.")
+            QMessageBox.warning(self, "File Manager", "A file or folder with that name already exists.")
             return
         path = join_remote_path(self.current_path, name)
         self.start_worker("mkdir", path=path)
@@ -1002,7 +1169,7 @@ class FileBrowserDialog(QDialog):
     def rename_selected(self):
         entry = self.selected_entry()
         if not entry or entry.get("up"):
-            QMessageBox.information(self, "Files", "Select a file or folder to rename.")
+            QMessageBox.information(self, "File Manager", "Select a file or folder to rename.")
             return
 
         old_name = entry.get("name", "")
@@ -1011,7 +1178,7 @@ class FileBrowserDialog(QDialog):
         if not ok or not new_name or new_name == old_name:
             return
         if "/" in new_name or "\\" in new_name:
-            QMessageBox.warning(self, "Files", "Name cannot contain slashes.")
+            QMessageBox.warning(self, "File Manager", "Name cannot contain slashes.")
             return
 
         overwrite = False
@@ -1034,7 +1201,7 @@ class FileBrowserDialog(QDialog):
     def copy_selected(self):
         entry = self.selected_entry()
         if not entry or entry.get("up"):
-            QMessageBox.information(self, "Files", "Select a file or folder to copy.")
+            QMessageBox.information(self, "File Manager", "Select a file or folder to copy.")
             return
         self.clipboard_entry = dict(entry)
         self.clipboard_action = "copy"
@@ -1044,7 +1211,7 @@ class FileBrowserDialog(QDialog):
     def move_selected(self):
         entry = self.selected_entry()
         if not entry or entry.get("up"):
-            QMessageBox.information(self, "Files", "Select a file or folder to move.")
+            QMessageBox.information(self, "File Manager", "Select a file or folder to move.")
             return
         self.clipboard_entry = dict(entry)
         self.clipboard_action = "move"
@@ -1053,7 +1220,7 @@ class FileBrowserDialog(QDialog):
 
     def paste_clipboard(self):
         if not self.clipboard_entry or self.clipboard_action not in {"copy", "move"}:
-            QMessageBox.information(self, "Files", "Copy or move a file or folder first.")
+            QMessageBox.information(self, "File Manager", "Copy or move a file or folder first.")
             return
 
         source_path = self.clipboard_entry.get("path")
@@ -1086,7 +1253,7 @@ class FileBrowserDialog(QDialog):
     def delete_selected(self):
         entry = self.selected_entry()
         if not entry or entry.get("up"):
-            QMessageBox.information(self, "Files", "Select a file or folder to delete.")
+            QMessageBox.information(self, "File Manager", "Select a file or folder to delete.")
             return
 
         name = entry.get("name", "")
@@ -1094,7 +1261,7 @@ class FileBrowserDialog(QDialog):
         reply = QMessageBox.question(
             self,
             "Delete",
-            f"Delete '{name}' from the MiSTer?\n\n{path}\n\nThis cannot be undone from MiSTer Companion.",
+            f"Delete '{name}' from the {'SD Card' if self.is_offline_mode() else 'MiSTer'}?\n\n{path}\n\nThis cannot be undone from MiSTer Companion.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )

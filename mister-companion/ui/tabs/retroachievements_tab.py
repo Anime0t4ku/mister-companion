@@ -690,7 +690,7 @@ class AchievementDetailsDialog(QDialog):
             return None
 
 
-class RetroAchievementsDialog(QDialog):
+class RetroAchievementsTab(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
 
@@ -721,28 +721,17 @@ class RetroAchievementsDialog(QDialog):
         self.game_icon_lookup_attempted = set()
         self.game_list_icon_labels = {}
 
-        self.setWindowTitle("RetroAchievements")
-        flags = self.windowFlags()
-        flags &= ~Qt.WindowType.MSWindowsFixedSizeDialogHint
-        flags |= Qt.WindowType.Window
-        flags |= Qt.WindowType.WindowMinimizeButtonHint
-        flags |= Qt.WindowType.WindowMaximizeButtonHint
-        flags |= Qt.WindowType.WindowCloseButtonHint
-        self.setWindowFlags(flags)
-        self.setSizeGripEnabled(False)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        self.resize(980, 760)
-        self.setMinimumSize(820, 560)
-        self.setMaximumSize(16777215, 16777215)
 
         self.build_ui()
-        self.install_resize_filters()
         self.load_config_values()
 
+        self._loaded_once = False
         if self.has_saved_credentials():
             self.login_group.hide()
             self.toggle_login_button.setText("Settings")
-            self.refresh_data()
+            self.status_label.setText("Open RetroAchievements to load your current progress.")
+            self.status_label.setStyleSheet("color: gray;")
         else:
             self.login_group.show()
             self.toggle_login_button.setText("Hide Settings")
@@ -2236,7 +2225,21 @@ class RetroAchievementsDialog(QDialog):
         dialog = AchievementDetailsDialog(achievement, self)
         dialog.exec()
 
-    def closeEvent(self, event):
+    def refresh(self, force=False):
+        # Load once on the first visit. After that, tab switches deliberately do
+        # nothing so filters, selected game, scroll positions and detail view
+        # remain exactly where the user left them until the app closes.
+        if self._loaded_once:
+            return
+        self._loaded_once = True
+        if self.has_saved_credentials():
+            self.refresh_data()
+
+    def update_connection_state(self, lightweight=True):
+        # RetroAchievements uses the public web API and does not depend on SSH.
+        return
+
+    def shutdown(self):
         self.pending_auto_select_first_game = False
 
         if self.worker is not None and self.worker.isRunning():
@@ -2257,4 +2260,6 @@ class RetroAchievementsDialog(QDialog):
         self.image_queue.clear()
         self.active_image_workers = 0
 
+    def closeEvent(self, event):
+        self.shutdown()
         super().closeEvent(event)

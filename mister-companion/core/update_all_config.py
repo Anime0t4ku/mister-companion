@@ -21,6 +21,36 @@ MISTER_FRONTIER_DB_URL = "https://raw.githubusercontent.com/MiSTerOrganize/MiSTe
 RETROACHIEVEMENTS_CORES_SECTION = "theypsilon/RetroAchievementsDB_MiSTer"
 RETROACHIEVEMENTS_CORES_DB_URL = "https://raw.githubusercontent.com/theypsilon/RetroAchievementsDB_MiSTer/db/db.json.zip"
 
+# Additional Update_All downloader databases mirrored from Install Center.
+PHYSICAL_DISC_SECTION = "MultiDatabases/physical-disc"
+PHYSICAL_DISC_DB_URL = "https://raw.githubusercontent.com/theypsilon/MultiDatabases_MiSTer/db/physical-disc/db.json"
+PAPRIUM_SECTION = "MultiDatabases/paprium"
+PAPRIUM_DB_URL = "https://raw.githubusercontent.com/theypsilon/MultiDatabases_MiSTer/db/paprium/db.json"
+MMS2_GB_SECTION = "MultiDatabases/mms2-gb"
+MMS2_GB_DB_URL = "https://raw.githubusercontent.com/theypsilon/MultiDatabases_MiSTer/db/mms2-gb/db.json"
+MEGAVGMD_SECTION = "MultiDatabases/megavgmdrive"
+MEGAVGMD_DB_URL = "https://raw.githubusercontent.com/theypsilon/MultiDatabases_MiSTer/db/megavgmdrive/db.json"
+
+DREAMSTER_SECTION = "MultiDatabases/dreamster"
+DREAMSTER_DB_URL = "https://raw.githubusercontent.com/theypsilon/MultiDatabases_MiSTer/db/dreamster/db.json"
+SONIC_MANIA_SECTION = "MultiDatabases/sonic-mania"
+SONIC_MANIA_DB_URL = "https://raw.githubusercontent.com/theypsilon/MultiDatabases_MiSTer/db/sonic-mania/db.json"
+DUKE3D_SECTION = "MultiDatabases/duke3d"
+DUKE3D_DB_URL = "https://raw.githubusercontent.com/theypsilon/MultiDatabases_MiSTer/db/duke3d/db.json"
+QUAKE_SECTION = "MultiDatabases/mister-quake"
+QUAKE_DB_URL = "https://raw.githubusercontent.com/theypsilon/MultiDatabases_MiSTer/db/mister-quake/db.json"
+SOLARUS_SECTION = "MultiDatabases/solarus"
+SOLARUS_DB_URL = "https://raw.githubusercontent.com/theypsilon/MultiDatabases_MiSTer/db/solarus/db.json"
+THREE_S_ARM_SECTION = "MultiDatabases/3s-arm"
+THREE_S_ARM_DB_URL = "https://raw.githubusercontent.com/theypsilon/MultiDatabases_MiSTer/db/3s-arm/db.json"
+
+TEST_SUITE_240P_SECTION = "ajgowans/240p"
+TEST_SUITE_240P_DB_URL = "https://raw.githubusercontent.com/ajgowans/240p/db/db.json.zip"
+MISTER_HIFI_SECTION = "MultiDatabases/mister-hifi"
+MISTER_HIFI_DB_URL = "https://raw.githubusercontent.com/theypsilon/MultiDatabases_MiSTer/db/mister-hifi/db.json"
+MISTERFIN_SECTION = "MultiDatabases/misterfin"
+MISTERFIN_DB_URL = "https://raw.githubusercontent.com/theypsilon/MultiDatabases_MiSTer/db/misterfin/db.json.zip"
+
 MANUALSDB_PATH = "/media/fat/downloader_ajgowans_manualsdb.ini"
 
 MISTER_FRONTIER_FILTERS = {
@@ -418,9 +448,21 @@ def _build_config_data(ini_data, json_data, arcade_org_ini, manualsdb_ini="", mi
         "agg23": is_enabled("agg23_db"),
         "altcores": is_enabled("ajgowans/alt-cores"),
         "dualram": is_enabled("TheJesusFish/Dual-Ram-Console-Cores"),
+        "retroachievements_cores": is_enabled(RETROACHIEVEMENTS_CORES_SECTION),
+
+        "physical_disc": is_enabled(PHYSICAL_DISC_SECTION),
+        "paprium_megadrive": is_enabled(PAPRIUM_SECTION),
+        "mms2_gb_core": is_enabled(MMS2_GB_SECTION),
+        "megavgmdrive": is_enabled(MEGAVGMD_SECTION),
+
+        "dreamster": is_enabled(DREAMSTER_SECTION),
+        "sonic_mania_mister": is_enabled(SONIC_MANIA_SECTION),
+        "mister_duke3d": is_enabled(DUKE3D_SECTION),
+        "mister_quake": is_enabled(QUAKE_SECTION),
+        "solarus_mister": is_enabled(SOLARUS_SECTION),
+        "three_s_arm": is_enabled(THREE_S_ARM_SECTION),
         "mister_frontier": is_enabled(MISTER_FRONTIER_SECTION),
         "mister_frontier_source": "All Frontier Cores",
-        "retroachievements_cores": is_enabled(RETROACHIEVEMENTS_CORES_SECTION),
 
         "arcade_org": arcade_org_ini_enabled or json_data.get("introduced_arcade_names_txt", False),
 
@@ -431,15 +473,16 @@ def _build_config_data(ini_data, json_data, arcade_org_ini, manualsdb_ini="", mi
         "retrospy": is_enabled("retrospy/retrospy-MiSTer"),
         "zaparoo": is_enabled(ZAPAROO_SECTION),
         "zaparoo_frontend": _mister_ini_text_has_zaparoo_launcher_entries(mister_ini),
+        "test_suite_240p": is_enabled(TEST_SUITE_240P_SECTION),
+        "mister_hifi": is_enabled(MISTER_HIFI_SECTION),
+        "misterfin": is_enabled(MISTERFIN_SECTION),
 
         "bios": is_enabled("bios_db"),
         "arcade_roms": is_enabled("arcade_roms_db"),
         "bootroms": is_enabled("uberyoji_mister_boot_roms_mgl"),
         "gbaborders": is_enabled("Dinierto/MiSTer-GBA-Borders"),
-        "insert_coin": is_enabled("funkycochise/Insert-Coin"),
         "anime0t4ku_wallpapers": is_enabled("anime0t4ku_wallpapers"),
         "pcn_challenge_wallpapers": is_enabled("pcn_challenge_wallpapers"),
-        "pcn_premium_wallpapers": is_enabled("pcn_premium_wallpapers"),
         "anime0t4ku_mister_scripts": is_enabled("anime0t4ku_mister_scripts"),
         "manualsdb": bool(manualsdb_selected),
         "manualsdb_selected": manualsdb_selected,
@@ -711,6 +754,25 @@ def _prepare_config_lines_and_json(config, main_lines, arcade_lines, bios_lines,
         ],
     )
 
+    for section, key, url in [
+        (PHYSICAL_DISC_SECTION, "physical_disc", PHYSICAL_DISC_DB_URL),
+        (PAPRIUM_SECTION, "paprium_megadrive", PAPRIUM_DB_URL),
+        (MMS2_GB_SECTION, "mms2_gb_core", MMS2_GB_DB_URL),
+        (MEGAVGMD_SECTION, "megavgmdrive", MEGAVGMD_DB_URL),
+        (DREAMSTER_SECTION, "dreamster", DREAMSTER_DB_URL),
+        (SONIC_MANIA_SECTION, "sonic_mania_mister", SONIC_MANIA_DB_URL),
+        (DUKE3D_SECTION, "mister_duke3d", DUKE3D_DB_URL),
+        (QUAKE_SECTION, "mister_quake", QUAKE_DB_URL),
+        (SOLARUS_SECTION, "solarus_mister", SOLARUS_DB_URL),
+        (THREE_S_ARM_SECTION, "three_s_arm", THREE_S_ARM_DB_URL),
+    ]:
+        main_lines = handle_simple_section(
+            section,
+            config.get(key, False),
+            main_lines,
+            [f"[{section}]", f"db_url = {url}"],
+        )
+
     main_lines = handle_mister_frontier_section(
         config.get("mister_frontier", False),
         config.get("mister_frontier_source", "All Frontier Cores"),
@@ -790,6 +852,17 @@ def _prepare_config_lines_and_json(config, main_lines, arcade_lines, bios_lines,
             "db_url = https://raw.githubusercontent.com/Anime0t4ku/0t4ku-mister-scripts/db/db/scripts.json.zip",
         ],
     )
+    for section, key, url in [
+        (TEST_SUITE_240P_SECTION, "test_suite_240p", TEST_SUITE_240P_DB_URL),
+        (MISTER_HIFI_SECTION, "mister_hifi", MISTER_HIFI_DB_URL),
+        (MISTERFIN_SECTION, "misterfin", MISTERFIN_DB_URL),
+    ]:
+        main_lines = handle_simple_section(
+            section,
+            config.get(key, False),
+            main_lines,
+            [f"[{section}]", f"db_url = {url}"],
+        )
 
     bios_lines = remove_section_from_lines(bios_lines, "bios_db")
     if config.get("bios"):
@@ -833,15 +906,6 @@ def _prepare_config_lines_and_json(config, main_lines, arcade_lines, bios_lines,
         ],
     )
     main_lines = handle_simple_section(
-        "funkycochise/Insert-Coin",
-        config.get("insert_coin", False),
-        main_lines,
-        [
-            "[funkycochise/Insert-Coin]",
-            "db_url = https://raw.githubusercontent.com/funkycochise/Insert-Coin/db/db.json.zip",
-        ],
-    )
-    main_lines = handle_simple_section(
         "anime0t4ku_wallpapers",
         config.get("anime0t4ku_wallpapers", False),
         main_lines,
@@ -857,15 +921,6 @@ def _prepare_config_lines_and_json(config, main_lines, arcade_lines, bios_lines,
         [
             "[pcn_challenge_wallpapers]",
             "db_url = https://raw.githubusercontent.com/Anime0t4ku/MiSTerWallpapers/db/db/pcnchallenge.json.zip",
-        ],
-    )
-    main_lines = handle_simple_section(
-        "pcn_premium_wallpapers",
-        config.get("pcn_premium_wallpapers", False),
-        main_lines,
-        [
-            "[pcn_premium_wallpapers]",
-            "db_url = https://raw.githubusercontent.com/Anime0t4ku/MiSTerWallpapers/db/db/pcnpremium.json.zip",
         ],
     )
 

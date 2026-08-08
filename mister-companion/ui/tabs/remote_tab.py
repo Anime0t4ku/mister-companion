@@ -1,6 +1,5 @@
-from PyQt6.QtCore import QEvent, QPoint, QRect, Qt, QThread, pyqtSignal
+from PyQt6.QtCore import QEvent, Qt, QThread, pyqtSignal
 from PyQt6.QtWidgets import (
-    QDialog,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -66,7 +65,7 @@ class RemoteDaemonCommandWorker(QThread):
             self.error.emit(str(e))
 
 
-class RemoteDialog(QDialog):
+class RemoteTab(QWidget):
     RESIZE_MARGIN = 7
     CONTROL_BUTTON_WIDTH = 60
     CONTROL_BUTTON_HEIGHT = 34
@@ -84,31 +83,28 @@ class RemoteDialog(QDialog):
         self.remote_client = None
         self.keyboard_passthrough_enabled = False
         self.held_keyboard_keys = set()
-
-        self._resizing = False
-        self._resize_direction = ""
-        self._resize_start_pos = QPoint()
-        self._resize_start_geometry = QRect()
-
-        self.setWindowTitle("Remote")
-        self.setWindowFlags(
-            Qt.WindowType.Dialog
-            | Qt.WindowType.FramelessWindowHint
-            | Qt.WindowType.WindowSystemMenuHint
-        )
-        self.resize(820, 820)
-        self.setMinimumSize(760, 560)
-        self.setSizeGripEnabled(False)
-        self.setMouseTracking(True)
+        self._tab_active = False
+        self._offline = False
 
         self.build_ui()
-        self.install_resize_event_filters()
-        self.refresh_state()
+        self.update_connection_state(lightweight=True)
 
     def build_ui(self):
-        root_layout = QVBoxLayout(self)
-        root_layout.setContentsMargins(12, 12, 12, 12)
+        outer_layout = QVBoxLayout(self)
+        outer_layout.setContentsMargins(12, 12, 12, 12)
+        outer_layout.setSpacing(0)
+
+        self.offline_label = QLabel("Remote not available in Offline Mode.")
+        self.offline_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.offline_label.setStyleSheet("font-weight: bold; font-size: 15px; background: transparent; border: none;")
+        self.offline_label.setVisible(False)
+        outer_layout.addWidget(self.offline_label, 1)
+
+        self.online_container = QWidget()
+        root_layout = QVBoxLayout(self.online_container)
+        root_layout.setContentsMargins(0, 0, 0, 0)
         root_layout.setSpacing(10)
+        outer_layout.addWidget(self.online_container, 1)
 
         title_label = QLabel("MiSTer Companion Remote")
         title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -232,7 +228,7 @@ class RemoteDialog(QDialog):
         keyboard_row.addWidget(self.keyboard_button)
 
         keyboard_note = QLabel(
-            "Captures keyboard input while this Remote window is focused. "
+            "Captures keyboard input only while the Remote tab is open and MiSTer Companion is focused. "
             "A-Z, numbers, arrows, Enter, Space, function keys, and common modifiers are supported."
         )
         keyboard_note.setWordWrap(True)
@@ -292,136 +288,6 @@ class RemoteDialog(QDialog):
 
         self.set_remote_controls_enabled(False)
         self.set_daemon_buttons_enabled(False)
-
-    def install_resize_event_filters(self):
-        self.installEventFilter(self)
-        self.setMouseTracking(True)
-
-        for widget in self.findChildren(QWidget):
-            widget.installEventFilter(self)
-            widget.setMouseTracking(True)
-
-    def eventFilter(self, obj, event):
-        if not isinstance(obj, QWidget) or obj.window() is not self:
-            return super().eventFilter(obj, event)
-
-        event_type = event.type()
-
-        if event_type == QEvent.Type.MouseButtonPress:
-            if event.button() == Qt.MouseButton.LeftButton:
-                direction = self._resize_hit_test(event.globalPosition().toPoint())
-
-                if direction:
-                    self._resizing = True
-                    self._resize_direction = direction
-                    self._resize_start_pos = event.globalPosition().toPoint()
-                    self._resize_start_geometry = self.geometry()
-                    self.setCursor(self._cursor_for_resize_direction(direction))
-                    event.accept()
-                    return True
-
-        elif event_type == QEvent.Type.MouseMove:
-            global_pos = event.globalPosition().toPoint()
-
-            if self._resizing:
-                self._apply_resize(global_pos)
-                event.accept()
-                return True
-
-            direction = self._resize_hit_test(global_pos)
-
-            if direction:
-                self.setCursor(self._cursor_for_resize_direction(direction))
-            else:
-                self.unsetCursor()
-
-        elif event_type == QEvent.Type.MouseButtonRelease:
-            if self._resizing:
-                self._resizing = False
-                self._resize_direction = ""
-                self.unsetCursor()
-                event.accept()
-                return True
-
-        return super().eventFilter(obj, event)
-
-    def _resize_hit_test(self, global_pos: QPoint) -> str:
-        if self.isMaximized() or self.isFullScreen():
-            return ""
-
-        geometry = self.frameGeometry()
-        margin = self.RESIZE_MARGIN
-
-        left = abs(global_pos.x() - geometry.left()) <= margin
-        right = abs(global_pos.x() - geometry.right()) <= margin
-        top = abs(global_pos.y() - geometry.top()) <= margin
-        bottom = abs(global_pos.y() - geometry.bottom()) <= margin
-
-        if top and left:
-            return "top_left"
-        if top and right:
-            return "top_right"
-        if bottom and left:
-            return "bottom_left"
-        if bottom and right:
-            return "bottom_right"
-        if left:
-            return "left"
-        if right:
-            return "right"
-        if top:
-            return "top"
-        if bottom:
-            return "bottom"
-
-        return ""
-
-    def _cursor_for_resize_direction(self, direction: str):
-        if direction in {"left", "right"}:
-            return Qt.CursorShape.SizeHorCursor
-
-        if direction in {"top", "bottom"}:
-            return Qt.CursorShape.SizeVerCursor
-
-        if direction in {"top_left", "bottom_right"}:
-            return Qt.CursorShape.SizeFDiagCursor
-
-        if direction in {"top_right", "bottom_left"}:
-            return Qt.CursorShape.SizeBDiagCursor
-
-        return Qt.CursorShape.ArrowCursor
-
-    def _apply_resize(self, global_pos: QPoint):
-        if not self._resizing or not self._resize_direction:
-            return
-
-        delta = global_pos - self._resize_start_pos
-        geometry = QRect(self._resize_start_geometry)
-
-        minimum_width = self.minimumWidth()
-        minimum_height = self.minimumHeight()
-
-        if "left" in self._resize_direction:
-            new_left = geometry.left() + delta.x()
-            max_left = geometry.right() - minimum_width
-            geometry.setLeft(min(new_left, max_left))
-
-        if "right" in self._resize_direction:
-            new_right = geometry.right() + delta.x()
-            min_right = geometry.left() + minimum_width
-            geometry.setRight(max(new_right, min_right))
-
-        if "top" in self._resize_direction:
-            new_top = geometry.top() + delta.y()
-            max_top = geometry.bottom() - minimum_height
-            geometry.setTop(min(new_top, max_top))
-
-        if "bottom" in self._resize_direction:
-            new_bottom = geometry.bottom() + delta.y()
-            min_bottom = geometry.top() + minimum_height
-            geometry.setBottom(max(new_bottom, min_bottom))
-
-        self.setGeometry(geometry)
 
     def prepare_control_button(self, button: QPushButton):
         button.setMinimumHeight(self.CONTROL_BUTTON_HEIGHT)
@@ -584,6 +450,9 @@ class RemoteDialog(QDialog):
         return getattr(self.connection, "host", "") if self.connection else ""
 
     def refresh_state(self):
+        if self._offline:
+            return
+
         connected = bool(self.connection and self.connection.is_connected())
         host = self.connected_host()
 
@@ -823,11 +692,7 @@ class RemoteDialog(QDialog):
             button.setEnabled(enabled)
 
         if not enabled:
-            self.keyboard_passthrough_enabled = False
-            if self.keyboard_button.isChecked():
-                self.keyboard_button.setChecked(False)
-            else:
-                self.keyboard_button.setText("Enable")
+            self.disable_keyboard_passthrough(log_message=False)
 
     def send_controller_button(self, name: str, action: str = "tap"):
         if self.remote_client is None:
@@ -859,69 +724,131 @@ class RemoteDialog(QDialog):
             pass
 
     def on_keyboard_passthrough_toggled(self, checked: bool):
+        # Passthrough may only be enabled while this tab is actually open.
+        if checked and not self._passthrough_context_available():
+            self.keyboard_passthrough_enabled = False
+            self.keyboard_button.blockSignals(True)
+            self.keyboard_button.setChecked(False)
+            self.keyboard_button.blockSignals(False)
+            self.keyboard_button.setText("Enable")
+            return
+
         self.keyboard_passthrough_enabled = bool(checked)
 
         if checked:
             self.keyboard_button.setText("Disable")
-            self.setFocus(Qt.FocusReason.OtherFocusReason)
             self.append_log("Keyboard passthrough enabled.")
         else:
             self.keyboard_button.setText("Enable")
             self.release_all_inputs()
             self.append_log("Keyboard passthrough disabled.")
 
-    def keyPressEvent(self, event):
-        if self.keyboard_passthrough_enabled and not event.isAutoRepeat():
-            key_name = self.qt_key_to_remote_key(event.key())
+    def _passthrough_context_available(self) -> bool:
+        if self._offline or not self._tab_active:
+            return False
+        if self.remote_client is None:
+            return False
+        if self.main_window is None or not self.main_window.isActiveWindow():
+            return False
+        if hasattr(self.main_window, "tabs") and self.main_window.tabs.currentWidget() is not self:
+            return False
+        return True
 
-            if key_name:
-                self.held_keyboard_keys.add(key_name)
-                self.safe_remote_action(
-                    f"Keyboard {key_name} down",
-                    lambda: self.send_keyboard_key(key_name, "down"),
-                )
-                event.accept()
-                return
+    def _can_passthrough(self) -> bool:
+        return self.keyboard_passthrough_enabled and self._passthrough_context_available()
 
-        super().keyPressEvent(event)
+    def handle_window_activation_changed(self, active: bool):
+        if not active:
+            # Release anything held on the MiSTer immediately when Companion
+            # loses focus. Passthrough stays armed and resumes only after the
+            # window is active again.
+            self.release_all_inputs()
 
-    def keyReleaseEvent(self, event):
-        if self.keyboard_passthrough_enabled and not event.isAutoRepeat():
-            key_name = self.qt_key_to_remote_key(event.key())
+    def handle_application_key_event(self, event) -> bool:
+        if event.type() not in (QEvent.Type.KeyPress, QEvent.Type.KeyRelease):
+            return False
+        if not self._can_passthrough() or event.isAutoRepeat():
+            return False
 
-            if key_name:
-                self.held_keyboard_keys.discard(key_name)
-                self.safe_remote_action(
-                    f"Keyboard {key_name} up",
-                    lambda: self.send_keyboard_key(key_name, "up"),
-                )
-                event.accept()
-                return
+        key_name = self.qt_key_to_remote_key(event.key())
+        if not key_name:
+            return False
 
-        super().keyReleaseEvent(event)
+        if event.type() == QEvent.Type.KeyPress:
+            self.held_keyboard_keys.add(key_name)
+            action = "down"
+        else:
+            self.held_keyboard_keys.discard(key_name)
+            action = "up"
 
-    def changeEvent(self, event):
-        if event.type() == QEvent.Type.ActivationChange:
-            if not self.isActiveWindow():
-                self.release_all_inputs()
+        try:
+            self.send_keyboard_key(key_name, action)
+        except Exception as exc:
+            self.append_log(f"Keyboard {key_name} {action} failed: {exc}")
+            self.disable_keyboard_passthrough(log_message=False)
+            self.set_remote_controls_enabled(False)
+            return False
 
-        super().changeEvent(event)
+        event.accept()
+        return True
 
-    def focusOutEvent(self, event):
+    def disable_keyboard_passthrough(self, log_message: bool = True):
+        was_enabled = self.keyboard_passthrough_enabled or self.keyboard_button.isChecked()
+        self.keyboard_passthrough_enabled = False
         self.release_all_inputs()
-        super().focusOutEvent(event)
+        self.keyboard_button.blockSignals(True)
+        self.keyboard_button.setChecked(False)
+        self.keyboard_button.blockSignals(False)
+        self.keyboard_button.setText("Enable")
+        if was_enabled and log_message:
+            self.append_log("Keyboard passthrough disabled.")
 
-    def closeEvent(self, event):
-        self.release_all_inputs()
+    def set_tab_active(self, active: bool):
+        active = bool(active)
+        if self._tab_active and not active:
+            # Never leave passthrough armed in the background.
+            self.disable_keyboard_passthrough(log_message=True)
+        self._tab_active = active
+
+    def update_connection_state(self, lightweight: bool = True):
+        offline = bool(self.main_window and hasattr(self.main_window, "is_offline_mode") and self.main_window.is_offline_mode())
+        if offline != self._offline:
+            self._offline = offline
+
+        self.offline_label.setVisible(offline)
+        self.online_container.setVisible(not offline)
+
+        if offline:
+            self.disable_keyboard_passthrough(log_message=False)
+            self.release_all_inputs()
+            self.disconnect_remote_client()
+            self.last_status = None
+            self.set_remote_controls_enabled(False)
+            self.set_daemon_buttons_enabled(False)
+            return
+
+        self.update_daemon_button_state()
+        if not (self.connection and self.connection.is_connected()):
+            self.disable_keyboard_passthrough(log_message=False)
+            self.disconnect_remote_client()
+            self.set_remote_controls_enabled(False)
+
+    def refresh(self, force: bool = False):
+        if self._offline:
+            return
+        if not self._tab_active:
+            return
+        if force or self.last_status is None:
+            self.refresh_state()
+
+    def shutdown(self):
+        self.disable_keyboard_passthrough(log_message=False)
         self.disconnect_remote_client()
 
         if self.status_worker is not None and self.status_worker.isRunning():
             self.status_worker.wait(1000)
-
         if self.command_worker is not None and self.command_worker.isRunning():
             self.command_worker.wait(1000)
-
-        super().closeEvent(event)
 
     def qt_key_to_remote_key(self, key):
         mapping = {

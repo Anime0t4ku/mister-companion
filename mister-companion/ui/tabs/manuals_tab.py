@@ -8,7 +8,6 @@ from PyQt6.QtGui import QImage, QKeySequence, QPalette, QPixmap, QShortcut
 from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
-    QDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -237,7 +236,7 @@ class ManualPreviewArea(QScrollArea):
         super().focusOutEvent(event)
 
 
-class ManualsDialog(QDialog):
+class ManualsTab(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
 
@@ -264,9 +263,6 @@ class ManualsDialog(QDialog):
         self.page_count = 0
         self.zoom_factor = 1.0
         self.zoom_fit_mode = True
-
-        self.setWindowTitle("Manuals")
-        self.resize(1200, 760)
 
         root_layout = QVBoxLayout(self)
         root_layout.setContentsMargins(10, 10, 10, 10)
@@ -346,6 +342,7 @@ class ManualsDialog(QDialog):
 
         viewer_holder = QWidget()
         viewer_holder.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        viewer_holder.setStyleSheet("background: transparent; border: none;")
         viewer_holder_layout = QVBoxLayout(viewer_holder)
         viewer_holder_layout.setContentsMargins(0, 0, 0, 0)
         viewer_holder_layout.addWidget(self.viewer_status_label)
@@ -395,16 +392,20 @@ class ManualsDialog(QDialog):
 
         self.systems_list.currentItemChanged.connect(self.on_system_selected)
         self.pdfs_list.currentItemChanged.connect(self.on_pdf_selected)
-        self.finished.connect(self.on_dialog_finished)
 
-        QShortcut(QKeySequence(Qt.Key.Key_Left), self, activated=self.previous_page)
-        QShortcut(QKeySequence(Qt.Key.Key_Up), self, activated=self.previous_page)
-        QShortcut(QKeySequence(Qt.Key.Key_Right), self, activated=self.next_page)
-        QShortcut(QKeySequence(Qt.Key.Key_Down), self, activated=self.next_page)
+        for key, callback in (
+            (Qt.Key.Key_Left, self.previous_page),
+            (Qt.Key.Key_Up, self.previous_page),
+            (Qt.Key.Key_Right, self.next_page),
+            (Qt.Key.Key_Down, self.next_page),
+        ):
+            shortcut = QShortcut(QKeySequence(key), self, activated=callback)
+            shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
 
         self.update_cache_buttons()
         self.update_page_buttons()
-        self.refresh_systems()
+        self._loaded_once = False
+        self._last_connection_state = None
 
     def wrap_panel(self, title, widget, extra_widget=None):
         panel = QFrame()
@@ -1040,11 +1041,37 @@ class ManualsDialog(QDialog):
         except Exception:
             pass
 
-    def on_dialog_finished(self, *_):
+    def refresh(self, force=False):
+        # Keep the current manual/system selection while switching tabs. The
+        # initial scan is deferred until this tab is first opened.
+        if self._loaded_once and not force:
+            return
+        self._loaded_once = True
+        self.connection = getattr(self.main_window, "connection", None)
+        self.refresh_systems()
+
+    def update_connection_state(self, lightweight=True):
+        self.connection = getattr(self.main_window, "connection", None)
+        connected = bool(self.connection and self.connection.is_connected())
+        if self._last_connection_state is None:
+            self._last_connection_state = connected
+            return
+        if connected != self._last_connection_state:
+            self._last_connection_state = connected
+            # The next visit should merge against the newly available source.
+            self._loaded_once = False
+
+    def shutdown(self):
         self.clear_viewer_temp_cache()
+        for worker in (self.scan_worker, self.pdf_scan_worker, self.cache_worker):
+            try:
+                if worker is not None and worker.isRunning():
+                    worker.wait(1500)
+            except Exception:
+                pass
 
     def closeEvent(self, event):
-        self.clear_viewer_temp_cache()
+        self.shutdown()
         super().closeEvent(event)
 
     def resizeEvent(self, event):

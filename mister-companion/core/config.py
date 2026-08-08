@@ -5,8 +5,6 @@ from core.app_paths import generated_path
 CONFIG_PATH = generated_path("config.json")
 
 VALID_THEME_MODES = {"auto", "light", "dark"}
-VALID_MENU_STYLES = {"side_menu", "tabs"}
-
 THEME_MODE_MIGRATIONS = {
     "purple": "dark",
 }
@@ -21,8 +19,8 @@ DEFAULT_CONFIG = {
     "check_updates_on_startup": True,
     "use_ssh_agent": False,
     "look_for_ssh_keys": False,
-    "menu_style": "side_menu",
     "remember_offline_sd_root": False,
+    "show_support_message": True,
     "offline_sd_root": "",
 }
 
@@ -40,18 +38,6 @@ def normalize_theme_mode(value):
     return mode
 
 
-def normalize_menu_style(value):
-    style = str(value or "side_menu").strip().lower().replace("-", "_").replace(" ", "_")
-
-    if style == "overlay":
-        style = "side_menu"
-
-    if style not in VALID_MENU_STYLES:
-        return "side_menu"
-
-    return style
-
-
 def normalize_config(data):
     merged = DEFAULT_CONFIG.copy()
 
@@ -64,7 +50,24 @@ def normalize_config(data):
 
     merged["app_version"] = APP_VERSION
     merged["theme_mode"] = normalize_theme_mode(merged.get("theme_mode"))
-    merged["menu_style"] = normalize_menu_style(merged.get("menu_style"))
+
+    # Migrate the retired Files dialog settings to the File Manager tab.
+    legacy_file_browser = merged.pop("file_browser", None)
+    if "file_manager" not in merged and isinstance(legacy_file_browser, dict):
+        file_manager = {}
+        columns = legacy_file_browser.get("columns")
+        if isinstance(columns, dict):
+            file_manager["columns"] = columns
+        sort_column = legacy_file_browser.get("sort_column")
+        if sort_column in {"name", "size", "modified"}:
+            file_manager["sort_column"] = sort_column
+        file_manager["sort_descending"] = bool(legacy_file_browser.get("sort_descending", False))
+        if file_manager:
+            merged["file_manager"] = file_manager
+
+    # Remove retired settings from existing configs.
+    merged.pop("menu_style", None)
+    merged.pop("show_news_widget", None)
     merged["remember_offline_sd_root"] = bool(merged.get("remember_offline_sd_root", False))
 
     if merged["remember_offline_sd_root"]:

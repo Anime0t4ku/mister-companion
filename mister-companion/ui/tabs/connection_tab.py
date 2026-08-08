@@ -1,9 +1,7 @@
-import time
 from pathlib import Path
 
-import requests
 from core.open_helpers import open_uri, open_local_folder
-from PyQt6.QtCore import QEvent, QTimer, Qt
+from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtWidgets import (
     QFileDialog,
     QCheckBox,
@@ -26,9 +24,8 @@ from ui.scaling import set_text_button_min_width
 from core.config import save_config
 from core.sd_eject import eject_sd_card_path
 
-NEWSWIDGET_URL = "https://raw.githubusercontent.com/Anime0t4ku/mister-companion/main/newsfeed.json"
-NEWS_ROTATION_INTERVAL_MS = 10000
-CONFIG_SHOW_NEWS_WIDGET = "show_news_widget"
+PATREON_URL = "https://www.patreon.com/Anime0t4ku"
+CONFIG_SHOW_SUPPORT_MESSAGE = "show_support_message"
 
 
 class ConnectionTab(QWidget):
@@ -38,26 +35,17 @@ class ConnectionTab(QWidget):
         self.main_window = main_window
         self.connection = main_window.connection
 
-        self.news_items = []
-        self.current_news_index = 0
-        self.news_url = ""
-        self.news_hovered = False
+        self.support_message_hidden = False
 
         self.save_after_next_connect = False
         self.mode_switch_in_progress = False
-
-        self.news_timer = QTimer(self)
-        self.news_timer.timeout.connect(self.show_next_news)
 
         self.init_ui()
         self.connect_signals()
         self.update_mode_state()
         self.update_connection_state()
 
-        if self.is_news_widget_enabled():
-            self.load_news_widget()
-        else:
-            self.hide_news_widget(update_config=False)
+        self.apply_support_message_preference()
 
     def init_ui(self):
         main_layout = QVBoxLayout()
@@ -104,36 +92,36 @@ class ConnectionTab(QWidget):
         header_text_layout.addWidget(header_title)
         header_text_layout.addWidget(self.mode_hint_label)
 
-        self.show_news_button = QPushButton("Show News")
-        set_text_button_min_width(self.show_news_button, 90)
-        self.show_news_button.hide()
+        self.show_support_button = QPushButton("Show Message")
+        set_text_button_min_width(self.show_support_button, 100)
+        self.show_support_button.hide()
 
-        show_news_button_width = self.show_news_button.minimumWidth()
+        show_support_button_width = self.show_support_button.minimumWidth()
 
-        self.show_news_button_placeholder = QWidget()
-        self.show_news_button_placeholder.setMinimumWidth(show_news_button_width)
-        self.show_news_button_placeholder.setSizePolicy(
+        self.show_support_button_placeholder = QWidget()
+        self.show_support_button_placeholder.setMinimumWidth(show_support_button_width)
+        self.show_support_button_placeholder.setSizePolicy(
             QSizePolicy.Policy.Minimum,
             QSizePolicy.Policy.Fixed,
         )
 
-        self.show_news_button_container = QWidget()
-        self.show_news_button_container.setMinimumWidth(show_news_button_width)
-        self.show_news_button_container.setSizePolicy(
+        self.show_support_button_container = QWidget()
+        self.show_support_button_container.setMinimumWidth(show_support_button_width)
+        self.show_support_button_container.setSizePolicy(
             QSizePolicy.Policy.Minimum,
             QSizePolicy.Policy.Fixed,
         )
 
-        show_news_button_layout = QHBoxLayout(self.show_news_button_container)
-        show_news_button_layout.setContentsMargins(0, 0, 0, 0)
-        show_news_button_layout.setSpacing(0)
-        show_news_button_layout.addWidget(self.show_news_button)
+        show_support_button_layout = QHBoxLayout(self.show_support_button_container)
+        show_support_button_layout.setContentsMargins(0, 0, 0, 0)
+        show_support_button_layout.setSpacing(0)
+        show_support_button_layout.addWidget(self.show_support_button)
 
-        header_row.addWidget(self.show_news_button_placeholder)
+        header_row.addWidget(self.show_support_button_placeholder)
         header_row.addStretch()
         header_row.addLayout(header_text_layout)
         header_row.addStretch()
-        header_row.addWidget(self.show_news_button_container)
+        header_row.addWidget(self.show_support_button_container)
 
         connection_layout.addLayout(header_row)
 
@@ -396,80 +384,74 @@ class ConnectionTab(QWidget):
 
         self.content_row.addWidget(self.connection_group, stretch=1)
 
-        self.news_group = QGroupBox("Newsfeed")
-        self.news_group.installEventFilter(self)
-        self.news_group.setMinimumWidth(320)
-        self.news_group.setMaximumWidth(380)
-        self.news_group.setSizePolicy(
+        self.support_group = QGroupBox("Thank You")
+        self.support_group.setMinimumWidth(320)
+        self.support_group.setMaximumWidth(380)
+        self.support_group.setSizePolicy(
             QSizePolicy.Policy.Fixed,
             QSizePolicy.Policy.Expanding,
         )
 
-        news_layout = QVBoxLayout()
-        news_layout.setContentsMargins(16, 16, 16, 16)
-        news_layout.setSpacing(10)
+        support_layout = QVBoxLayout()
+        support_layout.setContentsMargins(16, 16, 16, 16)
+        support_layout.setSpacing(12)
 
-        news_header_row = QHBoxLayout()
-        news_header_row.setSpacing(8)
+        support_header_row = QHBoxLayout()
+        support_header_row.setSpacing(8)
 
-        self.hide_news_button = QPushButton("Hide")
-        set_text_button_min_width(self.hide_news_button, 70)
-        news_header_row.addStretch()
-        news_header_row.addWidget(self.hide_news_button)
-        news_header_row.addStretch()
+        self.hide_support_button = QPushButton("Hide")
+        set_text_button_min_width(self.hide_support_button, 70)
+        support_header_row.addStretch()
+        support_header_row.addWidget(self.hide_support_button)
+        support_header_row.addStretch()
 
-        nav_row = QHBoxLayout()
-        nav_row.setSpacing(8)
+        self.support_headline_label = QLabel("Thank you for using MiSTer Companion!")
+        self.support_headline_label.setWordWrap(True)
+        self.support_headline_label.setTextFormat(Qt.TextFormat.PlainText)
+        self.support_headline_label.setStyleSheet("font-size: 15px; font-weight: bold;")
 
-        self.news_prev_button = QPushButton("◀")
-        set_text_button_min_width(self.news_prev_button, 36)
-        self.news_prev_button.hide()
+        self.support_message_label = QLabel(
+            "I really appreciate everyone who uses Companion and the other MiSTer "
+            "projects I work on.\n\n"
+            "I build these tools because I enjoy creating useful things for the MiSTer "
+            "community, whether that is improving Companion, maintaining projects like "
+            "MiSTer Hi-Fi and CollectionLauncher, or experimenting with new ideas.\n\n"
+            "If you enjoy these projects and would like to support their continued "
+            "development, Patreon is an optional way to contribute. It helps with "
+            "development costs and gives me more room to spend time on updates, fixes, "
+            "and new projects."
+        )
+        self.support_message_label.setWordWrap(True)
+        self.support_message_label.setTextFormat(Qt.TextFormat.PlainText)
 
-        self.news_next_button = QPushButton("▶")
-        set_text_button_min_width(self.news_next_button, 36)
-        self.news_next_button.hide()
+        self.patreon_button = QPushButton("Patreon")
+        set_text_button_min_width(self.patreon_button, 120)
 
-        self.news_counter_label = QLabel("")
-        self.news_counter_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.dismiss_support_button = QPushButton("Don't show this again")
+        set_text_button_min_width(self.dismiss_support_button, 170)
 
-        nav_row.addWidget(self.news_prev_button)
-        nav_row.addStretch()
-        nav_row.addWidget(self.news_counter_label)
-        nav_row.addStretch()
-        nav_row.addWidget(self.news_next_button)
+        support_button_row = QHBoxLayout()
+        support_button_row.setSpacing(8)
+        support_button_row.addStretch()
+        support_button_row.addWidget(self.patreon_button)
+        support_button_row.addStretch()
 
-        self.news_headline_label = QLabel("")
-        self.news_headline_label.setWordWrap(True)
-        self.news_headline_label.setTextFormat(Qt.TextFormat.PlainText)
-        self.news_headline_label.setStyleSheet("font-size: 15px; font-weight: bold;")
+        dismiss_row = QHBoxLayout()
+        dismiss_row.addStretch()
+        dismiss_row.addWidget(self.dismiss_support_button)
+        dismiss_row.addStretch()
 
-        self.news_message_label = QLabel("")
-        self.news_message_label.setWordWrap(True)
-        self.news_message_label.setTextFormat(Qt.TextFormat.PlainText)
+        support_layout.addLayout(support_header_row)
+        support_layout.addWidget(self.support_headline_label)
+        support_layout.addWidget(self.support_message_label)
+        support_layout.addLayout(support_button_row)
+        support_layout.addStretch()
+        support_layout.addLayout(dismiss_row)
 
-        self.news_button = QPushButton("")
-        self.news_button.setVisible(False)
-        set_text_button_min_width(self.news_button, 160)
-        self.news_date_label = QLabel("")
-        self.news_date_label.setAlignment(Qt.AlignmentFlag.AlignRight)
-        self.news_date_label.setStyleSheet("color: gray;")
+        self.support_group.setLayout(support_layout)
+        self.support_group.hide()
 
-        button_row = QHBoxLayout()
-        button_row.addWidget(self.news_button)
-        button_row.addStretch()
-
-        news_layout.addLayout(news_header_row)
-        news_layout.addLayout(nav_row)
-        news_layout.addWidget(self.news_headline_label)
-        news_layout.addWidget(self.news_message_label)
-        news_layout.addLayout(button_row)
-        news_layout.addStretch()
-        news_layout.addWidget(self.news_date_label)
-
-        self.news_group.setLayout(news_layout)
-        self.news_group.hide()
-
-        self.content_row.addWidget(self.news_group)
+        self.content_row.addWidget(self.support_group)
 
     def connect_signals(self):
         self.online_mode_radio.toggled.connect(self.handle_mode_changed)
@@ -499,12 +481,10 @@ class ConnectionTab(QWidget):
         self.use_ssh_agent_checkbox.toggled.connect(self.handle_ssh_option_changed)
         self.look_for_ssh_keys_checkbox.toggled.connect(self.handle_ssh_option_changed)
 
-        self.show_news_button.clicked.connect(lambda: self.show_news_widget())
-        self.hide_news_button.clicked.connect(lambda: self.hide_news_widget())
-
-        self.news_button.clicked.connect(self.open_news_link)
-        self.news_prev_button.clicked.connect(self.show_previous_news)
-        self.news_next_button.clicked.connect(self.show_next_news)
+        self.show_support_button.clicked.connect(self.show_support_message)
+        self.hide_support_button.clicked.connect(self.hide_support_message)
+        self.dismiss_support_button.clicked.connect(self.disable_support_message)
+        self.patreon_button.clicked.connect(lambda: open_uri(PATREON_URL))
 
     def sync_status_from_main_window(self):
         if hasattr(self.main_window, "connection_status_label"):
@@ -515,176 +495,43 @@ class ConnectionTab(QWidget):
                 self.main_window.connection_status_label.styleSheet()
             )
 
-    def is_news_widget_enabled(self):
-        return self.main_window.config_data.get(CONFIG_SHOW_NEWS_WIDGET, True)
+    def is_support_message_enabled(self):
+        return bool(self.main_window.config_data.get(CONFIG_SHOW_SUPPORT_MESSAGE, True))
 
-    def show_news_widget(self):
-        self.main_window.config_data[CONFIG_SHOW_NEWS_WIDGET] = True
+    def apply_support_message_preference(self):
+        if not self.is_support_message_enabled():
+            self.support_message_hidden = False
+            self.support_group.hide()
+            self.show_support_button.hide()
+            return
+
+        if self.support_message_hidden:
+            self.support_group.hide()
+            self.show_support_button.show()
+        else:
+            self.support_group.show()
+            self.show_support_button.hide()
+
+    def show_support_message(self):
+        if not self.is_support_message_enabled():
+            return
+        self.support_message_hidden = False
+        self.support_group.show()
+        self.show_support_button.hide()
+
+    def hide_support_message(self):
+        if not self.is_support_message_enabled():
+            return
+        self.support_message_hidden = True
+        self.support_group.hide()
+        self.show_support_button.show()
+
+    def disable_support_message(self):
+        self.main_window.config_data[CONFIG_SHOW_SUPPORT_MESSAGE] = False
         save_config(self.main_window.config_data)
-        self.show_news_button.hide()
-        self.load_news_widget()
-
-    def hide_news_widget(self, update_config=True):
-        if update_config:
-            self.main_window.config_data[CONFIG_SHOW_NEWS_WIDGET] = False
-            save_config(self.main_window.config_data)
-
-        self.news_group.hide()
-        self.show_news_button.show()
-        self.news_items = []
-        self.current_news_index = 0
-        self.news_url = ""
-        self.stop_news_rotation()
-
-    def eventFilter(self, watched, event):
-        if watched is self.news_group:
-            if event.type() == QEvent.Type.Enter:
-                self.news_hovered = True
-                self.update_news_nav_visibility()
-                self.stop_news_rotation()
-            elif event.type() == QEvent.Type.Leave:
-                self.news_hovered = False
-                self.update_news_nav_visibility()
-                self.start_news_rotation_if_needed()
-
-        return super().eventFilter(watched, event)
-
-    def load_news_widget(self):
-        if not self.is_news_widget_enabled():
-            self.hide_news_widget(update_config=False)
-            return
-
-        self.news_group.hide()
-        self.show_news_button.hide()
-        self.news_items = []
-        self.current_news_index = 0
-        self.news_url = ""
-        self.stop_news_rotation()
-
-        try:
-            url = f"{NEWSWIDGET_URL}?t={int(time.time())}"
-            response = requests.get(url, timeout=5)
-            response.raise_for_status()
-
-            data = response.json()
-            items = data.get("items", [])
-
-            valid_items = []
-            for item in items:
-                headline = str(item.get("headline", "")).strip()
-                message = str(item.get("message", "")).strip()
-                if headline or message:
-                    valid_items.append(item)
-
-            if not valid_items:
-                self.show_news_button.show()
-                return
-
-            self.news_items = valid_items
-            self.current_news_index = 0
-            self.show_news_item(self.current_news_index)
-            self.news_group.show()
-            self.start_news_rotation_if_needed()
-
-        except Exception:
-            self.news_group.hide()
-            self.show_news_button.show()
-
-    def show_news_item(self, index):
-        if not self.is_news_widget_enabled():
-            self.hide_news_widget(update_config=False)
-            return
-
-        if not self.news_items:
-            self.news_group.hide()
-            self.show_news_button.show()
-            return
-
-        index %= len(self.news_items)
-        self.current_news_index = index
-
-        item = self.news_items[index]
-
-        headline = str(item.get("headline", "")).strip()
-        message = str(item.get("message", "")).strip()
-        news_type = str(item.get("type", "info")).strip().lower()
-        date_text = str(item.get("date", "")).strip()
-        url = str(item.get("url", "")).strip()
-        url_label = str(item.get("url_label", "")).strip() or "Open"
-
-        color_map = {
-            "info": "#4da3ff",
-            "update": "#00aa00",
-            "warning": "#ff8800",
-        }
-        headline_color = color_map.get(news_type, "#4da3ff")
-
-        self.news_headline_label.setText(headline)
-        self.news_headline_label.setStyleSheet(
-            f"font-size: 15px; font-weight: bold; color: {headline_color};"
-        )
-
-        self.news_message_label.setText(message)
-
-        if url:
-            self.news_url = url
-            self.news_button.setText(url_label)
-            self.news_button.setVisible(True)
-        else:
-            self.news_url = ""
-            self.news_button.setVisible(False)
-
-        if date_text:
-            self.news_date_label.setText(f"Posted: {date_text}")
-            self.news_date_label.show()
-        else:
-            self.news_date_label.hide()
-
-        if len(self.news_items) > 1:
-            self.news_counter_label.setText(f"{index + 1} / {len(self.news_items)}")
-            self.news_counter_label.show()
-        else:
-            self.news_counter_label.hide()
-
-        self.update_news_nav_visibility()
-
-    def show_next_news(self):
-        if len(self.news_items) <= 1:
-            return
-
-        self.show_news_item(self.current_news_index + 1)
-
-    def show_previous_news(self):
-        if len(self.news_items) <= 1:
-            return
-
-        self.show_news_item(self.current_news_index - 1)
-
-    def update_news_nav_visibility(self):
-        show_nav = (
-            self.is_news_widget_enabled()
-            and self.news_hovered
-            and len(self.news_items) > 1
-        )
-        self.news_prev_button.setVisible(show_nav)
-        self.news_next_button.setVisible(show_nav)
-
-    def start_news_rotation_if_needed(self):
-        if (
-            self.is_news_widget_enabled()
-            and len(self.news_items) > 1
-            and not self.news_hovered
-        ):
-            if not self.news_timer.isActive():
-                self.news_timer.start(NEWS_ROTATION_INTERVAL_MS)
-
-    def stop_news_rotation(self):
-        if self.news_timer.isActive():
-            self.news_timer.stop()
-
-    def open_news_link(self):
-        if self.news_url:
-            open_uri(self.news_url)
+        self.support_message_hidden = False
+        self.support_group.hide()
+        self.show_support_button.hide()
 
     def handle_mode_changed(self):
         if self.mode_switch_in_progress:
@@ -826,8 +673,8 @@ class ConnectionTab(QWidget):
 
         self.online_mode_radio.setEnabled(True)
         self.offline_mode_radio.setEnabled(True)
-        self.show_news_button.setEnabled(True)
-        self.hide_news_button.setEnabled(True)
+        self.show_support_button.setEnabled(True)
+        self.hide_support_button.setEnabled(True)
 
     def validate_sd_root(self, path_text: str) -> bool:
         path_text = str(path_text or "").strip()
@@ -1075,8 +922,8 @@ class ConnectionTab(QWidget):
         self.use_ssh_agent_checkbox.setEnabled(False)
         self.look_for_ssh_keys_checkbox.setEnabled(False)
 
-        self.show_news_button.setEnabled(True)
-        self.hide_news_button.setEnabled(True)
+        self.show_support_button.setEnabled(True)
+        self.hide_support_button.setEnabled(True)
 
         if self.save_after_next_connect:
             QTimer.singleShot(0, self._save_after_successful_connect)
@@ -1103,8 +950,8 @@ class ConnectionTab(QWidget):
         self.use_ssh_agent_checkbox.setEnabled(True)
         self.look_for_ssh_keys_checkbox.setEnabled(True)
 
-        self.show_news_button.setEnabled(True)
-        self.hide_news_button.setEnabled(True)
+        self.show_support_button.setEnabled(True)
+        self.hide_support_button.setEnabled(True)
 
         self.save_after_next_connect = False
         self.update_save_buttons_state()

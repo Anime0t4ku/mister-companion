@@ -51,21 +51,22 @@ from core.updater import (
 from core.zaplauncher_db import rename_db
 from ui.dialogs.device_dialog import DeviceDialog
 from ui.dialogs.network_scanner_dialog import NetworkScannerDialog
-from ui.dialogs.manuals_dialog import ManualsDialog
-from ui.dialogs.remote_dialog import RemoteDialog
-from ui.dialogs.retroachievements_dialog import RetroAchievementsDialog
 from ui.dialogs.setup_notice_dialog import SetupNoticeDialog
 from ui.dialogs.support_dialog import SupportDialog
 from ui.dialogs.theme_picker_dialog import ThemePickerDialog
 from ui.dialogs.app_settings_dialog import AppSettingsDialog
 from ui.dialogs.changelog_dialog import ChangelogDialog
-from ui.dialogs.file_browser_dialog import FileBrowserDialog
 from ui.dialogs.update_available_dialog import UpdateAvailableDialog
 from ui.tabs.connection_tab import ConnectionTab
 from ui.tabs.device_tab import DeviceTab
 from ui.tabs.flash_tab import FlashTab
+from ui.tabs.file_manager_tab import FileManagerTab
 from ui.tabs.install_center_tab import InstallCenterTab
 from ui.tabs.mister_settings_tab import MiSTerSettingsTab
+from ui.tabs.misterzine_tab import MiSTerZineTab
+from ui.tabs.manuals_tab import ManualsTab
+from ui.tabs.retroachievements_tab import RetroAchievementsTab
+from ui.tabs.remote_tab import RemoteTab
 from ui.tabs.savemanager_tab import SaveManagerTab
 from ui.tabs.wallpapers_tab import WallpapersTab
 from ui.tabs.zapscraper_tab import ZapScraperTab
@@ -519,26 +520,6 @@ class MainWindow(QMainWindow):
 
         self.check_update_button = None
 
-        self.files_button = QPushButton("Files")
-        self.files_button.setObjectName("FooterButton")
-        self.files_button.clicked.connect(self.open_files)
-        bottom_bar.addWidget(self.files_button)
-
-        self.remote_button = QPushButton("Remote")
-        self.remote_button.setObjectName("FooterButton")
-        self.remote_button.clicked.connect(self.open_remote)
-        bottom_bar.addWidget(self.remote_button)
-
-        self.manuals_button = QPushButton("Manuals")
-        self.manuals_button.setObjectName("FooterButton")
-        self.manuals_button.clicked.connect(self.open_manuals)
-        bottom_bar.addWidget(self.manuals_button)
-
-        self.retroachievements_button = QPushButton("RetroAchievements")
-        self.retroachievements_button.setObjectName("FooterButton")
-        self.retroachievements_button.clicked.connect(self.open_retroachievements)
-        bottom_bar.addWidget(self.retroachievements_button)
-
         self.scale_combo = UpwardComboBox()
         self.scale_combo.setToolTip("UI Scale")
         self.scale_combo.addItems([f"{value}%" for value in UI_SCALE_OPTIONS])
@@ -606,6 +587,16 @@ class MainWindow(QMainWindow):
         self.device_tab = DeviceTab(self)
         self.tabs.addTab(self.device_tab, self.tab_icon("device"), "Device")
 
+        self.remote_tab = RemoteTab(self)
+        self.tabs.addTab(self.remote_tab, self.tab_icon("remote"), "Remote")
+
+        self.file_manager_tab = FileManagerTab(self)
+        self.tabs.addTab(
+            self.file_manager_tab,
+            self.tab_icon("file_manager"),
+            "File Manager",
+        )
+
         self.install_center_tab = InstallCenterTab(self)
         self.tabs.addTab(self.install_center_tab, self.tab_icon("scripts"), "Install Center")
 
@@ -614,6 +605,34 @@ class MainWindow(QMainWindow):
             self.mister_settings_tab,
             self.tab_icon("mister_settings"),
             "MiSTer Settings",
+        )
+
+        self.savemanager_tab = SaveManagerTab(self)
+        self.tabs.addTab(
+            self.savemanager_tab,
+            self.tab_icon("savemanager"),
+            "SaveManager",
+        )
+
+        self.misterzine_tab = MiSTerZineTab(self)
+        self.tabs.addTab(
+            self.misterzine_tab,
+            self.tab_icon("misterzine"),
+            "MiSTerZine",
+        )
+
+        self.manuals_tab = ManualsTab(self)
+        self.tabs.addTab(
+            self.manuals_tab,
+            self.tab_icon("manuals"),
+            "Manuals",
+        )
+
+        self.retroachievements_tab = RetroAchievementsTab(self)
+        self.tabs.addTab(
+            self.retroachievements_tab,
+            self.tab_icon("retroachievements"),
+            "RetroAchievements",
         )
 
         self.zapscripts_tab = ZapScriptsTab(self)
@@ -626,15 +645,8 @@ class MainWindow(QMainWindow):
         self.zapscraper_tab = ZapScraperTab(self)
         self.tabs.addTab(
             self.zapscraper_tab,
-            self.tab_icon("zapscripts"),
+            self.tab_icon("zapscraper"),
             "ZapScraper",
-        )
-
-        self.savemanager_tab = SaveManagerTab(self)
-        self.tabs.addTab(
-            self.savemanager_tab,
-            self.tab_icon("savemanager"),
-            "SaveManager",
         )
 
         self.wallpapers_tab = WallpapersTab(self)
@@ -669,24 +681,17 @@ class MainWindow(QMainWindow):
             ("Flash SD", "flash_sd"),
             ("Connection", "connection"),
             ("Device", "device"),
+            ("Remote", "remote"),
+            ("File Manager", "file_manager"),
             ("Install Center", "scripts"),
             ("MiSTer Settings", "mister_settings"),
-            ("ZapScripts", "zapscripts"),
-            ("ZapScraper", "zapscripts"),
             ("SaveManager", "savemanager"),
+            ("MiSTerZine", "misterzine"),
+            ("Manuals", "manuals"),
+            ("RetroAchievements", "retroachievements"),
+            ("ZapScripts", "zapscripts"),
+            ("ZapScraper", "zapscraper"),
         ]
-
-    def current_menu_style(self) -> str:
-        style = str(self.config_data.get("menu_style", "side_menu") or "side_menu").strip().lower()
-        style = style.replace("-", "_").replace(" ", "_")
-
-        if style == "overlay":
-            style = "side_menu"
-
-        if style not in {"side_menu", "tabs"}:
-            style = "side_menu"
-
-        return style
 
     def build_side_menu(self):
         if not hasattr(self, "side_menu_layout"):
@@ -796,99 +801,26 @@ class MainWindow(QMainWindow):
         )
 
     def apply_menu_style(self):
+        """Apply the permanent side-menu navigation layout."""
         if not hasattr(self, "tabs") or not hasattr(self, "side_menu"):
             return
 
-        style = self.current_menu_style()
-        use_side_menu = style == "side_menu"
-
-        self.side_menu.setVisible(use_side_menu)
-        self.tabs.tabBar().setVisible(not use_side_menu)
-
-        if use_side_menu:
-            self.tabs.setStyleSheet(
-                """
-                QTabWidget::pane {
-                    top: 0px;
-                }
-                """
-            )
-        else:
-            self.tabs.setStyleSheet("")
+        self.side_menu.setVisible(True)
+        self.tabs.tabBar().setVisible(False)
+        self.tabs.setStyleSheet(
+            """
+            QTabWidget::pane {
+                top: 0px;
+            }
+            """
+        )
 
         if hasattr(self, "content_area_layout"):
-            self.content_area_layout.setSpacing(8 if use_side_menu else 0)
+            self.content_area_layout.setSpacing(8)
 
         self.update_side_menu_selection(self.tabs.currentIndex())
         self.update_side_menu_style()
 
-    def open_remote(self):
-        if self._closing:
-            return
-
-        if self.is_offline_mode():
-            QMessageBox.information(
-                self,
-                "Remote",
-                "Remote is only available in Online Mode.",
-            )
-            return
-
-        if not self.connection.is_connected():
-            QMessageBox.information(
-                self,
-                "Remote",
-                "Connect to a MiSTer first before using Remote.",
-            )
-            return
-
-        dialog = RemoteDialog(self)
-        dialog.exec()
-
-    def open_manuals(self):
-        if self._closing:
-            return
-
-        if self.is_offline_mode():
-            QMessageBox.information(
-                self,
-                "Manuals",
-                "Manuals is only available in Online Mode.",
-            )
-            return
-
-        dialog = ManualsDialog(self)
-        dialog.exec()
-
-    def open_retroachievements(self):
-        if self._closing:
-            return
-
-        dialog = RetroAchievementsDialog(self)
-        dialog.exec()
-
-    def open_files(self):
-        if self._closing:
-            return
-
-        if self.is_offline_mode():
-            QMessageBox.information(
-                self,
-                "Files",
-                "Files is only available in Online Mode.",
-            )
-            return
-
-        if not self.connection.is_connected():
-            QMessageBox.information(
-                self,
-                "Files",
-                "Connect to a MiSTer first before using Files.",
-            )
-            return
-
-        dialog = FileBrowserDialog(self)
-        dialog.exec()
 
     def open_app_settings(self):
         if self._closing:
@@ -911,7 +843,7 @@ class MainWindow(QMainWindow):
         open_uri(FEEDBACK_URL)
 
     def apply_default_window_size(self):
-        preferred_width = 1240 if self.current_menu_style() == "side_menu" else 1100
+        preferred_width = 1240
         preferred_height = 980
         screen_margin = 80
 
@@ -979,10 +911,6 @@ class MainWindow(QMainWindow):
 
         s = make_scaler(self.get_ui_scale_percent())
         footer_buttons = [
-            getattr(self, "files_button", None),
-            getattr(self, "remote_button", None),
-            getattr(self, "manuals_button", None),
-            getattr(self, "retroachievements_button", None),
             getattr(self, "theme_button", None),
         ]
 
@@ -1120,6 +1048,9 @@ class MainWindow(QMainWindow):
         if event.type() == QEvent.Type.WindowStateChange:
             self.update_maximize_button()
             QTimer.singleShot(0, self.apply_window_corner_radius)
+        elif event.type() == QEvent.Type.ActivationChange:
+            if hasattr(self, "remote_tab"):
+                self.remote_tab.handle_window_activation_changed(self.isActiveWindow())
 
         super().changeEvent(event)
 
@@ -1212,6 +1143,9 @@ class MainWindow(QMainWindow):
         if not self._widget_belongs_to_window(obj):
             return super().eventFilter(obj, event)
 
+        if hasattr(self, "remote_tab") and self.remote_tab.handle_application_key_event(event):
+            return True
+
         event_type = event.type()
 
         if event_type == QEvent.Type.MouseButtonPress:
@@ -1299,10 +1233,14 @@ class MainWindow(QMainWindow):
             "Flash SD": "flash_sd",
             "Connection": "connection",
             "Device": "device",
+            "File Manager": "file_manager",
             "MiSTer Settings": "mister_settings",
             "Install Center": "scripts",
+            "MiSTerZine": "misterzine",
+            "Manuals": "manuals",
+            "RetroAchievements": "retroachievements",
             "ZapScripts": "zapscripts",
-            "ZapScraper": "zapscripts",
+            "ZapScraper": "zapscraper",
             "SaveManager": "savemanager",
         }
 
@@ -1397,18 +1335,11 @@ class MainWindow(QMainWindow):
             if not self.connection.is_connected():
                 self.set_connection_status("Status: Disconnected")
 
-        if hasattr(self, "remote_button"):
-            self.remote_button.setEnabled(
-                self.is_online_mode() and self.connection.is_connected()
-            )
-
-        if hasattr(self, "manuals_button"):
-            self.manuals_button.setEnabled(self.is_online_mode())
-
-        if hasattr(self, "files_button"):
-            self.files_button.setEnabled(
-                self.is_online_mode() and self.connection.is_connected()
-            )
+        if hasattr(self, "side_menu_buttons") and hasattr(self, "tabs"):
+            for index, (button, _icon_name) in enumerate(self.side_menu_buttons):
+                if index < self.tabs.count() and self.tabs.tabText(index) == "Manuals":
+                    button.setEnabled(self.is_online_mode())
+                    break
 
         if hasattr(self, "connection_tab") and hasattr(self.connection_tab, "update_mode_state"):
             self.connection_tab.update_mode_state()
@@ -1536,6 +1467,15 @@ class MainWindow(QMainWindow):
             pass
 
     def closeEvent(self, event):
+        if hasattr(self, "file_manager_tab"):
+            self.file_manager_tab.shutdown()
+        if hasattr(self, "manuals_tab"):
+            self.manuals_tab.shutdown()
+        if hasattr(self, "retroachievements_tab"):
+            self.retroachievements_tab.shutdown()
+        if hasattr(self, "remote_tab"):
+            self.remote_tab.shutdown()
+
         if not self.should_remember_offline_sd_root():
             self.config_data["offline_sd_root"] = ""
             save_config(self.config_data)
@@ -1873,8 +1813,13 @@ class MainWindow(QMainWindow):
 
         for attr_name in (
             "device_tab",
+            "remote_tab",
+            "file_manager_tab",
             "mister_settings_tab",
             "install_center_tab",
+            "misterzine_tab",
+            "manuals_tab",
+            "retroachievements_tab",
             "zapscripts_tab",
             "zapscraper_tab",
             "savemanager_tab",
@@ -1911,6 +1856,32 @@ class MainWindow(QMainWindow):
         current_widget = self.current_content_widget()
 
         self._update_tab_connection_state(current_widget, lightweight=True)
+
+        if hasattr(self, "misterzine_tab") and current_widget is self.misterzine_tab:
+            self.misterzine_tab.refresh(force=force)
+            return
+
+        if hasattr(self, "file_manager_tab") and current_widget is self.file_manager_tab:
+            # Keep the current folder when switching tabs. File Manager has its
+            # own Refresh button for an explicit reload.
+            self.file_manager_tab.refresh(force=False)
+            return
+
+        if hasattr(self, "manuals_tab") and current_widget is self.manuals_tab:
+            # Manuals is session-persistent as a tab. Scan only on first use;
+            # cached manuals remain available even when SSH is disconnected.
+            self.manuals_tab.refresh(force=False)
+            return
+
+        if hasattr(self, "retroachievements_tab") and current_widget is self.retroachievements_tab:
+            # Do not reload on tab switches: preserve the exact RA view/state
+            # until the application closes.
+            self.retroachievements_tab.refresh(force=False)
+            return
+
+        if hasattr(self, "remote_tab") and current_widget is self.remote_tab:
+            self.remote_tab.refresh(force=force)
+            return
 
         if hasattr(self, "flash_tab") and current_widget is self.flash_tab:
             self.flash_tab.refresh_status(force=force)
@@ -1971,8 +1942,8 @@ class MainWindow(QMainWindow):
         if current_widget is None:
             return
 
-        if current_widget is None:
-            return
+        if hasattr(self, "remote_tab"):
+            self.remote_tab.set_tab_active(current_widget is self.remote_tab)
 
         self._tab_refresh_generation += 1
         generation = self._tab_refresh_generation
@@ -2267,6 +2238,9 @@ class MainWindow(QMainWindow):
 
     def disconnect_from_mister(self):
         self._connected_session_active = False
+
+        if hasattr(self, "file_manager_tab"):
+            self.file_manager_tab.reset_session(clear_output=False)
 
         try:
             self.connection.disconnect()
