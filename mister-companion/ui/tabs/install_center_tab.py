@@ -920,7 +920,6 @@ class InstallCenterDetailsDialog(QDialog):
             add_button("Configure", self.configure, enabled=installed, min_width=190)
             add_button("Run Offline" if self.tab.is_offline_mode() else "Run", self.run_item, enabled=installed, min_width=170)
         elif handler == "zaparoo":
-            add_button("Check for Updates", self.check_for_updates, enabled=installed and online_mode, min_width=170)
             add_button("Enable Start on Boot", lambda: self.call_install_center_action("enable_zaparoo_service"), enabled=installed and "service disabled" in status_lower, min_width=190)
             add_button("Open Web Interface", lambda: self.call_install_center_action("open_zaparoo_web_interface"), enabled=installed and online_mode, min_width=190)
             add_button("Uninstall", self.uninstall, enabled=installed, min_width=170)
