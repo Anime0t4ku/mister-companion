@@ -1,12 +1,18 @@
 import hashlib
 import json
 import os
+import ssl
 import tempfile
 import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
+
+try:
+    import certifi
+except Exception:  # pragma: no cover - fall back to the platform trust store
+    certifi = None
 
 from core.app_paths import generated_path
 
@@ -26,9 +32,19 @@ def _ensure_cache_dirs():
     IMAGE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 
+def _ssl_context():
+    """Return a verified TLS context that also works in packaged macOS builds."""
+    if certifi is not None:
+        try:
+            return ssl.create_default_context(cafile=certifi.where())
+        except Exception:
+            pass
+    return ssl.create_default_context()
+
+
 def _request_bytes(url: str, timeout: int = 12) -> bytes:
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(request, timeout=timeout) as response:
+    with urllib.request.urlopen(request, timeout=timeout, context=_ssl_context()) as response:
         return response.read()
 
 
