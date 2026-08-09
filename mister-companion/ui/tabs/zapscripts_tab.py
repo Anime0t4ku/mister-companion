@@ -33,6 +33,7 @@ from ui.dialogs.zapscripts_controls_dialog import ZapScriptsControlsDialog
 from ui.dialogs.zapscripts_scan_notice_dialog import ZapScriptsScanNoticeDialog
 from ui.dialogs.nfc_writer_dialog import NFCWriterDialog
 from ui.dialogs.nfc_reader_dialog import NFCReaderDialog
+from ui.zaparoo_pairing import run_with_zaparoo_pairing
 
 
 REMOTE_MEDIA_DB_PATH = "/media/fat/zaparoo/media.db"
@@ -983,7 +984,9 @@ class ZapScriptsTab(QWidget):
             return
 
         try:
-            launch_media(self.connection, entry)
+            run_with_zaparoo_pairing(
+                self, self.connection, lambda: launch_media(self.connection, entry)
+            )
         except Exception as e:
             QMessageBox.critical(self, "Launch failed", str(e))
 
@@ -1053,7 +1056,9 @@ class ZapScriptsTab(QWidget):
             return
 
         try:
-            send_input_command(self.connection, command)
+            run_with_zaparoo_pairing(
+                self, self.connection, lambda: send_input_command(self.connection, command)
+            )
         except Exception as e:
             QMessageBox.critical(self, "Control failed", str(e))
 

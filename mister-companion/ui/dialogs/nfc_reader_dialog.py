@@ -18,6 +18,7 @@ from core.nfc_reader import (
     open_reader,
 )
 from core.zapscripts import send_input_command
+from ui.zaparoo_pairing import run_with_zaparoo_pairing
 
 
 def _is_likely_reader_port(reader) -> bool:
@@ -309,8 +310,11 @@ class NFCReaderDialog(QDialog):
         self.status.setText("Token detected. Sending payload to Zaparoo...")
 
         try:
-            send_input_command(self.connection, payload)
-            self.status.setText("Payload sent to Zaparoo. Waiting for NFC token...")
+            result = run_with_zaparoo_pairing(
+                self, self.connection, lambda: send_input_command(self.connection, payload)
+            )
+            if result is not None:
+                self.status.setText("Payload sent to Zaparoo. Waiting for NFC token...")
         except Exception as e:
             self.status.setText("Failed to send payload to Zaparoo.")
             self.payload_box.setPlainText(
@@ -332,8 +336,11 @@ class NFCReaderDialog(QDialog):
         self.status.setText("Token removed. Sending stop command...")
 
         try:
-            send_input_command(self.connection, "**stop")
-            self.status.setText("Stop command sent. Waiting for NFC token...")
+            result = run_with_zaparoo_pairing(
+                self, self.connection, lambda: send_input_command(self.connection, "**stop")
+            )
+            if result is not None:
+                self.status.setText("Stop command sent. Waiting for NFC token...")
         except Exception as e:
             self.status.setText("Failed to send stop command.")
             self.payload_box.setPlainText(f"Stop command error:\n{e}")

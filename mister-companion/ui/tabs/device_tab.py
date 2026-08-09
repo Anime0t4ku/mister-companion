@@ -25,6 +25,8 @@ from core.scripts_actions import get_scripts_status, get_scripts_status_local, r
 from core.scripts_static_wallpaper import get_static_wallpaper_state_local, remove_static_wallpaper_local
 from ui.dialogs.static_wallpaper_dialog import StaticWallpaperDialog
 from ui.update_all_runner import UpdateAllOutputDialog, prepare_update_all_task
+from core.zaparoo_crypto import clear_pairing_credentials, has_pairing_credentials
+from ui.zaparoo_pairing import prompt_for_zaparoo_pairing
 
 
 class DeviceStatusWorker(QThread):
@@ -269,6 +271,29 @@ class DeviceTab(QWidget):
         power_layout.addLayout(reboot_row)
         power_group.setLayout(power_layout)
 
+        self.zaparoo_group = QGroupBox("Zaparoo")
+        zaparoo_layout = QVBoxLayout()
+        zaparoo_layout.setContentsMargins(16, 18, 16, 18)
+        zaparoo_layout.setSpacing(10)
+
+        self.zaparoo_status_label = QLabel("")
+        self.zaparoo_status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.zaparoo_status_label.setWordWrap(True)
+
+        zaparoo_buttons_row = QVBoxLayout()
+        zaparoo_buttons_row.setSpacing(8)
+        self.zaparoo_pair_button = QPushButton("Pair with Zaparoo")
+        self.zaparoo_remove_pair_button = QPushButton("Remove Zaparoo Pairing")
+        for button in (self.zaparoo_pair_button, self.zaparoo_remove_pair_button):
+            set_text_button_min_width(button, 190)
+            button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+            zaparoo_buttons_row.addWidget(button, 0, Qt.AlignmentFlag.AlignCenter)
+
+        zaparoo_layout.addWidget(self.zaparoo_status_label)
+        zaparoo_layout.addLayout(zaparoo_buttons_row)
+        self.zaparoo_group.setLayout(zaparoo_layout)
+        self.zaparoo_group.setVisible(False)
+
         self.now_playing_group = QGroupBox("Now Playing")
         now_playing_layout = QVBoxLayout()
         now_playing_layout.setContentsMargins(16, 18, 16, 18)
@@ -296,6 +321,7 @@ class DeviceTab(QWidget):
         cards_grid.addWidget(self.static_wallpaper_group, 0, 1)
         cards_grid.addWidget(power_group, 1, 0)
         cards_grid.addWidget(self.update_all_group, 1, 1)
+        cards_grid.addWidget(self.zaparoo_group, 2, 0, 1, 2)
         cards_grid.setColumnStretch(0, 1)
         cards_grid.setColumnStretch(1, 1)
         main_layout.addLayout(cards_grid)
@@ -314,6 +340,52 @@ class DeviceTab(QWidget):
         self.configure_update_all_button.clicked.connect(self.configure_update_all)
         self.set_static_wallpaper_button.clicked.connect(self.set_static_wallpaper)
         self.remove_static_wallpaper_button.clicked.connect(self.remove_static_wallpaper_action)
+        self.zaparoo_pair_button.clicked.connect(self.pair_with_zaparoo)
+        self.zaparoo_remove_pair_button.clicked.connect(self.remove_zaparoo_pairing)
+
+    def update_zaparoo_pairing_state(self):
+        online = not self.is_offline_mode() and self.connection.is_connected()
+        host = getattr(self.connection, "host", "").strip() if online else ""
+        self.zaparoo_group.setVisible(bool(online and host))
+        if not online or not host:
+            return
+
+        paired = has_pairing_credentials(host)
+        self.zaparoo_status_label.setText(
+            f"MiSTer {host}: " + ("Paired" if paired else "Not paired")
+        )
+        self.zaparoo_pair_button.setVisible(not paired)
+        self.zaparoo_remove_pair_button.setVisible(paired)
+
+    def pair_with_zaparoo(self):
+        if self.is_offline_mode() or not self.connection.is_connected():
+            return
+        if prompt_for_zaparoo_pairing(self, self.connection):
+            self.update_zaparoo_pairing_state()
+
+    def remove_zaparoo_pairing(self):
+        if self.is_offline_mode() or not self.connection.is_connected():
+            return
+        host = getattr(self.connection, "host", "").strip()
+        if not host or not has_pairing_credentials(host):
+            self.update_zaparoo_pairing_state()
+            return
+
+        answer = QMessageBox.question(
+            self,
+            "Remove Zaparoo Pairing",
+            f"Remove the saved Zaparoo pairing for MiSTer {host}?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            clear_pairing_credentials(host)
+        except Exception as exc:
+            QMessageBox.critical(self, "Could Not Remove Pairing", str(exc))
+            return
+        self.update_zaparoo_pairing_state()
 
     def open_share_button_text(self):
         if sys.platform == "darwin":
@@ -434,9 +506,11 @@ class DeviceTab(QWidget):
         self.open_share_button.setToolTip("")
 
         self.show_usb_storage(True)
+        self.update_zaparoo_pairing_state()
 
     def apply_disconnected_state(self):
         self.refresh_timer.stop()
+        self.zaparoo_group.setVisible(False)
 
         self.refresh_button.setEnabled(False)
         self.return_to_menu_button.setEnabled(False)
@@ -487,6 +561,7 @@ class DeviceTab(QWidget):
 
     def apply_offline_state(self, lightweight=True):
         self.refresh_timer.stop()
+        self.zaparoo_group.setVisible(False)
 
         self.refresh_button.setEnabled(True)
         self.return_to_menu_button.setEnabled(False)

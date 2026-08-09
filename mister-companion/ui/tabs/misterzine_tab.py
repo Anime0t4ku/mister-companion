@@ -37,6 +37,7 @@ from core.misterzine import (
 )
 from core.open_helpers import open_uri
 from core.zapscripts import run_zaparoo_command
+from ui.zaparoo_pairing import run_with_zaparoo_pairing
 
 
 TABLE_COLUMNS = [
@@ -602,8 +603,13 @@ class MiSTerZineTab(QWidget):
             self.status_label.setText("This MiSTerZine entry does not contain a launch target.")
             return
         try:
-            run_zaparoo_command(self.main_window.connection, command, timeout=5)
-            self.status_label.setText(f"Launch sent to Zaparoo: {self.current_entry.get('title', '')}")
+            result = run_with_zaparoo_pairing(
+                self,
+                self.main_window.connection,
+                lambda: run_zaparoo_command(self.main_window.connection, command, timeout=5),
+            )
+            if result is not None:
+                self.status_label.setText(f"Launch sent to Zaparoo: {self.current_entry.get('title', '')}")
         except Exception as exc:
             self.status_label.setText(f"Could not launch through Zaparoo: {exc}")
 

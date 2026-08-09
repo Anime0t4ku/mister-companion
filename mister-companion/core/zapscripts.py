@@ -5,11 +5,21 @@ from pathlib import Path
 
 from websocket import create_connection
 
+from core.zaparoo_crypto import (
+    ZaparooCryptoError,
+    create_encrypted_session,
+    load_pairing_credentials,
+)
+
 
 REMOTE_MEDIA_DB_PATH = "/media/fat/zaparoo/media.db"
 
 
 class ZaparooApiError(RuntimeError):
+    pass
+
+
+class ZaparooPairingRequired(ZaparooApiError):
     pass
 
 
@@ -31,45 +41,102 @@ def _build_ws_url(connection) -> str:
     return f"ws://{host}:7497/api/v0.1"
 
 
-def _send_ws_payload(connection, payload: dict, timeout: int = 5):
-    ws_url = _build_ws_url(connection)
+def _response_error(response):
+    if not isinstance(response, dict) or not response.get("error"):
+        return None, ""
 
+    error = response["error"]
+    if isinstance(error, dict):
+        return error.get("code"), error.get("message") or str(error)
+    return None, str(error)
+
+
+def _plain_ws_payload(ws_url: str, payload: dict, timeout: int):
     ws = None
     try:
-        ws = create_connection(
-            ws_url,
-            timeout=timeout,
-            suppress_origin=True,
-        )
-
+        ws = create_connection(ws_url, timeout=timeout, suppress_origin=True)
         ws.send(json.dumps(payload))
         response_raw = ws.recv()
-
         try:
-            response = json.loads(response_raw)
+            return json.loads(response_raw)
         except Exception:
-            response = {"raw": response_raw}
-
-        if isinstance(response, dict) and response.get("error"):
-            error = response["error"]
-            if isinstance(error, dict):
-                message = error.get("message") or str(error)
-            else:
-                message = str(error)
-            raise ZaparooApiError(message)
-
-        return response
-
-    except Exception as e:
-        if isinstance(e, ZaparooApiError):
-            raise
-        raise ZaparooApiError(str(e)) from e
+            return {"raw": response_raw}
     finally:
         if ws is not None:
             try:
                 ws.close()
             except Exception:
                 pass
+
+
+def _encrypted_ws_payload(ws_url: str, payload: dict, credentials, timeout: int):
+    ws = None
+    session = create_encrypted_session(credentials)
+    try:
+        ws = create_connection(ws_url, timeout=timeout, suppress_origin=True)
+        ws.send(json.dumps(session.encrypt_payload(payload), separators=(",", ":")))
+        response_raw = ws.recv()
+        try:
+            response_frame = json.loads(response_raw)
+        except Exception as exc:
+            raise ZaparooCryptoError("Zaparoo returned an invalid encrypted response.") from exc
+
+        # Protocol/setup failures may be returned as plaintext JSON-RPC errors.
+        if isinstance(response_frame, dict) and response_frame.get("error") and not response_frame.get("e"):
+            return response_frame
+
+        return session.decrypt_frame(response_frame)
+    finally:
+        if ws is not None:
+            try:
+                ws.close()
+            except Exception:
+                pass
+
+
+def _send_ws_payload(connection, payload: dict, timeout: int = 5):
+    ws_url = _build_ws_url(connection)
+    host = getattr(connection, "host", "").strip()
+
+    credentials = None
+    credential_error = None
+    try:
+        credentials = load_pairing_credentials(host)
+    except ZaparooCryptoError as exc:
+        credential_error = exc
+
+    if credentials is not None:
+        try:
+            response = _encrypted_ws_payload(ws_url, payload, credentials, timeout)
+            code, message = _response_error(response)
+            if not message:
+                return response
+            if code not in (-32001, -32002):
+                raise ZaparooApiError(message)
+        except ZaparooApiError:
+            raise
+        except Exception:
+            # A stale/revoked credential can make the encrypted first frame fail.
+            # Probe plaintext once so we can distinguish optional encryption from
+            # a server that requires a fresh pairing.
+            pass
+
+    try:
+        response = _plain_ws_payload(ws_url, payload, timeout)
+        code, message = _response_error(response)
+        if message:
+            if code == -32002:
+                if credential_error is not None:
+                    raise ZaparooApiError(str(credential_error))
+                raise ZaparooPairingRequired(
+                    "Zaparoo pairing is required before this MiSTer can accept remote commands."
+                )
+            raise ZaparooApiError(message)
+        return response
+    except Exception as e:
+        if isinstance(e, ZaparooApiError):
+            raise
+        raise ZaparooApiError(str(e)) from e
 
 
 def run_zaparoo_command(connection, command: str, timeout: int = 5):

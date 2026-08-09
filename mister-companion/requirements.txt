@@ -6,3 +6,4 @@ psutil
 pyserial
 Pillow
 certifi
+cryptography
