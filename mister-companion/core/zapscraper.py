@@ -856,7 +856,8 @@ def scan_games_folder(
         if callable(stop_checker) and stop_checker():
             break
 
-        system_path = games_root / folder_name
+        games_folder = str(info.get("games_folder") or folder_name)
+        system_path = games_root / games_folder
         label = info.get("label", folder_name)
 
         if callable(progress_callback):
@@ -981,6 +982,67 @@ def _scan_zip_contents(
     return results
 
 
+def _scan_amigavision_listings(
+    system_path: Path,
+    listing_paths,
+    *,
+    completed_checker=None,
+) -> list[ZapScraperRom]:
+    """Create virtual ROM entries from AmigaVision listing files.
+
+    Zaparoo indexes AmigaVision games as virtual paths below the Amiga system,
+    e.g. ./Games/<exact listing name>. The listing file itself is used as the
+    backing path so the normal ZapScraper pipeline can handle both output modes
+    without requiring fake ROM files.
+    """
+    roms: list[ZapScraperRom] = []
+
+    for relative_listing in listing_paths or []:
+        listing_path = system_path / str(relative_listing)
+        if not listing_path.exists() or not listing_path.is_file():
+            continue
+
+        category = Path(str(relative_listing)).stem.capitalize()
+        if not category:
+            category = "Games"
+
+        try:
+            lines = listing_path.read_text(encoding="utf-8-sig", errors="replace").splitlines()
+        except Exception:
+            continue
+
+        for raw_line in lines:
+            listing_name = str(raw_line or "").strip()
+            if not listing_name or listing_name.startswith("#"):
+                continue
+
+            relative_path = f"./{category}/{listing_name}"
+            virtual_filename = f"{listing_name}.amigavision"
+
+            if callable(completed_checker) and completed_checker(
+                relative_path,
+                virtual_filename,
+                listing_path,
+                "",
+            ):
+                continue
+
+            roms.append(
+                ZapScraperRom(
+                    path=listing_path,
+                    relative_path=relative_path,
+                    filename=virtual_filename,
+                    stem=listing_name,
+                    size=0,
+                    scraper_lookup_name=clean_rom_display_name(listing_name),
+                    skip_hashes=True,
+                )
+            )
+
+    roms.sort(key=lambda item: item.relative_path.lower())
+    return roms
+
+
 def scan_system_folder(
     system_path: Path,
     system_folder: str,
@@ -995,6 +1057,16 @@ def scan_system_folder(
     roms: list[ZapScraperRom] = []
     checked_files = 0
     last_reported_folder = ""
+
+    system_info = SUPPORTED_SYSTEMS.get(system_folder, {})
+    amigavision_listings = system_info.get("amigavision_listings") or []
+    if amigavision_listings:
+        return _scan_amigavision_listings(
+            system_path,
+            amigavision_listings,
+            completed_checker=completed_checker,
+        )
+
     referenced_disc_helpers = _cue_referenced_local_paths(system_path)
 
     for path in system_path.rglob("*"):
@@ -3885,6 +3957,7 @@ def process_scrape_action(
     output_format: str = DEFAULT_OUTPUT_FORMAT,
     zaparoo_media_source_names=None,
     zaparoo_slug_map: dict[tuple[str, str], str] | None = None,
+    scraper_lookup_cache: dict[tuple[int, str], dict[str, Any] | None] | None = None,
     quota_callback=None,
     stop_checker=None,
     log_callback=None,
@@ -3940,24 +4013,50 @@ def process_scrape_action(
                 "slug_hit": True,
             }
 
-    if scraper_lookup_name:
-        _log(log_callback, f"Searching ScreenScraper as: {lookup_filename}")
+    lookup_cache_key: tuple[int, str] | None = None
+    lookup_cache_hit = False
+
+    # Arcade MRAs are launch descriptors and multiple MRAs can point at the
+    # same underlying ROM set. Reuse the ScreenScraper response for identical
+    # explicit lookup names so duplicate launchers do not consume extra API
+    # requests. The individual MRA paths are still written separately.
+    if (
+        action.get("system_folder") == ARCADE_SYSTEM_FOLDER
+        and scraper_lookup_name
+        and scraper_lookup_cache is not None
+    ):
+        lookup_cache_key = (system_id, lookup_filename.casefold())
+        if lookup_cache_key in scraper_lookup_cache:
+            data = scraper_lookup_cache[lookup_cache_key]
+            lookup_cache_hit = True
+            _log(log_callback, f"Using cached ScreenScraper result for: {lookup_filename}")
+        else:
+            data = None
     else:
-        _log(log_callback, "Searching ScreenScraper...")
+        data = None
 
     try:
-        data = fetch_game_info(
-            username=username,
-            password=password,
-            rom_path=rom_path,
-            rom_filename=lookup_filename,
-            rom_size=rom_size,
-            system_id=system_id,
-            zip_inner_path=rom.get("zip_inner_path", ""),
-            skip_hashes=_is_zaparoo_format(output_format) or bool(rom.get("skip_hashes")),
-            quota_callback=quota_callback,
-            stop_checker=stop_checker,
-        )
+        if not lookup_cache_hit:
+            if scraper_lookup_name:
+                _log(log_callback, f"Searching ScreenScraper as: {lookup_filename}")
+            else:
+                _log(log_callback, "Searching ScreenScraper...")
+
+            data = fetch_game_info(
+                username=username,
+                password=password,
+                rom_path=rom_path,
+                rom_filename=lookup_filename,
+                rom_size=rom_size,
+                system_id=system_id,
+                zip_inner_path=rom.get("zip_inner_path", ""),
+                skip_hashes=_is_zaparoo_format(output_format) or bool(rom.get("skip_hashes")),
+                quota_callback=quota_callback,
+                stop_checker=stop_checker,
+            )
+
+            if lookup_cache_key is not None:
+                scraper_lookup_cache[lookup_cache_key] = data
     except InterruptedError:
         raise
     except ScreenScraperQuotaError:
@@ -4044,6 +4143,7 @@ def process_scrape_action(
             "region": region_code,
             "output_format": output_format,
             "zaparoo": zaparoo_result,
+            "lookup_cache_hit": lookup_cache_hit,
         }
 
     image_relative_path = ""
@@ -4106,6 +4206,7 @@ def process_scrape_action(
         "image_relative_path": image_relative_path,
         "region": region_code,
         "output_format": output_format,
+        "lookup_cache_hit": lookup_cache_hit,
     }
 
 
@@ -4129,6 +4230,7 @@ def run_scrape_actions(
     output_format = normalize_output_format(output_format)
 
     slug_map: dict[tuple[str, str], str] = {}
+    scraper_lookup_cache: dict[tuple[int, str], dict[str, Any] | None] = {}
 
     total = len(actions)
     zaparoo_existing_cache: dict[str, tuple[dict[str, ET.Element], dict[str, ET.Element]]] = {}
@@ -4194,6 +4296,7 @@ def run_scrape_actions(
                 output_format=output_format,
                 zaparoo_media_source_names=zaparoo_media_source_names,
                 zaparoo_slug_map=slug_map if _is_zaparoo_format(output_format) else None,
+                scraper_lookup_cache=scraper_lookup_cache,
                 quota_callback=quota_callback,
                 stop_checker=stop_checker,
                 log_callback=log_callback,
@@ -4212,6 +4315,8 @@ def run_scrape_actions(
             if callable(log_callback):
                 if result.get("slug_hit"):
                     log_callback(f"Done (API skipped — matched existing title): {rom_filename}")
+                elif result.get("lookup_cache_hit"):
+                    log_callback(f"Done (API skipped — reused scraped ROM set): {rom_filename}")
                 elif result.get("request_skipped"):
                     log_callback(f"Done (ScreenScraper skipped): {rom_filename}")
                 else:

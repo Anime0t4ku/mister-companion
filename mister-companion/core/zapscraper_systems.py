@@ -117,6 +117,12 @@ SUPPORTED_SYSTEMS = {
         "screenscraper_id": 94,
         "extensions": [".bin", ".zip", ".7z"],
     },
+    "Amiga": {
+        "label": "AmigaVision",
+        "screenscraper_id": 64,
+        "extensions": [],
+        "amigavision_listings": ["listings/games.txt"],
+    },
     "Astrocade": {
         "label": "Bally Astrocade",
         "screenscraper_id": 44,
@@ -192,6 +198,11 @@ SUPPORTED_SYSTEMS = {
         "screenscraper_id": 21,
         "extensions": [".gg", ".zip", ".7z"],
     },
+    "Gamate": {
+        "label": "Gamate",
+        "screenscraper_id": 266,
+        "extensions": [".bin"],
+    },
     "GameNWatch": {
         "label": "Game & Watch",
         "screenscraper_id": 52,
@@ -226,6 +237,12 @@ SUPPORTED_SYSTEMS = {
         "label": "Atari Jaguar",
         "screenscraper_id": 27,
         "extensions": [".j64", ".jag", ".rom", ".bin", ".zip", ".7z"],
+    },
+    "JaguarCD": {
+        "label": "Atari Jaguar CD",
+        "screenscraper_id": 171,
+        "extensions": [".cdi"],
+        "games_folder": "Jaguar",
     },
     "Laser": {
         "label": "Laser",

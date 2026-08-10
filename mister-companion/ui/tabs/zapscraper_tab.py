@@ -1708,7 +1708,8 @@ class ZapScraperTab(QWidget):
         else:
             self.progress_bar.setRange(0, 0)
 
-        self.current_task_label.setText(f"{message} {games_found} games found.")
+        progress_message = f"{message.rstrip('.')} — {games_found} total"
+        self.current_task_label.setText(progress_message)
 
         should_log = (
             message.startswith("Checking ")
@@ -1718,7 +1719,7 @@ class ZapScraperTab(QWidget):
 
         if should_log and message != self.last_scan_log_message:
             self.last_scan_log_message = message
-            self.append_output(f"{message} {games_found} games found.")
+            self.append_output(progress_message)
 
     def on_scan_finished(self, systems):
         self.systems = systems or []
