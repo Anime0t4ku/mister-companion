@@ -62,6 +62,7 @@ from ui.tabs.device_tab import DeviceTab
 from ui.tabs.flash_tab import FlashTab
 from ui.tabs.file_manager_tab import FileManagerTab
 from ui.tabs.install_center_tab import InstallCenterTab
+from ui.tabs.tools_tab import ToolsTab
 from ui.tabs.mister_settings_tab import MiSTerSettingsTab
 from ui.tabs.misterzine_tab import MiSTerZineTab
 from ui.tabs.manuals_tab import ManualsTab
@@ -649,6 +650,9 @@ class MainWindow(QMainWindow):
             "ZapScraper",
         )
 
+        self.tools_tab = ToolsTab(self)
+        self.tabs.addTab(self.tools_tab, self.tab_icon("tools"), "Tools")
+
         self.wallpapers_tab = WallpapersTab(self)
 
         self.build_side_menu()
@@ -691,6 +695,7 @@ class MainWindow(QMainWindow):
             ("RetroAchievements", "retroachievements"),
             ("ZapScripts", "zapscripts"),
             ("ZapScraper", "zapscraper"),
+            ("Tools", "tools"),
         ]
 
     def build_side_menu(self):
@@ -1236,6 +1241,7 @@ class MainWindow(QMainWindow):
             "File Manager": "file_manager",
             "MiSTer Settings": "mister_settings",
             "Install Center": "scripts",
+            "Tools": "tools",
             "MiSTerZine": "misterzine",
             "Manuals": "manuals",
             "RetroAchievements": "retroachievements",
@@ -1817,6 +1823,7 @@ class MainWindow(QMainWindow):
             "file_manager_tab",
             "mister_settings_tab",
             "install_center_tab",
+            "tools_tab",
             "misterzine_tab",
             "manuals_tab",
             "retroachievements_tab",

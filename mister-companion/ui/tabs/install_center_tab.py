@@ -786,17 +786,20 @@ class InstallCenterDetailsDialog(QDialog):
         self.install_update_button = QPushButton("Update" if self.status.get("update_available") else "Install")
         uninstall_button = QPushButton("Uninstall")
         official_button = QPushButton("Official Page")
-        for button in (self.install_update_button, uninstall_button, official_button):
+        source_button = QPushButton("Source")
+        for button in (self.install_update_button, uninstall_button, official_button, source_button):
             self.prepare_action_button(button)
 
         self.install_update_button.setVisible(action_supported(self.item, self.status, "install_update") and context_ready)
         uninstall_button.setVisible(action_supported(self.item, self.status, "uninstall") and context_ready)
         official_button.setVisible(bool(self.item.get("official_url")))
+        source_button.setVisible(bool(self.source_url_for_item()))
 
         self.install_update_button.clicked.connect(self.install_or_update)
         uninstall_button.clicked.connect(self.uninstall)
         official_button.clicked.connect(self.open_official_page)
-        for button in (self.install_update_button, uninstall_button, official_button):
+        source_button.clicked.connect(self.open_source_page)
+        for button in (self.install_update_button, uninstall_button, official_button, source_button):
             actions.addWidget(button)
 
     def add_rom_action_buttons(self, actions, context_ready):
@@ -823,17 +826,17 @@ class InstallCenterDetailsDialog(QDialog):
         license_button.clicked.connect(self.open_license_page)
         actions.addWidget(license_button)
 
-        source_button = QPushButton("Source")
-        self.prepare_action_button(source_button)
-        source_button.setVisible(bool(self.item.get("source_url")))
-        source_button.clicked.connect(self.open_source_page)
-        actions.addWidget(source_button)
-
         official_button = QPushButton("Official Page")
         self.prepare_action_button(official_button)
         official_button.setVisible(bool(self.item.get("official_url")))
         official_button.clicked.connect(self.open_official_page)
         actions.addWidget(official_button)
+
+        source_button = QPushButton("Source")
+        self.prepare_action_button(source_button)
+        source_button.setVisible(bool(self.source_url_for_item()))
+        source_button.clicked.connect(self.open_source_page)
+        actions.addWidget(source_button)
 
 
     def choose_rom_install_folder(self):
@@ -892,6 +895,12 @@ class InstallCenterDetailsDialog(QDialog):
         official_button.setVisible(bool(self.item.get("official_url")))
         official_button.clicked.connect(self.open_official_page)
         actions.addWidget(official_button)
+
+        source_button = QPushButton("Source")
+        self.prepare_action_button(source_button)
+        source_button.setVisible(bool(self.source_url_for_item()))
+        source_button.clicked.connect(self.open_source_page)
+        actions.addWidget(source_button)
 
     def add_script_action_buttons(self, actions, context_ready):
         handler = self.item.get("handler") or self.item.get("id")
@@ -975,17 +984,17 @@ class InstallCenterDetailsDialog(QDialog):
         license_button.clicked.connect(self.open_license_page)
         actions.addWidget(license_button)
 
-        source_button = QPushButton("Source")
-        self.prepare_action_button(source_button)
-        source_button.setVisible(bool(self.item.get("source_url")))
-        source_button.clicked.connect(self.open_source_page)
-        actions.addWidget(source_button)
-
         official_button = QPushButton("Official Page")
         self.prepare_action_button(official_button)
         official_button.setVisible(bool(self.item.get("official_url")))
         official_button.clicked.connect(self.open_official_page)
         actions.addWidget(official_button)
+
+        source_button = QPushButton("Source")
+        self.prepare_action_button(source_button)
+        source_button.setVisible(bool(self.source_url_for_item()))
+        source_button.clicked.connect(self.open_source_page)
+        actions.addWidget(source_button)
 
 
     def open_collection_launcher_manager(self):
@@ -1075,17 +1084,17 @@ class InstallCenterDetailsDialog(QDialog):
         license_button.clicked.connect(self.open_license_page)
         actions.addWidget(license_button)
 
-        source_button = QPushButton("Source")
-        self.prepare_action_button(source_button)
-        source_button.setVisible(bool(self.item.get("source_url")))
-        source_button.clicked.connect(self.open_source_page)
-        actions.addWidget(source_button)
-
         official_button = QPushButton("Official Page")
         self.prepare_action_button(official_button)
         official_button.setVisible(bool(self.item.get("official_url")))
         official_button.clicked.connect(self.open_official_page)
         actions.addWidget(official_button)
+
+        source_button = QPushButton("Source")
+        self.prepare_action_button(source_button)
+        source_button.setVisible(bool(self.source_url_for_item()))
+        source_button.clicked.connect(self.open_source_page)
+        actions.addWidget(source_button)
 
 
     def open_megavgmdrive_game_folder(self):
@@ -1164,6 +1173,11 @@ class InstallCenterDetailsDialog(QDialog):
         if url:
             webbrowser.open(url)
 
+    def source_url_for_item(self):
+        if self.item.get("category") == "roms" or self.item.get("type") == "rom":
+            return str(self.item.get("source_url") or "").strip()
+        return str(self.item.get("project_url") or "").strip()
+
     def open_official_page(self):
         self.open_item_url("official_url")
 
@@ -1171,7 +1185,9 @@ class InstallCenterDetailsDialog(QDialog):
         self.open_item_url("license_url")
 
     def open_source_page(self):
-        self.open_item_url("source_url")
+        url = self.source_url_for_item()
+        if url:
+            webbrowser.open(url)
 
 
 class InstallCenterUpdatesDialog(QDialog):
