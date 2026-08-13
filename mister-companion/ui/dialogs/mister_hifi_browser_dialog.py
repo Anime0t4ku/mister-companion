@@ -21,7 +21,10 @@ class _RequestRunnable(QRunnable):
         self.fn = fn
         self.args = args
         self.signals = _RequestSignals()
-        self.setAutoDelete(True)
+        # Python owns the runnable until its finished signal removes it from
+        # the dialog's request list. Avoid Qt deleting the native QRunnable
+        # while a Python wrapper is still intentionally retained.
+        self.setAutoDelete(False)
 
     def run(self):
         try:
@@ -102,6 +105,14 @@ class MiSTerHiFiBrowserDialog(QDialog):
         QThreadPool.globalInstance().start(worker)
 
     def request_finished(self, worker):
+        # The runnable is Python-owned (autoDelete=False). Disconnect its
+        # signal object before dropping the final retained reference so Qt and
+        # Python cannot race ownership of the native QRunnable wrapper.
+        for signal in (worker.signals.done, worker.signals.failed, worker.signals.finished):
+            try:
+                signal.disconnect()
+            except (TypeError, RuntimeError):
+                pass
         try:
             self._request_refs.remove(worker)
         except ValueError:

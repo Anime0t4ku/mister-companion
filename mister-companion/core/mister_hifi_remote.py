@@ -84,7 +84,13 @@ class HiFiWebSocketListener:
         self._thread = threading.Thread(target=self._run, name="MiSTerHiFiWebSocket", daemon=True)
         self._thread.start()
 
-    def stop(self):
+    def stop(self, join_timeout=0.0):
+        """Stop the listener and optionally wait briefly for its worker thread.
+
+        Closing the websocket wakes a blocking recv() so the thread can unwind
+        promptly.  The bounded join is used during UI teardown to avoid leaving
+        a native websocket thread racing Qt object destruction.
+        """
         self._stop.set()
         ws = self._ws
         self._ws = None
@@ -93,6 +99,18 @@ class HiFiWebSocketListener:
                 ws.close()
             except Exception:
                 pass
+
+        thread = self._thread
+        if (
+            join_timeout
+            and thread is not None
+            and thread.is_alive()
+            and thread is not threading.current_thread()
+        ):
+            thread.join(max(0.0, float(join_timeout)))
+
+        if thread is not None and not thread.is_alive():
+            self._thread = None
 
     def _run(self):
         was_connected = False

@@ -1509,6 +1509,8 @@ class MainWindow(QMainWindow):
             pass
 
     def closeEvent(self, event):
+        if hasattr(self, "device_tab"):
+            self.device_tab.shutdown()
         if hasattr(self, "file_manager_tab"):
             self.file_manager_tab.shutdown()
         if hasattr(self, "manuals_tab"):

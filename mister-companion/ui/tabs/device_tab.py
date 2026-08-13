@@ -59,8 +59,8 @@ class DeviceStatusWorker(QThread):
     result = pyqtSignal(dict)
     error = pyqtSignal(str)
 
-    def __init__(self, connection, offline_mode=False, sd_root=""):
-        super().__init__()
+    def __init__(self, connection, offline_mode=False, sd_root="", parent=None):
+        super().__init__(parent)
         self.connection = connection
         self.offline_mode = offline_mode
         self.sd_root = sd_root
@@ -135,8 +135,8 @@ class DeviceStatusWorker(QThread):
 class NowPlayingWorker(QThread):
     result = pyqtSignal(dict)
 
-    def __init__(self, connection):
-        super().__init__()
+    def __init__(self, connection, parent=None):
+        super().__init__(parent)
         self.connection = connection
 
     def run(self):
@@ -147,8 +147,8 @@ class HiFiRequestWorker(QThread):
     result = pyqtSignal(object)
     error = pyqtSignal(str)
 
-    def __init__(self, fn, *args):
-        super().__init__()
+    def __init__(self, fn, *args, parent=None):
+        super().__init__(parent)
         self.fn = fn
         self.args = args
 
@@ -175,6 +175,7 @@ class DeviceTab(QWidget):
         self.hifi_state = {}
         self.hifi_art_key = ""
         self.hifi_slider_dragging = False
+        self._shutting_down = False
 
         self.hifi_state_signal.connect(self.apply_hifi_state)
         self.hifi_connected_signal.connect(self.on_hifi_connected)
@@ -811,10 +812,13 @@ class DeviceTab(QWidget):
                 self.connection,
                 offline_mode=True,
                 sd_root=sd_root,
+                parent=self,
             )
             self.status_worker.result.connect(self.on_status_refresh_result)
             self.status_worker.error.connect(self.on_status_refresh_error)
-            self.status_worker.finished.connect(self.on_status_refresh_finished)
+            self.status_worker.finished.connect(
+                lambda worker=self.status_worker: self.on_status_refresh_finished(worker)
+            )
             self.status_worker.start()
             return
 
@@ -829,13 +833,18 @@ class DeviceTab(QWidget):
             self.connection,
             offline_mode=False,
             sd_root="",
+            parent=self,
         )
         self.status_worker.result.connect(self.on_status_refresh_result)
         self.status_worker.error.connect(self.on_status_refresh_error)
-        self.status_worker.finished.connect(self.on_status_refresh_finished)
+        self.status_worker.finished.connect(
+            lambda worker=self.status_worker: self.on_status_refresh_finished(worker)
+        )
         self.status_worker.start()
 
     def on_status_refresh_result(self, result):
+        if self._shutting_down:
+            return
         if result.get("offline"):
             self.apply_offline_state(lightweight=True)
             self.apply_offline_status_result(result)
@@ -849,6 +858,8 @@ class DeviceTab(QWidget):
         self.apply_online_status_result(result)
 
     def on_status_refresh_error(self, message):
+        if self._shutting_down:
+            return
         self.refresh_timer.stop()
 
         if self.is_offline_mode():
@@ -870,9 +881,13 @@ class DeviceTab(QWidget):
 
         self.apply_disconnected_state()
 
-    def on_status_refresh_finished(self):
-        self.status_worker = None
-        if not self.is_offline_mode() and self.connection.is_connected() and self.isVisible():
+    def on_status_refresh_finished(self, worker):
+        if self.status_worker is worker:
+            self.status_worker = None
+        worker.deleteLater()
+        if self._shutting_down:
+            self.refresh_timer.stop()
+        elif not self.is_offline_mode() and self.connection.is_connected() and self.isVisible():
             self.refresh_timer.start()
         else:
             self.refresh_timer.stop()
@@ -1204,21 +1219,28 @@ class DeviceTab(QWidget):
             self.open_share_button.setEnabled(False)
 
     def poll_now_playing(self):
+        if self._shutting_down:
+            return
         if self.is_offline_mode() or not self.connection.is_connected() or not self.isVisible():
             self.refresh_timer.stop()
             self.apply_now_playing({})
             return
         if self.now_playing_worker is not None and self.now_playing_worker.isRunning():
             return
-        self.now_playing_worker = NowPlayingWorker(self.connection)
-        self.now_playing_worker.result.connect(self.apply_now_playing)
-        self.now_playing_worker.finished.connect(self.on_now_playing_worker_finished)
-        self.now_playing_worker.start()
+        worker = NowPlayingWorker(self.connection, parent=self)
+        self.now_playing_worker = worker
+        worker.result.connect(self.apply_now_playing)
+        worker.finished.connect(lambda w=worker: self.on_now_playing_worker_finished(w))
+        worker.start()
 
-    def on_now_playing_worker_finished(self):
-        self.now_playing_worker = None
+    def on_now_playing_worker_finished(self, worker):
+        if self.now_playing_worker is worker:
+            self.now_playing_worker = None
+        worker.deleteLater()
 
     def apply_now_playing(self, active_media):
+        if self._shutting_down:
+            return
         if not isinstance(active_media, dict) or not active_media:
             self.now_playing_summary_label.setText("")
             self.now_playing_group.setVisible(False)
@@ -1318,24 +1340,46 @@ class DeviceTab(QWidget):
             self.refresh_hifi_icons()
 
     def start_hifi_listener(self):
+        if self._shutting_down:
+            return
         if self.is_offline_mode() or not self.connection.is_connected():
             self.stop_hifi_listener()
             return
         if self.hifi_listener is not None:
             return
-        self.hifi_listener = HiFiWebSocketListener(
-            self.connection,
-            lambda state: self.hifi_state_signal.emit(state),
-            lambda: self.hifi_connected_signal.emit(),
-            lambda: self.hifi_disconnected_signal.emit(),
-        )
-        self.hifi_listener.start()
 
-    def stop_hifi_listener(self):
+        listener = None
+
+        def emit_state(state):
+            # A listener can still be unwinding after a reconnect/disconnect.
+            # Ignore callbacks from any listener that is no longer current.
+            if not self._shutting_down and self.hifi_listener is listener:
+                self.hifi_state_signal.emit(state)
+
+        def emit_connected():
+            if not self._shutting_down and self.hifi_listener is listener:
+                self.hifi_connected_signal.emit()
+
+        def emit_disconnected():
+            if not self._shutting_down and self.hifi_listener is listener:
+                self.hifi_disconnected_signal.emit()
+
+        listener = HiFiWebSocketListener(
+            self.connection,
+            emit_state,
+            emit_connected,
+            emit_disconnected,
+        )
+        self.hifi_listener = listener
+        listener.start()
+
+    def stop_hifi_listener(self, join_timeout=0.0):
         listener = self.hifi_listener
+        # Clear first so callbacks emitted while the worker is unwinding are
+        # treated as stale and never reach Qt widgets.
         self.hifi_listener = None
         if listener is not None:
-            listener.stop()
+            listener.stop(join_timeout=join_timeout)
         if hasattr(self, "hifi_group"):
             self.hifi_group.setVisible(False)
 
@@ -1379,16 +1423,20 @@ class DeviceTab(QWidget):
     def load_hifi_art(self, art_key):
         if self.hifi_art_worker is not None and self.hifi_art_worker.isRunning():
             return
-        worker = HiFiRequestWorker(hifi_artwork, self.connection, art_key)
+        worker = HiFiRequestWorker(hifi_artwork, self.connection, art_key, parent=self)
         self.hifi_art_worker = worker
         worker.result.connect(lambda data, key=art_key: self.apply_hifi_art(key, data))
-        worker.finished.connect(self.on_hifi_art_finished)
+        worker.finished.connect(lambda w=worker: self.on_hifi_art_finished(w))
         worker.start()
 
-    def on_hifi_art_finished(self):
-        self.hifi_art_worker = None
+    def on_hifi_art_finished(self, worker):
+        if self.hifi_art_worker is worker:
+            self.hifi_art_worker = None
+        worker.deleteLater()
 
     def apply_hifi_art(self, art_key, data):
+        if self._shutting_down:
+            return
         if art_key != self.hifi_art_key or not data:
             return
         pixmap = QPixmap()
@@ -1401,16 +1449,25 @@ class DeviceTab(QWidget):
         self.run_hifi_request(hifi_control, self.connection, action)
 
     def run_hifi_request(self, fn, *args):
+        if self._shutting_down:
+            return
         if self.hifi_request_worker is not None and self.hifi_request_worker.isRunning():
             return
-        worker = HiFiRequestWorker(fn, *args)
+        worker = HiFiRequestWorker(fn, *args, parent=self)
         self.hifi_request_worker = worker
-        worker.error.connect(lambda message: QMessageBox.warning(self, "MiSTer Hi-Fi", message))
-        worker.finished.connect(self.on_hifi_request_finished)
+        worker.error.connect(lambda message: self.show_hifi_request_error(worker, message))
+        worker.finished.connect(lambda w=worker: self.on_hifi_request_finished(w))
         worker.start()
 
-    def on_hifi_request_finished(self):
-        self.hifi_request_worker = None
+    def show_hifi_request_error(self, worker, message):
+        if self._shutting_down or self.hifi_request_worker is not worker:
+            return
+        QMessageBox.warning(self, "MiSTer Hi-Fi", message)
+
+    def on_hifi_request_finished(self, worker):
+        if self.hifi_request_worker is worker:
+            self.hifi_request_worker = None
+        worker.deleteLater()
 
     def hifi_slider_pressed(self):
         self.hifi_slider_dragging = True
@@ -1451,6 +1508,42 @@ class DeviceTab(QWidget):
             return
         dialog = MiSTerHiFiBrowserDialog(self.connection, self)
         dialog.exec()
+
+    def shutdown(self):
+        """Stop dashboard background activity before Qt destroys this widget."""
+        if self._shutting_down:
+            return
+        self._shutting_down = True
+        self.refresh_timer.stop()
+        self.stop_hifi_listener(join_timeout=3.0)
+
+        # All of these workers use bounded network operations. Waiting here is
+        # limited to app shutdown/disposal and prevents QThread wrappers from
+        # being destroyed while native code is still running.
+        for attr_name in (
+            "status_worker",
+            "now_playing_worker",
+            "hifi_request_worker",
+            "hifi_art_worker",
+        ):
+            worker = getattr(self, attr_name, None)
+            if worker is None:
+                continue
+            try:
+                if worker.isRunning():
+                    worker.requestInterruption()
+                    worker.wait(6000)
+            except RuntimeError:
+                pass
+
+            try:
+                if not worker.isRunning():
+                    worker.deleteLater()
+                    if getattr(self, attr_name, None) is worker:
+                        setattr(self, attr_name, None)
+            except RuntimeError:
+                if getattr(self, attr_name, None) is worker:
+                    setattr(self, attr_name, None)
 
     def enable_smb(self):
         if self.is_offline_mode():
