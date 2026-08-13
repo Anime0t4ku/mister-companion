@@ -55,6 +55,11 @@ Requirements:
 - requests
 - websocket-client
 - psutil
+- pyserial
+- Pillow
+- certifi
+- cryptography
+
 
 Install:
 
