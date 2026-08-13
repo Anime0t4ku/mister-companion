@@ -438,6 +438,9 @@ def easy_mode_values_from_ini_settings(settings):
     logo = settings.get("logo", "1").strip()
     values["logo"] = "Disabled" if logo == "0" else "Enabled"
 
+    recents = settings.get("recents", "0").strip()
+    values["recents"] = "On" if recents == "1" else "Off"
+
     font_value = settings.get("font", "").strip()
     if font_value.startswith("font/"):
         values["font"] = font_value.split("/", 1)[1].strip()
@@ -530,6 +533,9 @@ def build_easy_mode_settings(easy_values):
 
     logo = easy_values.get("logo", "").strip()
     settings["logo"] = "1" if logo == "Enabled" else "0"
+
+    recents = easy_values.get("recents", "Off").strip()
+    settings["recents"] = "1" if recents == "On" else "0"
 
     font = easy_values.get("font", "").strip()
     if font and font != "Default":

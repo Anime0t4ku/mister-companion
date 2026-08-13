@@ -39,6 +39,8 @@ from core.manuals import (
     remove_cached_pdf,
     scan_cached_pdfs,
     scan_cached_systems,
+    scan_local_pdfs,
+    scan_local_systems,
     scan_remote_pdfs,
     scan_remote_systems,
 )
@@ -48,23 +50,26 @@ class ManualsScanWorker(QThread):
     result = pyqtSignal(object)
     error = pyqtSignal(str)
 
-    def __init__(self, connection):
+    def __init__(self, connection, offline_sd_root=""):
         super().__init__()
         self.connection = connection
+        self.offline_sd_root = str(offline_sd_root or "")
 
     def run(self):
         try:
             cached_systems = scan_cached_systems()
-            remote_systems = []
+            source_systems = []
 
             if self.connection and self.connection.is_connected():
-                remote_systems = scan_remote_systems(self.connection)
+                source_systems = scan_remote_systems(self.connection)
+            elif self.offline_sd_root:
+                source_systems = scan_local_systems(self.offline_sd_root)
 
             self.result.emit(
                 {
                     "cached_systems": cached_systems,
-                    "remote_systems": remote_systems,
-                    "systems": merge_systems(remote_systems, cached_systems),
+                    "remote_systems": source_systems,
+                    "systems": merge_systems(source_systems, cached_systems),
                     "has_persistent_cached_manuals": bool(cached_systems),
                 }
             )
@@ -76,22 +81,25 @@ class ManualsPdfScanWorker(QThread):
     result = pyqtSignal(str, object)
     error = pyqtSignal(str)
 
-    def __init__(self, connection, system_name):
+    def __init__(self, connection, system_name, offline_sd_root=""):
         super().__init__()
         self.connection = connection
         self.system_name = system_name
+        self.offline_sd_root = str(offline_sd_root or "")
 
     def run(self):
         try:
             cached_pdfs = scan_cached_pdfs(self.system_name)
-            remote_pdfs = []
+            source_pdfs = []
 
             if self.connection and self.connection.is_connected():
-                remote_pdfs = scan_remote_pdfs(self.connection, self.system_name)
+                source_pdfs = scan_remote_pdfs(self.connection, self.system_name)
+            elif self.offline_sd_root:
+                source_pdfs = scan_local_pdfs(self.offline_sd_root, self.system_name)
 
             self.result.emit(
                 self.system_name,
-                merge_pdfs(remote_pdfs, cached_pdfs),
+                merge_pdfs(source_pdfs, cached_pdfs),
             )
         except Exception as e:
             self.error.emit(str(e))
@@ -442,6 +450,15 @@ class ManualsTab(QWidget):
         config_data["manuals_keep_cached_pdf"] = bool(checked)
         save_config(config_data)
 
+    def get_offline_sd_root(self):
+        getter = getattr(self.main_window, "get_offline_sd_root", None)
+        if not callable(getter):
+            return ""
+        try:
+            return str(getter() or "")
+        except Exception:
+            return ""
+
     def refresh_systems(self):
         self.systems_list.clear()
         self.pdfs_list.clear()
@@ -449,7 +466,9 @@ class ManualsTab(QWidget):
         self.manual_search_edit.clear()
         self.set_viewer_message("Scanning manuals...")
 
-        self.scan_worker = ManualsScanWorker(self.connection)
+        self.scan_worker = ManualsScanWorker(
+            self.connection, self.get_offline_sd_root()
+        )
         self.scan_worker.result.connect(self.on_systems_loaded)
         self.scan_worker.error.connect(self.on_scan_error)
         self.scan_worker.finished.connect(self.cleanup_scan_worker)
@@ -501,7 +520,9 @@ class ManualsTab(QWidget):
         self.pdfs_list.clear()
         self.set_viewer_message("Scanning PDF manuals...")
 
-        self.pdf_scan_worker = ManualsPdfScanWorker(self.connection, system_name)
+        self.pdf_scan_worker = ManualsPdfScanWorker(
+            self.connection, system_name, self.get_offline_sd_root()
+        )
         self.pdf_scan_worker.result.connect(self.on_pdfs_loaded)
         self.pdf_scan_worker.error.connect(self.on_pdf_scan_error)
         self.pdf_scan_worker.finished.connect(self.cleanup_pdf_scan_worker)
@@ -566,6 +587,10 @@ class ManualsTab(QWidget):
         self.current_pdf_item = pdf
 
         if pdf.get("source") == "cache":
+            self.open_cached_pdf(Path(pdf["path"]), is_temp=False)
+            return
+
+        if pdf.get("source") == "offline_sd":
             self.open_cached_pdf(Path(pdf["path"]), is_temp=False)
             return
 

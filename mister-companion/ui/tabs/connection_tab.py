@@ -16,11 +16,13 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QRadioButton,
     QSizePolicy,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
 
 from ui.scaling import set_text_button_min_width
+from ui.tabs.device_tab import DeviceTab
 from core.config import save_config
 from core.sd_eject import eject_sd_card_path
 
@@ -48,10 +50,22 @@ class ConnectionTab(QWidget):
         self.apply_support_message_preference()
 
     def init_ui(self):
-        main_layout = QVBoxLayout()
+        outer_layout = QVBoxLayout(self)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+        outer_layout.setSpacing(0)
+
+        self.state_stack = QStackedWidget()
+        outer_layout.addWidget(self.state_stack)
+
+        self.connection_page = QWidget()
+        main_layout = QVBoxLayout(self.connection_page)
         main_layout.setContentsMargins(12, 12, 12, 12)
         main_layout.setSpacing(12)
-        self.setLayout(main_layout)
+        self.state_stack.addWidget(self.connection_page)
+
+        self.device_dashboard = DeviceTab(self.main_window)
+        self.state_stack.addWidget(self.device_dashboard)
+        self.state_stack.setCurrentWidget(self.connection_page)
 
         self.connection_status_label = QLabel("Status: Disconnected")
         self.connection_status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -323,7 +337,7 @@ class ConnectionTab(QWidget):
 
         self.offline_sd_input = QLineEdit()
         self.offline_sd_input.setPlaceholderText("MiSTer SD card root")
-        self.offline_sd_input.setText(self.main_window.get_offline_sd_root())
+        self.offline_sd_input.setText(self.selected_sd_root())
         self.offline_sd_input.setMinimumWidth(320)
         self.offline_sd_input.setMaximumWidth(520)
 
@@ -359,13 +373,13 @@ class ConnectionTab(QWidget):
         self.eject_sd_btn = QPushButton("Eject SD Card")
         self.eject_sd_btn.setMinimumWidth(120)
 
-        self.clear_sd_btn = QPushButton("Clear Selection")
-        self.clear_sd_btn.setMinimumWidth(120)
+        self.load_sd_btn = QPushButton("Load SD Card")
+        self.load_sd_btn.setMinimumWidth(120)
 
         offline_actions_row.addStretch()
         offline_actions_row.addWidget(self.open_sd_btn)
         offline_actions_row.addWidget(self.eject_sd_btn)
-        offline_actions_row.addWidget(self.clear_sd_btn)
+        offline_actions_row.addWidget(self.load_sd_btn)
         offline_actions_row.addStretch()
 
         self.offline_sd_status_label = QLabel("")
@@ -460,7 +474,7 @@ class ConnectionTab(QWidget):
         self.browse_sd_btn.clicked.connect(self.handle_browse_sd_card)
         self.open_sd_btn.clicked.connect(self.handle_open_sd_card)
         self.eject_sd_btn.clicked.connect(self.handle_eject_sd_card)
-        self.clear_sd_btn.clicked.connect(self.handle_clear_sd_card)
+        self.load_sd_btn.clicked.connect(self.handle_load_sd_card)
         self.remember_sd_location_checkbox.toggled.connect(
             self.handle_remember_sd_location_changed
         )
@@ -603,7 +617,7 @@ class ConnectionTab(QWidget):
             )
             self.open_sd_btn.setEnabled(False)
             self.eject_sd_btn.setEnabled(False)
-            self.clear_sd_btn.setEnabled(False)
+            self.load_sd_btn.setEnabled(False)
         else:
             self.mode_hint_label.setText("Switching to Online Mode...")
 
@@ -635,8 +649,8 @@ class ConnectionTab(QWidget):
         self.online_mode_radio.blockSignals(False)
         self.offline_mode_radio.blockSignals(False)
 
-        if self.main_window.get_offline_sd_root():
-            self.offline_sd_input.setText(self.main_window.get_offline_sd_root())
+        if self.selected_sd_root():
+            self.offline_sd_input.setText(self.selected_sd_root())
 
         self.online_controls_widget.setVisible(not is_offline)
         self.offline_group.setVisible(is_offline)
@@ -653,7 +667,16 @@ class ConnectionTab(QWidget):
     def apply_offline_state(self):
         self.sync_status_from_main_window()
 
-        sd_root = self.main_window.get_offline_sd_root()
+        if hasattr(self.main_window, "is_offline_sd_loaded") and self.main_window.is_offline_sd_loaded():
+            self.state_stack.setCurrentWidget(self.device_dashboard)
+            self.device_dashboard.apply_offline_state(lightweight=True)
+            QTimer.singleShot(0, self.device_dashboard.refresh_info)
+            return
+
+        self.device_dashboard.apply_disconnected_state()
+        self.state_stack.setCurrentWidget(self.connection_page)
+
+        sd_root = self.selected_sd_root()
         if sd_root:
             self.offline_sd_status_label.setText(f"Selected SD Card: {sd_root}")
             self.offline_sd_status_label.setStyleSheet(
@@ -661,7 +684,7 @@ class ConnectionTab(QWidget):
             )
             self.open_sd_btn.setEnabled(True)
             self.eject_sd_btn.setEnabled(True)
-            self.clear_sd_btn.setEnabled(True)
+            self.load_sd_btn.setEnabled(True)
         else:
             self.offline_sd_status_label.setText("No SD card selected.")
             self.offline_sd_status_label.setStyleSheet(
@@ -669,12 +692,17 @@ class ConnectionTab(QWidget):
             )
             self.open_sd_btn.setEnabled(False)
             self.eject_sd_btn.setEnabled(False)
-            self.clear_sd_btn.setEnabled(False)
+            self.load_sd_btn.setEnabled(False)
 
         self.online_mode_radio.setEnabled(True)
         self.offline_mode_radio.setEnabled(True)
         self.show_support_button.setEnabled(True)
         self.hide_support_button.setEnabled(True)
+
+    def selected_sd_root(self) -> str:
+        if hasattr(self.main_window, "get_offline_sd_selection"):
+            return self.main_window.get_offline_sd_selection()
+        return self.main_window.get_offline_sd_root()
 
     def validate_sd_root(self, path_text: str) -> bool:
         path_text = str(path_text or "").strip()
@@ -736,7 +764,7 @@ class ConnectionTab(QWidget):
     def handle_browse_sd_card(self):
         start_dir = (
             self.offline_sd_input.text().strip()
-            or self.main_window.get_offline_sd_root()
+            or self.selected_sd_root()
             or str(Path.home())
         )
 
@@ -752,16 +780,22 @@ class ConnectionTab(QWidget):
         self.offline_sd_input.setText(selected)
 
         if self.validate_sd_root(selected):
-            self.mode_switch_in_progress = True
-            self.apply_mode_switching_state(True)
+            self.main_window.set_offline_sd_root(selected)
+            self.main_window.apply_app_mode_state()
+            self.update_mode_state()
 
-            QTimer.singleShot(
-                0,
-                lambda: self.finish_mode_switch(True),
-            )
+    def handle_load_sd_card(self):
+        sd_root = self.offline_sd_input.text().strip() or self.selected_sd_root()
+        if not self.validate_sd_root(sd_root):
+            return
+
+        self.main_window.set_offline_sd_root(sd_root)
+        if hasattr(self.main_window, "load_offline_sd_card"):
+            self.main_window.load_offline_sd_card(sd_root)
+        self.update_mode_state()
 
     def handle_open_sd_card(self):
-        sd_root = self.main_window.get_offline_sd_root()
+        sd_root = self.selected_sd_root()
         if not sd_root:
             return
 
@@ -777,7 +811,7 @@ class ConnectionTab(QWidget):
         open_local_folder(path)
 
     def handle_eject_sd_card(self):
-        sd_root = self.main_window.get_offline_sd_root()
+        sd_root = self.selected_sd_root()
         if not sd_root:
             QMessageBox.warning(
                 self,
@@ -803,7 +837,7 @@ class ConnectionTab(QWidget):
 
         self.eject_sd_btn.setEnabled(False)
         self.open_sd_btn.setEnabled(False)
-        self.clear_sd_btn.setEnabled(False)
+        self.load_sd_btn.setEnabled(False)
         self.offline_sd_status_label.setText("Ejecting SD card...")
         self.offline_sd_status_label.setStyleSheet(
             "color: #1e88e5; font-weight: bold;"
@@ -840,16 +874,10 @@ class ConnectionTab(QWidget):
             )
             self.update_mode_state()
 
-    def handle_clear_sd_card(self):
-        self.offline_sd_input.clear()
-        self.main_window.set_offline_sd_root("")
-        self.main_window.apply_app_mode_state()
-        self.update_mode_state()
-
     def handle_remember_sd_location_changed(self, checked: bool):
         if hasattr(self.main_window, "set_remember_offline_sd_root"):
             current_path = (
-                self.main_window.get_offline_sd_root()
+                self.selected_sd_root()
                 or self.offline_sd_input.text().strip()
             )
             if checked and current_path:
@@ -900,6 +928,9 @@ class ConnectionTab(QWidget):
 
     def apply_connected_state(self):
         self.sync_status_from_main_window()
+        self.state_stack.setCurrentWidget(self.device_dashboard)
+        self.device_dashboard.apply_connected_state()
+        QTimer.singleShot(0, self.device_dashboard.refresh_info)
 
         self.connect_btn.setText("Disconnect")
         self.connect_btn.setEnabled(True)
@@ -930,6 +961,8 @@ class ConnectionTab(QWidget):
 
     def apply_disconnected_state(self):
         self.sync_status_from_main_window()
+        self.device_dashboard.apply_disconnected_state()
+        self.state_stack.setCurrentWidget(self.connection_page)
 
         self.connect_btn.setText("Connect")
         self.connect_btn.setEnabled(True)
@@ -1052,3 +1085,7 @@ class ConnectionTab(QWidget):
             return ""
 
         return self.profile_selector.currentText()
+    def refresh_theme(self):
+        if hasattr(self, "device_dashboard") and hasattr(self.device_dashboard, "refresh_theme"):
+            self.device_dashboard.refresh_theme()
+

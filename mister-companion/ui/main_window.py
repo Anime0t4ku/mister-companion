@@ -58,7 +58,6 @@ from ui.dialogs.app_settings_dialog import AppSettingsDialog
 from ui.dialogs.changelog_dialog import ChangelogDialog
 from ui.dialogs.update_available_dialog import UpdateAvailableDialog
 from ui.tabs.connection_tab import ConnectionTab
-from ui.tabs.device_tab import DeviceTab
 from ui.tabs.flash_tab import FlashTab
 from ui.tabs.file_manager_tab import FileManagerTab
 from ui.tabs.install_center_tab import InstallCenterTab
@@ -425,6 +424,7 @@ class MainWindow(QMainWindow):
         self.config_data = load_config()
 
         self.app_mode = APP_MODE_ONLINE
+        self.offline_sd_loaded = False
         self.offline_sd_root = (
             str(self.config_data.get("offline_sd_root", "") or "").strip()
             if self.config_data.get("remember_offline_sd_root", False)
@@ -583,10 +583,8 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.flash_tab, self.tab_icon("flash_sd"), "Flash SD")
 
         self.connection_tab = ConnectionTab(self)
-        self.tabs.addTab(self.connection_tab, self.tab_icon("connection"), "Connection")
-
-        self.device_tab = DeviceTab(self)
-        self.tabs.addTab(self.device_tab, self.tab_icon("device"), "Device")
+        self.device_tab = self.connection_tab.device_dashboard
+        self.tabs.addTab(self.connection_tab, self.tab_icon("connection"), "MiSTer")
 
         self.remote_tab = RemoteTab(self)
         self.tabs.addTab(self.remote_tab, self.tab_icon("remote"), "Remote")
@@ -683,8 +681,7 @@ class MainWindow(QMainWindow):
     def tab_entries(self):
         return [
             ("Flash SD", "flash_sd"),
-            ("Connection", "connection"),
-            ("Device", "device"),
+            ("MiSTer", "connection"),
             ("Remote", "remote"),
             ("File Manager", "file_manager"),
             ("Install Center", "scripts"),
@@ -1236,8 +1233,7 @@ class MainWindow(QMainWindow):
 
         icon_map = {
             "Flash SD": "flash_sd",
-            "Connection": "connection",
-            "Device": "device",
+            "MiSTer": "connection",
             "File Manager": "file_manager",
             "MiSTer Settings": "mister_settings",
             "Install Center": "scripts",
@@ -1263,7 +1259,41 @@ class MainWindow(QMainWindow):
         return self.app_mode == APP_MODE_OFFLINE
 
     def get_offline_sd_root(self) -> str:
+        if not self.is_offline_sd_loaded():
+            return ""
         return self.offline_sd_root
+
+    def get_offline_sd_selection(self) -> str:
+        return self.offline_sd_root
+
+    def is_offline_sd_loaded(self) -> bool:
+        return bool(self.is_offline_mode() and self.offline_sd_loaded and self.offline_sd_root)
+
+    def load_offline_sd_card(self, path: str = ""):
+        if self._closing:
+            return
+
+        if path:
+            self.set_offline_sd_root(path)
+
+        if not self.offline_sd_root:
+            return
+
+        self.app_mode = APP_MODE_OFFLINE
+        self.offline_sd_loaded = True
+        self.connection_fail_count = 0
+        self.apply_app_mode_state()
+        self.update_all_tab_states(lightweight=True)
+        self.refresh_current_tab(force=True)
+
+    def unload_offline_sd_card(self):
+        if self._closing:
+            return
+
+        self.offline_sd_loaded = False
+        self.apply_app_mode_state()
+        self.update_all_tab_states(lightweight=True)
+        self.refresh_current_tab(force=True)
 
     def should_remember_offline_sd_root(self) -> bool:
         return bool(self.config_data.get("remember_offline_sd_root", False))
@@ -1299,6 +1329,7 @@ class MainWindow(QMainWindow):
             return
 
         self.app_mode = APP_MODE_ONLINE
+        self.offline_sd_loaded = False
         self.connection_fail_count = 0
         self.offline_sd_root = ""
 
@@ -1323,6 +1354,7 @@ class MainWindow(QMainWindow):
             self.set_offline_sd_root(sd_root)
 
         self.app_mode = APP_MODE_OFFLINE
+        self.offline_sd_loaded = False
         self.connection_fail_count = 0
 
         self.apply_app_mode_state()
@@ -1331,9 +1363,13 @@ class MainWindow(QMainWindow):
 
     def apply_app_mode_state(self):
         if self.is_offline_mode():
-            if self.offline_sd_root:
+            if self.is_offline_sd_loaded():
                 self.set_connection_status(
-                    f"Status: Offline Mode, SD Card: {self.offline_sd_root}"
+                    f"Status: Offline Mode, SD Card Loaded: {self.offline_sd_root}"
+                )
+            elif self.offline_sd_root:
+                self.set_connection_status(
+                    f"Status: Offline Mode, SD Card Selected: {self.offline_sd_root}"
                 )
             else:
                 self.set_connection_status("Status: Offline Mode, No SD Card Selected")
@@ -1344,7 +1380,7 @@ class MainWindow(QMainWindow):
         if hasattr(self, "side_menu_buttons") and hasattr(self, "tabs"):
             for index, (button, _icon_name) in enumerate(self.side_menu_buttons):
                 if index < self.tabs.count() and self.tabs.tabText(index) == "Manuals":
-                    button.setEnabled(self.is_online_mode())
+                    button.setEnabled(True)
                     break
 
         if hasattr(self, "connection_tab") and hasattr(self.connection_tab, "update_mode_state"):
@@ -1863,6 +1899,11 @@ class MainWindow(QMainWindow):
         current_widget = self.current_content_widget()
 
         self._update_tab_connection_state(current_widget, lightweight=True)
+
+        if hasattr(self, "connection_tab") and current_widget is self.connection_tab:
+            if self.connection.is_connected() or self.is_offline_sd_loaded():
+                self.device_tab.refresh_info()
+            return
 
         if hasattr(self, "misterzine_tab") and current_widget is self.misterzine_tab:
             self.misterzine_tab.refresh(force=force)

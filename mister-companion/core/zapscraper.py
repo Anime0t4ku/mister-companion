@@ -174,178 +174,256 @@ def _first_present_text(data: dict[str, Any], names: set[str]) -> str:
     return ""
 
 
+def _screenscraper_ssuser(data: dict[str, Any]) -> dict[str, Any] | None:
+    """Return ScreenScraper's authenticated user block when present.
+
+    ScreenScraper exposes per-account quota limits under ``response.ssuser``.
+    Those values must take precedence over generic request counters elsewhere
+    in the response, which may describe API/server defaults instead.
+    """
+    response = data.get("response")
+    if isinstance(response, dict):
+        ssuser = response.get("ssuser")
+        if isinstance(ssuser, dict):
+            return ssuser
+
+    ssuser = data.get("ssuser")
+    if isinstance(ssuser, dict):
+        return ssuser
+
+    return None
+
+
+def _direct_int(data: dict[str, Any], key: str) -> int | None:
+    value = data.get(key)
+    if value is None:
+        return None
+
+    try:
+        text = str(value).strip()
+        if not text:
+            return None
+
+        digits = re.sub(r"[^\d-]", "", text)
+        if not digits:
+            return None
+
+        return int(digits)
+    except Exception:
+        return None
+
+
+def _direct_text(data: dict[str, Any], key: str) -> str:
+    value = data.get(key)
+    return str(value or "").strip()
+
+
 def extract_screenscraper_quota_info(data: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(data, dict):
         return {}
 
-    daily_used = _first_present_int(
-        data,
-        {
-            "requeststoday",
-            "requestsday",
-            "request_today",
-            "requests_today",
-            "usedrequeststoday",
-            "usedrequestsday",
-            "usedtoday",
-            "used_day",
-            "apiusedtoday",
-            "nbscrapetoday",
-            "nbscrapeursjour",
-        },
-    )
+    ssuser = _screenscraper_ssuser(data)
 
-    daily_limit = _first_present_int(
-        data,
-        {
-            "maxrequestsperday",
-            "maxrequestsday",
-            "requestslimitday",
-            "requestsdaymax",
-            "dailymax",
-            "daily_limit",
-            "maxday",
-            "maxrequetesjour",
-            "maxrequests",
-        },
-    )
+    if ssuser is not None:
+        # ScreenScraper documents these fields as the authenticated user's
+        # effective limits/counters. Keep them authoritative so supporter
+        # allowances (for example 100,000 requests/day) are not replaced by
+        # generic/base limits found elsewhere in the API response.
+        daily_used = _direct_int(ssuser, "requeststoday")
+        daily_limit = _direct_int(ssuser, "maxrequestsperday")
+        ko_used = _direct_int(ssuser, "requestskotoday")
+        ko_limit = _direct_int(ssuser, "maxrequestskoperday")
+        minute_limit = _direct_int(ssuser, "maxrequestspermin")
+        threads = _direct_int(ssuser, "maxthreads")
+        username = (
+            _direct_text(ssuser, "pseudo")
+            or _direct_text(ssuser, "ssid")
+            or _direct_text(ssuser, "username")
+        )
 
-    daily_remaining = _first_present_int(
-        data,
-        {
-            "requestsremaining",
-            "requestsremainingday",
-            "remainingrequests",
-            "remainingrequestsday",
-            "requestsleft",
-            "requestsleftday",
-            "remainingday",
-            "quota_remaining",
-            "dayremaining",
-        },
-    )
+        daily_remaining = (
+            max(0, daily_limit - daily_used)
+            if daily_used is not None and daily_limit is not None
+            else None
+        )
+        ko_remaining = (
+            max(0, ko_limit - ko_used)
+            if ko_used is not None and ko_limit is not None
+            else None
+        )
+        minute_used = None
+    else:
+        # Compatibility fallback for older/unusual responses. Deliberately
+        # exclude generic ``maxrequests``: it is ambiguous and must never be
+        # treated as an authenticated user's daily stop limit.
+        daily_used = _first_present_int(
+            data,
+            {
+                "requeststoday",
+                "requestsday",
+                "request_today",
+                "requests_today",
+                "usedrequeststoday",
+                "usedrequestsday",
+                "usedtoday",
+                "used_day",
+                "apiusedtoday",
+                "nbscrapetoday",
+                "nbscrapeursjour",
+            },
+        )
 
-    ko_used = _first_present_int(
-        data,
-        {
-            "kotoday",
-            "ko_today",
-            "koday",
-            "ko_day",
-            "kocount",
-            "ko_count",
-            "kocounttoday",
-            "ko_count_today",
-            "usedko",
-            "usedkotoday",
-            "used_ko",
-            "used_ko_today",
-            "nbko",
-            "nbkotoday",
-            "nb_ko",
-            "nb_ko_today",
-            "nbscrapeko",
-            "nbscrapekotoday",
-            "nbscrapeursko",
-            "nbscrapeurskotoday",
-            "requestskotoday",
-            "requestsko",
-            "scrapekotoday",
-            "scrapeko",
-        },
-    )
+        daily_limit = _first_present_int(
+            data,
+            {
+                "maxrequestsperday",
+                "maxrequestsday",
+                "requestslimitday",
+                "requestsdaymax",
+                "dailymax",
+                "daily_limit",
+                "maxday",
+                "maxrequetesjour",
+            },
+        )
 
-    ko_limit = _first_present_int(
-        data,
-        {
-            "maxko",
-            "maxkotoday",
-            "max_ko",
-            "max_ko_today",
-            "kolimit",
-            "ko_limit",
-            "kolimitday",
-            "ko_limit_day",
-            "maxkoday",
-            "max_ko_day",
-            "maxscrapeko",
-            "maxscrapekotoday",
-            "maxnbscrapeko",
-            "maxnbscrapekotoday",
-            "maxrequestskoday",
-            "maxrequestskotoday",
-            "maxrequestskoperday",
-            "max_requests_ko_per_day",
-            "maxrequestskoperjour",
-        },
-    )
+        daily_remaining = _first_present_int(
+            data,
+            {
+                "requestsremaining",
+                "requestsremainingday",
+                "remainingrequests",
+                "remainingrequestsday",
+                "requestsleft",
+                "requestsleftday",
+                "remainingday",
+                "quota_remaining",
+                "dayremaining",
+            },
+        )
 
-    ko_remaining = _first_present_int(
-        data,
-        {
-            "koremaining",
-            "ko_remaining",
-            "koremainingtoday",
-            "ko_remaining_today",
-            "koleft",
-            "ko_left",
-            "kolefttoday",
-            "ko_left_today",
-            "remainingko",
-            "remainingkotoday",
-            "remaining_ko",
-            "remaining_ko_today",
-        },
-    )
+        ko_used = _first_present_int(
+            data,
+            {
+                "kotoday",
+                "ko_today",
+                "koday",
+                "ko_day",
+                "kocount",
+                "ko_count",
+                "kocounttoday",
+                "ko_count_today",
+                "usedko",
+                "usedkotoday",
+                "used_ko",
+                "used_ko_today",
+                "nbko",
+                "nbkotoday",
+                "nb_ko",
+                "nb_ko_today",
+                "nbscrapeko",
+                "nbscrapekotoday",
+                "nbscrapeursko",
+                "nbscrapeurskotoday",
+                "requestskotoday",
+                "requestsko",
+                "scrapekotoday",
+                "scrapeko",
+            },
+        )
 
-    minute_used = _first_present_int(
-        data,
-        {
-            "requestsminute",
-            "requestsperminute",
-            "usedrequestsminute",
-            "used_minute",
-            "minuterequests",
-        },
-    )
+        ko_limit = _first_present_int(
+            data,
+            {
+                "maxko",
+                "maxkotoday",
+                "max_ko",
+                "max_ko_today",
+                "kolimit",
+                "ko_limit",
+                "kolimitday",
+                "ko_limit_day",
+                "maxkoday",
+                "max_ko_day",
+                "maxscrapeko",
+                "maxscrapekotoday",
+                "maxnbscrapeko",
+                "maxnbscrapekotoday",
+                "maxrequestskoday",
+                "maxrequestskotoday",
+                "maxrequestskoperday",
+                "max_requests_ko_per_day",
+                "maxrequestskoperjour",
+            },
+        )
 
-    minute_limit = _first_present_int(
-        data,
-        {
-            "maxrequestsperminute",
-            "maxrequestsminute",
-            "requestslimitminute",
-            "minute_limit",
-            "maxminute",
-        },
-    )
+        ko_remaining = _first_present_int(
+            data,
+            {
+                "koremaining",
+                "ko_remaining",
+                "koremainingtoday",
+                "ko_remaining_today",
+                "koleft",
+                "ko_left",
+                "kolefttoday",
+                "ko_left_today",
+                "remainingko",
+                "remainingkotoday",
+                "remaining_ko",
+                "remaining_ko_today",
+            },
+        )
 
-    threads = _first_present_int(
-        data,
-        {
-            "maxthreads",
-            "threads",
-            "nbscrapeurs",
-            "maxthread",
-        },
-    )
+        minute_used = _first_present_int(
+            data,
+            {
+                "requestsminute",
+                "requestsperminute",
+                "usedrequestsminute",
+                "used_minute",
+                "minuterequests",
+            },
+        )
 
-    username = _first_present_text(
-        data,
-        {
-            "pseudo",
-            "ssid",
-            "username",
-            "nom",
-            "user",
-        },
-    )
+        minute_limit = _first_present_int(
+            data,
+            {
+                "maxrequestsperminute",
+                "maxrequestspermin",
+                "maxrequestsminute",
+                "requestslimitminute",
+                "minute_limit",
+                "maxminute",
+            },
+        )
 
-    if daily_remaining is None and daily_used is not None and daily_limit is not None:
-        daily_remaining = max(0, daily_limit - daily_used)
+        threads = _first_present_int(
+            data,
+            {
+                "maxthreads",
+                "threads",
+                "nbscrapeurs",
+                "maxthread",
+            },
+        )
 
-    if ko_remaining is None and ko_used is not None and ko_limit is not None:
-        ko_remaining = max(0, ko_limit - ko_used)
+        username = _first_present_text(
+            data,
+            {
+                "pseudo",
+                "ssid",
+                "username",
+                "nom",
+                "user",
+            },
+        )
+
+        if daily_remaining is None and daily_used is not None and daily_limit is not None:
+            daily_remaining = max(0, daily_limit - daily_used)
+
+        if ko_remaining is None and ko_used is not None and ko_limit is not None:
+            ko_remaining = max(0, ko_limit - ko_used)
 
     quota = {}
 

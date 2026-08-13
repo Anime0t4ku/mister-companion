@@ -137,16 +137,33 @@ def list_directory(connection, remote_path):
         sftp.close()
 
 
-def ensure_remote_dir(sftp, remote_dir):
+def ensure_remote_dir(sftp, remote_dir, replace_files=False):
     remote_dir = normalize_remote_path(remote_dir)
     parts = [part for part in remote_dir.split("/") if part]
     current = ""
     for part in parts:
         current += "/" + part
         try:
-            sftp.stat(current)
-        except Exception:
+            attr = sftp.stat(current)
+            if not stat.S_ISDIR(attr.st_mode):
+                if not replace_files:
+                    raise NotADirectoryError(f"A file blocks the destination folder: {current}")
+                delete_path_with_sftp(sftp, current)
+                sftp.mkdir(current)
+        except FileNotFoundError:
             sftp.mkdir(current)
+        except OSError:
+            # Paramiko servers do not all use FileNotFoundError consistently.
+            try:
+                attr = sftp.stat(current)
+            except Exception:
+                sftp.mkdir(current)
+            else:
+                if not stat.S_ISDIR(attr.st_mode):
+                    if not replace_files:
+                        raise NotADirectoryError(f"A file blocks the destination folder: {current}")
+                    delete_path_with_sftp(sftp, current)
+                    sftp.mkdir(current)
 
 
 def ensure_target_available(sftp, target_path, overwrite=False):
@@ -164,12 +181,18 @@ def upload_path(connection, local_path, remote_dir, progress_callback=None, mess
     try:
         name = target_name or local_path.name
         target_path = join_remote_path(remote_dir, name)
-        ensure_target_available(sftp, target_path, overwrite=overwrite)
 
         if local_path.is_dir():
-            upload_folder(sftp, local_path, target_path, progress_callback, message_callback)
+            if sftp_exists(sftp, target_path):
+                if not overwrite:
+                    raise FileExistsError(f"Target already exists: {target_path}")
+                attr = sftp.stat(target_path)
+                if not stat.S_ISDIR(attr.st_mode):
+                    delete_path_with_sftp(sftp, target_path)
+            upload_folder(sftp, local_path, target_path, progress_callback, message_callback, merge_overwrite=overwrite)
             return target_path
 
+        ensure_target_available(sftp, target_path, overwrite=overwrite)
         if message_callback:
             message_callback(f"Uploading {local_path.name}...")
         sftp.put(str(local_path), target_path, callback=progress_callback)
@@ -178,24 +201,30 @@ def upload_path(connection, local_path, remote_dir, progress_callback=None, mess
         sftp.close()
 
 
-def upload_folder(sftp, local_folder, remote_folder, progress_callback=None, message_callback=None):
-    ensure_remote_dir(sftp, remote_folder)
-    for root, dirs, files in os.walk(local_folder):
-        root_path = Path(root)
-        relative = root_path.relative_to(local_folder)
-        current_remote = remote_folder if str(relative) == "." else join_remote_path(remote_folder, str(relative).replace(os.sep, "/"))
-        ensure_remote_dir(sftp, current_remote)
-
-        for dirname in dirs:
-            ensure_remote_dir(sftp, join_remote_path(current_remote, dirname))
-
-        for filename in files:
-            local_file = root_path / filename
-            remote_file = join_remote_path(current_remote, filename)
+def upload_folder(sftp, local_folder, remote_folder, progress_callback=None, message_callback=None, merge_overwrite=False):
+    ensure_remote_dir(sftp, remote_folder, replace_files=merge_overwrite)
+    for child in Path(local_folder).iterdir():
+        remote_item = join_remote_path(remote_folder, child.name)
+        if child.is_dir():
+            if sftp_exists(sftp, remote_item):
+                attr = sftp.stat(remote_item)
+                if not stat.S_ISDIR(attr.st_mode):
+                    if not merge_overwrite:
+                        raise FileExistsError(f"Target already exists: {remote_item}")
+                    delete_path_with_sftp(sftp, remote_item)
+            upload_folder(sftp, child, remote_item, progress_callback, message_callback, merge_overwrite=merge_overwrite)
+        else:
+            if sftp_exists(sftp, remote_item):
+                attr = sftp.stat(remote_item)
+                if stat.S_ISDIR(attr.st_mode):
+                    if not merge_overwrite:
+                        raise FileExistsError(f"Target already exists: {remote_item}")
+                    delete_path_with_sftp(sftp, remote_item)
+                elif not merge_overwrite:
+                    raise FileExistsError(f"Target already exists: {remote_item}")
             if message_callback:
-                message_callback(f"Uploading {local_file.name}...")
-            sftp.put(str(local_file), remote_file, callback=progress_callback)
-
+                message_callback(f"Uploading {child.name}...")
+            sftp.put(str(child), remote_item, callback=progress_callback)
 
 def download_path(connection, remote_path, local_dir, progress_callback=None, message_callback=None, target_name=None, overwrite=False):
     remote_path = clamp_to_root(remote_path)
@@ -204,18 +233,20 @@ def download_path(connection, remote_path, local_dir, progress_callback=None, me
     sftp = connection.client.open_sftp()
     try:
         attr = sftp.stat(remote_path)
+        source_is_dir = stat.S_ISDIR(attr.st_mode)
         name = target_name or posixpath.basename(remote_path.rstrip("/"))
         target = local_dir / name
         if target.exists():
             if not overwrite:
                 raise FileExistsError(f"Target already exists: {target}")
-            if target.is_dir():
-                shutil.rmtree(target)
-            else:
-                target.unlink()
+            if not (source_is_dir and target.is_dir()):
+                if target.is_dir():
+                    shutil.rmtree(target)
+                else:
+                    target.unlink()
 
-        if stat.S_ISDIR(attr.st_mode):
-            download_folder(sftp, remote_path, target, progress_callback, message_callback)
+        if source_is_dir:
+            download_folder(sftp, remote_path, target, progress_callback, message_callback, merge_overwrite=overwrite)
             return str(target)
 
         if message_callback:
@@ -226,8 +257,12 @@ def download_path(connection, remote_path, local_dir, progress_callback=None, me
         sftp.close()
 
 
-def download_folder(sftp, remote_folder, local_folder, progress_callback=None, message_callback=None):
+def download_folder(sftp, remote_folder, local_folder, progress_callback=None, message_callback=None, merge_overwrite=False):
     local_folder = Path(local_folder)
+    if local_folder.exists() and not local_folder.is_dir():
+        if not merge_overwrite:
+            raise FileExistsError(f"Target already exists: {local_folder}")
+        local_folder.unlink()
     local_folder.mkdir(parents=True, exist_ok=True)
     for attr in sftp.listdir_attr(remote_folder):
         name = attr.filename
@@ -236,12 +271,21 @@ def download_folder(sftp, remote_folder, local_folder, progress_callback=None, m
         remote_item = join_remote_path(remote_folder, name)
         local_item = local_folder / name
         if stat.S_ISDIR(attr.st_mode):
-            download_folder(sftp, remote_item, local_item, progress_callback, message_callback)
+            if local_item.exists() and not local_item.is_dir():
+                if not merge_overwrite:
+                    raise FileExistsError(f"Target already exists: {local_item}")
+                local_item.unlink()
+            download_folder(sftp, remote_item, local_item, progress_callback, message_callback, merge_overwrite=merge_overwrite)
         else:
+            if local_item.exists() and local_item.is_dir():
+                if not merge_overwrite:
+                    raise FileExistsError(f"Target already exists: {local_item}")
+                shutil.rmtree(local_item)
+            elif local_item.exists() and not merge_overwrite:
+                raise FileExistsError(f"Target already exists: {local_item}")
             if message_callback:
                 message_callback(f"Downloading {name}...")
             sftp.get(remote_item, str(local_item), callback=progress_callback)
-
 
 def make_directory(connection, remote_path):
     remote_path = clamp_to_root(remote_path)
@@ -276,15 +320,26 @@ def copy_path(connection, source_path, target_dir, target_name=None, overwrite=F
     sftp = connection.client.open_sftp()
     try:
         attr = sftp.stat(source_path)
+        source_is_dir = stat.S_ISDIR(attr.st_mode)
         name = target_name or posixpath.basename(source_path.rstrip("/"))
         target_path = join_remote_path(target_dir, name)
         if source_path == target_path:
             raise ValueError("Source and destination are the same.")
-        ensure_target_available(sftp, target_path, overwrite=overwrite)
-        if stat.S_ISDIR(attr.st_mode):
-            copy_folder_with_sftp(sftp, source_path, target_path, progress_callback, message_callback)
+        if source_is_dir and (target_path == source_path or target_path.startswith(source_path.rstrip("/") + "/")):
+            raise ValueError("A folder cannot be copied into itself.")
+
+        if sftp_exists(sftp, target_path):
+            if not overwrite:
+                raise FileExistsError(f"Target already exists: {target_path}")
+            target_attr = sftp.stat(target_path)
+            target_is_dir = stat.S_ISDIR(target_attr.st_mode)
+            if not (source_is_dir and target_is_dir):
+                delete_path_with_sftp(sftp, target_path)
+
+        if source_is_dir:
+            copy_folder_with_sftp(sftp, source_path, target_path, progress_callback, message_callback, merge_overwrite=overwrite)
         else:
-            copy_file_with_sftp(sftp, source_path, target_path, progress_callback, message_callback)
+            copy_file_with_sftp(sftp, source_path, target_path, progress_callback, message_callback, overwrite=overwrite)
         return target_path
     finally:
         sftp.close()
@@ -302,26 +357,53 @@ def move_path(connection, source_path, target_dir, target_name=None, overwrite=F
 
     sftp = connection.client.open_sftp()
     try:
+        attr = sftp.stat(source_path)
+        source_is_dir = stat.S_ISDIR(attr.st_mode)
         name = target_name or posixpath.basename(source_path.rstrip("/"))
         target_path = join_remote_path(target_dir, name)
         if source_path == target_path:
             raise ValueError("Source and destination are the same.")
-        ensure_target_available(sftp, target_path, overwrite=overwrite)
-        try:
-            sftp.rename(source_path, target_path)
-        except Exception:
-            attr = sftp.stat(source_path)
-            if stat.S_ISDIR(attr.st_mode):
-                copy_folder_with_sftp(sftp, source_path, target_path, progress_callback, message_callback)
-            else:
-                copy_file_with_sftp(sftp, source_path, target_path, progress_callback, message_callback)
-            delete_path_with_sftp(sftp, source_path)
+        if source_is_dir and target_path.startswith(source_path.rstrip("/") + "/"):
+            raise ValueError("A folder cannot be moved into itself.")
+
+        target_exists = sftp_exists(sftp, target_path)
+        target_is_dir = False
+        if target_exists:
+            if not overwrite:
+                raise FileExistsError(f"Target already exists: {target_path}")
+            target_is_dir = stat.S_ISDIR(sftp.stat(target_path).st_mode)
+
+        # A folder-over-folder move is a merge, so rename cannot be used.
+        merge_folders = source_is_dir and target_exists and target_is_dir
+        if target_exists and not merge_folders:
+            delete_path_with_sftp(sftp, target_path)
+
+        if not merge_folders:
+            try:
+                sftp.rename(source_path, target_path)
+                return target_path
+            except Exception:
+                pass
+
+        if source_is_dir:
+            copy_folder_with_sftp(sftp, source_path, target_path, progress_callback, message_callback, merge_overwrite=overwrite)
+        else:
+            copy_file_with_sftp(sftp, source_path, target_path, progress_callback, message_callback, overwrite=overwrite)
+        delete_path_with_sftp(sftp, source_path)
         return target_path
     finally:
         sftp.close()
 
 
-def copy_file_with_sftp(sftp, source_path, target_path, progress_callback=None, message_callback=None):
+def copy_file_with_sftp(sftp, source_path, target_path, progress_callback=None, message_callback=None, overwrite=True):
+    if sftp_exists(sftp, target_path):
+        attr = sftp.stat(target_path)
+        if stat.S_ISDIR(attr.st_mode):
+            if not overwrite:
+                raise FileExistsError(f"Target already exists: {target_path}")
+            delete_path_with_sftp(sftp, target_path)
+        elif not overwrite:
+            raise FileExistsError(f"Target already exists: {target_path}")
     if message_callback:
         message_callback(f"Copying {posixpath.basename(source_path)}...")
     attr = sftp.stat(source_path)
@@ -339,8 +421,15 @@ def copy_file_with_sftp(sftp, source_path, target_path, progress_callback=None, 
                     progress_callback(transferred, total)
 
 
-def copy_folder_with_sftp(sftp, source_folder, target_folder, progress_callback=None, message_callback=None):
-    ensure_remote_dir(sftp, target_folder)
+def copy_folder_with_sftp(sftp, source_folder, target_folder, progress_callback=None, message_callback=None, merge_overwrite=True):
+    if sftp_exists(sftp, target_folder):
+        attr = sftp.stat(target_folder)
+        if not stat.S_ISDIR(attr.st_mode):
+            if not merge_overwrite:
+                raise FileExistsError(f"Target already exists: {target_folder}")
+            delete_path_with_sftp(sftp, target_folder)
+    ensure_remote_dir(sftp, target_folder, replace_files=merge_overwrite)
+
     for attr in sftp.listdir_attr(source_folder):
         name = attr.filename
         if name in {".", ".."}:
@@ -348,10 +437,9 @@ def copy_folder_with_sftp(sftp, source_folder, target_folder, progress_callback=
         source_item = join_remote_path(source_folder, name)
         target_item = join_remote_path(target_folder, name)
         if stat.S_ISDIR(attr.st_mode):
-            copy_folder_with_sftp(sftp, source_item, target_item, progress_callback, message_callback)
+            copy_folder_with_sftp(sftp, source_item, target_item, progress_callback, message_callback, merge_overwrite=merge_overwrite)
         else:
-            copy_file_with_sftp(sftp, source_item, target_item, progress_callback, message_callback)
-
+            copy_file_with_sftp(sftp, source_item, target_item, progress_callback, message_callback, overwrite=merge_overwrite)
 
 def delete_path(connection, remote_path):
     remote_path = clamp_to_root(remote_path)

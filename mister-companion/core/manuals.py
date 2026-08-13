@@ -7,8 +7,14 @@ from core.open_helpers import open_local_folder
 from shlex import quote
 
 
+REMOTE_SD_DOCS_ROOT = "/media/fat/docs"
+REMOTE_USB_DOCS_ROOT = "/media/usb0/docs"
 REMOTE_CIFS_DOCS_ROOT = "/media/fat/cifs/docs"
-REMOTE_LOCAL_DOCS_ROOT = "/media/fat/docs"
+REMOTE_DOCS_ROOTS = (
+    ("sd", REMOTE_SD_DOCS_ROOT),
+    ("usb", REMOTE_USB_DOCS_ROOT),
+    ("cifs", REMOTE_CIFS_DOCS_ROOT),
+)
 
 
 def get_manuals_cache_root() -> Path:
@@ -162,92 +168,141 @@ def remote_path_exists(connection, path: str) -> bool:
     return "EXISTS" in result
 
 
-def get_remote_docs_root(connection):
+def get_remote_docs_roots(connection):
+    """Return available manual roots in duplicate-priority order: SD, USB, CIFS."""
     if not connection or not connection.is_connected():
-        return ""
-
-    if remote_path_exists(connection, REMOTE_CIFS_DOCS_ROOT):
-        return REMOTE_CIFS_DOCS_ROOT
-
-    if remote_path_exists(connection, REMOTE_LOCAL_DOCS_ROOT):
-        return REMOTE_LOCAL_DOCS_ROOT
-
-    return ""
-
-
-def scan_remote_systems(connection):
-    root = get_remote_docs_root(connection)
-
-    if not root:
         return []
 
+    roots = []
+    for source, path in REMOTE_DOCS_ROOTS:
+        if remote_path_exists(connection, path):
+            roots.append((source, path))
+    return roots
+
+
+def _scan_remote_relative_pdfs(connection, root: str):
     command = (
         f"find {quote(root)} -mindepth 2 -type f "
         f"\\( -iname '*.pdf' \\) -printf '%P\\n' 2>/dev/null"
     )
-
     output = connection.run_command(command)
+    return [
+        line.strip().lstrip("/")
+        for line in output.splitlines()
+        if line.strip().lstrip("/")
+    ]
+
+
+def scan_remote_systems(connection):
     systems = []
+    seen = set()
 
-    for line in output.splitlines():
-        relative_path = line.strip().lstrip("/")
+    # Scan every available source. Root ordering matches manual duplicate priority.
+    for _source, root in get_remote_docs_roots(connection):
+        for relative_path in _scan_remote_relative_pdfs(connection, root):
+            if "/" not in relative_path:
+                continue
 
-        if not relative_path or "/" not in relative_path:
-            continue
-
-        system_name = relative_path.split("/", 1)[0]
-
-        if system_name and system_name not in systems:
-            systems.append(system_name)
+            system_name = relative_path.split("/", 1)[0]
+            key = system_name.casefold()
+            if system_name and key not in seen:
+                seen.add(key)
+                systems.append(system_name)
 
     return sorted(systems, key=str.lower)
 
 
-def get_remote_system_docs_dir(connection, system_name: str):
-    root = get_remote_docs_root(connection)
-
-    if not root:
-        return ""
-
-    system_dir = f"{root}/{system_name}"
-
-    if remote_path_exists(connection, system_dir):
-        return system_dir
-
-    return ""
-
-
 def scan_remote_pdfs(connection, system_name: str):
-    system_dir = get_remote_system_docs_dir(connection, system_name)
+    """Merge manuals from SD, USB and CIFS, preferring SD > USB > CIFS."""
+    pdfs = []
+    seen = set()
+    wanted_system = str(system_name or "").casefold()
 
-    if not system_dir:
+    for source, root in get_remote_docs_roots(connection):
+        for relative_path in _scan_remote_relative_pdfs(connection, root):
+            if "/" not in relative_path:
+                continue
+
+            found_system, relative_name = relative_path.split("/", 1)
+            if found_system.casefold() != wanted_system:
+                continue
+            if not relative_name or not is_pdf_name(relative_name):
+                continue
+
+            # Duplicates are identified by their path inside the system folder.
+            # Since roots are scanned SD -> USB -> CIFS, the first copy wins.
+            key = relative_name.replace("\\", "/").casefold()
+            if key in seen:
+                continue
+
+            seen.add(key)
+            pdfs.append(
+                {
+                    "name": relative_name,
+                    "path": f"{root}/{found_system}/{relative_name}",
+                    "source": f"remote_{source}",
+                    "storage": source,
+                    "system": system_name,
+                }
+            )
+
+    return sorted(pdfs, key=lambda item: item["name"].lower())
+
+
+def get_local_docs_root(sd_root) -> Path:
+    if not sd_root:
+        return Path()
+    return Path(sd_root) / "docs"
+
+
+def scan_local_systems(sd_root):
+    docs_root = get_local_docs_root(sd_root)
+    if not docs_root.exists() or not docs_root.is_dir():
         return []
 
-    command = (
-        f"find {quote(system_dir)} -type f "
-        f"\\( -iname '*.pdf' \\) -printf '%P\\n' 2>/dev/null"
-    )
-
-    output = connection.run_command(command)
-    pdfs = []
-
-    for line in output.splitlines():
-        relative_name = line.strip().lstrip("/")
-
-        if not relative_name or not is_pdf_name(relative_name):
+    systems = []
+    for child in sorted(docs_root.iterdir(), key=lambda p: p.name.lower()):
+        if not child.is_dir():
             continue
+        if any(path.is_file() and is_pdf_name(path.name) for path in child.rglob("*")):
+            systems.append(child.name)
+    return systems
 
+
+def scan_local_pdfs(sd_root, system_name: str):
+    docs_root = get_local_docs_root(sd_root)
+    if not docs_root.exists() or not docs_root.is_dir():
+        return []
+
+    system_dir = None
+    wanted = str(system_name or "").casefold()
+    for child in docs_root.iterdir():
+        if child.is_dir() and child.name.casefold() == wanted:
+            system_dir = child
+            break
+
+    if system_dir is None:
+        return []
+
+    pdfs = []
+    for file_path in sorted(system_dir.rglob("*"), key=lambda p: str(p).lower()):
+        if not file_path.is_file() or not is_pdf_name(file_path.name):
+            continue
+        try:
+            relative_name = file_path.relative_to(system_dir).as_posix()
+        except Exception:
+            relative_name = file_path.name
         pdfs.append(
             {
                 "name": relative_name,
-                "path": f"{system_dir}/{relative_name}",
-                "source": "remote",
+                "path": str(file_path),
+                "source": "offline_sd",
+                "storage": "sd",
                 "system": system_name,
             }
         )
 
-    return sorted(pdfs, key=lambda item: item["name"].lower())
-
+    return pdfs
 
 def get_cached_pdf_path(system_name: str, filename: str):
     system_dir = ensure_manuals_cache_root() / sanitize_name(system_name)
@@ -309,10 +364,14 @@ def cache_remote_pdf(
 
 def merge_systems(remote_systems, cached_systems):
     systems = []
+    seen = set()
 
     for name in remote_systems + cached_systems:
-        if name not in systems:
-            systems.append(name)
+        key = str(name or "").casefold()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        systems.append(name)
 
     return sorted(systems, key=str.lower)
 

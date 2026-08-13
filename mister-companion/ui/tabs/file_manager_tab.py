@@ -128,19 +128,15 @@ def _copy_local_item(source, target, progress_callback=None, message_callback=No
     source = Path(source)
     target = Path(target)
     if source.is_dir():
+        if target.exists() and not target.is_dir():
+            _remove_local_target(target)
         target.mkdir(parents=True, exist_ok=True)
-        for root, dirs, files in os.walk(source):
-            root_path = Path(root)
-            rel = root_path.relative_to(source)
-            dst_root = target if str(rel) == "." else target / rel
-            dst_root.mkdir(parents=True, exist_ok=True)
-            for dirname in dirs:
-                (dst_root / dirname).mkdir(parents=True, exist_ok=True)
-            for filename in files:
-                _copy_local_file(root_path / filename, dst_root / filename, progress_callback, message_callback)
+        for child in source.iterdir():
+            _copy_local_item(child, target / child.name, progress_callback, message_callback)
     else:
+        if target.exists() and target.is_dir():
+            _remove_local_target(target)
         _copy_local_file(source, target, progress_callback, message_callback)
-
 
 def _offline_target(sd_root, virtual_dir, target_name):
     directory = _offline_local_path(sd_root, virtual_dir)
@@ -192,6 +188,21 @@ class FileManagerWorker(QThread):
                 return
 
             if self.action == "download":
+                download_items = self.kwargs.get("download_items")
+                if download_items is not None:
+                    targets = []
+                    for item in download_items:
+                        targets.append(download_path(
+                            self.connection,
+                            item.get("remote_path"),
+                            item.get("local_dir"),
+                            progress_callback=self.on_transfer_progress,
+                            message_callback=self.progress.emit,
+                            target_name=item.get("target_name"),
+                            overwrite=item.get("overwrite", False),
+                        ))
+                    self.result.emit(self.action, targets)
+                    return
                 target = download_path(
                     self.connection,
                     self.kwargs.get("remote_path"),
@@ -219,21 +230,25 @@ class FileManagerWorker(QThread):
                 self.result.emit(self.action, self.kwargs.get("new_path"))
                 return
 
-            if self.action == "copy":
-                target = copy_path(
-                    self.connection,
-                    self.kwargs.get("source_path"),
-                    self.kwargs.get("target_dir"),
-                    target_name=self.kwargs.get("target_name"),
-                    overwrite=self.kwargs.get("overwrite", False),
-                    progress_callback=self.on_transfer_progress,
-                    message_callback=self.progress.emit,
-                )
-                self.result.emit(self.action, target)
-                return
-
-            if self.action == "move":
-                target = move_path(
+            if self.action in {"copy", "move"}:
+                transfer_items = self.kwargs.get("transfer_items")
+                if transfer_items is not None:
+                    targets = []
+                    transfer_func = move_path if self.action == "move" else copy_path
+                    for item in transfer_items:
+                        targets.append(transfer_func(
+                            self.connection,
+                            item.get("source_path"),
+                            item.get("target_dir"),
+                            target_name=item.get("target_name"),
+                            overwrite=item.get("overwrite", False),
+                            progress_callback=self.on_transfer_progress,
+                            message_callback=self.progress.emit,
+                        ))
+                    self.result.emit(self.action, targets)
+                    return
+                transfer_func = move_path if self.action == "move" else copy_path
+                target = transfer_func(
                     self.connection,
                     self.kwargs.get("source_path"),
                     self.kwargs.get("target_dir"),
@@ -246,6 +261,14 @@ class FileManagerWorker(QThread):
                 return
 
             if self.action == "delete":
+                paths = self.kwargs.get("paths")
+                if paths is not None:
+                    deleted = []
+                    for path in paths:
+                        delete_path(self.connection, path)
+                        deleted.append(path)
+                    self.result.emit(self.action, deleted)
+                    return
                 delete_path(self.connection, self.kwargs.get("path"))
                 self.result.emit(self.action, self.kwargs.get("path"))
                 return
@@ -271,12 +294,30 @@ class FileManagerWorker(QThread):
                 if target.exists():
                     if not item.get("overwrite", False):
                         raise FileExistsError(f"Target already exists: {target}")
-                    _remove_local_target(target)
+                    if not (source.is_dir() and target.is_dir()):
+                        _remove_local_target(target)
                 _copy_local_item(source, target, self.on_transfer_progress, self.progress.emit)
                 uploaded.append(_offline_virtual_path(self.sd_root, target))
             self.result.emit(action, uploaded)
             return
         if action == "download":
+            download_items = self.kwargs.get("download_items")
+            if download_items is not None:
+                targets = []
+                for item in download_items:
+                    source = _offline_local_path(self.sd_root, item.get("remote_path"))
+                    local_dir = Path(item.get("local_dir"))
+                    local_dir.mkdir(parents=True, exist_ok=True)
+                    target = local_dir / (item.get("target_name") or source.name)
+                    if target.exists():
+                        if not item.get("overwrite", False):
+                            raise FileExistsError(f"Target already exists: {target}")
+                        if not (source.is_dir() and target.is_dir()):
+                            _remove_local_target(target)
+                    _copy_local_item(source, target, self.on_transfer_progress, self.progress.emit)
+                    targets.append(str(target))
+                self.result.emit(action, targets)
+                return
             source = _offline_local_path(self.sd_root, self.kwargs.get("remote_path"))
             local_dir = Path(self.kwargs.get("local_dir"))
             local_dir.mkdir(parents=True, exist_ok=True)
@@ -284,7 +325,8 @@ class FileManagerWorker(QThread):
             if target.exists():
                 if not self.kwargs.get("overwrite", False):
                     raise FileExistsError(f"Target already exists: {target}")
-                _remove_local_target(target)
+                if not (source.is_dir() and target.is_dir()):
+                    _remove_local_target(target)
             _copy_local_item(source, target, self.on_transfer_progress, self.progress.emit)
             self.result.emit(action, str(target))
             return
@@ -304,31 +346,60 @@ class FileManagerWorker(QThread):
             self.result.emit(action, self.kwargs.get("new_path"))
             return
         if action in {"copy", "move"}:
-            source = _offline_local_path(self.sd_root, self.kwargs.get("source_path"))
-            target_dir = _offline_local_path(self.sd_root, self.kwargs.get("target_dir"))
-            target = target_dir / (self.kwargs.get("target_name") or source.name)
-            if source.resolve() == target.resolve():
-                raise ValueError("Source and destination are the same.")
-            if target.exists():
-                if not self.kwargs.get("overwrite", False):
-                    raise FileExistsError(f"Target already exists: {target}")
-                _remove_local_target(target)
-            if action == "move":
-                try:
-                    shutil.move(str(source), str(target))
-                except Exception:
+            transfer_items = self.kwargs.get("transfer_items")
+            if transfer_items is None:
+                transfer_items = [{
+                    "source_path": self.kwargs.get("source_path"),
+                    "target_dir": self.kwargs.get("target_dir"),
+                    "target_name": self.kwargs.get("target_name"),
+                    "overwrite": self.kwargs.get("overwrite", False),
+                }]
+            targets = []
+            for item in transfer_items:
+                source = _offline_local_path(self.sd_root, item.get("source_path"))
+                target_dir = _offline_local_path(self.sd_root, item.get("target_dir"))
+                target = target_dir / (item.get("target_name") or source.name)
+                if source.resolve() == target.resolve():
+                    raise ValueError("Source and destination are the same.")
+                if source.is_dir():
+                    try:
+                        target.resolve().relative_to(source.resolve())
+                    except ValueError:
+                        pass
+                    else:
+                        raise ValueError("A folder cannot be copied or moved into itself.")
+                merge_folders = False
+                if target.exists():
+                    if not item.get("overwrite", False):
+                        raise FileExistsError(f"Target already exists: {target}")
+                    merge_folders = source.is_dir() and target.is_dir()
+                    if not merge_folders:
+                        _remove_local_target(target)
+                if action == "move" and not merge_folders:
+                    try:
+                        shutil.move(str(source), str(target))
+                    except Exception:
+                        _copy_local_item(source, target, self.on_transfer_progress, self.progress.emit)
+                        _remove_local_target(source)
+                else:
                     _copy_local_item(source, target, self.on_transfer_progress, self.progress.emit)
-                    _remove_local_target(source)
-            else:
-                _copy_local_item(source, target, self.on_transfer_progress, self.progress.emit)
-            self.result.emit(action, _offline_virtual_path(self.sd_root, target))
+                    if action == "move":
+                        _remove_local_target(source)
+                targets.append(_offline_virtual_path(self.sd_root, target))
+            self.result.emit(action, targets if len(targets) != 1 or self.kwargs.get("transfer_items") is not None else targets[0])
             return
         if action == "delete":
-            target = _offline_local_path(self.sd_root, self.kwargs.get("path"))
-            if target.resolve() == Path(self.sd_root).expanduser().resolve():
-                raise ValueError("The SD Card root cannot be deleted.")
-            _remove_local_target(target)
-            self.result.emit(action, self.kwargs.get("path"))
+            paths = self.kwargs.get("paths")
+            if paths is None:
+                paths = [self.kwargs.get("path")]
+            deleted = []
+            for path in paths:
+                target = _offline_local_path(self.sd_root, path)
+                if target.resolve() == Path(self.sd_root).expanduser().resolve():
+                    raise ValueError("The SD Card root cannot be deleted.")
+                _remove_local_target(target)
+                deleted.append(path)
+            self.result.emit(action, deleted if len(deleted) != 1 or self.kwargs.get("paths") is not None else deleted[0])
             return
         raise ValueError(f"Unknown file manager action: {action}")
 
@@ -406,7 +477,7 @@ class FileManagerTab(QWidget):
         self.busy = False
         self.pending_load_path = None
         self.last_transfer_percent = -1
-        self.clipboard_entry = None
+        self.clipboard_entries = []
         self.clipboard_action = ""
         self.sort_column = self.file_manager_config.get("sort_column", "name")
         self.sort_descending = bool(self.file_manager_config.get("sort_descending", False))
@@ -491,7 +562,7 @@ class FileManagerTab(QWidget):
         self.file_tree.setHeaderLabels(["Name", "Size", "Modified"])
         self.file_tree.setRootIsDecorated(False)
         self.file_tree.setAlternatingRowColors(True)
-        self.file_tree.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.file_tree.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.file_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.file_tree.itemDoubleClicked.connect(self.on_item_double_clicked)
         self.file_tree.customContextMenuRequested.connect(self.open_context_menu)
@@ -641,20 +712,21 @@ class FileManagerTab(QWidget):
         self.update_action_buttons()
 
     def update_action_buttons(self):
-        selected = self.selected_entry() if hasattr(self, "file_tree") else None
-        has_selection = bool(selected and not selected.get("up"))
-        has_clipboard = bool(self.clipboard_entry and self.clipboard_action in {"copy", "move"})
+        selected = self.selected_entries() if hasattr(self, "file_tree") else []
+        selection_count = len(selected)
+        has_selection = selection_count > 0
+        has_clipboard = bool(self.clipboard_entries and self.clipboard_action in {"copy", "move"})
         enabled = not self.busy
 
         for button in (
             self.download_button,
             self.copy_button,
             self.move_button,
-            self.rename_button,
             self.delete_button,
         ):
             button.setEnabled(enabled and has_selection)
 
+        self.rename_button.setEnabled(enabled and selection_count == 1)
         self.paste_button.setEnabled(enabled and has_clipboard)
 
     def is_offline_mode(self):
@@ -759,7 +831,7 @@ class FileManagerTab(QWidget):
         self.roots = []
         self.entries = []
         self.pending_load_path = None
-        self.clipboard_entry = None
+        self.clipboard_entries = []
         self.clipboard_action = ""
         self._initialized = False
         if self.worker is not None and self.worker.isRunning():
@@ -805,7 +877,8 @@ class FileManagerTab(QWidget):
             return
 
         if action == "download":
-            self.append_output(f"Download completed: {data}")
+            count = len(data) if isinstance(data, list) else 1
+            self.append_output(f"Download completed: {count} item{'s' if count != 1 else ''}.")
             return
 
         if action == "mkdir":
@@ -819,20 +892,23 @@ class FileManagerTab(QWidget):
             return
 
         if action == "copy":
-            self.append_output(f"Copied to: {data}")
+            count = len(data) if isinstance(data, list) else 1
+            self.append_output(f"Copy completed: {count} item{'s' if count != 1 else ''}.")
             self.pending_load_path = self.current_path
             return
 
         if action == "move":
-            self.append_output(f"Moved to: {data}")
-            self.clipboard_entry = None
+            count = len(data) if isinstance(data, list) else 1
+            self.append_output(f"Move completed: {count} item{'s' if count != 1 else ''}.")
+            self.clipboard_entries = []
             self.clipboard_action = ""
             self.update_action_buttons()
             self.pending_load_path = self.current_path
             return
 
         if action == "delete":
-            self.append_output(f"Deleted: {data}")
+            count = len(data) if isinstance(data, list) else 1
+            self.append_output(f"Deleted {count} item{'s' if count != 1 else ''}.")
             self.pending_load_path = self.current_path
 
     def on_worker_error(self, message):
@@ -990,14 +1066,39 @@ class FileManagerTab(QWidget):
         path = root if not folder else join_remote_path(root, folder)
         self.load_path(path)
 
+    def selected_entries(self):
+        entries = []
+        for item in self.file_tree.selectedItems():
+            entry = item.data(0, Qt.ItemDataRole.UserRole)
+            if entry and not entry.get("up"):
+                entries.append(entry)
+        return entries
+
     def selected_entry(self):
-        items = self.file_tree.selectedItems()
-        if not items:
-            return None
-        return items[0].data(0, Qt.ItemDataRole.UserRole)
+        entries = self.selected_entries()
+        return entries[0] if entries else None
 
     def existing_names(self):
         return {entry.get("name", "") for entry in self.entries}
+
+    def existing_entry(self, name):
+        for entry in self.entries:
+            if entry.get("name", "") == name:
+                return entry
+        return None
+
+    def conflict_choice_for_entry(self, source_entry, target_path, action_name):
+        existing = self.existing_entry(source_entry.get("name", ""))
+        merge_folders = bool(source_entry.get("is_dir") and existing and existing.get("is_dir"))
+        if merge_folders:
+            return self.conflict_choice(
+                "Folder Exists",
+                f"A folder already exists at:\n\n{target_path}\n\n"
+                "Merging will keep files that only exist in the destination and overwrite matching files from the source.\n\n"
+                "What do you want to do?",
+                overwrite_label="Merge & Overwrite",
+            )
+        return self.confirm_overwrite(target_path, action_name)
 
     def unique_name(self, name, existing_names=None):
         existing = set(existing_names or self.existing_names())
@@ -1104,39 +1205,49 @@ class FileManagerTab(QWidget):
         self.start_worker("upload", upload_items=upload_items)
 
     def download_selected(self):
-        entry = self.selected_entry()
-        if not entry or entry.get("up"):
-            QMessageBox.information(self, "File Manager", "Select a file or folder to download.")
+        entries = self.selected_entries()
+        if not entries:
+            QMessageBox.information(self, "File Manager", "Select one or more files or folders to download.")
             return
 
         local_dir = QFileDialog.getExistingDirectory(self, "Choose Download Folder")
         if not local_dir:
             return
 
-        target_name = entry.get("name", "")
-        overwrite = False
-        local_target = Path(local_dir) / target_name
-        if local_target.exists():
-            choice = self.conflict_choice(
-                "File Exists",
-                f"An item already exists at:\n\n{local_target}\n\nWhat do you want to do?",
-                overwrite_label="Overwrite",
-            )
-            if choice == self.CONFLICT_CANCEL:
-                return
-            if choice == self.CONFLICT_OVERWRITE:
-                overwrite = True
-            elif choice == self.CONFLICT_KEEP_BOTH:
-                target_name = self.unique_local_name(local_dir, target_name)
+        download_items = []
+        planned_names = {child.name for child in Path(local_dir).iterdir()} if Path(local_dir).exists() else set()
+        for entry in entries:
+            target_name = entry.get("name", "")
+            overwrite = False
+            local_target = Path(local_dir) / target_name
+            if target_name in planned_names or local_target.exists():
+                merge_folders = bool(entry.get("is_dir") and local_target.exists() and local_target.is_dir())
+                choice = self.conflict_choice(
+                    "Folder Exists" if merge_folders else "File Exists",
+                    (f"A folder already exists at:\n\n{local_target}\n\n"
+                     "Merging will keep files that only exist in the destination and overwrite matching files from the source.\n\n"
+                     "What do you want to do?") if merge_folders else
+                    f"An item already exists at:\n\n{local_target}\n\nWhat do you want to do?",
+                    overwrite_label="Merge & Overwrite" if merge_folders else "Overwrite",
+                )
+                if choice == self.CONFLICT_CANCEL:
+                    return
+                if choice == self.CONFLICT_OVERWRITE:
+                    overwrite = True
+                elif choice == self.CONFLICT_KEEP_BOTH:
+                    target_name = self.unique_local_name(local_dir, target_name)
+                    while target_name in planned_names:
+                        target_name = self.unique_local_name(local_dir, target_name)
+            planned_names.add(target_name)
+            download_items.append({
+                "remote_path": entry.get("path"),
+                "local_dir": local_dir,
+                "target_name": target_name,
+                "overwrite": overwrite,
+            })
 
-        self.append_output(f"Downloading {entry.get('name')}...")
-        self.start_worker(
-            "download",
-            remote_path=entry.get("path"),
-            local_dir=local_dir,
-            target_name=target_name,
-            overwrite=overwrite,
-        )
+        self.append_output(f"Downloading {len(download_items)} item{'s' if len(download_items) != 1 else ''}...")
+        self.start_worker("download", download_items=download_items)
 
     def unique_local_name(self, local_dir, name):
         local_dir = Path(local_dir)
@@ -1167,10 +1278,11 @@ class FileManagerTab(QWidget):
         self.start_worker("mkdir", path=path)
 
     def rename_selected(self):
-        entry = self.selected_entry()
-        if not entry or entry.get("up"):
-            QMessageBox.information(self, "File Manager", "Select a file or folder to rename.")
+        entries = self.selected_entries()
+        if len(entries) != 1:
+            QMessageBox.information(self, "File Manager", "Select exactly one file or folder to rename.")
             return
+        entry = entries[0]
 
         old_name = entry.get("name", "")
         new_name, ok = QInputDialog.getText(self, "Rename", "New name:", text=old_name)
@@ -1199,76 +1311,92 @@ class FileManagerTab(QWidget):
         self.start_worker("rename", old_path=entry.get("path"), new_path=new_path, overwrite=overwrite)
 
     def copy_selected(self):
-        entry = self.selected_entry()
-        if not entry or entry.get("up"):
-            QMessageBox.information(self, "File Manager", "Select a file or folder to copy.")
+        entries = self.selected_entries()
+        if not entries:
+            QMessageBox.information(self, "File Manager", "Select one or more files or folders to copy.")
             return
-        self.clipboard_entry = dict(entry)
+        self.clipboard_entries = [dict(entry) for entry in entries]
         self.clipboard_action = "copy"
-        self.append_output(f"Copied to clipboard: {entry.get('name')}")
+        self.append_output(f"Copied {len(entries)} item{'s' if len(entries) != 1 else ''} to clipboard.")
         self.update_action_buttons()
 
     def move_selected(self):
-        entry = self.selected_entry()
-        if not entry or entry.get("up"):
-            QMessageBox.information(self, "File Manager", "Select a file or folder to move.")
+        entries = self.selected_entries()
+        if not entries:
+            QMessageBox.information(self, "File Manager", "Select one or more files or folders to move.")
             return
-        self.clipboard_entry = dict(entry)
+        self.clipboard_entries = [dict(entry) for entry in entries]
         self.clipboard_action = "move"
-        self.append_output(f"Ready to move: {entry.get('name')}. Open the destination folder and choose Paste.")
+        self.append_output(
+            f"Ready to move {len(entries)} item{'s' if len(entries) != 1 else ''}. "
+            "Open the destination folder and choose Paste."
+        )
         self.update_action_buttons()
 
     def paste_clipboard(self):
-        if not self.clipboard_entry or self.clipboard_action not in {"copy", "move"}:
-            QMessageBox.information(self, "File Manager", "Copy or move a file or folder first.")
+        if not self.clipboard_entries or self.clipboard_action not in {"copy", "move"}:
+            QMessageBox.information(self, "File Manager", "Copy or move one or more files or folders first.")
             return
 
-        source_path = self.clipboard_entry.get("path")
-        source_name = self.clipboard_entry.get("name", "")
-        if not source_path or not source_name:
+        transfer_items = []
+        planned = set(self.existing_names())
+        for source_entry in self.clipboard_entries:
+            source_path = source_entry.get("path")
+            source_name = source_entry.get("name", "")
+            if not source_path or not source_name:
+                continue
+
+            target_name = source_name
+            overwrite = False
+            if target_name in planned:
+                target_path = join_remote_path(self.current_path, target_name)
+                choice = self.conflict_choice_for_entry(source_entry, target_path, "paste")
+                if choice == self.CONFLICT_CANCEL:
+                    return
+                if choice == self.CONFLICT_OVERWRITE:
+                    overwrite = True
+                elif choice == self.CONFLICT_KEEP_BOTH:
+                    target_name = self.unique_name(target_name, planned)
+            planned.add(target_name)
+            transfer_items.append({
+                "source_path": source_path,
+                "target_dir": self.current_path,
+                "target_name": target_name,
+                "overwrite": overwrite,
+            })
+
+        if not transfer_items:
             return
-
-        target_name = source_name
-        overwrite = False
-        if target_name in self.existing_names():
-            target_path = join_remote_path(self.current_path, target_name)
-            choice = self.confirm_overwrite(target_path, "paste")
-            if choice == self.CONFLICT_CANCEL:
-                return
-            if choice == self.CONFLICT_OVERWRITE:
-                overwrite = True
-            elif choice == self.CONFLICT_KEEP_BOTH:
-                target_name = self.unique_name(target_name)
-
         action = self.clipboard_action
-        self.append_output(f"{'Moving' if action == 'move' else 'Copying'} {source_name} to {self.current_path}...")
-        self.start_worker(
-            action,
-            source_path=source_path,
-            target_dir=self.current_path,
-            target_name=target_name,
-            overwrite=overwrite,
+        self.append_output(
+            f"{'Moving' if action == 'move' else 'Copying'} {len(transfer_items)} "
+            f"item{'s' if len(transfer_items) != 1 else ''} to {self.current_path}..."
         )
+        self.start_worker(action, transfer_items=transfer_items)
 
     def delete_selected(self):
-        entry = self.selected_entry()
-        if not entry or entry.get("up"):
-            QMessageBox.information(self, "File Manager", "Select a file or folder to delete.")
+        entries = self.selected_entries()
+        if not entries:
+            QMessageBox.information(self, "File Manager", "Select one or more files or folders to delete.")
             return
 
-        name = entry.get("name", "")
-        path = entry.get("path", "")
+        names = [entry.get("name", "") for entry in entries]
+        if len(entries) == 1:
+            detail = f"Delete '{names[0]}'"
+        else:
+            detail = f"Delete {len(entries)} selected items"
         reply = QMessageBox.question(
             self,
             "Delete",
-            f"Delete '{name}' from the {'SD Card' if self.is_offline_mode() else 'MiSTer'}?\n\n{path}\n\nThis cannot be undone from MiSTer Companion.",
+            f"{detail} from the {'SD Card' if self.is_offline_mode() else 'MiSTer'}?\n\n"
+            "This cannot be undone from MiSTer Companion.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
         if reply != QMessageBox.StandardButton.Yes:
             return
 
-        self.start_worker("delete", path=path)
+        self.start_worker("delete", paths=[entry.get("path") for entry in entries if entry.get("path")])
 
     def open_context_menu(self, position):
         menu = QMenu(self)
@@ -1312,14 +1440,15 @@ class FileManagerTab(QWidget):
         menu.addSeparator()
         menu.addAction(refresh_action)
 
-        has_selection = bool(entry and not entry.get("up"))
-        has_clipboard = bool(self.clipboard_entry and self.clipboard_action in {"copy", "move"})
+        selected_entries = self.selected_entries()
+        has_selection = bool(selected_entries)
+        has_clipboard = bool(self.clipboard_entries and self.clipboard_action in {"copy", "move"})
         enabled = not self.busy
 
         download_action.setEnabled(enabled and has_selection)
         copy_action.setEnabled(enabled and has_selection)
         move_action.setEnabled(enabled and has_selection)
-        rename_action.setEnabled(enabled and has_selection)
+        rename_action.setEnabled(enabled and len(selected_entries) == 1)
         delete_action.setEnabled(enabled and has_selection)
         paste_action.setEnabled(enabled and has_clipboard)
         upload_action.setEnabled(enabled)

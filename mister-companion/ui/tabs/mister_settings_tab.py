@@ -514,6 +514,12 @@ class MiSTerSettingsTab(QWidget):
             "Disabled"
         ])
 
+        self.easy_recents_combo = QComboBox()
+        self.easy_recents_combo.addItems([
+            "Off",
+            "On"
+        ])
+
         self.easy_font_combo = QComboBox()
         self.easy_font_combo.addItem("Default")
 
@@ -548,12 +554,14 @@ class MiSTerSettingsTab(QWidget):
         easy_layout.addWidget(self.easy_analogue_combo, 6, 1)
         easy_layout.addWidget(QLabel("MiSTer Logo"), 7, 0)
         easy_layout.addWidget(self.easy_logo_combo, 7, 1)
-        easy_layout.addWidget(QLabel("Font"), 8, 0)
-        easy_layout.addWidget(self.easy_font_combo, 8, 1)
-        easy_layout.addWidget(QLabel("AmigaVision Preset"), 9, 0)
-        easy_layout.addWidget(self.easy_amigavision_preset_combo, 9, 1)
-        easy_layout.addWidget(QLabel("Menu CRT Preset"), 10, 0)
-        easy_layout.addWidget(self.easy_menu_crt_preset_combo, 10, 1)
+        easy_layout.addWidget(QLabel("Recents"), 8, 0)
+        easy_layout.addWidget(self.easy_recents_combo, 8, 1)
+        easy_layout.addWidget(QLabel("Font"), 9, 0)
+        easy_layout.addWidget(self.easy_font_combo, 9, 1)
+        easy_layout.addWidget(QLabel("AmigaVision Preset"), 10, 0)
+        easy_layout.addWidget(self.easy_amigavision_preset_combo, 10, 1)
+        easy_layout.addWidget(QLabel("Menu CRT Preset"), 11, 0)
+        easy_layout.addWidget(self.easy_menu_crt_preset_combo, 11, 1)
 
         easy_layout.setColumnStretch(1, 1)
         self.easy_group.setLayout(easy_layout)
@@ -650,6 +658,7 @@ class MiSTerSettingsTab(QWidget):
         self.easy_hdmi_limited_combo.setCurrentText("Full Range")
         self.set_analogue_combo_value("RGBS (SCART)")
         self.easy_logo_combo.setCurrentText("Enabled")
+        self.easy_recents_combo.setCurrentText("Off")
         self.easy_font_combo.setCurrentText("Default")
         self.easy_amigavision_preset_combo.setCurrentText("Disabled")
         self.easy_menu_crt_preset_combo.setCurrentText("Disabled")
@@ -667,6 +676,7 @@ class MiSTerSettingsTab(QWidget):
             self.easy_hdmi_limited_combo,
             self.easy_analogue_combo,
             self.easy_logo_combo,
+            self.easy_recents_combo,
             self.easy_font_combo,
             self.easy_amigavision_preset_combo,
             self.easy_menu_crt_preset_combo,
@@ -1609,6 +1619,7 @@ class MiSTerSettingsTab(QWidget):
             "hdmi_limited": self.easy_hdmi_limited_combo.currentText().strip(),
             "analogue": self.easy_analogue_combo.currentText().strip(),
             "logo": self.easy_logo_combo.currentText().strip(),
+            "recents": self.easy_recents_combo.currentText().strip(),
             "font": self.easy_font_combo.currentText().strip(),
             "amigavision_preset": self.easy_amigavision_preset_combo.currentText().strip(),
             "menu_crt_preset": self.easy_menu_crt_preset_combo.currentText().strip(),
@@ -1623,6 +1634,7 @@ class MiSTerSettingsTab(QWidget):
         self.easy_hdmi_limited_combo.setCurrentText(values.get("hdmi_limited", "Full Range"))
         self.set_analogue_combo_value(values.get("analogue", "RGBS (SCART)"))
         self.easy_logo_combo.setCurrentText(values.get("logo", "Enabled"))
+        self.easy_recents_combo.setCurrentText(values.get("recents", "Off"))
         self.easy_amigavision_preset_combo.setCurrentText(
             values.get("amigavision_preset", "Disabled")
         )

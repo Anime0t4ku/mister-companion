@@ -173,6 +173,35 @@ def send_input_command(connection, command: str, timeout: int = 5):
     return run_zaparoo_command(connection, command, timeout=timeout)
 
 
+def get_active_media(connection, timeout: int = 3) -> dict:
+    """Return Zaparoo Core's currently active primary (now playing) media.
+
+    This intentionally uses only the documented ``media.active`` API. MiSTer
+    game tracking for titles launched outside Zaparoo depends on ``recents=1``
+    in MiSTer.ini; Companion does not infer now-playing state from MiSTer files.
+    """
+    payload = {
+        "jsonrpc": "2.0",
+        "method": "media.active",
+        "params": {"slot": "primary"},
+        "id": "mister-companion-now-playing",
+    }
+
+    response = _send_ws_payload(connection, payload, timeout=timeout)
+    if not isinstance(response, dict):
+        return {}
+
+    result = response.get("result")
+    if result is None:
+        return {}
+    if not isinstance(result, dict):
+        raise ZaparooApiError("Zaparoo media.active returned an unexpected response.")
+
+    # ActiveMedia's required fields are launcherId, systemId, systemName,
+    # mediaPath, mediaName, started, and zapScript. Keep optional fields intact.
+    return result
+
+
 def get_media_database_status(connection, timeout: int = 5) -> dict:
     payload = {
         "jsonrpc": "2.0",
