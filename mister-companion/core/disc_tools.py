@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import os
 import platform
+import plistlib
 import re
 import shutil
 import subprocess
+import time
 import tarfile
 import tempfile
 import zipfile
@@ -21,13 +23,12 @@ CDRDAO_COMPANION_RELEASE_BASE = (
     f"cdrdao-{CDRDAO_VERSION}"
 )
 
-# Known-good upstream packages that Companion can install without relying on a
-# system package manager or an external manifest. Additional native packages can
-# be added here as they are validated. Windows ARM64 intentionally uses this same
-# x64 bundle through Windows' built-in x64 emulation.
+
+
+
 _BUILTIN_CDRDAO_PACKAGES = {
-    # The official upstream Windows build is used on both x64 and ARM64.
-    # Windows 11 on ARM runs this x64 helper through its built-in emulation.
+    
+    
     "windows-x64": {
         "version": CDRDAO_VERSION,
         "url": "https://sourceforge.net/projects/cdrdao/files/rel_1_2_6/cdrdao126.zip/download",
@@ -43,16 +44,6 @@ _BUILTIN_CDRDAO_PACKAGES = {
         "url": f"{CDRDAO_COMPANION_RELEASE_BASE}/cdrdao-{CDRDAO_VERSION}-linux-arm64.tar.gz",
         "filename": f"cdrdao-{CDRDAO_VERSION}-linux-arm64.tar.gz",
     },
-    "macos-x64": {
-        "version": CDRDAO_VERSION,
-        "url": f"{CDRDAO_COMPANION_RELEASE_BASE}/cdrdao-{CDRDAO_VERSION}-macos-x64.tar.gz",
-        "filename": f"cdrdao-{CDRDAO_VERSION}-macos-x64.tar.gz",
-    },
-    "macos-arm64": {
-        "version": CDRDAO_VERSION,
-        "url": f"{CDRDAO_COMPANION_RELEASE_BASE}/cdrdao-{CDRDAO_VERSION}-macos-arm64.tar.gz",
-        "filename": f"cdrdao-{CDRDAO_VERSION}-macos-arm64.tar.gz",
-    },
 }
 
 
@@ -60,18 +51,25 @@ class DiscToolError(RuntimeError):
     pass
 
 
+
 def platform_key() -> str:
     system = platform.system().lower()
     machine = platform.machine().lower()
     arm64 = machine in {"arm64", "aarch64"}
     if system == "windows":
-        # Windows 11 ARM can run the same x64 cdrdao helper via x64 emulation.
+        
         return "windows-x64"
     if system == "darwin":
         return "macos-arm64" if arm64 else "macos-x64"
     if system == "linux":
         return "linux-arm64" if arm64 else "linux-x64"
     raise DiscToolError(f"Unsupported platform: {platform.system()} {platform.machine()}")
+
+
+
+def _is_macos() -> bool:
+    return platform.system().lower() == "darwin"
+
 
 
 def _tool_name(name: str) -> str:
@@ -136,12 +134,9 @@ def _find_tool(root: Path, name: str) -> Path | None:
 
 
 def install_cdrdao(progress_callback=None) -> Path:
-    """Install Companion's private cdrdao bundle.
+    if _is_macos():
+        raise DiscToolError("macOS uses the native Disc Recording backend and does not require cdrdao.")
 
-    Companion uses its own published native Linux/macOS builds and the official
-    upstream Windows package. Windows ARM64 maps to the Windows x64 package and
-    runs it through Windows' x64 emulation.
-    """
     key = platform_key()
     package = _BUILTIN_CDRDAO_PACKAGES.get(key)
     if not package:
@@ -165,8 +160,8 @@ def install_cdrdao(progress_callback=None) -> Path:
         archive = tmpdir / filename
         _download(url, archive, progress_callback)
 
-        # Catch SourceForge/host error pages before presenting an opaque archive
-        # exception to the user.
+        
+        
         if archive.suffix.lower() == ".zip":
             try:
                 with archive.open("rb") as handle:
@@ -186,8 +181,8 @@ def install_cdrdao(progress_callback=None) -> Path:
 
         staged = tmpdir / "staged"
         staged.mkdir()
-        # Keep the whole executable directory so DLLs/dylibs/shared libraries stay
-        # beside the tools. Copy helper executables into that same root if needed.
+        
+        
         exe_dir = found["cdrdao"].parent
         shutil.copytree(exe_dir, staged, dirs_exist_ok=True)
         for name, src in found.items():
@@ -210,13 +205,11 @@ def install_cdrdao(progress_callback=None) -> Path:
 
 def _tool_env() -> dict[str, str]:
     env = os.environ.copy()
-    env["PATH"] = str(CDRDAO_DIR) + os.pathsep + env.get("PATH", "")
-    if platform.system().lower() == "darwin":
-        env["DYLD_LIBRARY_PATH"] = str(CDRDAO_DIR) + (os.pathsep + env["DYLD_LIBRARY_PATH"] if env.get("DYLD_LIBRARY_PATH") else "")
-    elif platform.system().lower() == "linux":
-        env["LD_LIBRARY_PATH"] = str(CDRDAO_DIR) + (os.pathsep + env["LD_LIBRARY_PATH"] if env.get("LD_LIBRARY_PATH") else "")
+    tool_dir = cdrdao_executable().parent if has_cdrdao() else CDRDAO_DIR
+    env["PATH"] = str(tool_dir) + os.pathsep + env.get("PATH", "")
+    if platform.system().lower() == "linux":
+        env["LD_LIBRARY_PATH"] = str(tool_dir) + (os.pathsep + env["LD_LIBRARY_PATH"] if env.get("LD_LIBRARY_PATH") else "")
     return env
-
 
 def _verify_cdrdao() -> None:
     """Verify that Companion's private cdrdao bundle can actually execute.
@@ -237,7 +230,7 @@ def _verify_cdrdao() -> None:
     for command in attempts:
         try:
             proc = subprocess.run(
-                command, cwd=str(CDRDAO_DIR), env=_tool_env(),
+                command, cwd=str(cdrdao_executable().parent), env=_tool_env(),
                 capture_output=True, text=True, errors="replace", timeout=15,
             )
         except (OSError, subprocess.SubprocessError):
@@ -247,19 +240,19 @@ def _verify_cdrdao() -> None:
         text = ((proc.stdout or "") + "\n" + (proc.stderr or "")).strip()
         outputs.append(text)
         lower = text.lower()
-        # Accept the normal version output regardless of whether the build prints
-        # the pinned version to stdout or stderr.  Some Windows bundles return a
-        # non-zero status for the unsupported --version spelling, so do not make
-        # that spelling alone determine whether the installed binary is usable.
+        
+        
+        
+        
         if "cdrdao" in lower and (CDRDAO_VERSION in text or "version" in lower):
             return
         if proc.returncode == 0 and "cdrdao" in lower:
             return
 
     if launched:
-        # The executable itself started, which is sufficient for installation.
-        # Operational commands such as scanbus/read-cd will surface any real
-        # runtime/device error later with their full cdrdao output.
+        
+        
+        
         return
 
     raise DiscToolError(
@@ -268,11 +261,558 @@ def _verify_cdrdao() -> None:
     )
 
 
+
+
+def _macos_drutil() -> Path:
+    return Path("/usr/bin/drutil")
+
+
+def has_native_macos_disc_backend() -> bool:
+    """Return whether macOS' built-in DiscRecording command-line frontend exists."""
+    return _is_macos() and _macos_drutil().is_file()
+
+
+def disc_backend_ready() -> bool:
+    """Disc tools are native on macOS and cdrdao-backed elsewhere."""
+    return has_native_macos_disc_backend() if _is_macos() else has_cdrdao()
+
+
+def _macos_drutil_run(args: list[str], timeout: int = 30) -> subprocess.CompletedProcess:
+    proc = subprocess.run(
+        [str(_macos_drutil()), *args],
+        capture_output=True,
+        text=True,
+        errors="replace",
+        timeout=timeout,
+    )
+    if proc.returncode != 0:
+        output = ((proc.stdout or "") + "\n" + (proc.stderr or "")).strip()
+        raise DiscToolError(output or f"drutil exited with code {proc.returncode}.")
+    return proc
+
+
+def _macos_media_nodes() -> list[tuple[str, str]]:
+    """Return (drive label, raw BSD node) pairs for inserted optical media.
+
+    Prefer ioreg's XML property-list output instead of scraping its human-readable
+    tree.  The latter can vary between macOS versions and was the reason an
+    otherwise visible IOCDMedia device could be missed.  A short retry window
+    also handles the momentary unpublish/republish that can occur after drutil
+    probes an optical disc.
+    """
+
+    def collect_from_plist(value) -> list[tuple[str, str]]:
+        found: list[tuple[str, str]] = []
+
+        def walk(obj) -> None:
+            if isinstance(obj, dict):
+                bsd = obj.get("BSD Name")
+                whole = obj.get("Whole")
+                if isinstance(bsd, str) and re.fullmatch(r"disk\d+", bsd) and whole is not False:
+                    label = (
+                        obj.get("IORegistryEntryName")
+                        or obj.get("Product Name")
+                        or obj.get("Model")
+                        or "Optical Drive"
+                    )
+                    pair = (str(label), f"/dev/r{bsd}")
+                    if pair not in found:
+                        found.append(pair)
+                for child in obj.values():
+                    if isinstance(child, (dict, list)):
+                        walk(child)
+            elif isinstance(obj, list):
+                for child in obj:
+                    walk(child)
+
+        walk(value)
+        return found
+
+    def query_ioreg() -> list[tuple[str, str]]:
+        try:
+            proc = subprocess.run(
+                ["/usr/sbin/ioreg", "-a", "-r", "-c", "IOCDMedia"],
+                capture_output=True,
+                timeout=15,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return []
+        if proc.returncode != 0 or not proc.stdout:
+            return []
+        try:
+            return collect_from_plist(plistlib.loads(proc.stdout))
+        except Exception:
+            return []
+
+    def query_ioreg_text() -> list[tuple[str, str]]:
+        
+        
+        
+        try:
+            proc = subprocess.run(
+                ["/usr/sbin/ioreg", "-r", "-c", "IOCDMedia", "-l"],
+                capture_output=True,
+                text=True,
+                errors="replace",
+                timeout=15,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return []
+        if proc.returncode != 0:
+            return []
+        results: list[tuple[str, str]] = []
+        current_label = ""
+        for raw in (proc.stdout or "").splitlines():
+            line = raw.strip()
+            m = re.search(r"\+-o\s+(.+?)\s+Media\s+<class IOCDMedia", line)
+            if m:
+                current_label = m.group(1).strip()
+                continue
+            m = re.search(r'"BSD Name"\s*=\s*"(disk\d+)"', line)
+            if m and current_label:
+                results.append((current_label, f"/dev/r{m.group(1)}"))
+                current_label = ""
+        return results
+
+    
+    
+    
+    for attempt in range(9):
+        results = query_ioreg() or query_ioreg_text()
+        if results:
+            return results
+        if attempt < 8:
+            time.sleep(0.25)
+    return []
+
+
+def _macos_parse_device(device: str) -> tuple[int, str | None]:
+    
+    m = re.fullmatch(r"macos:(\d+):(.*)", str(device))
+    if not m:
+        raise DiscToolError("The selected macOS optical drive is no longer valid. Refresh the drive list.")
+    index = int(m.group(1))
+    raw = m.group(2)
+    return index, None if raw == "-" else raw
+
+
+def _scan_macos_drives() -> list[tuple[str, str]]:
+    if not has_native_macos_disc_backend():
+        return []
+    try:
+        proc = _macos_drutil_run(["list"], timeout=20)
+    except DiscToolError:
+        return []
+    media = _macos_media_nodes()
+    used_nodes: set[str] = set()
+    results: list[tuple[str, str]] = []
+    
+    for raw in (proc.stdout or "").splitlines():
+        line = raw.strip()
+        m = re.match(r"^(\d+)\s+(.+)$", line)
+        if not m:
+            continue
+        index = int(m.group(1))
+        rest = m.group(2).strip()
+        
+        parts = re.split(r"\s{2,}", rest)
+        label = " ".join(parts[:3]).strip() if len(parts) >= 3 else rest
+        
+        
+        raw_node = None
+        lower = rest.lower()
+        for media_label, node in media:
+            if node in used_nodes:
+                continue
+            tokens = [t for t in re.split(r"\s+", media_label.lower()) if len(t) > 2]
+            if tokens and all(t in lower for t in tokens[-2:]):
+                raw_node = node
+                used_nodes.add(node)
+                break
+        if raw_node is None and len(media) == 1 and len(results) == 0:
+            raw_node = media[0][1]
+            used_nodes.add(raw_node)
+        results.append((f"macos:{index}:{raw_node or '-'}", label))
+    return results
+
+
+def _macos_current_raw_device(index: int, preferred: str | None = None) -> str:
+    """Resolve the current raw BSD node for a drutil drive index.
+
+    BSD disk numbers can change when media is inserted/ejected or when macOS
+    re-enumerates a USB optical drive, so never trust the node captured when
+    the UI drive list was populated.
+    """
+    if preferred and Path(preferred).exists():
+        return preferred
+
+    media = _macos_media_nodes()
+    if not media:
+        raise DiscToolError("macOS could not find inserted CD media. Refresh the drive list and try again.")
+
+    
+    try:
+        proc = _macos_drutil_run(["list"], timeout=20)
+        selected = ""
+        for raw in (proc.stdout or "").splitlines():
+            line = raw.strip()
+            m = re.match(r"^(\d+)\s+(.+)$", line)
+            if m and int(m.group(1)) == index:
+                selected = m.group(2).lower()
+                break
+        if selected:
+            for media_label, node in media:
+                tokens = [t for t in re.split(r"\s+", media_label.lower()) if len(t) > 2]
+                if tokens and all(t in selected for t in tokens[-2:]) and Path(node).exists():
+                    return node
+    except DiscToolError:
+        pass
+
+    
+    existing = [node for _label, node in media if Path(node).exists()]
+    if len(existing) == 1:
+        return existing[0]
+
+    raise DiscToolError(
+        "macOS could not match the selected optical drive to its current raw device. "
+        "Refresh the drive list and try again."
+    )
+
+
+def _frames_to_msf(frames: int) -> str:
+    frames = max(0, int(frames))
+    minutes, rem = divmod(frames, 75 * 60)
+    seconds, ff = divmod(rem, 75)
+    return f"{minutes:02d}:{seconds:02d}:{ff:02d}"
+
+
+def _macos_toc(index: int) -> tuple[list[dict], int]:
+    proc = _macos_drutil_run(["-drive", str(index), "toc"], timeout=25)
+    tracks: list[dict] = []
+    leadout_abs = None
+    for raw in (proc.stdout or "").splitlines():
+        line = raw.strip()
+        m = re.match(r"Lead-out\s*:\s*(\d{1,3}:\d{2}[.:]\d{2})", line, re.IGNORECASE)
+        if m:
+            leadout_abs = _msf_to_frames(m.group(1))
+            continue
+        m = re.match(
+            r"Session\s+(\d+)\s*,\s*Track\s+(\d+)\s*:\s*(\d{1,3}:\d{2}[.:]\d{2})\s+(.+)$",
+            line,
+            re.IGNORECASE,
+        )
+        if m:
+            desc = m.group(4).lower()
+            tracks.append({
+                "session": int(m.group(1)),
+                "number": int(m.group(2)),
+                "absolute": _msf_to_frames(m.group(3)),
+                "audio": "audio" in desc or "2ch" in desc,
+                "description": m.group(4).strip(),
+            })
+    if not tracks or leadout_abs is None:
+        raise DiscToolError("macOS could not read the disc TOC.")
+    
+    
+    for track in tracks:
+        track["lba"] = max(0, track["absolute"] - 150)
+    total_sectors = max(0, leadout_abs - 150)
+    if total_sectors <= 0:
+        raise DiscToolError("macOS reported an invalid CD lead-out address.")
+    return tracks, total_sectors
+
+
+def _macos_open_current_raw_device(index: int, preferred: str | None = None, timeout: float = 8.0):
+    """Resolve and immediately open the current whole-disc raw BSD device.
+
+    Mixed-mode CDs may be republished by macOS while Disc Recording probes the
+    TOC.  Do not return a path and open it later: resolve + open in the same
+    retry loop so a transient disk-number change cannot leave us with a stale
+    /dev/rdiskN.
+    """
+    deadline = time.monotonic() + max(0.5, timeout)
+    last_error: OSError | None = None
+    hint = preferred
+    while time.monotonic() < deadline:
+        try:
+            raw_device = _macos_current_raw_device(index, hint)
+        except DiscToolError:
+            raw_device = None
+        hint = None  
+
+        if raw_device:
+            candidates = [raw_device]
+            
+            
+            if raw_device.startswith("/dev/rdisk"):
+                candidates.append(raw_device.replace("/dev/rdisk", "/dev/disk", 1))
+            for candidate in candidates:
+                try:
+                    return open(candidate, "rb", buffering=0), candidate
+                except (FileNotFoundError, PermissionError, OSError) as exc:
+                    last_error = exc
+
+        time.sleep(0.20)
+
+    if isinstance(last_error, PermissionError):
+        raise DiscToolError("macOS denied access to the optical disc device.") from last_error
+    if last_error is not None:
+        raise DiscToolError(
+            "macOS could not open the inserted CD media after it was detected. "
+            "Eject and reinsert the disc, then refresh the drive list."
+        ) from last_error
+    raise DiscToolError("macOS could not find inserted CD media. Refresh the drive list and try again.")
+
+
+def _macos_cue_track_mode(handle, track: dict) -> str:
+    if track.get("audio"):
+        return "AUDIO"
+    
+    
+    
+    try:
+        handle.seek(int(track["lba"]) * 2352)
+        header = handle.read(16)
+        if len(header) >= 16 and header[:12] == b"\x00" + (b"\xff" * 10) + b"\x00":
+            if header[15] == 2:
+                return "MODE2/2352"
+            if header[15] == 1:
+                return "MODE1/2352"
+    except OSError:
+        pass
+    return "MODE1/2352"
+
+
+def _rip_disc_macos(
+    device: str,
+    output_cue: str | Path,
+    log_callback=None,
+    progress_callback=None,
+) -> tuple[Path, Path, Path]:
+    index, preferred_raw_device = _macos_parse_device(device)
+    cue = Path(output_cue)
+    if cue.suffix.lower() != ".cue":
+        cue = cue.with_suffix(".cue")
+    cue.parent.mkdir(parents=True, exist_ok=True)
+    bin_path = cue.with_suffix(".bin")
+    toc_path = cue.with_suffix(".toc")  
+    for path in (cue, bin_path):
+        if path.exists():
+            raise FileExistsError(f"Output already exists: {path}")
+
+    if progress_callback:
+        progress_callback(0, "Reading disc layout...")
+    
+    
+    tracks, total_sectors = _macos_toc(index)
+    src, raw_device = _macos_open_current_raw_device(index, preferred_raw_device)
+    try:
+        modes = {track["number"]: _macos_cue_track_mode(src, track) for track in tracks}
+        src.seek(0)
+        if log_callback:
+            log_callback(f"Using native macOS Disc Recording ({len(tracks)} tracks).")
+
+        
+        
+        
+        
+        
+        
+        write_group_sectors = 64
+        copied = 0
+        current_track_idx = 0
+        pending = bytearray()
+        with src, bin_path.open("xb") as dst:
+            while copied < total_sectors:
+                while current_track_idx + 1 < len(tracks) and copied >= tracks[current_track_idx + 1]["lba"]:
+                    current_track_idx += 1
+
+                sector = None
+                last_error = None
+                for attempt in range(4):
+                    try:
+                        
+                        
+                        if attempt:
+                            src.seek(copied * 2352)
+                            time.sleep(0.05 * attempt)
+                        sector = src.read(2352)
+                        if len(sector) == 2352:
+                            break
+                        if not sector:
+                            last_error = OSError("optical drive returned no data")
+                        else:
+                            last_error = OSError(f"partial raw CD sector ({len(sector)} bytes)")
+                    except OSError as exc:
+                        last_error = exc
+                        sector = None
+
+                if sector is None or len(sector) != 2352:
+                    detail = f": {last_error}" if last_error else ""
+                    raise DiscToolError(
+                        f"The optical drive could not read raw sector {copied}{detail}"
+                    )
+
+                pending.extend(sector)
+                copied += 1
+                if len(pending) >= write_group_sectors * 2352 or copied >= total_sectors:
+                    dst.write(pending)
+                    pending.clear()
+
+                percent = min(100, int(copied * 100 / total_sectors))
+                track_no = tracks[current_track_idx]["number"]
+                if progress_callback and (copied == 1 or copied % write_group_sectors == 0 or copied >= total_sectors):
+                    progress_callback(percent, f"Ripping track {track_no} of {len(tracks)} — {percent}%")
+    except Exception:
+        bin_path.unlink(missing_ok=True)
+        raise
+
+    cue_lines = [f'FILE "{bin_path.name}" BINARY']
+    for track in tracks:
+        cue_lines.append(f'  TRACK {track["number"]:02d} {modes[track["number"]]}')
+        cue_lines.append(f'    INDEX 01 {_frames_to_msf(track["lba"])}')
+    cue.write_text("\n".join(cue_lines) + "\n", encoding="utf-8")
+    if progress_callback:
+        progress_callback(100, "Disc read complete — 100%")
+    return cue, bin_path, toc_path
+
+
+def _run_native_macos_burn(
+    index: int,
+    image_path: Path,
+    speed: int | None = None,
+    log_callback=None,
+    progress_callback=None,
+) -> None:
+    script = r"""
+ObjC.import('Foundation')
+ObjC.import('DiscRecording')
+
+function val(dict, key) {
+    var item = dict.objectForKey(key)
+    if (!item) return null
+    try { return ObjC.unwrap(item) } catch (e) { return String(item) }
+}
+
+function emit(obj) {
+    console.log(JSON.stringify(obj))
+}
+
+function run(argv) {
+    var wanted = parseInt(argv[0], 10) - 1
+    var imagePath = String(argv[1])
+    var xfactor = parseFloat(argv[2] || '0')
+    var devices = $.DRDevice.devices
+    var count = Number(devices.count)
+    if (wanted < 0 || wanted >= count) throw new Error('Selected optical drive is unavailable')
+    var device = devices.objectAtIndex(wanted)
+    var layout = $.DRBurn.layoutForImageFile($(imagePath))
+    if (!layout) throw new Error('Disc Recording could not create a burn layout for this image')
+    var burn = $.DRBurn.burnForDevice(device)
+    burn.setVerifyDisc(false)
+    burn.setAppendable(false)
+    if (xfactor > 0) {
+        var kps = $.DRDeviceKPSForXFactor(device, xfactor)
+        if (kps > 0) burn.setRequestedBurnSpeed(kps)
+    }
+    burn.writeLayout(layout)
+    var lastState = ''
+    var lastPercent = -1
+    while (true) {
+        var status = burn.status
+        var state = val(status, $.DRStatusStateKey)
+        var percent = val(status, $.DRStatusPercentCompleteKey)
+        var track = val(status, $.DRStatusCurrentTrackKey)
+        var numericPercent = percent === null ? -1 : Math.max(0, Math.min(100, Math.round(Number(percent) * (Number(percent) <= 1 ? 100 : 1))))
+        var stateText = state === null ? '' : String(state)
+        if (stateText !== lastState || numericPercent !== lastPercent) {
+            emit({state: stateText, percent: numericPercent, track: track})
+            lastState = stateText
+            lastPercent = numericPercent
+        }
+        var lower = stateText.toLowerCase()
+        if (lower.indexOf('done') >= 0) return
+        if (lower.indexOf('failed') >= 0) {
+            var err = val(status, $.DRErrorStatusKey)
+            throw new Error(err === null ? 'Disc Recording reported a burn failure' : String(err))
+        }
+        $.NSThread.sleepForTimeInterval(0.2)
+    }
+}
+"""
+    with tempfile.TemporaryDirectory(prefix="mister-companion-native-burn-") as tmp:
+        script_path = Path(tmp) / "burn.js"
+        script_path.write_text(script, encoding="utf-8")
+        command = [
+            "/usr/bin/osascript", "-l", "JavaScript", str(script_path),
+            str(index), str(image_path), str(speed or 0),
+        ]
+        proc = subprocess.Popen(
+            command,
+            cwd=str(image_path.parent),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            bufsize=1,
+        )
+        assert proc.stdout is not None
+        output: list[str] = []
+        for raw in proc.stdout:
+            line = raw.strip()
+            if not line:
+                continue
+            output.append(line)
+            try:
+                import json
+                event = json.loads(line)
+            except Exception:
+                if log_callback:
+                    log_callback(line)
+                continue
+            state = str(event.get("state") or "")
+            lower = state.lower()
+            percent = int(event.get("percent", -1) or 0) if event.get("percent", -1) != -1 else -1
+            track = event.get("track")
+            if "prepar" in lower:
+                message = "Preparing disc..."
+                value = -1
+            elif "sessionopen" in lower or ("session" in lower and "open" in lower):
+                message = "Opening write session..."
+                value = -1
+            elif "trackopen" in lower or ("track" in lower and "open" in lower):
+                message = f"Opening track {track}..." if track else "Opening track..."
+                value = -1
+            elif "trackwrite" in lower or ("track" in lower and "write" in lower):
+                value = max(0, percent)
+                message = f"Writing track {track} — {value}%" if track else f"Writing disc — {value}%"
+            elif "trackclose" in lower or "sessionclose" in lower or "finishing" in lower:
+                message = "Finalizing disc..."
+                value = -1
+            elif "done" in lower:
+                message = "Disc written successfully — 100%"
+                value = 100
+            else:
+                message = "Burning disc..."
+                value = percent if percent >= 0 else -1
+            if progress_callback:
+                progress_callback(value, message)
+        code = proc.wait()
+        if code != 0:
+            detail = output[-1] if output else f"Native Disc Recording exited with code {code}."
+            raise DiscToolError(detail)
+    if progress_callback:
+        progress_callback(100, "Disc written successfully — 100%")
+
+
 def scan_drives() -> list[tuple[str, str]]:
+    if _is_macos():
+        return _scan_macos_drives()
     if not has_cdrdao():
         return []
     proc = subprocess.run(
-        [str(cdrdao_executable()), "scanbus"], cwd=str(CDRDAO_DIR), env=_tool_env(),
+        [str(cdrdao_executable()), "scanbus"], cwd=str(cdrdao_executable().parent), env=_tool_env(),
         capture_output=True, text=True, errors="replace", timeout=25,
     )
     text = (proc.stdout or "") + "\n" + (proc.stderr or "")
@@ -283,10 +823,10 @@ def scan_drives() -> list[tuple[str, str]]:
         if not line or line.startswith(("Cdrdao", "SCSI", "Using")):
             continue
 
-        # Native Windows scanbus output uses drive-root tokens such as:
-        #   D:\\ : HL-DT-ST, DVDRAM GP65NB60, PF00
-        # cdrdao expects --device D on Windows, so normalize the scan result to
-        # the drive letter while keeping the reported vendor/model as the label.
+        
+        
+        
+        
         m = re.match(r"^([A-Za-z]):[\\/]*\s*:\s*(.*)$", line)
         if m:
             device = m.group(1).upper()
@@ -296,7 +836,7 @@ def scan_drives() -> list[tuple[str, str]]:
             results.append((device, label))
             continue
 
-        # Unix/macOS native device paths, e.g. /dev/sr0 : VENDOR, MODEL, REV.
+        
         m = re.match(r"^(/dev/\S+)\s*:\s*(.*)$", line)
         if m:
             device = m.group(1).strip()
@@ -306,7 +846,7 @@ def scan_drives() -> list[tuple[str, str]]:
             results.append((device, label))
             continue
 
-        # Older/platform-specific SCSI bus notation.
+        
         m = re.match(r"^(\d+[,/:]\d+[,/:]\d+)\s*(?::\s*|\s+)(.+)$", line)
         if m:
             results.append((m.group(1), m.group(2).strip().strip("'")))
@@ -322,7 +862,7 @@ def scan_drives() -> list[tuple[str, str]]:
 
 def _run_streaming(command: list[str], log_callback=None, cwd: Path | None = None) -> None:
     proc = subprocess.Popen(
-        command, cwd=str(cwd or CDRDAO_DIR), env=_tool_env(), stdout=subprocess.PIPE,
+        command, cwd=str(cwd or cdrdao_executable().parent), env=_tool_env(), stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace",
     )
     assert proc.stdout is not None
@@ -335,8 +875,13 @@ def _run_streaming(command: list[str], log_callback=None, cwd: Path | None = Non
 
 
 def _msf_to_frames(value: str) -> int:
+    
+    
     try:
-        minutes, seconds, frames = (int(part) for part in value.split(":", 2))
+        match = re.fullmatch(r"(\d+):(\d{1,2})[.:](\d{1,2})", str(value).strip())
+        if not match:
+            return 0
+        minutes, seconds, frames = (int(part) for part in match.groups())
     except (TypeError, ValueError):
         return 0
     return ((minutes * 60) + seconds) * 75 + frames
@@ -348,6 +893,8 @@ def rip_disc(
     log_callback=None,
     progress_callback=None,
 ) -> tuple[Path, Path, Path]:
+    if _is_macos():
+        return _rip_disc_macos(device, output_cue, log_callback, progress_callback)
     if not has_cdrdao():
         raise DiscToolError("Install cdrdao first.")
     cue = Path(output_cue)
@@ -361,12 +908,12 @@ def rip_disc(
         if path.exists():
             raise FileExistsError(f"Output already exists: {path}")
 
-    # Run cdrdao from the selected output directory and pass only relative
-    # filenames. On Windows, cdrdao writes the --datafile value verbatim into
-    # the generated TOC. An absolute path such as D:\\Game.bin therefore
-    # leaves backslashes in the TOC, which toc2cue parses as TOC syntax and
-    # fails to reopen. Relative filenames avoid that problem entirely and also
-    # keep the generated TOC portable.
+    
+    
+    
+    
+    
+    
     workdir = cue.parent
     command = [
         str(cdrdao_executable()), "read-cd", "--read-raw", "--device", device,
@@ -444,9 +991,9 @@ def rip_disc(
                 log_callback("Disc read completed successfully.")
             return
 
-        # cdrdao prints hardware capability details and a raw track table before
-        # the copy begins. They are useful diagnostically but noisy for normal
-        # users, so only pass warnings/errors and other meaningful messages on.
+        
+        
+        
         if stripped.startswith(("Track   Mode", "----", "PQ sub-channel", "Raw P-W", "Cooked R-W", "CD-TEXT", "Using driver", "Cdrdao version")):
             return
         if log_callback and ("error" in lower or "warning" in lower):
@@ -454,10 +1001,10 @@ def rip_disc(
 
     _run_streaming(command, rip_output, workdir)
 
-    # toc2cue 1.2.6 uses -C <output-bin-file> to create a CUE-compatible
-    # BIN and -s to byte-swap AUDIO sectors while doing so.  The previous
-    # implementation incorrectly used a non-existent --binfile option, which
-    # makes toc2cue exit with code 1 after an otherwise successful rip.
+    
+    
+    
+    
     converted = stem.with_name(stem.name + "-cue").with_suffix(".bin")
     convert_cmd = [
         str(toc2cue_executable()),
@@ -480,14 +1027,14 @@ def rip_disc(
     if not converted.is_file() or not cue.is_file():
         raise DiscToolError("toc2cue did not create the expected BIN/CUE output.")
 
-    # Keep the public output name selected by the user. toc2cue writes the
-    # converted filename into the CUE, so update that reference after renaming.
+    
+    
     bin_path.unlink(missing_ok=True)
     converted.replace(bin_path)
     text = cue.read_text(encoding="utf-8", errors="replace")
     cue.write_text(text.replace(converted.name, bin_path.name), encoding="utf-8")
-    # The TOC is only an internal cdrdao intermediate. The public Disc to Image
-    # result is BIN/CUE (or CHD), so do not leave the TOC beside the user's image.
+    
+    
     toc_path.unlink(missing_ok=True)
     return cue, bin_path, toc_path
 
@@ -499,8 +1046,8 @@ def _burn_output_handler(line: str, log_callback=None, progress_callback=None, s
         return
     state = state if state is not None else {}
 
-    # cdrdao reports actual written data as "Wrote X of Y MB". Use that as
-    # the authoritative burn percentage instead of exposing raw console output.
+    
+    
     m = re.search(r"Wrote\s+(\d+(?:\.\d+)?)\s+of\s+(\d+(?:\.\d+)?)\s+MB", stripped, re.IGNORECASE)
     if m:
         done = float(m.group(1))
@@ -530,8 +1077,8 @@ def _burn_output_handler(line: str, log_callback=None, progress_callback=None, s
             progress_callback(0, "Calibrating writer...")
         return
 
-    # Keep the user-facing output concise. Surface only useful milestones and
-    # diagnostics; cdrdao's device/sector chatter stays hidden.
+    
+    
     if log_callback and (
         "error" in lower
         or "warning" in lower
@@ -543,9 +1090,19 @@ def _burn_output_handler(line: str, log_callback=None, progress_callback=None, s
 
 
 def burn_cue(device: str, cue_path: str | Path, speed: int | None = None, log_callback=None, progress_callback=None) -> None:
+    cue = Path(cue_path)
+    if _is_macos():
+        if not has_native_macos_disc_backend():
+            raise DiscToolError("The macOS Disc Recording backend is unavailable.")
+        if not cue.is_file():
+            raise FileNotFoundError(cue)
+        index, _raw = _macos_parse_device(device)
+        if progress_callback:
+            progress_callback(0, "Preparing game disc...")
+        _run_native_macos_burn(index, cue, speed, log_callback, progress_callback)
+        return
     if not has_cdrdao():
         raise DiscToolError("Install cdrdao first.")
-    cue = Path(cue_path)
     if not cue.is_file():
         raise FileNotFoundError(cue)
     if progress_callback:
@@ -581,11 +1138,11 @@ def create_iso9660_from_folder(source_folder: str | Path, output_iso: str | Path
     files = [p for p in source.iterdir() if p.is_file()]
     if not files:
         raise DiscToolError("The selected MSU-1 / MD+ folder contains no files at its root.")
-    # Deliberately do not recurse: selected-folder contents are authored directly
-    # at disc root, and a containing game folder is never added to the ISO.
-    # ISO 9660 volume identifiers are limited to 32 characters. Keep the user
-    # supplied label predictable and portable; if none is supplied, derive a
-    # sensible label from the selected folder name.
+    
+    
+    
+    
+    
     requested_label = (volume_id or source.name or "MISTER_DISC").strip().upper()
     safe_label = re.sub(r"[^A-Z0-9_]", "_", requested_label)[:32].strip("_") or "MISTER_DISC"
     iso = pycdlib.PyCdlib()
@@ -593,8 +1150,8 @@ def create_iso9660_from_folder(source_folder: str | Path, output_iso: str | Path
     used_iso_names: set[str] = set()
     try:
         for path in files:
-            # Joliet preserves the real filename for MiSTer. Add a conservative,
-            # unique ISO9660 alias as the primary tree entry.
+            
+            
             cleaned = re.sub(r"[^A-Z0-9_]", "_", path.stem.upper())[:24] or "FILE"
             ext = re.sub(r"[^A-Z0-9]", "", path.suffix.upper().lstrip("."))[:3]
             base = cleaned + (("." + ext) if ext else "")
@@ -616,6 +1173,18 @@ def create_iso9660_from_folder(source_folder: str | Path, output_iso: str | Path
 
 
 def burn_iso9660_folder(device: str, source_folder: str | Path, speed: int | None = None, volume_id: str | None = None, log_callback=None, progress_callback=None) -> None:
+    if _is_macos():
+        if not has_native_macos_disc_backend():
+            raise DiscToolError("The macOS Disc Recording backend is unavailable.")
+        if progress_callback:
+            progress_callback(0, "Creating ISO 9660 data image...")
+        with tempfile.TemporaryDirectory(prefix="mister-companion-data-disc-") as tmp:
+            iso_path = create_iso9660_from_folder(source_folder, Path(tmp) / "data.iso", volume_id=volume_id)
+            index, _raw = _macos_parse_device(device)
+            if progress_callback:
+                progress_callback(0, "ISO 9660 image ready. Starting burn...")
+            _run_native_macos_burn(index, iso_path, speed, log_callback, progress_callback)
+        return
     if not has_cdrdao():
         raise DiscToolError("Install cdrdao first.")
     if progress_callback:

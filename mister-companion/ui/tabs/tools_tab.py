@@ -48,7 +48,9 @@ from core.disc_tools import (
     DiscToolError,
     burn_cue,
     burn_iso9660_folder,
+    disc_backend_ready,
     has_cdrdao,
+    has_native_macos_disc_backend,
     install_cdrdao,
     remove_cdrdao,
     rip_disc,
@@ -369,7 +371,7 @@ class ToolsTab(QWidget):
         self.patch_status.setText("Patch failed.")
         QMessageBox.critical(self, "ROM Patcher", message)
 
-    # ----------------------------- Disc Tools -----------------------------
+    
     def _open_disc_page(self, page):
         self.stack.setCurrentWidget(page)
         self._refresh_cdrdao_status()
@@ -385,6 +387,11 @@ class ToolsTab(QWidget):
         remove = QPushButton("Remove")
         remove.clicked.connect(self._remove_cdrdao_clicked)
         row.addWidget(remove)
+        if os.sys.platform == "darwin":
+            
+            
+            install.setVisible(False)
+            remove.setVisible(False)
         layout.addLayout(row)
         progress = QProgressBar()
         progress.setVisible(False)
@@ -531,22 +538,32 @@ class ToolsTab(QWidget):
         return page
 
     def _refresh_cdrdao_status(self):
-        installed = has_cdrdao()
-        text = f"cdrdao {CDRDAO_VERSION}: {'Ready' if installed else 'Not installed'}"
+        ready = disc_backend_ready()
+        if os.sys.platform == "darwin":
+            text = "Native macOS Disc Recording: Ready" if ready else "Native macOS Disc Recording: Unavailable"
+            install_text = "Install cdrdao"
+        else:
+            text = f"cdrdao {CDRDAO_VERSION}: {'Ready' if ready else 'Not installed'}"
+            install_text = "Install cdrdao"
         if hasattr(self, "disc_cdrdao_status"):
             self.disc_cdrdao_status.setText(text)
-            self.disc_install_cdrdao.setVisible(not installed)
-            self.disc_remove_cdrdao.setVisible(installed)
+            self.disc_install_cdrdao.setText(install_text)
+            self.disc_install_cdrdao.setVisible(os.sys.platform != "darwin" and not ready)
+            self.disc_remove_cdrdao.setVisible(os.sys.platform != "darwin" and ready)
         if hasattr(self, "burn_cdrdao_status"):
             self.burn_cdrdao_status.setText(text)
-            self.burn_install_cdrdao.setVisible(not installed)
-            self.burn_remove_cdrdao.setVisible(installed)
+            self.burn_install_cdrdao.setText(install_text)
+            self.burn_install_cdrdao.setVisible(os.sys.platform != "darwin" and not ready)
+            self.burn_remove_cdrdao.setVisible(os.sys.platform != "darwin" and ready)
         if hasattr(self, "disc_rip_button"):
-            self.disc_rip_button.setEnabled(installed)
+            self.disc_rip_button.setEnabled(ready)
         if hasattr(self, "burn_button"):
-            self.burn_button.setEnabled(installed)
+            self.burn_button.setEnabled(ready)
 
     def _install_cdrdao_clicked(self):
+        if os.sys.platform == "darwin":
+            return
+
         for button_name in ("disc_install_cdrdao", "burn_install_cdrdao"):
             button = getattr(self, button_name, None)
             if button is not None:
@@ -591,9 +608,9 @@ class ToolsTab(QWidget):
 
     def _cdrdao_install_failed(self, message):
         self._finish_cdrdao_install_ui()
-        # Installation may already have placed a usable bundle before a
-        # post-install verification step failed.  Always refresh from the actual
-        # on-disk state so Disc to Image/Image to Disc are not left disabled.
+        
+        
+        
         self._refresh_cdrdao_status()
         self._refresh_disc_drives()
         QMessageBox.critical(self, "cdrdao", message)
@@ -605,7 +622,7 @@ class ToolsTab(QWidget):
 
     def _refresh_disc_drives(self):
         drives = []
-        if has_cdrdao():
+        if disc_backend_ready():
             try:
                 drives = scan_drives()
             except Exception:
@@ -617,7 +634,8 @@ class ToolsTab(QWidget):
             previous = combo.currentData()
             combo.clear()
             for device, label in drives:
-                combo.addItem(f"{label}  [{device}]", device)
+                display = label if os.sys.platform == "darwin" else f"{label}  [{device}]"
+                combo.addItem(display, device)
             if not drives:
                 combo.addItem("No optical drives detected", None)
             elif previous:
@@ -626,14 +644,14 @@ class ToolsTab(QWidget):
                         combo.setCurrentIndex(i)
                         break
 
-        # Keep action buttons in sync with the real managed-tool state.  This is
-        # especially important immediately after install/verification, where the
-        # drive list may already be usable even if an earlier status path failed.
-        installed = has_cdrdao()
+        
+        
+        
+        ready = disc_backend_ready()
         if hasattr(self, "disc_rip_button"):
-            self.disc_rip_button.setEnabled(installed)
+            self.disc_rip_button.setEnabled(ready)
         if hasattr(self, "burn_button"):
-            self.burn_button.setEnabled(installed)
+            self.burn_button.setEnabled(ready)
 
     def _browse_disc_output(self):
         path, _ = QFileDialog.getSaveFileName(self, "Save Disc Image", self.disc_output_cue.text().strip(), "CUE sheet (*.cue)")
@@ -779,12 +797,15 @@ class ToolsTab(QWidget):
                 worker.status.emit("LOG:" + line)
 
             def progress(percent, message):
-                worker.progress.emit(percent)
-                worker.status.emit("BURNSTATUS:" + message)
+                if percent is None or percent < 0:
+                    worker.status.emit("BURNBUSY:" + message)
+                else:
+                    worker.progress.emit(percent)
+                    worker.status.emit("BURNSTATUS:" + message)
 
-                # Keep the output pane concise like Disc to Image. Percentages
-                # belong in the progress bar/status line; the log only records
-                # meaningful burn stages and track changes.
+                
+                
+                
                 milestone = re.sub(r"\s*[—-]\s*\d+%$", "", message).strip()
                 if milestone and milestone != burn_log_state["last_milestone"]:
                     worker.status.emit("LOG:" + milestone)
@@ -802,14 +823,25 @@ class ToolsTab(QWidget):
             return True
 
         self.worker = ToolWorker(work, self)
-        self.worker.progress.connect(self.burn_progress.setValue)
+        self.worker.progress.connect(self._burn_progress_value)
         self.worker.status.connect(self._burn_worker_status)
         self.worker.succeeded.connect(self._burn_disc_done)
         self.worker.failed.connect(self._burn_disc_failed)
         self.worker.start()
 
+    def _burn_progress_value(self, value):
+        
+        
+        
+        if self.burn_progress.minimum() == 0 and self.burn_progress.maximum() == 0:
+            self.burn_progress.setRange(0, 100)
+        self.burn_progress.setValue(value)
+
     def _burn_worker_status(self, text):
-        if text.startswith("BURNSTATUS:"):
+        if text.startswith("BURNBUSY:"):
+            self.burn_progress.setRange(0, 0)
+            self.burn_status.setText(text[len("BURNBUSY:"):])
+        elif text.startswith("BURNSTATUS:"):
             self.burn_status.setText(text[len("BURNSTATUS:"):])
         elif text.startswith("LOG:"):
             self.burn_log.append(text[len("LOG:"):])
@@ -818,16 +850,18 @@ class ToolsTab(QWidget):
 
     def _burn_disc_done(self, _result):
         self.burn_button.setEnabled(True)
+        self.burn_progress.setRange(0, 100)
         self.burn_progress.setValue(100)
         self.burn_status.setText("Complete — 100%")
         QMessageBox.information(self, "Image to Disc", "Disc written successfully.")
 
     def _burn_disc_failed(self, message):
         self.burn_button.setEnabled(True)
+        self.burn_progress.setRange(0, 100)
         self.burn_status.setText("Failed")
         QMessageBox.critical(self, "Image to Disc", message)
 
-    # --------------------------- CHD Converter ---------------------------
+    
     def _build_chd(self):
         page = QWidget()
         layout = QVBoxLayout(page)
