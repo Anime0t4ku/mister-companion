@@ -6,6 +6,7 @@ import plistlib
 import re
 import shutil
 import subprocess
+import threading
 import time
 import tarfile
 import tempfile
@@ -768,7 +769,7 @@ function run(argv) {
                 import json
                 event = json.loads(line)
             except Exception:
-                if log_callback:
+                if log_callback and "error" in line.lower():
                     log_callback(line)
                 continue
             state = str(event.get("state") or "")
@@ -797,13 +798,13 @@ function run(argv) {
                 message = "Burning disc..."
                 value = percent if percent >= 0 else -1
             if progress_callback:
-                progress_callback(value, message)
+                progress_callback(value, "")
         code = proc.wait()
         if code != 0:
             detail = output[-1] if output else f"Native Disc Recording exited with code {code}."
             raise DiscToolError(detail)
     if progress_callback:
-        progress_callback(100, "Disc written successfully — 100%")
+        progress_callback(100, "")
 
 
 def scan_drives() -> list[tuple[str, str]]:
@@ -874,6 +875,62 @@ def _run_streaming(command: list[str], log_callback=None, cwd: Path | None = Non
         raise DiscToolError(f"{Path(command[0]).name} exited with code {code}.")
 
 
+def _linux_mount_points(device: str) -> list[str]:
+    if platform.system().lower() != "linux" or not str(device).startswith("/dev/"):
+        return []
+    wanted = os.path.realpath(str(device))
+    mounts: list[str] = []
+    try:
+        with open("/proc/self/mounts", "r", encoding="utf-8", errors="replace") as handle:
+            for line in handle:
+                parts = line.split()
+                if len(parts) < 2:
+                    continue
+                source = parts[0].replace("\\040", " ")
+                target = parts[1].replace("\\040", " ")
+                if source.startswith("/dev/") and os.path.realpath(source) == wanted:
+                    mounts.append(target)
+    except OSError:
+        pass
+    return mounts
+
+
+def _linux_unmount_optical(device: str) -> None:
+    if platform.system().lower() != "linux" or not str(device).startswith("/dev/"):
+        return
+    device = os.path.realpath(str(device))
+    udisksctl = shutil.which("udisksctl")
+    umount = shutil.which("umount")
+    for _ in range(4):
+        mounts = _linux_mount_points(device)
+        if not mounts:
+            return
+        if udisksctl:
+            try:
+                subprocess.run(
+                    [udisksctl, "unmount", "-b", device],
+                    capture_output=True, text=True, errors="replace", timeout=15,
+                )
+            except (OSError, subprocess.SubprocessError):
+                pass
+        mounts = _linux_mount_points(device)
+        if mounts and umount:
+            for mount_point in mounts:
+                try:
+                    subprocess.run(
+                        [umount, mount_point],
+                        capture_output=True, text=True, errors="replace", timeout=15,
+                    )
+                except (OSError, subprocess.SubprocessError):
+                    pass
+        time.sleep(0.25)
+    if _linux_mount_points(device):
+        raise DiscToolError(
+            "The disc is mounted by Linux and could not be released automatically. "
+            "Close any file manager windows using the disc and try again."
+        )
+
+
 def _msf_to_frames(value: str) -> int:
     
     
@@ -915,6 +972,7 @@ def rip_disc(
     
     
     workdir = cue.parent
+    _linux_unmount_optical(device)
     command = [
         str(cdrdao_executable()), "read-cd", "--read-raw", "--device", device,
         "--datafile", bin_path.name, toc_path.name,
@@ -937,6 +995,8 @@ def rip_disc(
     def report_progress(percent: int, message: str) -> None:
         nonlocal last_percent
         percent = max(0, min(100, int(percent)))
+        if percent < last_percent:
+            return
         if progress_callback and percent != last_percent:
             last_percent = percent
             progress_callback(percent, message)
@@ -962,8 +1022,6 @@ def rip_disc(
             count = max(track_lengths) if track_lengths else current_track
             label = current_kind.capitalize()
             message = f"Ripping track {current_track} of {count} ({label}) — 0%"
-            if log_callback:
-                log_callback(f"Ripping track {current_track} of {count} ({label})...")
             report_progress(0 if current_track == 1 else int(100 * sum(v for k, v in track_lengths.items() if k < current_track) / max(1, sum(track_lengths.values()))), message)
             return
 
@@ -996,15 +1054,56 @@ def rip_disc(
         
         if stripped.startswith(("Track   Mode", "----", "PQ sub-channel", "Raw P-W", "Cooked R-W", "CD-TEXT", "Using driver", "Cdrdao version")):
             return
-        if log_callback and ("error" in lower or "warning" in lower):
+        if re.search(r"found\s+\d+\s+q\s+sub-channels?\s+with\s+crc\s+errors?", lower):
+            return
+        if "warning" in lower:
+            return
+        if log_callback and "error" in lower:
             log_callback(stripped)
 
-    _run_streaming(command, rip_output, workdir)
+    if platform.system().lower() == "linux":
+        done = threading.Event()
 
-    
-    
-    
-    
+        def monitor_size() -> None:
+            last_size_percent = -1
+            while not done.wait(0.2):
+                try:
+                    size = bin_path.stat().st_size
+                except OSError:
+                    continue
+                lengths = dict(track_lengths)
+                total = sum(lengths.values())
+                if not total or size <= 0:
+                    continue
+                copied = min(total, size // 2352)
+                overall = min(99, int(copied * 100 / total))
+                if overall == last_size_percent:
+                    continue
+                last_size_percent = overall
+                before = 0
+                track_no = 1
+                track_length = total
+                for number in sorted(lengths):
+                    length = lengths[number]
+                    if copied < before + length or number == max(lengths):
+                        track_no = number
+                        track_length = max(1, length)
+                        break
+                    before += length
+                within = max(0, min(track_length, copied - before))
+                track_percent = min(100, int(within * 100 / track_length))
+                report_progress(overall, f"Ripping track {track_no} of {max(lengths)} — {track_percent}%")
+
+        monitor = threading.Thread(target=monitor_size, daemon=True)
+        monitor.start()
+        try:
+            _run_streaming(command, rip_output, workdir)
+        finally:
+            done.set()
+            monitor.join(timeout=1)
+    else:
+        _run_streaming(command, rip_output, workdir)
+
     converted = stem.with_name(stem.name + "-cue").with_suffix(".bin")
     convert_cmd = [
         str(toc2cue_executable()),
@@ -1040,54 +1139,26 @@ def rip_disc(
 
 
 def _burn_output_handler(line: str, log_callback=None, progress_callback=None, state=None) -> None:
-    """Translate cdrdao's console output into concise burn status/progress."""
     stripped = line.strip()
     if not stripped:
         return
     state = state if state is not None else {}
-
-    
-    
     m = re.search(r"Wrote\s+(\d+(?:\.\d+)?)\s+of\s+(\d+(?:\.\d+)?)\s+MB", stripped, re.IGNORECASE)
     if m:
         done = float(m.group(1))
         total = float(m.group(2))
         percent = max(0, min(100, int(done * 100 / total))) if total > 0 else 0
-        track = state.get("track")
-        message = f"Writing track {track} — {percent}%" if track else f"Writing disc — {percent}%"
+        state["percent"] = max(state.get("percent", 0), percent)
         if progress_callback:
-            progress_callback(percent, message)
+            progress_callback(state["percent"], "")
         return
-
-    m = re.search(r"Writing track\s+(\d+)", stripped, re.IGNORECASE)
-    if m:
-        track = int(m.group(1))
-        state["track"] = track
-        if progress_callback:
-            progress_callback(state.get("percent", 0), f"Writing track {track}...")
-        return
-
     lower = stripped.lower()
     if "lead-out" in lower or "leadout" in lower:
         if progress_callback:
-            progress_callback(max(99, state.get("percent", 0)), "Finalizing disc...")
+            progress_callback(max(99, state.get("percent", 0)), "")
         return
-    if "power calibration" in lower:
-        if progress_callback:
-            progress_callback(0, "Calibrating writer...")
-        return
-
-    
-    
-    if log_callback and (
-        "error" in lower
-        or "warning" in lower
-        or "writing finished" in lower
-        or "writing completed" in lower
-        or "blanking" in lower
-    ):
+    if "error" in lower and log_callback:
         log_callback(stripped)
-
 
 def burn_cue(device: str, cue_path: str | Path, speed: int | None = None, log_callback=None, progress_callback=None) -> None:
     cue = Path(cue_path)
@@ -1097,19 +1168,26 @@ def burn_cue(device: str, cue_path: str | Path, speed: int | None = None, log_ca
         if not cue.is_file():
             raise FileNotFoundError(cue)
         index, _raw = _macos_parse_device(device)
+        if log_callback:
+            log_callback("Burning disc...")
         if progress_callback:
-            progress_callback(0, "Preparing game disc...")
+            progress_callback(0, "")
         _run_native_macos_burn(index, cue, speed, log_callback, progress_callback)
+        if log_callback:
+            log_callback("Disc written successfully.")
         return
     if not has_cdrdao():
         raise DiscToolError("Install cdrdao first.")
     if not cue.is_file():
         raise FileNotFoundError(cue)
+    if log_callback:
+        log_callback("Burning disc...")
     if progress_callback:
-        progress_callback(0, "Preparing game disc...")
+        progress_callback(0, "")
+    _linux_unmount_optical(device)
     with tempfile.TemporaryDirectory(prefix="mister-companion-burn-") as tmp:
         toc = Path(tmp) / "image.toc"
-        _run_streaming([str(cue2toc_executable()), str(cue), str(toc)], log_callback, cue.parent)
+        _run_streaming([str(cue2toc_executable()), "-q", "-o", str(toc), str(cue)], log_callback, cue.parent)
         command = [str(cdrdao_executable()), "write", "--device", device]
         if speed:
             command += ["--speed", str(speed)]
@@ -1122,7 +1200,9 @@ def burn_cue(device: str, cue_path: str | Path, speed: int | None = None, log_ca
             _burn_output_handler(line, log_callback, progress_callback, state)
         _run_streaming(command, output, cue.parent)
     if progress_callback:
-        progress_callback(100, "Disc written successfully — 100%")
+        progress_callback(100, "")
+    if log_callback:
+        log_callback("Disc written successfully.")
 
 
 def create_iso9660_from_folder(source_folder: str | Path, output_iso: str | Path, volume_id: str | None = None) -> Path:
@@ -1199,6 +1279,7 @@ def burn_iso9660_folder(device: str, source_folder: str | Path, speed: int | Non
         )
         if progress_callback:
             progress_callback(0, "ISO 9660 image ready. Starting burn...")
+        _linux_unmount_optical(device)
         command = [str(cdrdao_executable()), "write", "--device", device]
         if speed:
             command += ["--speed", str(speed)]

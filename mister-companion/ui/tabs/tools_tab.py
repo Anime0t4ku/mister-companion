@@ -678,13 +678,11 @@ class ToolsTab(QWidget):
         self.disc_rip_progress.setRange(0, 100)
         self.disc_rip_progress.setValue(0)
         self.disc_rip_progress.setVisible(True)
-        self.disc_rip_status.setText("Reading disc layout...")
-        self.disc_rip_status.setVisible(True)
+        self.disc_rip_status.setVisible(False)
         self.disc_rip_log.clear()
 
         convert = self.disc_convert_chd.isChecked()
         remove_bin_cue = self.disc_remove_bin.isChecked()
-
         def work(worker):
             def rip_log(line):
                 worker.status.emit("LOG:" + line)
@@ -709,7 +707,7 @@ class ToolsTab(QWidget):
                         percent = max(0, min(100, int(float(match.group(1)))))
                         worker.progress.emit(percent)
                         worker.status.emit(f"RIPSTATUS:Converting BIN/CUE to CHD — {percent}%")
-                    elif "error" in line.lower() or "warning" in line.lower():
+                    elif "error" in line.lower():
                         worker.status.emit("LOG:" + line)
 
                 run_chdman(cue, chd, chd_log)
@@ -730,7 +728,7 @@ class ToolsTab(QWidget):
 
     def _disc_rip_worker_status(self, text):
         if text.startswith("RIPSTATUS:"):
-            self.disc_rip_status.setText(text[len("RIPSTATUS:"):])
+            return
         elif text.startswith("LOG:"):
             self.disc_rip_log.append(text[len("LOG:"):])
         else:
@@ -739,12 +737,10 @@ class ToolsTab(QWidget):
     def _rip_disc_done(self, output):
         self.disc_rip_button.setEnabled(True)
         self.disc_rip_progress.setValue(100)
-        self.disc_rip_status.setText("Complete — 100%")
         QMessageBox.information(self, "Disc to Image", f"Disc image created successfully.\n\n{output}")
 
     def _rip_disc_failed(self, message):
         self.disc_rip_button.setEnabled(True)
-        self.disc_rip_status.setText("Failed")
         QMessageBox.critical(self, "Disc to Image", message)
 
     def _burn_mode_changed(self):
