@@ -7,3 +7,4 @@ pyserial
 Pillow
 certifi
 cryptography
+pycdlib

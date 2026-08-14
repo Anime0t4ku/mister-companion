@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import posixpath
+import re
 import shutil
 import stat
 import tempfile
@@ -10,6 +11,7 @@ from pathlib import Path, PurePosixPath
 from PyQt6.QtCore import QThread, pyqtSignal
 from PyQt6.QtWidgets import (
     QAbstractItemView,
+    QCheckBox,
     QComboBox,
     QFileDialog,
     QFrame,
@@ -40,6 +42,18 @@ from core.chd_converter import (
     run_chdman,
 )
 from core.file_browser import download_path, join_remote_path, remote_exists, upload_path
+from core.disc_tools import (
+    CDRDAO_DIR,
+    CDRDAO_VERSION,
+    DiscToolError,
+    burn_cue,
+    burn_iso9660_folder,
+    has_cdrdao,
+    install_cdrdao,
+    remove_cdrdao,
+    rip_disc,
+    scan_drives,
+)
 from core.rom_patcher import (
     SUPPORTED_PATCH_EXTENSIONS,
     SUPPORTED_PATCH_FORMATS,
@@ -93,9 +107,13 @@ class ToolsTab(QWidget):
         self.home_page = self._build_home()
         self.patcher_page = self._build_patcher()
         self.chd_page = self._build_chd()
+        self.disc_to_image_page = self._build_disc_to_image()
+        self.image_to_disc_page = self._build_image_to_disc()
         self.stack.addWidget(self.home_page)
         self.stack.addWidget(self.patcher_page)
         self.stack.addWidget(self.chd_page)
+        self.stack.addWidget(self.disc_to_image_page)
+        self.stack.addWidget(self.image_to_disc_page)
 
     def _build_home(self):
         page = QWidget()
@@ -110,6 +128,8 @@ class ToolsTab(QWidget):
         for name, text, slot in (
             ("ROM Patcher", "Apply IPS, IPS32, BPS, UPS and PPF patches. The source ROM is never overwritten.", lambda: self.stack.setCurrentWidget(self.patcher_page)),
             ("CHD Converter", "Queue CUE/GDI/ISO → CHD conversions with independent PC or MiSTer input/output locations.", lambda: self.stack.setCurrentWidget(self.chd_page)),
+            ("Disc to Image", "Rip a physical game CD to BIN/CUE, with optional CHD conversion.", lambda: self._open_disc_page(self.disc_to_image_page)),
+            ("Image to Disc", "Burn BIN/CUE game discs or MSU-1 / MD+ folders as ISO 9660 data CDs.", lambda: self._open_disc_page(self.image_to_disc_page)),
         ):
             frame = QFrame()
             frame.setFrameShape(QFrame.Shape.StyledPanel)
@@ -148,11 +168,6 @@ class ToolsTab(QWidget):
         title = QLabel("ROM Patcher")
         title.setStyleSheet("font-size: 20px; font-weight: 600;")
         layout.addWidget(title)
-        supported = QLabel("Supported patch formats: " + " · ".join(SUPPORTED_PATCH_FORMATS) + "\nThe source ROM is always preserved; patched output is written as a new file.")
-        supported.setWordWrap(True)
-        layout.addWidget(supported)
-        layout.addSpacing(8)
-
         self.rom_location, self.rom_path = self._path_row(layout, "ROM:", self._browse_rom)
         self.patch_location, self.patch_path = self._path_row(layout, "Patch:", self._browse_patch)
         self.output_location, self.output_path = self._path_row(layout, "Output:", self._browse_output)
@@ -220,6 +235,8 @@ class ToolsTab(QWidget):
                 self._sync_location_combo(combo)
         if hasattr(self, "chd_tool_status"):
             self._refresh_chdman_status()
+        if hasattr(self, "disc_cdrdao_status"):
+            self._refresh_cdrdao_status()
 
     def _browse_rom(self):
         if self.rom_location.currentText() == REMOTE:
@@ -352,6 +369,464 @@ class ToolsTab(QWidget):
         self.patch_status.setText("Patch failed.")
         QMessageBox.critical(self, "ROM Patcher", message)
 
+    # ----------------------------- Disc Tools -----------------------------
+    def _open_disc_page(self, page):
+        self.stack.setCurrentWidget(page)
+        self._refresh_cdrdao_status()
+        self._refresh_disc_drives()
+
+    def _cdrdao_controls(self, layout):
+        row = QHBoxLayout()
+        status = QLabel()
+        row.addWidget(status, 1)
+        install = QPushButton("Install cdrdao")
+        install.clicked.connect(self._install_cdrdao_clicked)
+        row.addWidget(install)
+        remove = QPushButton("Remove")
+        remove.clicked.connect(self._remove_cdrdao_clicked)
+        row.addWidget(remove)
+        layout.addLayout(row)
+        progress = QProgressBar()
+        progress.setVisible(False)
+        layout.addWidget(progress)
+        return status, install, remove, progress
+
+    def _build_disc_to_image(self):
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.addWidget(self._back_button())
+        title = QLabel("Disc to Image")
+        title.setStyleSheet("font-size: 20px; font-weight: 600;")
+        layout.addWidget(title)
+        self.disc_cdrdao_status, self.disc_install_cdrdao, self.disc_remove_cdrdao, self.disc_cdrdao_progress = self._cdrdao_controls(layout)
+
+        row = QHBoxLayout()
+        row.addWidget(QLabel("Optical drive:"))
+        self.disc_read_drive = QComboBox()
+        row.addWidget(self.disc_read_drive, 1)
+        refresh = QPushButton("Refresh")
+        refresh.clicked.connect(self._refresh_disc_drives)
+        row.addWidget(refresh)
+        layout.addLayout(row)
+
+        row = QHBoxLayout()
+        row.addWidget(QLabel("Output CUE:"))
+        self.disc_output_cue = QLineEdit()
+        row.addWidget(self.disc_output_cue, 1)
+        browse = QPushButton("Browse")
+        browse.clicked.connect(self._browse_disc_output)
+        row.addWidget(browse)
+        layout.addLayout(row)
+
+        self.disc_convert_chd = QCheckBox("Convert to CHD after ripping")
+        self.disc_convert_chd.toggled.connect(self._disc_chd_toggled)
+        layout.addWidget(self.disc_convert_chd)
+        self.disc_remove_bin = QCheckBox("Remove BIN/CUE after successful CHD conversion")
+        self.disc_remove_bin.setChecked(False)
+        self.disc_remove_bin.setEnabled(False)
+        layout.addWidget(self.disc_remove_bin)
+
+        buttons = QHBoxLayout()
+        buttons.addStretch(1)
+        self.disc_rip_button = QPushButton("Rip Disc")
+        self.disc_rip_button.clicked.connect(self._rip_disc_clicked)
+        buttons.addWidget(self.disc_rip_button)
+        layout.addLayout(buttons)
+        self.disc_rip_status = QLabel("")
+        self.disc_rip_status.setVisible(False)
+        layout.addWidget(self.disc_rip_status)
+        self.disc_rip_progress = QProgressBar()
+        self.disc_rip_progress.setRange(0, 100)
+        self.disc_rip_progress.setValue(0)
+        self.disc_rip_progress.setFormat("%p%")
+        self.disc_rip_progress.setVisible(False)
+        layout.addWidget(self.disc_rip_progress)
+        self.disc_rip_log = QTextEdit()
+        self.disc_rip_log.setReadOnly(True)
+        self.disc_rip_log.setMaximumHeight(160)
+        layout.addWidget(self.disc_rip_log)
+        layout.addStretch(1)
+        return page
+
+    def _build_image_to_disc(self):
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.addWidget(self._back_button())
+        title = QLabel("Image to Disc")
+        title.setStyleSheet("font-size: 20px; font-weight: 600;")
+        layout.addWidget(title)
+        self.burn_cdrdao_status, self.burn_install_cdrdao, self.burn_remove_cdrdao, self.burn_cdrdao_progress = self._cdrdao_controls(layout)
+
+        row = QHBoxLayout()
+        row.addWidget(QLabel("Mode:"))
+        self.burn_mode = QComboBox()
+        self.burn_mode.addItems(["BIN/CUE Game Disc", "MSU-1 / MD+ Data Disc"])
+        self.burn_mode.currentIndexChanged.connect(self._burn_mode_changed)
+        row.addWidget(self.burn_mode, 1)
+        layout.addLayout(row)
+
+        row = QHBoxLayout()
+        self.burn_source_label = QLabel("CUE image:")
+        row.addWidget(self.burn_source_label)
+        self.burn_source = QLineEdit()
+        row.addWidget(self.burn_source, 1)
+        browse = QPushButton("Browse")
+        browse.clicked.connect(self._browse_burn_source)
+        row.addWidget(browse)
+        layout.addLayout(row)
+
+        self.burn_root_note = QLabel("MSU-1 / MD+ mode writes only the files inside the selected folder to the ISO 9660 root; the selected folder itself is not created on disc.")
+        self.burn_root_note.setWordWrap(True)
+        self.burn_root_note.setVisible(False)
+        layout.addWidget(self.burn_root_note)
+
+        self.burn_label_row = QWidget()
+        burn_label_layout = QHBoxLayout(self.burn_label_row)
+        burn_label_layout.setContentsMargins(0, 0, 0, 0)
+        burn_label_layout.addWidget(QLabel("Disc label:"))
+        self.burn_disc_label = QLineEdit()
+        self.burn_disc_label.setMaxLength(32)
+        self.burn_disc_label.setPlaceholderText("Optional (max 32 characters)")
+        burn_label_layout.addWidget(self.burn_disc_label, 1)
+        self.burn_label_row.setVisible(False)
+        layout.addWidget(self.burn_label_row)
+
+        row = QHBoxLayout()
+        row.addWidget(QLabel("Optical writer:"))
+        self.disc_write_drive = QComboBox()
+        row.addWidget(self.disc_write_drive, 1)
+        refresh = QPushButton("Refresh")
+        refresh.clicked.connect(self._refresh_disc_drives)
+        row.addWidget(refresh)
+        layout.addLayout(row)
+
+        row = QHBoxLayout()
+        row.addWidget(QLabel("Write speed:"))
+        self.burn_speed = QComboBox()
+        self.burn_speed.addItems(["Auto", "4x", "8x", "12x", "16x", "24x"])
+        row.addWidget(self.burn_speed)
+        row.addStretch(1)
+        layout.addLayout(row)
+
+        buttons = QHBoxLayout()
+        buttons.addStretch(1)
+        self.burn_button = QPushButton("Burn Disc")
+        self.burn_button.clicked.connect(self._burn_disc_clicked)
+        buttons.addWidget(self.burn_button)
+        layout.addLayout(buttons)
+        self.burn_status = QLabel()
+        self.burn_status.setVisible(False)
+        layout.addWidget(self.burn_status)
+        self.burn_progress = QProgressBar()
+        self.burn_progress.setRange(0, 100)
+        self.burn_progress.setValue(0)
+        self.burn_progress.setFormat("%p%")
+        self.burn_progress.setVisible(False)
+        layout.addWidget(self.burn_progress)
+        self.burn_log = QTextEdit()
+        self.burn_log.setReadOnly(True)
+        self.burn_log.setMaximumHeight(160)
+        layout.addWidget(self.burn_log)
+        layout.addStretch(1)
+        return page
+
+    def _refresh_cdrdao_status(self):
+        installed = has_cdrdao()
+        text = f"cdrdao {CDRDAO_VERSION}: {'Ready' if installed else 'Not installed'}"
+        if hasattr(self, "disc_cdrdao_status"):
+            self.disc_cdrdao_status.setText(text)
+            self.disc_install_cdrdao.setVisible(not installed)
+            self.disc_remove_cdrdao.setVisible(installed)
+        if hasattr(self, "burn_cdrdao_status"):
+            self.burn_cdrdao_status.setText(text)
+            self.burn_install_cdrdao.setVisible(not installed)
+            self.burn_remove_cdrdao.setVisible(installed)
+        if hasattr(self, "disc_rip_button"):
+            self.disc_rip_button.setEnabled(installed)
+        if hasattr(self, "burn_button"):
+            self.burn_button.setEnabled(installed)
+
+    def _install_cdrdao_clicked(self):
+        for button_name in ("disc_install_cdrdao", "burn_install_cdrdao"):
+            button = getattr(self, button_name, None)
+            if button is not None:
+                button.setEnabled(False)
+        for progress_name in ("disc_cdrdao_progress", "burn_cdrdao_progress"):
+            progress = getattr(self, progress_name, None)
+            if progress is not None:
+                progress.setValue(0)
+                progress.setVisible(True)
+
+        def work(worker):
+            def progress(done, total):
+                worker.progress.emit(int(done * 100 / total) if total else 0)
+            return install_cdrdao(progress)
+
+        self.worker = ToolWorker(work, self)
+        self.worker.progress.connect(self._set_cdrdao_install_progress)
+        self.worker.succeeded.connect(self._cdrdao_installed)
+        self.worker.failed.connect(self._cdrdao_install_failed)
+        self.worker.start()
+
+    def _set_cdrdao_install_progress(self, value):
+        for progress_name in ("disc_cdrdao_progress", "burn_cdrdao_progress"):
+            progress = getattr(self, progress_name, None)
+            if progress is not None:
+                progress.setValue(value)
+
+    def _finish_cdrdao_install_ui(self):
+        for button_name in ("disc_install_cdrdao", "burn_install_cdrdao"):
+            button = getattr(self, button_name, None)
+            if button is not None:
+                button.setEnabled(True)
+        for progress_name in ("disc_cdrdao_progress", "burn_cdrdao_progress"):
+            progress = getattr(self, progress_name, None)
+            if progress is not None:
+                progress.setVisible(False)
+
+    def _cdrdao_installed(self, _result):
+        self._finish_cdrdao_install_ui()
+        self._refresh_cdrdao_status()
+        self._refresh_disc_drives()
+
+    def _cdrdao_install_failed(self, message):
+        self._finish_cdrdao_install_ui()
+        # Installation may already have placed a usable bundle before a
+        # post-install verification step failed.  Always refresh from the actual
+        # on-disk state so Disc to Image/Image to Disc are not left disabled.
+        self._refresh_cdrdao_status()
+        self._refresh_disc_drives()
+        QMessageBox.critical(self, "cdrdao", message)
+
+    def _remove_cdrdao_clicked(self):
+        remove_cdrdao()
+        self._refresh_cdrdao_status()
+        self._refresh_disc_drives()
+
+    def _refresh_disc_drives(self):
+        drives = []
+        if has_cdrdao():
+            try:
+                drives = scan_drives()
+            except Exception:
+                drives = []
+        for combo_name in ("disc_read_drive", "disc_write_drive"):
+            combo = getattr(self, combo_name, None)
+            if combo is None:
+                continue
+            previous = combo.currentData()
+            combo.clear()
+            for device, label in drives:
+                combo.addItem(f"{label}  [{device}]", device)
+            if not drives:
+                combo.addItem("No optical drives detected", None)
+            elif previous:
+                for i in range(combo.count()):
+                    if combo.itemData(i) == previous:
+                        combo.setCurrentIndex(i)
+                        break
+
+        # Keep action buttons in sync with the real managed-tool state.  This is
+        # especially important immediately after install/verification, where the
+        # drive list may already be usable even if an earlier status path failed.
+        installed = has_cdrdao()
+        if hasattr(self, "disc_rip_button"):
+            self.disc_rip_button.setEnabled(installed)
+        if hasattr(self, "burn_button"):
+            self.burn_button.setEnabled(installed)
+
+    def _browse_disc_output(self):
+        path, _ = QFileDialog.getSaveFileName(self, "Save Disc Image", self.disc_output_cue.text().strip(), "CUE sheet (*.cue)")
+        if path:
+            if not path.lower().endswith(".cue"):
+                path += ".cue"
+            self.disc_output_cue.setText(path)
+
+    def _disc_chd_toggled(self, checked):
+        self.disc_remove_bin.setEnabled(checked)
+        if not checked:
+            self.disc_remove_bin.setChecked(False)
+
+    def _rip_disc_clicked(self):
+        device = self.disc_read_drive.currentData()
+        output = self.disc_output_cue.text().strip()
+        if not device or not output:
+            QMessageBox.warning(self, "Disc to Image", "Select an optical drive and output CUE file first.")
+            return
+        if self.disc_convert_chd.isChecked() and not has_chdman():
+            QMessageBox.warning(self, "Disc to Image", "Download CHDman from CHD Converter before enabling CHD conversion.")
+            return
+        self.disc_rip_button.setEnabled(False)
+        self.disc_rip_progress.setRange(0, 100)
+        self.disc_rip_progress.setValue(0)
+        self.disc_rip_progress.setVisible(True)
+        self.disc_rip_status.setText("Reading disc layout...")
+        self.disc_rip_status.setVisible(True)
+        self.disc_rip_log.clear()
+
+        convert = self.disc_convert_chd.isChecked()
+        remove_bin_cue = self.disc_remove_bin.isChecked()
+
+        def work(worker):
+            def rip_log(line):
+                worker.status.emit("LOG:" + line)
+
+            def rip_progress(percent, message):
+                worker.progress.emit(percent)
+                worker.status.emit("RIPSTATUS:" + message)
+
+            cue, bin_path, toc = rip_disc(
+                device, output, rip_log, progress_callback=rip_progress
+            )
+            chd = None
+            if convert:
+                chd = cue.with_suffix(".chd")
+                worker.progress.emit(0)
+                worker.status.emit("RIPSTATUS:Converting BIN/CUE to CHD — 0%")
+                worker.status.emit("LOG:Converting BIN/CUE to CHD...")
+
+                def chd_log(line):
+                    match = re.search(r"(\d+(?:\.\d+)?)%\s+complete", line, re.IGNORECASE)
+                    if match:
+                        percent = max(0, min(100, int(float(match.group(1)))))
+                        worker.progress.emit(percent)
+                        worker.status.emit(f"RIPSTATUS:Converting BIN/CUE to CHD — {percent}%")
+                    elif "error" in line.lower() or "warning" in line.lower():
+                        worker.status.emit("LOG:" + line)
+
+                run_chdman(cue, chd, chd_log)
+                worker.progress.emit(100)
+                worker.status.emit("RIPSTATUS:CHD conversion complete — 100%")
+                if remove_bin_cue:
+                    cue.unlink(missing_ok=True)
+                    bin_path.unlink(missing_ok=True)
+                    toc.unlink(missing_ok=True)
+            return str(chd or cue)
+
+        self.worker = ToolWorker(work, self)
+        self.worker.progress.connect(self.disc_rip_progress.setValue)
+        self.worker.status.connect(self._disc_rip_worker_status)
+        self.worker.succeeded.connect(self._rip_disc_done)
+        self.worker.failed.connect(self._rip_disc_failed)
+        self.worker.start()
+
+    def _disc_rip_worker_status(self, text):
+        if text.startswith("RIPSTATUS:"):
+            self.disc_rip_status.setText(text[len("RIPSTATUS:"):])
+        elif text.startswith("LOG:"):
+            self.disc_rip_log.append(text[len("LOG:"):])
+        else:
+            self.disc_rip_log.append(text)
+
+    def _rip_disc_done(self, output):
+        self.disc_rip_button.setEnabled(True)
+        self.disc_rip_progress.setValue(100)
+        self.disc_rip_status.setText("Complete — 100%")
+        QMessageBox.information(self, "Disc to Image", f"Disc image created successfully.\n\n{output}")
+
+    def _rip_disc_failed(self, message):
+        self.disc_rip_button.setEnabled(True)
+        self.disc_rip_status.setText("Failed")
+        QMessageBox.critical(self, "Disc to Image", message)
+
+    def _burn_mode_changed(self):
+        data_mode = self.burn_mode.currentIndex() == 1
+        self.burn_source_label.setText("MSU-1 / MD+ folder:" if data_mode else "CUE image:")
+        self.burn_root_note.setVisible(data_mode)
+        self.burn_label_row.setVisible(data_mode)
+        self.burn_source.clear()
+        if not data_mode:
+            self.burn_disc_label.clear()
+
+    def _browse_burn_source(self):
+        if self.burn_mode.currentIndex() == 1:
+            path = QFileDialog.getExistingDirectory(self, "Select MSU-1 / MD+ Folder")
+        else:
+            path, _ = QFileDialog.getOpenFileName(self, "Select CUE Image", filter="CUE sheet (*.cue);;All files (*.*)")
+        if path:
+            self.burn_source.setText(path)
+
+    def _burn_speed_value(self):
+        text = self.burn_speed.currentText()
+        return None if text == "Auto" else int(text.rstrip("x"))
+
+    def _burn_disc_clicked(self):
+        device = self.disc_write_drive.currentData()
+        source = self.burn_source.text().strip()
+        if not device or not source:
+            QMessageBox.warning(self, "Image to Disc", "Select an optical writer and source first.")
+            return
+        data_mode = self.burn_mode.currentIndex() == 1
+        if data_mode:
+            root_files = [p for p in Path(source).iterdir() if p.is_file()] if Path(source).is_dir() else []
+            if not root_files:
+                QMessageBox.warning(self, "Image to Disc", "The selected MSU-1 / MD+ folder has no files at its root.")
+                return
+        self.burn_button.setEnabled(False)
+        self.burn_progress.setRange(0, 100)
+        self.burn_progress.setValue(0)
+        self.burn_progress.setVisible(True)
+        self.burn_status.setText("Preparing disc...")
+        self.burn_status.setVisible(True)
+        self.burn_log.clear()
+        speed = self._burn_speed_value()
+        disc_label = self.burn_disc_label.text().strip() if data_mode else ""
+
+        def work(worker):
+            burn_log_state = {"last_milestone": None}
+
+            def log(line):
+                worker.status.emit("LOG:" + line)
+
+            def progress(percent, message):
+                worker.progress.emit(percent)
+                worker.status.emit("BURNSTATUS:" + message)
+
+                # Keep the output pane concise like Disc to Image. Percentages
+                # belong in the progress bar/status line; the log only records
+                # meaningful burn stages and track changes.
+                milestone = re.sub(r"\s*[—-]\s*\d+%$", "", message).strip()
+                if milestone and milestone != burn_log_state["last_milestone"]:
+                    worker.status.emit("LOG:" + milestone)
+                    burn_log_state["last_milestone"] = milestone
+
+            if data_mode:
+                burn_iso9660_folder(
+                    device, source, speed=speed, volume_id=disc_label or None,
+                    log_callback=log, progress_callback=progress
+                )
+            else:
+                burn_cue(
+                    device, source, speed=speed, log_callback=log, progress_callback=progress
+                )
+            return True
+
+        self.worker = ToolWorker(work, self)
+        self.worker.progress.connect(self.burn_progress.setValue)
+        self.worker.status.connect(self._burn_worker_status)
+        self.worker.succeeded.connect(self._burn_disc_done)
+        self.worker.failed.connect(self._burn_disc_failed)
+        self.worker.start()
+
+    def _burn_worker_status(self, text):
+        if text.startswith("BURNSTATUS:"):
+            self.burn_status.setText(text[len("BURNSTATUS:"):])
+        elif text.startswith("LOG:"):
+            self.burn_log.append(text[len("LOG:"):])
+        else:
+            self.burn_log.append(text)
+
+    def _burn_disc_done(self, _result):
+        self.burn_button.setEnabled(True)
+        self.burn_progress.setValue(100)
+        self.burn_status.setText("Complete — 100%")
+        QMessageBox.information(self, "Image to Disc", "Disc written successfully.")
+
+    def _burn_disc_failed(self, message):
+        self.burn_button.setEnabled(True)
+        self.burn_status.setText("Failed")
+        QMessageBox.critical(self, "Image to Disc", message)
+
     # --------------------------- CHD Converter ---------------------------
     def _build_chd(self):
         page = QWidget()
@@ -360,10 +835,6 @@ class ToolsTab(QWidget):
         title = QLabel("CHD Converter")
         title.setStyleSheet("font-size: 20px; font-weight: 600;")
         layout.addWidget(title)
-        info = QLabel("Queue-based conversion. Supported inputs: CUE, GDI and ISO. All supported inputs are converted to CHD. Each queued job keeps its own input and output location.")
-        info.setWordWrap(True)
-        layout.addWidget(info)
-
         tool_row = QHBoxLayout()
         self.chd_tool_status = QLabel()
         tool_row.addWidget(self.chd_tool_status, 1)
@@ -433,7 +904,7 @@ class ToolsTab(QWidget):
 
     def _refresh_chdman_status(self):
         installed = has_chdman()
-        self.chd_tool_status.setText(f"CHDman {CHDMAN_VERSION}: {'Ready' if installed else 'Not downloaded'}\nTool folder: {CHDMAN_DIR}")
+        self.chd_tool_status.setText(f"CHDman {CHDMAN_VERSION}: {'Ready' if installed else 'Not downloaded'}")
         self.download_chdman_button.setVisible(not installed)
         self.remove_chdman_button.setVisible(installed)
 
