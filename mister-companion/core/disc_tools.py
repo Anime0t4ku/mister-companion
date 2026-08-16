@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import hashlib
 import platform
 import plistlib
 import re
@@ -1205,7 +1206,192 @@ def burn_cue(device: str, cue_path: str | Path, speed: int | None = None, log_ca
         log_callback("Disc written successfully.")
 
 
-def create_iso9660_from_folder(source_folder: str | Path, output_iso: str | Path, volume_id: str | None = None) -> Path:
+
+_JOLIET_COMPONENT_LIMIT = 64
+_MSU_ROM_EXTS = {".sfc", ".smc"}
+_MD_ROM_EXTS = {".md", ".gen", ".mdx", ".bin"}
+
+
+def _joliet_name_too_long(name: str) -> bool:
+    # Joliet level 3 allows at most 64 UCS-2 characters per path component.
+    return len(name) > _JOLIET_COMPONENT_LIMIT
+
+
+def _short_disc_name(stem: str, suffix: str, reserved: set[str], max_len: int = _JOLIET_COMPONENT_LIMIT) -> str:
+    digest = hashlib.sha1((stem + suffix).encode("utf-8", errors="replace")).hexdigest()[:6].upper()
+    tail = f"_{digest}{suffix}"
+    keep = max(1, max_len - len(tail))
+    candidate = stem[:keep] + tail
+    n = 1
+    while candidate.casefold() in reserved:
+        extra = f"_{n}"
+        keep = max(1, max_len - len(tail) - len(extra))
+        candidate = stem[:keep] + extra + tail
+        n += 1
+    reserved.add(candidate.casefold())
+    return candidate
+
+
+def _parse_cue_file_references(text: str) -> list[str]:
+    refs = []
+    pattern = re.compile(r'^\s*FILE\s+(?:"([^"]+)"|(\S+))\s+.+$', re.IGNORECASE)
+    for line in text.splitlines():
+        match = pattern.match(line)
+        if match:
+            refs.append(match.group(1) or match.group(2))
+    return refs
+
+
+def _rewrite_cue_file_references(text: str, replacements: dict[str, str]) -> str:
+    pattern = re.compile(r'^(\s*FILE\s+)(?:"([^"]+)"|(\S+))(\s+.+)$', re.IGNORECASE)
+    out = []
+    for line in text.splitlines(keepends=True):
+        newline = "\r\n" if line.endswith("\r\n") else ("\n" if line.endswith("\n") else "")
+        body = line[:-len(newline)] if newline else line
+        match = pattern.match(body)
+        if not match:
+            out.append(line)
+            continue
+        ref = match.group(2) or match.group(3)
+        replacement = replacements.get(ref)
+        if replacement is None:
+            replacement = replacements.get(Path(ref).name)
+        if replacement is None:
+            out.append(line)
+            continue
+        out.append(f'{match.group(1)}"{replacement}"{match.group(4)}{newline}')
+    return "".join(out)
+
+
+def _prepare_joliet_name_map(source: Path, log_callback=None):
+    """Return (disc_names, cue_overrides) without touching the user's source files.
+
+    disc_names maps source Paths to Joliet names. cue_overrides contains rewritten
+    CUE text for MD+ sets whose referenced files had to be renamed.
+    """
+    files = [p for p in source.iterdir() if p.is_file()]
+    disc_names = {p: p.name for p in files}
+    cue_overrides: dict[Path, str] = {}
+    reserved = {p.name.casefold() for p in files if not _joliet_name_too_long(p.name)}
+    handled: set[Path] = set()
+
+    def report(path: Path, new_name: str):
+        if path.name != new_name and log_callback:
+            log_callback(f'Joliet filename limit exceeded: "{path.name}" -> "{new_name}"')
+
+    # SNES MSU-1: keep one common basename for ROM, .msu and numbered PCM tracks.
+    for msu in [p for p in files if p.suffix.lower() == ".msu"]:
+        base = msu.stem
+        related = []
+        for item in files:
+            lower_suffix = item.suffix.lower()
+            if item.stem == base and lower_suffix in (_MSU_ROM_EXTS | {".msu"}):
+                related.append((item, item.suffix))
+                continue
+            match = re.fullmatch(re.escape(base) + r"-(\d+)\.pcm", item.name, re.IGNORECASE)
+            if match:
+                related.append((item, f"-{match.group(1)}{item.suffix}"))
+        if not related or not any(_joliet_name_too_long(item.name) for item, _suffix in related):
+            handled.update(item for item, _suffix in related)
+            continue
+        longest_tail = max(len(tail) for _item, tail in related)
+        digest = hashlib.sha1(base.encode("utf-8", errors="replace")).hexdigest()[:6].upper()
+        tail_room = 1 + len(digest) + longest_tail
+        keep = max(1, _JOLIET_COMPONENT_LIMIT - tail_room)
+        short_base = f"{base[:keep]}_{digest}"
+        if log_callback:
+            log_callback(f'MSU-1 set uses a Joliet-safe temporary basename: "{base}" -> "{short_base}"')
+        for item, tail in related:
+            new_name = short_base + tail
+            # The shared basename must remain identical, so a collision means we cannot rename safely.
+            if new_name.casefold() in reserved and new_name.casefold() != item.name.casefold():
+                raise DiscToolError(f'Cannot create a unique Joliet-safe MSU-1 filename for "{item.name}".')
+            reserved.add(new_name.casefold())
+            disc_names[item] = new_name
+            handled.add(item)
+            report(item, new_name)
+
+    # MD+: ROM and CUE keep a common basename; every renamed CUE reference is rewritten.
+    for cue in [p for p in files if p.suffix.lower() == ".cue"]:
+        try:
+            cue_text = cue.read_text(encoding="utf-8-sig")
+        except UnicodeDecodeError:
+            cue_text = cue.read_text(encoding="latin-1")
+        refs = _parse_cue_file_references(cue_text)
+        ref_paths = []
+        for ref in refs:
+            ref_path = source / Path(ref).name
+            if ref_path.is_file():
+                ref_paths.append((ref, ref_path))
+
+        referenced_paths = {p.resolve() for _ref, p in ref_paths}
+        matching_roms = [
+            p for p in files
+            if p.stem == cue.stem and p.suffix.lower() in _MD_ROM_EXTS and p != cue
+            and p.resolve() not in referenced_paths
+        ]
+        md_related = [cue] + matching_roms + [p for _ref, p in ref_paths]
+        if not any(_joliet_name_too_long(p.name) for p in md_related):
+            handled.update(md_related)
+            continue
+
+        # Only treat this as MD+ when there is a matching ROM. A standalone CUE may be unrelated data.
+        if not matching_roms:
+            continue
+
+        common_suffixes = [cue.suffix] + [p.suffix for p in matching_roms]
+        longest_common_tail = max(len(x) for x in common_suffixes)
+        digest = hashlib.sha1(cue.stem.encode("utf-8", errors="replace")).hexdigest()[:6].upper()
+        keep = max(1, _JOLIET_COMPONENT_LIMIT - (1 + len(digest) + longest_common_tail))
+        short_base = f"{cue.stem[:keep]}_{digest}"
+        if log_callback:
+            log_callback(f'MD+ set uses a Joliet-safe temporary basename: "{cue.stem}" -> "{short_base}"')
+
+        cue_new = short_base + cue.suffix
+        disc_names[cue] = cue_new
+        handled.add(cue)
+        report(cue, cue_new)
+        for rom in matching_roms:
+            new_name = short_base + rom.suffix
+            disc_names[rom] = new_name
+            handled.add(rom)
+            report(rom, new_name)
+
+        replacements: dict[str, str] = {}
+        for ref, ref_path in ref_paths:
+            handled.add(ref_path)
+            if _joliet_name_too_long(ref_path.name):
+                new_name = _short_disc_name(ref_path.stem, ref_path.suffix, reserved)
+                disc_names[ref_path] = new_name
+                replacements[ref] = new_name
+                replacements[Path(ref).name] = new_name
+                report(ref_path, new_name)
+            else:
+                replacements[ref] = disc_names[ref_path]
+                replacements[Path(ref).name] = disc_names[ref_path]
+        if replacements:
+            rewritten = _rewrite_cue_file_references(cue_text, replacements)
+            # Validate every rewritten FILE target exists in the on-disc name set.
+            available = {name.casefold() for name in disc_names.values()}
+            missing = [ref for ref in _parse_cue_file_references(rewritten) if Path(ref).name.casefold() not in available]
+            if missing:
+                raise DiscToolError(f'MD+ CUE rewrite failed; missing referenced file: {missing[0]}')
+            cue_overrides[cue] = rewritten
+            if log_callback:
+                log_callback(f'Updated temporary CUE references in "{cue_new}".')
+
+    # Never silently truncate an unknown long filename; that could break a game-specific relationship.
+    for item in files:
+        if _joliet_name_too_long(disc_names[item]) and item not in handled:
+            raise DiscToolError(
+                f'"{item.name}" exceeds the Joliet filename limit and is not part of a recognized '
+                "MSU-1 or MD+ naming relationship, so Companion will not rename it automatically."
+            )
+
+    return disc_names, cue_overrides
+
+
+def create_iso9660_from_folder(source_folder: str | Path, output_iso: str | Path, volume_id: str | None = None, log_callback=None) -> Path:
     try:
         import pycdlib
     except ImportError as exc:
@@ -1218,20 +1404,24 @@ def create_iso9660_from_folder(source_folder: str | Path, output_iso: str | Path
     files = [p for p in source.iterdir() if p.is_file()]
     if not files:
         raise DiscToolError("The selected MSU-1 / MD+ folder contains no files at its root.")
-    
-    
-    
-    
-    
+
+    disc_names, cue_overrides = _prepare_joliet_name_map(source, log_callback=log_callback)
     requested_label = (volume_id or source.name or "MISTER_DISC").strip().upper()
     safe_label = re.sub(r"[^A-Z0-9_]", "_", requested_label)[:32].strip("_") or "MISTER_DISC"
     iso = pycdlib.PyCdlib()
     iso.new(interchange_level=3, joliet=3, vol_ident=safe_label)
     used_iso_names: set[str] = set()
+    rewrite_tmp = tempfile.TemporaryDirectory(prefix="mister-companion-cue-rewrite-") if cue_overrides else None
     try:
+        rewritten_paths: dict[Path, Path] = {}
+        if rewrite_tmp:
+            rewrite_root = Path(rewrite_tmp.name)
+            for cue_path, cue_text in cue_overrides.items():
+                staged = rewrite_root / cue_path.name
+                staged.write_text(cue_text, encoding="utf-8", newline="")
+                rewritten_paths[cue_path] = staged
+
         for path in files:
-            
-            
             cleaned = re.sub(r"[^A-Z0-9_]", "_", path.stem.upper())[:24] or "FILE"
             ext = re.sub(r"[^A-Z0-9]", "", path.suffix.upper().lstrip("."))[:3]
             base = cleaned + (("." + ext) if ext else "")
@@ -1243,12 +1433,15 @@ def create_iso9660_from_folder(source_folder: str | Path, output_iso: str | Path
                 n += 1
             used_iso_names.add(candidate)
             iso_path = f"/{candidate};1"
-            joliet_path = "/" + path.name
-            iso.add_file(str(path), iso_path=iso_path, joliet_path=joliet_path)
+            joliet_path = "/" + disc_names[path]
+            source_path = rewritten_paths.get(path, path)
+            iso.add_file(str(source_path), iso_path=iso_path, joliet_path=joliet_path)
         output.parent.mkdir(parents=True, exist_ok=True)
         iso.write(str(output))
     finally:
         iso.close()
+        if rewrite_tmp:
+            rewrite_tmp.cleanup()
     return output
 
 
@@ -1259,7 +1452,7 @@ def burn_iso9660_folder(device: str, source_folder: str | Path, speed: int | Non
         if progress_callback:
             progress_callback(0, "Creating ISO 9660 data image...")
         with tempfile.TemporaryDirectory(prefix="mister-companion-data-disc-") as tmp:
-            iso_path = create_iso9660_from_folder(source_folder, Path(tmp) / "data.iso", volume_id=volume_id)
+            iso_path = create_iso9660_from_folder(source_folder, Path(tmp) / "data.iso", volume_id=volume_id, log_callback=log_callback)
             index, _raw = _macos_parse_device(device)
             if progress_callback:
                 progress_callback(0, "ISO 9660 image ready. Starting burn...")
@@ -1271,7 +1464,7 @@ def burn_iso9660_folder(device: str, source_folder: str | Path, speed: int | Non
         progress_callback(0, "Creating ISO 9660 data image...")
     with tempfile.TemporaryDirectory(prefix="mister-companion-data-disc-") as tmp:
         tmpdir = Path(tmp)
-        iso_path = create_iso9660_from_folder(source_folder, tmpdir / "data.iso", volume_id=volume_id)
+        iso_path = create_iso9660_from_folder(source_folder, tmpdir / "data.iso", volume_id=volume_id, log_callback=log_callback)
         toc_path = tmpdir / "data.toc"
         toc_path.write_text(
             'CD_ROM\n\nTRACK MODE1\nNO COPY\nDATAFILE "data.iso"\n',

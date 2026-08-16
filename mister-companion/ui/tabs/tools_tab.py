@@ -37,11 +37,13 @@ from core.chd_converter import (
     default_output_name,
     descriptor_references,
     download_chdman,
+    extract_chdman,
     has_chdman,
     remove_chdman,
     run_chdman,
 )
 from core.file_browser import download_path, join_remote_path, remote_exists, upload_path
+from core.app_paths import generated_path
 from core.disc_tools import (
     CDRDAO_DIR,
     CDRDAO_VERSION,
@@ -71,6 +73,8 @@ from ui.dialogs.remote_file_picker_dialog import RemoteFilePickerDialog
 LOCAL = "This PC"
 REMOTE = "MiSTer"
 CHD_INPUT_EXTS = {".cue", ".gdi", ".iso"}
+CHD_EXTRACT_INPUT_EXTS = {".chd"}
+DISC_WORK_DIR = generated_path("tools", "disc_temp", default_root=Path(__file__).resolve().parents[2])
 
 
 class ToolWorker(QThread):
@@ -97,7 +101,9 @@ class ToolsTab(QWidget):
         self.main_window = main_window
         self.connection = main_window.connection
         self.worker = None
+        self.drive_scan_worker = None
         self.chd_jobs: list[dict] = []
+        self.chd_extract_jobs: list[dict] = []
         self._build_ui()
         self.update_connection_state()
 
@@ -109,11 +115,13 @@ class ToolsTab(QWidget):
         self.home_page = self._build_home()
         self.patcher_page = self._build_patcher()
         self.chd_page = self._build_chd()
+        self.chd_extract_page = self._build_chd_extract()
         self.disc_to_image_page = self._build_disc_to_image()
         self.image_to_disc_page = self._build_image_to_disc()
         self.stack.addWidget(self.home_page)
         self.stack.addWidget(self.patcher_page)
         self.stack.addWidget(self.chd_page)
+        self.stack.addWidget(self.chd_extract_page)
         self.stack.addWidget(self.disc_to_image_page)
         self.stack.addWidget(self.image_to_disc_page)
 
@@ -130,8 +138,9 @@ class ToolsTab(QWidget):
         for name, text, slot in (
             ("ROM Patcher", "Apply IPS, IPS32, BPS, UPS and PPF patches. The source ROM is never overwritten.", lambda: self.stack.setCurrentWidget(self.patcher_page)),
             ("CHD Converter", "Queue CUE/GDI/ISO → CHD conversions with independent PC or MiSTer input/output locations.", lambda: self.stack.setCurrentWidget(self.chd_page)),
-            ("Disc to Image", "Rip a physical game CD to BIN/CUE, with optional CHD conversion.", lambda: self._open_disc_page(self.disc_to_image_page)),
-            ("Image to Disc", "Burn BIN/CUE game discs or MSU-1 / MD+ folders as ISO 9660 data CDs.", lambda: self._open_disc_page(self.image_to_disc_page)),
+            ("CHD Extractor", "Extract CHD images to CUE/BIN, GDI or ISO with independent PC or MiSTer input/output locations.", lambda: self.stack.setCurrentWidget(self.chd_extract_page)),
+            ("Disc to Image", "Rip a physical game CD locally to BIN/CUE, with optional CHD conversion, then save to PC or MiSTer.", lambda: self._open_disc_page(self.disc_to_image_page)),
+            ("Image to Disc", "Burn BIN/CUE game discs or MSU-1 / MD+ folders from PC or MiSTer using the PC optical drive.", lambda: self._open_disc_page(self.image_to_disc_page)),
         ):
             frame = QFrame()
             frame.setFrameShape(QFrame.Shape.StyledPanel)
@@ -192,6 +201,11 @@ class ToolsTab(QWidget):
         layout.addLayout(row)
         self.patch_status = QLabel("")
         layout.addWidget(self.patch_status)
+        self.patch_progress = QProgressBar()
+        self.patch_progress.setRange(0, 100)
+        self.patch_progress.setValue(0)
+        self.patch_progress.setVisible(False)
+        layout.addWidget(self.patch_progress)
         layout.addStretch(1)
         return page
 
@@ -231,7 +245,7 @@ class ToolsTab(QWidget):
             combo.setCurrentText(LOCAL)
 
     def update_connection_state(self, lightweight=True):
-        for combo_name in ("rom_location", "patch_location", "output_location", "chd_input_location", "chd_output_location"):
+        for combo_name in ("rom_location", "patch_location", "output_location", "chd_input_location", "chd_output_location", "chd_extract_input_location", "chd_extract_output_location", "disc_output_location", "burn_source_location"):
             combo = getattr(self, combo_name, None)
             if combo:
                 self._sync_location_combo(combo)
@@ -316,8 +330,50 @@ class ToolsTab(QWidget):
                 pass
         self.checksum_label.setText("Source checksums: calculated during patching")
 
-    def _download_remote_file(self, remote_path, temp_dir):
-        return Path(download_path(self.connection, remote_path, temp_dir, overwrite=False))
+    @staticmethod
+    def _transfer_percent(done, total):
+        return max(0, min(100, int(done * 100 / total))) if total else 0
+
+    def _download_remote_file(self, remote_path, temp_dir, worker=None, status_prefix="TRANSFER:"):
+        name = PurePosixPath(remote_path).name
+
+        def message(text):
+            if worker:
+                worker.status.emit(f"LOG:{text}")
+
+        def progress(done, total):
+            if worker:
+                percent = self._transfer_percent(done, total)
+                worker.progress.emit(percent)
+                worker.status.emit(f"{status_prefix}Downloading {name} — {percent}%")
+
+        return Path(download_path(
+            self.connection, remote_path, temp_dir,
+            progress_callback=progress if worker else None,
+            message_callback=message if worker else None,
+            overwrite=False,
+        ))
+
+    def _upload_remote_file(self, local_path, remote_dir, worker=None, status_prefix="TRANSFER:", target_name=None):
+        local_path = Path(local_path)
+        name = target_name or local_path.name
+
+        def message(text):
+            if worker:
+                worker.status.emit(f"LOG:{text}")
+
+        def progress(done, total):
+            if worker:
+                percent = self._transfer_percent(done, total)
+                worker.progress.emit(percent)
+                worker.status.emit(f"{status_prefix}Uploading {name} — {percent}%")
+
+        return upload_path(
+            self.connection, local_path, remote_dir,
+            progress_callback=progress if worker else None,
+            message_callback=message if worker else None,
+            target_name=name, overwrite=False,
+        )
 
     def _ensure_remote_output_new(self, remote_path):
         if remote_exists(self.connection, remote_path):
@@ -335,14 +391,16 @@ class ToolsTab(QWidget):
         output_location = self.output_location.currentText()
         self.patch_button.setEnabled(False)
         self.patch_status.setText("Patching...")
+        self.patch_progress.setValue(0)
+        self.patch_progress.setVisible(source_location == REMOTE or patch_location == REMOTE or output_location == REMOTE)
 
         def work(worker):
             with tempfile.TemporaryDirectory(prefix="mister-companion-patch-") as tmp:
                 tmpdir = Path(tmp)
                 worker.status.emit("Preparing source ROM...")
-                local_source = self._download_remote_file(source, tmpdir) if source_location == REMOTE else Path(source)
+                local_source = self._download_remote_file(source, tmpdir, worker) if source_location == REMOTE else Path(source)
                 worker.status.emit("Preparing patch...")
-                local_patch = self._download_remote_file(patch, tmpdir) if patch_location == REMOTE else Path(patch)
+                local_patch = self._download_remote_file(patch, tmpdir, worker) if patch_location == REMOTE else Path(patch)
                 if output_location == REMOTE:
                     self._ensure_remote_output_new(output)
                     local_output = tmpdir / PurePosixPath(output).name
@@ -352,17 +410,28 @@ class ToolsTab(QWidget):
                 result = apply_patch(local_source, local_patch, local_output)
                 if output_location == REMOTE:
                     worker.status.emit("Uploading patched ROM to MiSTer...")
-                    upload_path(self.connection, local_output, posixpath.dirname(output), target_name=PurePosixPath(output).name, overwrite=False)
+                    self._upload_remote_file(local_output, posixpath.dirname(output), worker, target_name=PurePosixPath(output).name)
                 return result
 
         self.worker = ToolWorker(work, self)
-        self.worker.status.connect(self.patch_status.setText)
+        self.worker.status.connect(self._patch_worker_status)
+        self.worker.progress.connect(self.patch_progress.setValue)
         self.worker.succeeded.connect(self._patch_done)
         self.worker.failed.connect(self._patch_failed)
         self.worker.start()
 
+    def _patch_worker_status(self, text):
+        if text.startswith("TRANSFER:"):
+            self.patch_status.setText(text[len("TRANSFER:"):])
+        elif text.startswith("LOG:"):
+            self.patch_status.setText(text[len("LOG:"):])
+        else:
+            self.patch_status.setText(text)
+
     def _patch_done(self, result):
         self.patch_button.setEnabled(True)
+        if self.patch_progress.isVisible():
+            self.patch_progress.setValue(100)
         self.patch_status.setText(f"Complete. {result['format']} patch applied; source ROM was not modified.")
         QMessageBox.information(self, "ROM Patcher", "Patch applied successfully.\n\nThe original ROM was not modified.")
 
@@ -411,13 +480,15 @@ class ToolsTab(QWidget):
         row.addWidget(QLabel("Optical drive:"))
         self.disc_read_drive = QComboBox()
         row.addWidget(self.disc_read_drive, 1)
-        refresh = QPushButton("Refresh")
-        refresh.clicked.connect(self._refresh_disc_drives)
-        row.addWidget(refresh)
+        self.disc_read_refresh = QPushButton("Refresh")
+        self.disc_read_refresh.clicked.connect(self._refresh_disc_drives)
+        row.addWidget(self.disc_read_refresh)
         layout.addLayout(row)
 
         row = QHBoxLayout()
         row.addWidget(QLabel("Output CUE:"))
+        self.disc_output_location = self._location_combo()
+        row.addWidget(self.disc_output_location)
         self.disc_output_cue = QLineEdit()
         row.addWidget(self.disc_output_cue, 1)
         browse = QPushButton("Browse")
@@ -475,6 +546,8 @@ class ToolsTab(QWidget):
         row = QHBoxLayout()
         self.burn_source_label = QLabel("CUE image:")
         row.addWidget(self.burn_source_label)
+        self.burn_source_location = self._location_combo()
+        row.addWidget(self.burn_source_location)
         self.burn_source = QLineEdit()
         row.addWidget(self.burn_source, 1)
         browse = QPushButton("Browse")
@@ -502,9 +575,9 @@ class ToolsTab(QWidget):
         row.addWidget(QLabel("Optical writer:"))
         self.disc_write_drive = QComboBox()
         row.addWidget(self.disc_write_drive, 1)
-        refresh = QPushButton("Refresh")
-        refresh.clicked.connect(self._refresh_disc_drives)
-        row.addWidget(refresh)
+        self.disc_write_refresh = QPushButton("Refresh")
+        self.disc_write_refresh.clicked.connect(self._refresh_disc_drives)
+        row.addWidget(self.disc_write_refresh)
         layout.addLayout(row)
 
         row = QHBoxLayout()
@@ -621,12 +694,33 @@ class ToolsTab(QWidget):
         self._refresh_disc_drives()
 
     def _refresh_disc_drives(self):
-        drives = []
-        if disc_backend_ready():
-            try:
-                drives = scan_drives()
-            except Exception:
-                drives = []
+        # Drive enumeration (notably cdrdao scanbus) may wait while an optical
+        # drive is busy.  Never run it on the Qt GUI thread.
+        if self.drive_scan_worker is not None and self.drive_scan_worker.isRunning():
+            return
+
+        for button_name in ("disc_read_refresh", "disc_write_refresh"):
+            button = getattr(self, button_name, None)
+            if button is not None:
+                button.setEnabled(False)
+        for combo_name in ("disc_read_drive", "disc_write_drive"):
+            combo = getattr(self, combo_name, None)
+            if combo is not None and combo.count() == 0:
+                combo.addItem("Scanning optical drives...", None)
+
+        def work(_worker):
+            if not disc_backend_ready():
+                return []
+            return scan_drives()
+
+        self.drive_scan_worker = ToolWorker(work, self)
+        self.drive_scan_worker.succeeded.connect(self._disc_drives_scanned)
+        self.drive_scan_worker.failed.connect(self._disc_drive_scan_failed)
+        self.drive_scan_worker.finished.connect(self._disc_drive_scan_finished)
+        self.drive_scan_worker.start()
+
+    def _disc_drives_scanned(self, drives):
+        drives = list(drives or [])
         for combo_name in ("disc_read_drive", "disc_write_drive"):
             combo = getattr(self, combo_name, None)
             if combo is None:
@@ -644,17 +738,32 @@ class ToolsTab(QWidget):
                         combo.setCurrentIndex(i)
                         break
 
-        
-        
-        
         ready = disc_backend_ready()
         if hasattr(self, "disc_rip_button"):
             self.disc_rip_button.setEnabled(ready)
         if hasattr(self, "burn_button"):
             self.burn_button.setEnabled(ready)
 
+    def _disc_drive_scan_failed(self, _message):
+        self._disc_drives_scanned([])
+
+    def _disc_drive_scan_finished(self):
+        for button_name in ("disc_read_refresh", "disc_write_refresh"):
+            button = getattr(self, button_name, None)
+            if button is not None:
+                button.setEnabled(True)
+
     def _browse_disc_output(self):
-        path, _ = QFileDialog.getSaveFileName(self, "Save Disc Image", self.disc_output_cue.text().strip(), "CUE sheet (*.cue)")
+        if self.disc_output_location.currentText() == REMOTE:
+            default_name = PurePosixPath(self.disc_output_cue.text().strip()).name or "disc.cue"
+            path = RemoteFilePickerDialog.get_save_file(
+                self.connection, self, title="Save Disc Image on MiSTer",
+                default_name=default_name,
+            )
+        else:
+            path, _ = QFileDialog.getSaveFileName(
+                self, "Save Disc Image", self.disc_output_cue.text().strip(), "CUE sheet (*.cue)"
+            )
         if path:
             if not path.lower().endswith(".cue"):
                 path += ".cue"
@@ -668,8 +777,12 @@ class ToolsTab(QWidget):
     def _rip_disc_clicked(self):
         device = self.disc_read_drive.currentData()
         output = self.disc_output_cue.text().strip()
+        destination = self.disc_output_location.currentText()
         if not device or not output:
             QMessageBox.warning(self, "Disc to Image", "Select an optical drive and output CUE file first.")
+            return
+        if destination == REMOTE and not self._is_remote_allowed():
+            QMessageBox.warning(self, "Disc to Image", "Connect to MiSTer in Online mode first.")
             return
         if self.disc_convert_chd.isChecked() and not has_chdman():
             QMessageBox.warning(self, "Disc to Image", "Download CHDman from CHD Converter before enabling CHD conversion.")
@@ -683,6 +796,7 @@ class ToolsTab(QWidget):
 
         convert = self.disc_convert_chd.isChecked()
         remove_bin_cue = self.disc_remove_bin.isChecked()
+
         def work(worker):
             def rip_log(line):
                 worker.status.emit("LOG:" + line)
@@ -691,33 +805,72 @@ class ToolsTab(QWidget):
                 worker.progress.emit(percent)
                 worker.status.emit("RIPSTATUS:" + message)
 
-            cue, bin_path, toc = rip_disc(
-                device, output, rip_log, progress_callback=rip_progress
-            )
-            chd = None
-            if convert:
-                chd = cue.with_suffix(".chd")
-                worker.progress.emit(0)
-                worker.status.emit("RIPSTATUS:Converting BIN/CUE to CHD — 0%")
-                worker.status.emit("LOG:Converting BIN/CUE to CHD...")
+            DISC_WORK_DIR.mkdir(parents=True, exist_ok=True)
+            if destination == REMOTE:
+                remote_cue = output
+                remote_dir = posixpath.dirname(remote_cue)
+                base_name = PurePosixPath(remote_cue).stem
+                with tempfile.TemporaryDirectory(prefix="rip-", dir=str(DISC_WORK_DIR)) as tmp:
+                    local_cue = Path(tmp) / f"{base_name}.cue"
+                    cue, bin_path, toc = rip_disc(device, local_cue, rip_log, progress_callback=rip_progress)
+                    chd = None
+                    if convert:
+                        chd = cue.with_suffix(".chd")
+                        worker.progress.emit(0)
+                        worker.status.emit("RIPSTATUS:Converting BIN/CUE to CHD — 0%")
+                        worker.status.emit("LOG:Converting BIN/CUE to CHD...")
 
-                def chd_log(line):
-                    match = re.search(r"(\d+(?:\.\d+)?)%\s+complete", line, re.IGNORECASE)
-                    if match:
-                        percent = max(0, min(100, int(float(match.group(1)))))
-                        worker.progress.emit(percent)
-                        worker.status.emit(f"RIPSTATUS:Converting BIN/CUE to CHD — {percent}%")
-                    elif "error" in line.lower():
-                        worker.status.emit("LOG:" + line)
+                        def chd_log(line):
+                            match = re.search(r"(\d+(?:\.\d+)?)%\s+complete", line, re.IGNORECASE)
+                            if match:
+                                percent = max(0, min(100, int(float(match.group(1)))))
+                                worker.progress.emit(percent)
+                                worker.status.emit(f"RIPSTATUS:Converting BIN/CUE to CHD — {percent}%")
+                            elif "error" in line.lower():
+                                worker.status.emit("LOG:" + line)
 
-                run_chdman(cue, chd, chd_log)
-                worker.progress.emit(100)
-                worker.status.emit("RIPSTATUS:CHD conversion complete — 100%")
-                if remove_bin_cue:
-                    cue.unlink(missing_ok=True)
-                    bin_path.unlink(missing_ok=True)
-                    toc.unlink(missing_ok=True)
-            return str(chd or cue)
+                        run_chdman(cue, chd, chd_log)
+                        worker.progress.emit(100)
+                        worker.status.emit("RIPSTATUS:CHD conversion complete — 100%")
+
+                    upload_files = []
+                    if not convert or not remove_bin_cue:
+                        upload_files.extend([cue, bin_path])
+                    if chd is not None:
+                        upload_files.append(chd)
+                    for local_file in upload_files:
+                        remote_target = posixpath.join(remote_dir, local_file.name)
+                        self._ensure_remote_output_new(remote_target)
+                    worker.status.emit("LOG:Transferring completed image to MiSTer...")
+                    for local_file in upload_files:
+                        self._upload_remote_file(local_file, remote_dir, worker, status_prefix="RIPSTATUS:", target_name=local_file.name)
+                    return posixpath.join(remote_dir, (chd.name if chd is not None else cue.name))
+            else:
+                cue, bin_path, toc = rip_disc(device, output, rip_log, progress_callback=rip_progress)
+                chd = None
+                if convert:
+                    chd = cue.with_suffix(".chd")
+                    worker.progress.emit(0)
+                    worker.status.emit("RIPSTATUS:Converting BIN/CUE to CHD — 0%")
+                    worker.status.emit("LOG:Converting BIN/CUE to CHD...")
+
+                    def chd_log(line):
+                        match = re.search(r"(\d+(?:\.\d+)?)%\s+complete", line, re.IGNORECASE)
+                        if match:
+                            percent = max(0, min(100, int(float(match.group(1)))))
+                            worker.progress.emit(percent)
+                            worker.status.emit(f"RIPSTATUS:Converting BIN/CUE to CHD — {percent}%")
+                        elif "error" in line.lower():
+                            worker.status.emit("LOG:" + line)
+
+                    run_chdman(cue, chd, chd_log)
+                    worker.progress.emit(100)
+                    worker.status.emit("RIPSTATUS:CHD conversion complete — 100%")
+                    if remove_bin_cue:
+                        cue.unlink(missing_ok=True)
+                        bin_path.unlink(missing_ok=True)
+                        toc.unlink(missing_ok=True)
+                return str(chd or cue)
 
         self.worker = ToolWorker(work, self)
         self.worker.progress.connect(self.disc_rip_progress.setValue)
@@ -753,10 +906,17 @@ class ToolsTab(QWidget):
             self.burn_disc_label.clear()
 
     def _browse_burn_source(self):
+        remote = self.burn_source_location.currentText() == REMOTE
         if self.burn_mode.currentIndex() == 1:
-            path = QFileDialog.getExistingDirectory(self, "Select MSU-1 / MD+ Folder")
+            if remote:
+                path = RemoteFilePickerDialog.get_directory(self.connection, self, title="Select MSU-1 / MD+ Folder on MiSTer")
+            else:
+                path = QFileDialog.getExistingDirectory(self, "Select MSU-1 / MD+ Folder")
         else:
-            path, _ = QFileDialog.getOpenFileName(self, "Select CUE Image", filter="CUE sheet (*.cue);;All files (*.*)")
+            if remote:
+                path = RemoteFilePickerDialog.get_open_file(self.connection, self, title="Select CUE Image from MiSTer", filters=[".cue"])
+            else:
+                path, _ = QFileDialog.getOpenFileName(self, "Select CUE Image", filter="CUE sheet (*.cue);;All files (*.*)")
         if path:
             self.burn_source.setText(path)
 
@@ -767,11 +927,15 @@ class ToolsTab(QWidget):
     def _burn_disc_clicked(self):
         device = self.disc_write_drive.currentData()
         source = self.burn_source.text().strip()
+        source_location = self.burn_source_location.currentText()
         if not device or not source:
             QMessageBox.warning(self, "Image to Disc", "Select an optical writer and source first.")
             return
+        if source_location == REMOTE and not self._is_remote_allowed():
+            QMessageBox.warning(self, "Image to Disc", "Connect to MiSTer in Online mode first.")
+            return
         data_mode = self.burn_mode.currentIndex() == 1
-        if data_mode:
+        if data_mode and source_location == LOCAL:
             root_files = [p for p in Path(source).iterdir() if p.is_file()] if Path(source).is_dir() else []
             if not root_files:
                 QMessageBox.warning(self, "Image to Disc", "The selected MSU-1 / MD+ folder has no files at its root.")
@@ -798,24 +962,33 @@ class ToolsTab(QWidget):
                 else:
                     worker.progress.emit(percent)
                     worker.status.emit("BURNSTATUS:" + message)
-
-                
-                
-                
                 milestone = re.sub(r"\s*[—-]\s*\d+%$", "", message).strip()
                 if milestone and milestone != burn_log_state["last_milestone"]:
                     worker.status.emit("LOG:" + milestone)
                     burn_log_state["last_milestone"] = milestone
 
-            if data_mode:
-                burn_iso9660_folder(
-                    device, source, speed=speed, volume_id=disc_label or None,
-                    log_callback=log, progress_callback=progress
-                )
-            else:
-                burn_cue(
-                    device, source, speed=speed, log_callback=log, progress_callback=progress
-                )
+            DISC_WORK_DIR.mkdir(parents=True, exist_ok=True)
+            with tempfile.TemporaryDirectory(prefix="burn-", dir=str(DISC_WORK_DIR)) as tmp:
+                tmpdir = Path(tmp)
+                local_source = Path(source)
+                if source_location == REMOTE:
+                    worker.status.emit("BURNBUSY:Downloading source from MiSTer...")
+                    if data_mode:
+                        local_source = self._download_remote_folder(source, tmpdir, worker, status_prefix="BURNSTATUS:")
+                        if not any(p.is_file() for p in local_source.iterdir()):
+                            raise DiscToolError("The selected MSU-1 / MD+ folder has no files at its root.")
+                    else:
+                        local_source = self._prepare_remote_descriptor(source, tmpdir, worker, status_prefix="BURNSTATUS:")
+
+                if data_mode:
+                    burn_iso9660_folder(
+                        device, local_source, speed=speed, volume_id=disc_label or None,
+                        log_callback=log, progress_callback=progress
+                    )
+                else:
+                    burn_cue(
+                        device, local_source, speed=speed, log_callback=log, progress_callback=progress
+                    )
             return True
 
         self.worker = ToolWorker(work, self)
@@ -858,6 +1031,37 @@ class ToolsTab(QWidget):
         QMessageBox.critical(self, "Image to Disc", message)
 
     
+    def _download_remote_folder(self, remote_folder, temp_dir, worker=None, status_prefix="TRANSFER:"):
+        local_root = Path(temp_dir) / PurePosixPath(remote_folder.rstrip("/")).name
+        local_root.mkdir(parents=True, exist_ok=True)
+        sftp = self.connection.client.open_sftp()
+        try:
+            def walk(remote_dir, local_dir):
+                for attr in sftp.listdir_attr(remote_dir):
+                    if attr.filename in {".", ".."}:
+                        continue
+                    remote_item = join_remote_path(remote_dir, attr.filename)
+                    local_item = local_dir / attr.filename
+                    if stat.S_ISDIR(attr.st_mode):
+                        local_item.mkdir(parents=True, exist_ok=True)
+                        walk(remote_item, local_item)
+                    else:
+                        local_item.parent.mkdir(parents=True, exist_ok=True)
+                        if worker:
+                            worker.status.emit(f"LOG:Downloading {attr.filename}...")
+
+                        def progress(done, total, name=attr.filename):
+                            if worker:
+                                percent = self._transfer_percent(done, total)
+                                worker.progress.emit(percent)
+                                worker.status.emit(f"{status_prefix}Downloading {name} — {percent}%")
+
+                        sftp.get(remote_item, str(local_item), callback=progress if worker else None)
+            walk(remote_folder, local_root)
+        finally:
+            sftp.close()
+        return local_root
+
     def _build_chd(self):
         page = QWidget()
         layout = QVBoxLayout(page)
@@ -924,6 +1128,14 @@ class ToolsTab(QWidget):
         self.chd_start.clicked.connect(self._chd_start_queue)
         buttons.addWidget(self.chd_start)
         layout.addLayout(buttons)
+        self.chd_transfer_status = QLabel("")
+        self.chd_transfer_status.setVisible(False)
+        layout.addWidget(self.chd_transfer_status)
+        self.chd_transfer_progress = QProgressBar()
+        self.chd_transfer_progress.setRange(0, 100)
+        self.chd_transfer_progress.setValue(0)
+        self.chd_transfer_progress.setVisible(False)
+        layout.addWidget(self.chd_transfer_progress)
 
         self.chd_log = QTextEdit()
         self.chd_log.setReadOnly(True)
@@ -934,9 +1146,12 @@ class ToolsTab(QWidget):
 
     def _refresh_chdman_status(self):
         installed = has_chdman()
-        self.chd_tool_status.setText(f"CHDman {CHDMAN_VERSION}: {'Ready' if installed else 'Not downloaded'}")
+        text = f"CHDman {CHDMAN_VERSION}: {'Ready' if installed else 'Not downloaded'}"
+        self.chd_tool_status.setText(text)
         self.download_chdman_button.setVisible(not installed)
         self.remove_chdman_button.setVisible(installed)
+        if hasattr(self, "chd_extract_tool_status"):
+            self.chd_extract_tool_status.setText(text)
 
     def _download_chdman_clicked(self):
         self.download_chdman_button.setEnabled(False)
@@ -1046,17 +1261,27 @@ class ToolsTab(QWidget):
         self.chd_jobs.clear()
         self._refresh_chd_table()
 
-    def _prepare_remote_descriptor(self, remote_path, temp_dir):
-        descriptor = self._download_remote_file(remote_path, temp_dir)
+    def _prepare_remote_descriptor(self, remote_path, temp_dir, worker=None, status_prefix="TRANSFER:"):
+        descriptor = self._download_remote_file(remote_path, temp_dir, worker, status_prefix=status_prefix)
         refs = descriptor_references(descriptor)
         remote_dir = posixpath.dirname(remote_path)
         for ref in refs:
             remote_ref = posixpath.normpath(posixpath.join(remote_dir, ref.replace("\\", "/")))
             local_ref = Path(temp_dir) / ref.replace("\\", "/")
             local_ref.parent.mkdir(parents=True, exist_ok=True)
+            name = PurePosixPath(remote_ref).name
             sftp = self.connection.client.open_sftp()
             try:
-                sftp.get(remote_ref, str(local_ref))
+                if worker:
+                    worker.status.emit(f"LOG:Downloading {name}...")
+
+                def progress(done, total, filename=name):
+                    if worker:
+                        percent = self._transfer_percent(done, total)
+                        worker.progress.emit(percent)
+                        worker.status.emit(f"{status_prefix}Downloading {filename} — {percent}%")
+
+                sftp.get(remote_ref, str(local_ref), callback=progress if worker else None)
             finally:
                 sftp.close()
         return descriptor
@@ -1070,6 +1295,11 @@ class ToolsTab(QWidget):
             return
         self.chd_start.setEnabled(False)
         self.chd_log.clear()
+        self.chd_transfer_progress.setValue(0)
+        has_remote_transfer = any(job["source"] == REMOTE or job["destination"] == REMOTE for job in self.chd_jobs if job["status"] != "Completed")
+        self.chd_transfer_progress.setVisible(has_remote_transfer)
+        self.chd_transfer_status.setVisible(has_remote_transfer)
+        self.chd_transfer_status.setText("Preparing transfer...") if has_remote_transfer else None
 
         def work(worker):
             failures = 0
@@ -1083,9 +1313,9 @@ class ToolsTab(QWidget):
                         tmpdir = Path(tmp)
                         if job["source"] == REMOTE:
                             if PurePosixPath(job["input"]).suffix.lower() in {".cue", ".gdi"}:
-                                local_input = self._prepare_remote_descriptor(job["input"], tmpdir)
+                                local_input = self._prepare_remote_descriptor(job["input"], tmpdir, worker)
                             else:
-                                local_input = self._download_remote_file(job["input"], tmpdir)
+                                local_input = self._download_remote_file(job["input"], tmpdir, worker)
                         else:
                             local_input = Path(job["input"])
 
@@ -1100,7 +1330,7 @@ class ToolsTab(QWidget):
                         if job["destination"] == REMOTE:
                             remote_dir = posixpath.dirname(job["output"])
                             for output in outputs:
-                                upload_path(self.connection, output, remote_dir, target_name=output.name, overwrite=False)
+                                self._upload_remote_file(output, remote_dir, worker, target_name=output.name)
                     job["status"] = "Completed"
                     worker.status.emit(f"TABLE:{index}:Completed")
                 except Exception as exc:
@@ -1112,6 +1342,7 @@ class ToolsTab(QWidget):
 
         self.worker = ToolWorker(work, self)
         self.worker.status.connect(self._chd_worker_status)
+        self.worker.progress.connect(self.chd_transfer_progress.setValue)
         self.worker.succeeded.connect(self._chd_queue_done)
         self.worker.failed.connect(self._chd_queue_failed)
         self.worker.start()
@@ -1125,6 +1356,8 @@ class ToolsTab(QWidget):
                 item = self.chd_table.item(row, 4)
                 if item:
                     item.setText(status)
+        elif text.startswith("TRANSFER:"):
+            self.chd_transfer_status.setText(text[len("TRANSFER:"):])
         elif text.startswith("LOG:"):
             self.chd_log.append(text[4:])
         else:
@@ -1133,6 +1366,9 @@ class ToolsTab(QWidget):
     def _chd_queue_done(self, failures):
         self.chd_start.setEnabled(True)
         self._refresh_chd_table()
+        if self.chd_transfer_progress.isVisible() and not failures:
+            self.chd_transfer_progress.setValue(100)
+            self.chd_transfer_status.setText("Transfer complete — 100%")
         if failures:
             QMessageBox.warning(self, "CHD Converter", f"Queue finished with {failures} failed job(s).")
         else:
@@ -1141,3 +1377,256 @@ class ToolsTab(QWidget):
     def _chd_queue_failed(self, message):
         self.chd_start.setEnabled(True)
         QMessageBox.critical(self, "CHD Converter", message)
+
+    def _build_chd_extract(self):
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.addWidget(self._back_button())
+        title = QLabel("CHD Extractor")
+        title.setStyleSheet("font-size: 20px; font-weight: 600;")
+        layout.addWidget(title)
+        self.chd_extract_tool_status = QLabel()
+        layout.addWidget(self.chd_extract_tool_status)
+
+        input_row = QHBoxLayout()
+        input_row.addWidget(QLabel("Add input from:"))
+        self.chd_extract_input_location = self._location_combo()
+        input_row.addWidget(self.chd_extract_input_location)
+        add_files = QPushButton("Add Files")
+        add_files.clicked.connect(self._chd_extract_add_files_clicked)
+        input_row.addWidget(add_files)
+        add_folder = QPushButton("Add Folder")
+        add_folder.clicked.connect(self._chd_extract_add_folder_clicked)
+        input_row.addWidget(add_folder)
+        input_row.addStretch(1)
+        layout.addLayout(input_row)
+
+        format_row = QHBoxLayout()
+        format_row.addWidget(QLabel("Output format for new jobs:"))
+        self.chd_extract_format = QComboBox()
+        self.chd_extract_format.addItems(["CUE/BIN", "GDI", "ISO"])
+        format_row.addWidget(self.chd_extract_format)
+        format_row.addStretch(1)
+        layout.addLayout(format_row)
+
+        output_row = QHBoxLayout()
+        output_row.addWidget(QLabel("Output for new jobs:"))
+        self.chd_extract_output_location = self._location_combo()
+        output_row.addWidget(self.chd_extract_output_location)
+        self.chd_extract_output_dir = QLineEdit()
+        output_row.addWidget(self.chd_extract_output_dir, 1)
+        browse = QPushButton("Browse")
+        browse.clicked.connect(self._chd_extract_browse_output)
+        output_row.addWidget(browse)
+        layout.addLayout(output_row)
+
+        self.chd_extract_table = QTableWidget(0, 6)
+        self.chd_extract_table.setHorizontalHeaderLabels(["Input", "Source", "Format", "Output", "Destination", "Status"])
+        self.chd_extract_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.chd_extract_table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        header = self.chd_extract_table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        layout.addWidget(self.chd_extract_table, 1)
+
+        buttons = QHBoxLayout()
+        remove = QPushButton("Remove Selected")
+        remove.clicked.connect(self._chd_extract_remove_selected)
+        buttons.addWidget(remove)
+        clear = QPushButton("Clear Queue")
+        clear.clicked.connect(self._chd_extract_clear)
+        buttons.addWidget(clear)
+        buttons.addStretch(1)
+        self.chd_extract_start = QPushButton("Start Queue")
+        self.chd_extract_start.clicked.connect(self._chd_extract_start_queue)
+        buttons.addWidget(self.chd_extract_start)
+        layout.addLayout(buttons)
+        self.chd_extract_status = QLabel("")
+        self.chd_extract_status.setVisible(False)
+        layout.addWidget(self.chd_extract_status)
+        self.chd_extract_progress = QProgressBar()
+        self.chd_extract_progress.setRange(0, 100)
+        self.chd_extract_progress.setValue(0)
+        self.chd_extract_progress.setVisible(False)
+        layout.addWidget(self.chd_extract_progress)
+
+        self.chd_extract_log = QTextEdit()
+        self.chd_extract_log.setReadOnly(True)
+        self.chd_extract_log.setMaximumHeight(130)
+        layout.addWidget(self.chd_extract_log)
+        self._refresh_chdman_status()
+        return page
+
+    def _chd_extract_browse_output(self):
+        if self.chd_extract_output_location.currentText() == REMOTE:
+            path = RemoteFilePickerDialog.get_directory(self.connection, self, title="Select MiSTer Output Folder")
+        else:
+            path = QFileDialog.getExistingDirectory(self, "Select Output Folder")
+        if path:
+            self.chd_extract_output_dir.setText(path)
+
+    def _chd_extract_add_files_clicked(self):
+        output_dir = self.chd_extract_output_dir.text().strip()
+        if not output_dir:
+            QMessageBox.warning(self, "CHD Extractor", "Select an output folder for new jobs first.")
+            return
+        source_location = self.chd_extract_input_location.currentText()
+        if source_location == REMOTE:
+            files = RemoteFilePickerDialog.get_open_files(self.connection, self, title="Select CHD Images from MiSTer", filters=[".chd"])
+        else:
+            files, _ = QFileDialog.getOpenFileNames(self, "Select CHD Images", filter="CHD images (*.chd);;All files (*.*)")
+        for path in files:
+            self._add_chd_extract_job(path, source_location, output_dir, self.chd_extract_output_location.currentText())
+
+    def _chd_extract_add_folder_clicked(self):
+        output_dir = self.chd_extract_output_dir.text().strip()
+        if not output_dir:
+            QMessageBox.warning(self, "CHD Extractor", "Select an output folder for new jobs first.")
+            return
+        location = self.chd_extract_input_location.currentText()
+        if location == REMOTE:
+            folder = RemoteFilePickerDialog.get_directory(self.connection, self, title="Select MiSTer Input Folder")
+            files = self._remote_files_with_exts(folder, CHD_EXTRACT_INPUT_EXTS) if folder else []
+        else:
+            folder = QFileDialog.getExistingDirectory(self, "Select Input Folder")
+            files = [str(p) for p in Path(folder).rglob("*.chd") if p.is_file()] if folder else []
+        for path in files:
+            self._add_chd_extract_job(path, location, output_dir, self.chd_extract_output_location.currentText())
+
+    def _remote_files_with_exts(self, folder, exts):
+        results = []
+        sftp = self.connection.client.open_sftp()
+        try:
+            def walk(path):
+                for attr in sftp.listdir_attr(path):
+                    if attr.filename in {".", ".."}:
+                        continue
+                    item = join_remote_path(path, attr.filename)
+                    if stat.S_ISDIR(attr.st_mode):
+                        walk(item)
+                    elif PurePosixPath(item).suffix.lower() in exts:
+                        results.append(item)
+            walk(folder)
+        finally:
+            sftp.close()
+        return results
+
+    def _add_chd_extract_job(self, input_path, source_location, output_dir, output_location):
+        fmt_label = self.chd_extract_format.currentText()
+        fmt = {"CUE/BIN": "cue", "GDI": "gdi", "ISO": "iso"}[fmt_label]
+        stem = PurePosixPath(str(input_path).replace("\\", "/")).stem
+        output_name = f"{stem}.{fmt}"
+        output_path = posixpath.join(output_dir.rstrip("/"), output_name) if output_location == REMOTE else str(Path(output_dir) / output_name)
+        self.chd_extract_jobs.append({
+            "input": input_path, "source": source_location, "format": fmt, "format_label": fmt_label,
+            "output": output_path, "destination": output_location, "status": "Queued",
+        })
+        self._refresh_chd_extract_table()
+
+    def _refresh_chd_extract_table(self):
+        self.chd_extract_table.setRowCount(len(self.chd_extract_jobs))
+        keys = ("input", "source", "format_label", "output", "destination", "status")
+        for row, job in enumerate(self.chd_extract_jobs):
+            for col, key in enumerate(keys):
+                self.chd_extract_table.setItem(row, col, QTableWidgetItem(str(job[key])))
+
+    def _chd_extract_remove_selected(self):
+        rows = sorted({idx.row() for idx in self.chd_extract_table.selectionModel().selectedRows()}, reverse=True)
+        for row in rows:
+            if 0 <= row < len(self.chd_extract_jobs):
+                del self.chd_extract_jobs[row]
+        self._refresh_chd_extract_table()
+
+    def _chd_extract_clear(self):
+        self.chd_extract_jobs.clear()
+        self._refresh_chd_extract_table()
+
+    def _chd_extract_start_queue(self):
+        if not self.chd_extract_jobs:
+            QMessageBox.information(self, "CHD Extractor", "The queue is empty.")
+            return
+        if not has_chdman():
+            QMessageBox.warning(self, "CHD Extractor", "Download CHDman from CHD Converter first.")
+            return
+        self.chd_extract_start.setEnabled(False)
+        self.chd_extract_log.clear()
+        self.chd_extract_progress.setValue(0)
+        has_remote_transfer = any(job["source"] == REMOTE or job["destination"] == REMOTE for job in self.chd_extract_jobs if job["status"] != "Completed")
+        self.chd_extract_progress.setVisible(has_remote_transfer)
+        self.chd_extract_status.setVisible(has_remote_transfer)
+        self.chd_extract_status.setText("Preparing transfer...") if has_remote_transfer else None
+
+        def work(worker):
+            failures = 0
+            for index, job in enumerate(self.chd_extract_jobs):
+                if job["status"] == "Completed":
+                    continue
+                worker.status.emit(f"TABLE:{index}:Extracting")
+                try:
+                    with tempfile.TemporaryDirectory(prefix="mister-companion-chd-extract-") as tmp:
+                        tmpdir = Path(tmp)
+                        local_input = self._download_remote_file(job["input"], tmpdir, worker) if job["source"] == REMOTE else Path(job["input"])
+                        extract_dir = tmpdir / "output"
+                        outputs = extract_chdman(local_input, extract_dir, job["format"], lambda line: worker.status.emit("LOG:" + line))
+                        if not outputs:
+                            raise ChdmanError("CHDman did not produce any output files.")
+                        if job["destination"] == REMOTE:
+                            remote_dir = posixpath.dirname(job["output"])
+                            for output in outputs:
+                                self._ensure_remote_output_new(posixpath.join(remote_dir, output.name))
+                            for output in outputs:
+                                self._upload_remote_file(output, remote_dir, worker, target_name=output.name)
+                        else:
+                            destination_dir = Path(job["output"]).parent
+                            destination_dir.mkdir(parents=True, exist_ok=True)
+                            for output in outputs:
+                                target = destination_dir / output.name
+                                if target.exists():
+                                    raise FileExistsError(f"Output already exists: {target}")
+                            for output in outputs:
+                                shutil.copy2(output, destination_dir / output.name)
+                    worker.status.emit(f"TABLE:{index}:Completed")
+                except Exception as exc:
+                    failures += 1
+                    worker.status.emit(f"TABLE:{index}:Failed")
+                    worker.status.emit(f"LOG:{PurePosixPath(job['input']).name}: {exc}")
+            return failures
+
+        self.worker = ToolWorker(work, self)
+        self.worker.status.connect(self._chd_extract_worker_status)
+        self.worker.progress.connect(self.chd_extract_progress.setValue)
+        self.worker.succeeded.connect(self._chd_extract_queue_done)
+        self.worker.failed.connect(self._chd_extract_queue_failed)
+        self.worker.start()
+
+    def _chd_extract_worker_status(self, text):
+        if text.startswith("TABLE:"):
+            _, row, status = text.split(":", 2)
+            row = int(row)
+            if 0 <= row < len(self.chd_extract_jobs):
+                self.chd_extract_jobs[row]["status"] = status
+                item = self.chd_extract_table.item(row, 5)
+                if item:
+                    item.setText(status)
+        elif text.startswith("TRANSFER:"):
+            self.chd_extract_status.setText(text[len("TRANSFER:"):])
+        elif text.startswith("LOG:"):
+            self.chd_extract_log.append(text[4:])
+        else:
+            self.chd_extract_log.append(text)
+
+    def _chd_extract_queue_done(self, failures):
+        self.chd_extract_start.setEnabled(True)
+        self._refresh_chd_extract_table()
+        if self.chd_extract_progress.isVisible() and not failures:
+            self.chd_extract_progress.setValue(100)
+            self.chd_extract_status.setText("Transfer complete — 100%")
+        if failures:
+            QMessageBox.warning(self, "CHD Extractor", f"Queue finished with {failures} failed job(s).")
+        else:
+            QMessageBox.information(self, "CHD Extractor", "Queue completed successfully.")
+
+    def _chd_extract_queue_failed(self, message):
+        self.chd_extract_start.setEnabled(True)
+        QMessageBox.critical(self, "CHD Extractor", message)
+

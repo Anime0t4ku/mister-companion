@@ -178,3 +178,57 @@ def run_chdman(input_path: str | Path, output_path: str | Path, log_callback=Non
     if code != 0:
         raise ChdmanError(f"CHDman exited with code {code}.")
     return outputs
+
+
+def extract_chdman(input_path: str | Path, output_dir: str | Path, output_format: str, log_callback=None) -> list[Path]:
+    """Extract a CHD to a user-selected supported disc-image format.
+
+    output_format is one of: cue, gdi, iso.  Extraction always happens in
+    output_dir; callers can then move/upload the complete output set.
+    """
+    exe = chdman_executable()
+    if not exe.exists():
+        raise ChdmanError("CHDman is not downloaded yet.")
+
+    input_path = Path(input_path)
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    fmt = output_format.strip().lower()
+    if fmt not in {"cue", "gdi", "iso"}:
+        raise ChdmanError("Supported CHD extraction formats are CUE/BIN, GDI and ISO.")
+
+    stem = input_path.stem
+    before = {p.resolve() for p in output_dir.iterdir()}
+    if fmt == "cue":
+        descriptor = output_dir / f"{stem}.cue"
+        binary = output_dir / f"{stem}.bin"
+        command = [str(exe), "extractcd", "-i", str(input_path), "-o", str(descriptor), "-ob", str(binary)]
+    elif fmt == "gdi":
+        descriptor = output_dir / f"{stem}.gdi"
+        command = [str(exe), "extractcd", "-i", str(input_path), "-o", str(descriptor)]
+    else:
+        descriptor = output_dir / f"{stem}.iso"
+        command = [str(exe), "extractdvd", "-i", str(input_path), "-o", str(descriptor)]
+
+    if descriptor.exists():
+        raise FileExistsError(f"Output already exists: {descriptor}")
+
+    env = os.environ.copy()
+    if platform.system().lower() == "darwin":
+        env["DYLD_LIBRARY_PATH"] = str(CHDMAN_DIR) + (os.pathsep + env["DYLD_LIBRARY_PATH"] if env.get("DYLD_LIBRARY_PATH") else "")
+    proc = subprocess.Popen(
+        command, cwd=str(CHDMAN_DIR), env=env, stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace",
+    )
+    assert proc.stdout is not None
+    for line in proc.stdout:
+        if log_callback:
+            log_callback(line.rstrip())
+    code = proc.wait()
+    if code != 0:
+        raise ChdmanError(f"CHDman exited with code {code}.")
+
+    outputs = [p for p in output_dir.iterdir() if p.resolve() not in before and p.is_file()]
+    if not outputs and descriptor.exists():
+        outputs = [descriptor]
+    return sorted(outputs, key=lambda path: path.name.lower())
