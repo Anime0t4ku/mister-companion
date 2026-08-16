@@ -9,6 +9,8 @@ body:
       value: |
         Have an idea that could improve MiSTer Companion? Keep the request focused and explain how it would help users.
 
+        Please search both open and closed issues before submitting to make sure the same feature has not already been requested or discussed.
+
   - type: dropdown
     id: platform
     attributes:
@@ -17,30 +19,6 @@ body:
         - Desktop
         - Mobile
         - Desktop and Mobile
-    validations:
-      required: true
-
-  - type: dropdown
-    id: desktop_platform
-    attributes:
-      label: Desktop Operating System
-      description: Select Not Applicable when the request is only for Mobile.
-      options:
-        - Windows
-        - Linux
-        - Windows and Linux
-        - Not Applicable
-    validations:
-      required: true
-
-  - type: dropdown
-    id: mobile_platform
-    attributes:
-      label: Mobile Operating System
-      description: Android is currently the only supported Mobile platform.
-      options:
-        - Android
-        - Not Applicable
     validations:
       required: true
 
@@ -75,7 +53,8 @@ body:
   - type: checkboxes
     id: checks
     attributes:
-      label: Before Submitting
+      label: Existing Issues
+      description: Before submitting, please search both open and closed issues to make sure this feature has not already been requested or discussed.
       options:
-        - label: I searched the existing issues and did not find the same request.
+        - label: I have searched both open and closed issues and did not find an existing request that matches this feature.
           required: true

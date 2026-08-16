@@ -1,27 +1,46 @@
 name: Question
 description: Ask a question about MiSTer Companion
 title: "[QUESTION] "
-labels: ["question"]
-
+labels:
+  - question
 body:
+  - type: markdown
+    attributes:
+      value: |
+        Have a question about MiSTer Companion? Please provide as much relevant detail as possible.
 
-- type: markdown
-  attributes:
-    value: |
-      Have a question about MiSTer Companion?
+        Please search both open and closed issues before submitting in case your question has already been answered.
 
-      Please provide as much detail as possible.
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Desktop
+        - Mobile
+        - Not applicable
+    validations:
+      required: true
 
-- type: textarea
-  id: question
-  attributes:
-    label: Your Question
-    description: What would you like to know?
-  validations:
-    required: true
+  - type: textarea
+    id: question
+    attributes:
+      label: Your Question
+      description: What would you like to know?
+    validations:
+      required: true
 
-- type: textarea
-  id: context
-  attributes:
-    label: Additional Context
-    description: Include any relevant details about your setup.
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional Context
+      description: Include any relevant details about your setup or what you are trying to do.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Existing Issues
+      description: Before submitting, please search both open and closed issues to make sure your question has not already been answered.
+      options:
+        - label: I have searched both open and closed issues and did not find an existing issue or question that answers this.
+          required: true

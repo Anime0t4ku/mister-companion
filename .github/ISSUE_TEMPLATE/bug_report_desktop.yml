@@ -10,64 +10,48 @@ body:
       value: |
         Thanks for reporting a MiSTer Companion Desktop issue.
 
-        Please check that you are using the latest release and search existing issues before submitting.
+        Please make sure you are using the latest available release and search both open and closed issues before submitting.
 
   - type: input
     id: version
     attributes:
       label: MiSTer Companion Version
       description: Which Desktop version are you using?
-      placeholder: e.g. v4.5.3
+      placeholder: e.g. v7.5.3
     validations:
       required: true
 
   - type: dropdown
-    id: operating_system
+    id: platform
     attributes:
-      label: Operating System
+      label: Platform
+      description: Select the platform you are using MiSTer Companion on.
       options:
-        - Windows
-        - Linux
+        - Windows x64
+        - Windows ARM64
+        - macOS Apple Silicon
+        - macOS Intel
+        - Linux x64
+        - Linux ARM64
     validations:
       required: true
 
   - type: dropdown
     id: installation_type
     attributes:
-      label: Installation Type
+      label: How are you running MiSTer Companion?
       options:
-        - Executable
-        - Python Script
-    validations:
-      required: true
-
-  - type: dropdown
-    id: mode
-    attributes:
-      label: Mode
-      options:
-        - Online Mode
-        - Offline Mode
-        - Both
-        - Not Applicable
-    validations:
-      required: true
-
-  - type: input
-    id: affected_feature
-    attributes:
-      label: Affected Tab or Feature
-      description: Which part of MiSTer Companion is affected?
-      placeholder: e.g. Connection, MiSTer Settings, Scripts, Extras
+        - Official packaged release
+        - From source
     validations:
       required: true
 
   - type: textarea
     id: description
     attributes:
-      label: Describe the Bug
-      description: Explain what happened and include any important context.
-      placeholder: Describe the problem clearly.
+      label: Describe the Issue
+      description: Explain the problem clearly and include any important context.
+      placeholder: What problem are you experiencing?
     validations:
       required: true
 
@@ -75,11 +59,12 @@ body:
     id: steps
     attributes:
       label: Steps to Reproduce
+      description: Provide the exact steps needed to reproduce the issue.
       placeholder: |
         1. Open MiSTer Companion
-        2. Go to ...
-        3. Select ...
-        4. The problem occurs
+        2. ...
+        3. ...
+        4. The issue occurs
     validations:
       required: true
 
@@ -91,25 +76,53 @@ body:
     validations:
       required: true
 
-  - type: textarea
-    id: logs
+  - type: dropdown
+    id: usage_type
     attributes:
-      label: Logs or Console Output
-      description: Paste relevant errors or console output here. Remove private information first.
-      render: shell
+      label: How were you using Companion when the issue occurred?
+      options:
+        - Connected to MiSTer
+        - Offline SD card
+        - Local PC files
+        - Not applicable
+    validations:
+      required: true
+
+  - type: dropdown
+    id: regression
+    attributes:
+      label: Did this work in an earlier MiSTer Companion version?
+      options:
+        - "Yes"
+        - "No"
+        - Not sure
+    validations:
+      required: true
+
+  - type: input
+    id: last_working_version
+    attributes:
+      label: Last Known Working Version
+      description: If this worked in an earlier version, enter the last version you know worked correctly.
+      placeholder: e.g. v7.5.2
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Screenshots, Logs, or Error Messages
+      description: Add any screenshots, logs, or error messages that may help. Remove private information first.
 
   - type: textarea
     id: additional
     attributes:
       label: Additional Information
-      description: Add screenshots, videos, or other useful details.
+      description: Add any other details that may be useful.
 
   - type: checkboxes
     id: checks
     attributes:
-      label: Before Submitting
+      label: Existing Issues
+      description: Before submitting, please search both open and closed issues to make sure this problem has not already been reported or resolved.
       options:
-        - label: I am using the latest available version of MiSTer Companion Desktop.
-          required: true
-        - label: I searched the existing issues and did not find the same problem.
+        - label: I have searched both open and closed issues and did not find an existing report that matches this issue.
           required: true

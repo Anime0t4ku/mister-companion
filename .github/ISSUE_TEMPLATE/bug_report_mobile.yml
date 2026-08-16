@@ -10,22 +10,23 @@ body:
       value: |
         Thanks for reporting a MiSTer Companion Mobile issue.
 
-        MiSTer Companion Mobile currently supports Android. Please check that you are using the latest release and search existing issues before submitting.
+        Please make sure you are using the latest available release and search both open and closed issues before submitting.
 
   - type: input
     id: version
     attributes:
       label: MiSTer Companion Mobile Version
-      placeholder: e.g. v1.3.6
+      description: Which Mobile version are you using?
+      placeholder: e.g. v4.0.1
     validations:
       required: true
 
-  - type: dropdown
-    id: operating_system
+  - type: input
+    id: device
     attributes:
-      label: Operating System
-      options:
-        - Android
+      label: Android Device
+      description: Enter the manufacturer and model of your Android device.
+      placeholder: e.g. Samsung Galaxy S25
     validations:
       required: true
 
@@ -37,28 +38,12 @@ body:
     validations:
       required: true
 
-  - type: input
-    id: device
-    attributes:
-      label: Device Model
-      placeholder: e.g. Samsung Galaxy S25
-    validations:
-      required: true
-
-  - type: input
-    id: affected_feature
-    attributes:
-      label: Affected Tab or Feature
-      placeholder: e.g. Connection, Remote, RetroAchievements, Extras
-    validations:
-      required: true
-
   - type: textarea
     id: description
     attributes:
-      label: Describe the Bug
-      description: Explain what happened and include any important context.
-      placeholder: Describe the problem clearly.
+      label: Describe the Issue
+      description: Explain the problem clearly and include any important context.
+      placeholder: What problem are you experiencing?
     validations:
       required: true
 
@@ -66,11 +51,12 @@ body:
     id: steps
     attributes:
       label: Steps to Reproduce
+      description: Provide the exact steps needed to reproduce the issue.
       placeholder: |
         1. Open MiSTer Companion Mobile
-        2. Go to ...
-        3. Select ...
-        4. The problem occurs
+        2. ...
+        3. ...
+        4. The issue occurs
     validations:
       required: true
 
@@ -82,25 +68,52 @@ body:
     validations:
       required: true
 
-  - type: textarea
-    id: logs
+  - type: dropdown
+    id: connection_state
     attributes:
-      label: Logs or Error Messages
-      description: Paste any relevant errors here. Remove private information first.
-      render: shell
+      label: Connection State When the Issue Occurred
+      options:
+        - Connected to MiSTer
+        - Disconnected from MiSTer
+        - Not applicable
+    validations:
+      required: true
+
+  - type: dropdown
+    id: regression
+    attributes:
+      label: Did this work in an earlier MiSTer Companion Mobile version?
+      options:
+        - "Yes"
+        - "No"
+        - Not sure
+    validations:
+      required: true
+
+  - type: input
+    id: last_working_version
+    attributes:
+      label: Last Known Working Version
+      description: If this worked in an earlier version, enter the last version you know worked correctly.
+      placeholder: e.g. v4.0.0
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Screenshots or Error Messages
+      description: Add any screenshots or error messages that may help. Remove private information first.
 
   - type: textarea
     id: additional
     attributes:
       label: Additional Information
-      description: Add screenshots, videos, or other useful details.
+      description: Add any other details that may be useful.
 
   - type: checkboxes
     id: checks
     attributes:
-      label: Before Submitting
+      label: Existing Issues
+      description: Before submitting, please search both open and closed issues to make sure this problem has not already been reported or resolved.
       options:
-        - label: I am using the latest available version of MiSTer Companion Mobile.
-          required: true
-        - label: I searched the existing issues and did not find the same problem.
+        - label: I have searched both open and closed issues and did not find an existing report that matches this issue.
           required: true
