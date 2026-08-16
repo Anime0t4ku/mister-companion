@@ -1161,6 +1161,41 @@ def _burn_output_handler(line: str, log_callback=None, progress_callback=None, s
     if "error" in lower and log_callback:
         log_callback(stripped)
 
+def _cdrdao_needs_raw_driver(lines: list[str]) -> bool:
+    text = "\n".join(lines).lower()
+    return (
+        "cannot set write parameters mode page" in text
+        or "cannot setup write parameters for session-at-once mode" in text
+    )
+
+
+def _run_cdrdao_write_with_compatibility(command: list[str], output_callback, cwd: Path) -> None:
+    """Run cdrdao normally, retrying once with generic-mmc-raw for the known SAO incompatibility."""
+    captured: list[str] = []
+
+    def capture(line: str) -> None:
+        captured.append(line.rstrip())
+        output_callback(line)
+
+    try:
+        _run_streaming(command, capture, cwd)
+        return
+    except DiscToolError:
+        if not _cdrdao_needs_raw_driver(captured):
+            raise
+
+    output_callback("Standard write mode is unsupported by this drive. Retrying in compatibility mode...")
+    retry_command = list(command)
+    # cdrdao accepts --driver before the TOC argument. Insert it immediately after the device pair.
+    try:
+        device_index = retry_command.index("--device")
+        insert_at = device_index + 2
+    except ValueError:
+        insert_at = max(1, len(retry_command) - 1)
+    retry_command[insert_at:insert_at] = ["--driver", "generic-mmc-raw"]
+    _run_streaming(retry_command, output_callback, cwd)
+
+
 def burn_cue(device: str, cue_path: str | Path, speed: int | None = None, log_callback=None, progress_callback=None) -> None:
     cue = Path(cue_path)
     if _is_macos():
@@ -1199,7 +1234,7 @@ def burn_cue(device: str, cue_path: str | Path, speed: int | None = None, log_ca
             if m and float(m.group(2)) > 0:
                 state["percent"] = max(0, min(100, int(float(m.group(1)) * 100 / float(m.group(2)))))
             _burn_output_handler(line, log_callback, progress_callback, state)
-        _run_streaming(command, output, cue.parent)
+        _run_cdrdao_write_with_compatibility(command, output, cue.parent)
     if progress_callback:
         progress_callback(100, "")
     if log_callback:
@@ -1406,7 +1441,7 @@ def create_iso9660_from_folder(source_folder: str | Path, output_iso: str | Path
         raise DiscToolError("The selected MSU-1 / MD+ folder contains no files at its root.")
 
     disc_names, cue_overrides = _prepare_joliet_name_map(source, log_callback=log_callback)
-    requested_label = (volume_id or source.name or "MISTER_DISC").strip().upper()
+    requested_label = (volume_id or "MISTER_DISC").strip().upper()
     safe_label = re.sub(r"[^A-Z0-9_]", "_", requested_label)[:32].strip("_") or "MISTER_DISC"
     iso = pycdlib.PyCdlib()
     iso.new(interchange_level=3, joliet=3, vol_ident=safe_label)
@@ -1421,16 +1456,15 @@ def create_iso9660_from_folder(source_folder: str | Path, output_iso: str | Path
                 staged.write_text(cue_text, encoding="utf-8", newline="")
                 rewritten_paths[cue_path] = staged
 
-        for path in files:
-            cleaned = re.sub(r"[^A-Z0-9_]", "_", path.stem.upper())[:24] or "FILE"
+        for index, path in enumerate(files, start=1):
+            # ISO9660 identifiers are only compatibility aliases here; Joliet carries the
+            # real on-disc filename. Keep aliases deliberately short so pycdlib never
+            # rejects a valid MSU-1/MD+ filename because of the ISO9660 side.
             ext = re.sub(r"[^A-Z0-9]", "", path.suffix.upper().lstrip("."))[:3]
-            base = cleaned + (("." + ext) if ext else "")
-            candidate = base
-            n = 1
+            candidate = f"F{index:07d}" + (("." + ext) if ext else "")
             while candidate in used_iso_names:
-                suffix = f"_{n}"
-                candidate = (cleaned[: max(1, 24 - len(suffix))] + suffix) + (("." + ext) if ext else "")
-                n += 1
+                index += 1
+                candidate = f"F{index:07d}" + (("." + ext) if ext else "")
             used_iso_names.add(candidate)
             iso_path = f"/{candidate};1"
             joliet_path = "/" + disc_names[path]
@@ -1483,6 +1517,6 @@ def burn_iso9660_folder(device: str, source_folder: str | Path, speed: int | Non
             if m and float(m.group(2)) > 0:
                 state["percent"] = max(0, min(100, int(float(m.group(1)) * 100 / float(m.group(2)))))
             _burn_output_handler(line, log_callback, progress_callback, state)
-        _run_streaming(command, output, tmpdir)
+        _run_cdrdao_write_with_compatibility(command, output, tmpdir)
     if progress_callback:
         progress_callback(100, "Disc written successfully — 100%")
