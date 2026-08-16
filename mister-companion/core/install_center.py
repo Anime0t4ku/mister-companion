@@ -180,6 +180,12 @@ from core.scripts_mister_hifi import (
     uninstall_mister_hifi,
     uninstall_mister_hifi_local,
 )
+from core.scripts_disc_tools import (
+    install_or_update_disc_tools,
+    install_or_update_disc_tools_local,
+    uninstall_disc_tools,
+    uninstall_disc_tools_local,
+)
 from core.extras_solarus import (
     get_solarus_status,
     get_solarus_status_local,
@@ -244,6 +250,7 @@ DOWNLOADER_HANDLER_DATABASES = {
     "user_profiles": "BertSVG/MiSTer_FPGA_User_Profiles",
     "collection_launcher": "MultiDatabases/collection-launcher",
     "mister_hifi": "MultiDatabases/mister-hifi",
+    "disc_tools": "MultiDatabases/disc-tools",
     "solarus": "MultiDatabases/solarus",
 }
 
@@ -415,6 +422,7 @@ FALLBACK_ITEMS = [
     ("user_profiles", "scripts", "script", "user_profiles", "User Profiles", "BertSVG", "Adds user profiles to the MiSTer FPGA Project."),
     ("collection_launcher", "scripts", "script", "collection_launcher", "Collection Launcher", "Anime0t4ku", "Launch a GUI for user defined Game Collections."),
     ("mister_hifi", "scripts", "script", "mister_hifi", "MiSTer Hi-Fi", "Anime0t4ku", "A Music Player with lossless audio formats support for MiSTer FPGA."),
+    ("disc_tools", "scripts", "script", "disc_tools", "Disc Tools", "Anime0t4ku", "Rip and burn optical discs directly on MiSTer FPGA."),
     ("zaparoo", "scripts", "script", "zaparoo", "Zaparoo", "Zaparoo Project", "Zaparoo lets you launch games, media, scripts, and other MiSTer content by scanning NFC cards, tags, barcodes, or other supported readers. It also allows MiSTer Companion to launch games remotely from the ZapScripts tab."),
     ("migrate_sd", "scripts", "script", "migrate_sd", "migrate_sd", "theypsilon", "migrate_sd helps migrate an existing MiSTer SD card setup to another SD card, such as when moving to a larger card."),
     ("cifs_mount", "scripts", "script", "cifs_mount", "cifs_mount", "MiSTer community", "cifs_mount connects your MiSTer to a shared network folder, such as a NAS or PC share, so games and files can be accessed over your local network."),
@@ -461,6 +469,7 @@ SCRIPT_INSTALLERS = {
     "user_profiles": (install_or_update_user_profiles, install_or_update_user_profiles_local, uninstall_user_profiles, uninstall_user_profiles_local),
     "collection_launcher": (install_or_update_collection_launcher, install_or_update_collection_launcher_local, uninstall_collection_launcher, uninstall_collection_launcher_local),
     "mister_hifi": (install_or_update_mister_hifi, install_or_update_mister_hifi_local, uninstall_mister_hifi, uninstall_mister_hifi_local),
+    "disc_tools": (install_or_update_disc_tools, install_or_update_disc_tools_local, uninstall_disc_tools, uninstall_disc_tools_local),
     "zaparoo": (install_zaparoo, install_zaparoo_local, uninstall_zaparoo, uninstall_zaparoo_local),
     "migrate_sd": (install_migrate_sd, install_migrate_sd_local, uninstall_migrate_sd, uninstall_migrate_sd_local),
     "cifs_mount": (install_cifs_mount, install_cifs_mount_local, uninstall_cifs_mount, uninstall_cifs_mount_local),
@@ -1499,7 +1508,7 @@ def run_uninstall(item: dict, context: InstallCenterContext, log: Callable[[str]
                 uninstall_local(context.sd_root, force=force_downloader)
             else:
                 uninstall_online(context.connection, force=force_downloader)
-        elif handler in {"misterfin", "user_profiles", "collection_launcher", "mister_hifi"}:
+        elif handler in {"misterfin", "user_profiles", "collection_launcher", "mister_hifi", "disc_tools"}:
             if context.offline:
                 uninstall_local(context.sd_root, log, force=force_downloader)
             else:

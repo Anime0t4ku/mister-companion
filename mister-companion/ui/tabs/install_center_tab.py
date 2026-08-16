@@ -87,6 +87,7 @@ DOWNLOADER_UPDATE_HANDLERS = frozenset({
     "user_profiles",
     "collection_launcher",
     "mister_hifi",
+    "disc_tools",
     "solarus",
 })
 

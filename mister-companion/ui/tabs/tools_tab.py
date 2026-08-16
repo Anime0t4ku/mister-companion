@@ -1152,11 +1152,30 @@ class ToolsTab(QWidget):
         self.remove_chdman_button.setVisible(installed)
         if hasattr(self, "chd_extract_tool_status"):
             self.chd_extract_tool_status.setText(text)
+        if hasattr(self, "chd_extract_download_chdman_button"):
+            self.chd_extract_download_chdman_button.setVisible(not installed)
+        if hasattr(self, "chd_extract_remove_chdman_button"):
+            self.chd_extract_remove_chdman_button.setVisible(installed)
+
+    def _set_chdman_download_state(self, downloading):
+        self.download_chdman_button.setEnabled(not downloading)
+        self.chd_download_progress.setVisible(downloading)
+        if downloading:
+            self.chd_download_progress.setValue(0)
+        if hasattr(self, "chd_extract_download_chdman_button"):
+            self.chd_extract_download_chdman_button.setEnabled(not downloading)
+        if hasattr(self, "chd_extract_download_progress"):
+            self.chd_extract_download_progress.setVisible(downloading)
+            if downloading:
+                self.chd_extract_download_progress.setValue(0)
+
+    def _update_chdman_download_progress(self, value):
+        self.chd_download_progress.setValue(value)
+        if hasattr(self, "chd_extract_download_progress"):
+            self.chd_extract_download_progress.setValue(value)
 
     def _download_chdman_clicked(self):
-        self.download_chdman_button.setEnabled(False)
-        self.chd_download_progress.setValue(0)
-        self.chd_download_progress.setVisible(True)
+        self._set_chdman_download_state(True)
 
         def work(worker):
             def progress(done, total):
@@ -1164,19 +1183,17 @@ class ToolsTab(QWidget):
             return download_chdman(progress)
 
         self.worker = ToolWorker(work, self)
-        self.worker.progress.connect(self.chd_download_progress.setValue)
+        self.worker.progress.connect(self._update_chdman_download_progress)
         self.worker.succeeded.connect(self._chdman_downloaded)
         self.worker.failed.connect(self._chdman_download_failed)
         self.worker.start()
 
     def _chdman_downloaded(self, _result):
-        self.download_chdman_button.setEnabled(True)
-        self.chd_download_progress.setVisible(False)
+        self._set_chdman_download_state(False)
         self._refresh_chdman_status()
 
     def _chdman_download_failed(self, message):
-        self.download_chdman_button.setEnabled(True)
-        self.chd_download_progress.setVisible(False)
+        self._set_chdman_download_state(False)
         QMessageBox.critical(self, "CHDman", message)
 
     def _remove_chdman_clicked(self):
@@ -1385,8 +1402,19 @@ class ToolsTab(QWidget):
         title = QLabel("CHD Extractor")
         title.setStyleSheet("font-size: 20px; font-weight: 600;")
         layout.addWidget(title)
+        extract_tool_row = QHBoxLayout()
         self.chd_extract_tool_status = QLabel()
-        layout.addWidget(self.chd_extract_tool_status)
+        extract_tool_row.addWidget(self.chd_extract_tool_status, 1)
+        self.chd_extract_download_chdman_button = QPushButton("Download CHDman")
+        self.chd_extract_download_chdman_button.clicked.connect(self._download_chdman_clicked)
+        extract_tool_row.addWidget(self.chd_extract_download_chdman_button)
+        self.chd_extract_remove_chdman_button = QPushButton("Remove")
+        self.chd_extract_remove_chdman_button.clicked.connect(self._remove_chdman_clicked)
+        extract_tool_row.addWidget(self.chd_extract_remove_chdman_button)
+        layout.addLayout(extract_tool_row)
+        self.chd_extract_download_progress = QProgressBar()
+        self.chd_extract_download_progress.setVisible(False)
+        layout.addWidget(self.chd_extract_download_progress)
 
         input_row = QHBoxLayout()
         input_row.addWidget(QLabel("Add input from:"))
@@ -1546,7 +1574,7 @@ class ToolsTab(QWidget):
             QMessageBox.information(self, "CHD Extractor", "The queue is empty.")
             return
         if not has_chdman():
-            QMessageBox.warning(self, "CHD Extractor", "Download CHDman from CHD Converter first.")
+            QMessageBox.warning(self, "CHD Extractor", "Download CHDman first.")
             return
         self.chd_extract_start.setEnabled(False)
         self.chd_extract_log.clear()
