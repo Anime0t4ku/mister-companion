@@ -16,10 +16,10 @@ from pathlib import Path
 
 import requests
 
-from core.app_paths import generated_path
+from core.app_paths import app_base_dir, generated_path
 
 CDRDAO_VERSION = "1.2.6"
-CDRDAO_DIR = generated_path("tools", "cdrdao", default_root=Path(__file__).resolve().parent.parent)
+CDRDAO_DIR = generated_path("tools", "cdrdao", default_root=app_base_dir())
 CDRDAO_COMPANION_RELEASE_BASE = (
     "https://github.com/Anime0t4ku/cdrdao-Companion/releases/download/"
     f"cdrdao-{CDRDAO_VERSION}"
@@ -1421,18 +1421,16 @@ def create_iso9660_from_folder(source_folder: str | Path, output_iso: str | Path
                 staged.write_text(cue_text, encoding="utf-8", newline="")
                 rewritten_paths[cue_path] = staged
 
-        # Joliet carries the real on-disc filenames.  The ISO9660 path is only a
-        # fallback identifier required by pycdlib, so keep it deliberately short
-        # (8.3) instead of deriving it from the source filename.  This avoids
-        # pycdlib rejecting otherwise-valid MSU-1 / MD+ names with
-        # ``Input string too long!`` while preserving the filenames the cores use.
-        for index, path in enumerate(files, start=1):
+        for path in files:
+            cleaned = re.sub(r"[^A-Z0-9_]", "_", path.stem.upper())[:24] or "FILE"
             ext = re.sub(r"[^A-Z0-9]", "", path.suffix.upper().lstrip("."))[:3]
-            candidate = f"F{index:07d}" + (("." + ext) if ext else "")
-            if candidate in used_iso_names:
-                # The numeric alias above is unique for this flat folder, but keep
-                # the guard explicit in case the generation scheme changes later.
-                raise DiscToolError(f"Could not create a unique ISO9660 alias for {path.name}.")
+            base = cleaned + (("." + ext) if ext else "")
+            candidate = base
+            n = 1
+            while candidate in used_iso_names:
+                suffix = f"_{n}"
+                candidate = (cleaned[: max(1, 24 - len(suffix))] + suffix) + (("." + ext) if ext else "")
+                n += 1
             used_iso_names.add(candidate)
             iso_path = f"/{candidate};1"
             joliet_path = "/" + disc_names[path]

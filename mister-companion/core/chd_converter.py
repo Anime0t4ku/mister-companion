@@ -10,10 +10,10 @@ from pathlib import Path
 
 import requests
 
-from core.app_paths import generated_path
+from core.app_paths import app_base_dir, generated_path
 
 CHDMAN_VERSION = "0.289.0"
-CHDMAN_DIR = generated_path("tools", "chdman", default_root=Path(__file__).resolve().parent.parent)
+CHDMAN_DIR = generated_path("tools", "chdman", default_root=app_base_dir())
 
 
 class ChdmanError(RuntimeError):
