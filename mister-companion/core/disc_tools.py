@@ -26,6 +26,11 @@ CDRDAO_COMPANION_RELEASE_BASE = (
 )
 
 
+def _windows_no_console_kwargs() -> dict[str, int]:
+    """Hide external tool console windows in packaged/source Windows launches."""
+    if os.name == "nt":
+        return {"creationflags": subprocess.CREATE_NO_WINDOW}
+    return {}
 
 
 _BUILTIN_CDRDAO_PACKAGES = {
@@ -234,6 +239,7 @@ def _verify_cdrdao() -> None:
             proc = subprocess.run(
                 command, cwd=str(cdrdao_executable().parent), env=_tool_env(),
                 capture_output=True, text=True, errors="replace", timeout=15,
+                **_windows_no_console_kwargs(),
             )
         except (OSError, subprocess.SubprocessError):
             continue
@@ -816,6 +822,7 @@ def scan_drives() -> list[tuple[str, str]]:
     proc = subprocess.run(
         [str(cdrdao_executable()), "scanbus"], cwd=str(cdrdao_executable().parent), env=_tool_env(),
         capture_output=True, text=True, errors="replace", timeout=25,
+        **_windows_no_console_kwargs(),
     )
     text = (proc.stdout or "") + "\n" + (proc.stderr or "")
     results: list[tuple[str, str]] = []
@@ -866,6 +873,7 @@ def _run_streaming(command: list[str], log_callback=None, cwd: Path | None = Non
     proc = subprocess.Popen(
         command, cwd=str(cwd or cdrdao_executable().parent), env=_tool_env(), stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace",
+        **_windows_no_console_kwargs(),
     )
     assert proc.stdout is not None
     for line in proc.stdout:

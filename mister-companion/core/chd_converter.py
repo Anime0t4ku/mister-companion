@@ -20,6 +20,13 @@ class ChdmanError(RuntimeError):
     pass
 
 
+def _windows_no_console_kwargs() -> dict[str, int]:
+    """Hide CHDman console windows on Windows while retaining captured output."""
+    if os.name == "nt":
+        return {"creationflags": subprocess.CREATE_NO_WINDOW}
+    return {}
+
+
 def _platform_package() -> str:
     system = platform.system().lower()
     machine = platform.machine().lower()
@@ -169,6 +176,7 @@ def run_chdman(input_path: str | Path, output_path: str | Path, log_callback=Non
         text=True,
         encoding="utf-8",
         errors="replace",
+        **_windows_no_console_kwargs(),
     )
     assert proc.stdout is not None
     for line in proc.stdout:
@@ -219,6 +227,7 @@ def extract_chdman(input_path: str | Path, output_dir: str | Path, output_format
     proc = subprocess.Popen(
         command, cwd=str(CHDMAN_DIR), env=env, stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace",
+        **_windows_no_console_kwargs(),
     )
     assert proc.stdout is not None
     for line in proc.stdout:
