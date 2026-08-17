@@ -366,19 +366,28 @@ def _load_downloader_presence_markers(db_ids) -> dict[str, list[str]]:
     return result
 
 
-def _cheap_downloader_presence_online(connection, db_ids) -> dict:
-    markers_by_db = _load_downloader_presence_markers(db_ids)
+def _downloader_presence_paths(markers, *, sd_root=None) -> list[str | Path]:
+    """Resolve the exact same Downloader JSON markers for either filesystem backend."""
+    if sd_root is None:
+        return ["/media/fat/" + str(marker).lstrip("/") for marker in markers]
+    root = Path(sd_root).expanduser().resolve()
+    return [root / str(marker).lstrip("/") for marker in markers]
+
+
+def _cheap_downloader_presence_online(connection, db_ids, markers_by_db=None) -> dict:
+    # Marker selection is shared with offline mode; only the filesystem backend differs.
+    markers_by_db = markers_by_db or _load_downloader_presence_markers(db_ids)
     commands = []
     indexed_ids = []
     for db_id in db_ids:
         markers = markers_by_db.get(db_id) or []
         if not markers:
             continue
-        remote_paths = ["/media/fat/" + marker.lstrip("/") for marker in markers]
-        tests = " || ".join(f"[ -e {shlex.quote(path)} ]" for path in remote_paths)
+        remote_paths = _downloader_presence_paths(markers)
+        tests = " || ".join(f"[ -e {shlex.quote(str(path))} ]" for path in remote_paths)
         index = len(indexed_ids)
         indexed_ids.append(db_id)
-        commands.append(f"if {tests}; then printf 'MCDB\\t{index}\\t1\\n'; else printf 'MCDB\\t{index}\\t0\\n'; fi")
+        commands.append(f"if {tests}; then printf 'MCDB\t{index}\t1\n'; else printf 'MCDB\t{index}\t0\n'; fi")
     states = {db_id: {"installed": False, "update_available": False, "recognized": False} for db_id in db_ids}
     if not commands:
         return states
@@ -395,16 +404,19 @@ def _cheap_downloader_presence_online(connection, db_ids) -> dict:
     return states
 
 
-def _cheap_downloader_presence_local(sd_root, db_ids) -> dict:
-    root = Path(sd_root).expanduser().resolve()
-    markers_by_db = _load_downloader_presence_markers(db_ids)
+def _cheap_downloader_presence_local(sd_root, db_ids, markers_by_db=None) -> dict:
+    # This deliberately mirrors _cheap_downloader_presence_online: same JSON-derived
+    # marker set and "any marker exists" rule, with /media/fat replaced by the
+    # selected SD-card root.
+    markers_by_db = markers_by_db or _load_downloader_presence_markers(db_ids)
     states = {}
     for db_id in db_ids:
         markers = markers_by_db.get(db_id) or []
         if not markers:
             states[db_id] = {"installed": False, "update_available": False, "recognized": False}
             continue
-        installed = any((root / marker).exists() for marker in markers)
+        local_paths = _downloader_presence_paths(markers, sd_root=sd_root)
+        installed = any(Path(path).exists() for path in local_paths)
         states[db_id] = {"installed": installed, "update_available": False, "recognized": True}
     return states
 

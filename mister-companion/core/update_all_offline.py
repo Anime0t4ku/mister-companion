@@ -27,6 +27,7 @@ ProgressCallback = Callable[[str], None]
 
 
 _DOWNLOADER_URL = "https://github.com/MiSTer-devel/Downloader_MiSTer/releases/download/latest/downloader.zip"
+_DOWNLOADER_REFRESH_SECONDS = 300
 
 
 @dataclass
@@ -243,15 +244,21 @@ class UpdateAllOfflineRunner:
 
         old_env_values: dict[str, str | None] = {
             "PC_LAUNCHER": os.environ.get("PC_LAUNCHER"),
-            "PC_LAUNCHER_NO_WAIT": os.environ.get("PC_LAUNCHER_NO_WAIT"),
-            "DOWNLOADER_LAUNCHER": os.environ.get("DOWNLOADER_LAUNCHER"),
-            "DOWNLOADER_SOURCE": os.environ.get("DOWNLOADER_SOURCE"),
+            "DOWNLOADER_OUTPUT": os.environ.get("DOWNLOADER_OUTPUT"),
         }
 
+        # Match the official PC launcher contract. The official launcher only
+        # tells Downloader where the launcher lives; Downloader derives the PC
+        # base path from that location. Avoid injecting MiSTer-launcher variables
+        # that the PC launcher itself does not set.
         os.environ["PC_LAUNCHER"] = str(launcher_path)
-        os.environ["PC_LAUNCHER_NO_WAIT"] = "1"
-        os.environ["DOWNLOADER_LAUNCHER"] = str(launcher_path)
-        os.environ["DOWNLOADER_SOURCE"] = str(downloader_path)
+
+        # Check mode is consumed programmatically by Install Center. This is an
+        # official Downloader output mode and gives us per-database check events.
+        if "--check" in self.downloader_args or "-c" in self.downloader_args:
+            os.environ["DOWNLOADER_OUTPUT"] = "dlp1-ltsv"
+        else:
+            os.environ.pop("DOWNLOADER_OUTPUT", None)
 
         sys.argv = [str(downloader_path), *self.downloader_args]
 
@@ -319,21 +326,36 @@ class UpdateAllOfflineRunner:
     def _fetch_downloader_zip(self) -> Path:
         target = self.cache_dir / "downloader.zip"
 
-        if target.exists():
-            if self._is_valid_zip(target):
-                self._log(f"Using cached official Downloader: {target}")
-                return target
-
-            self._log("Cached official Downloader ZIP is invalid. Removing it...")
+        # The official PC Launcher fetches the current Downloader build whenever
+        # it starts. Companion used to keep a valid cached ZIP forever, which can
+        # leave SD-card mode running an obsolete Downloader long after the
+        # official launcher has moved on. Refresh periodically, while allowing
+        # closely related calls (for example --version followed by --check) to
+        # reuse the same freshly downloaded build.
+        cache_valid = self._is_valid_zip(target)
+        cache_fresh = False
+        if cache_valid:
             try:
-                target.unlink()
-            except FileNotFoundError:
-                pass
-            except Exception as exc:
-                raise RuntimeError(f"Could not remove invalid cached Downloader ZIP: {exc}") from exc
+                cache_fresh = (time.time() - target.stat().st_mtime) < _DOWNLOADER_REFRESH_SECONDS
+            except OSError:
+                cache_fresh = False
 
-        self._log(f"Downloading official Downloader: {_DOWNLOADER_URL}")
-        self._download_to_file(_DOWNLOADER_URL, target)
+        if cache_fresh:
+            self._log(f"Using fresh official Downloader: {target}")
+            return target
+
+        self._log(f"Refreshing official Downloader: {_DOWNLOADER_URL}")
+        try:
+            self._download_to_file(_DOWNLOADER_URL, target)
+        except Exception:
+            # A previously downloaded official build is still preferable to
+            # making offline Install Center unusable because the refresh endpoint
+            # had a transient failure. Update checks themselves can then surface
+            # any network/database error normally.
+            if cache_valid:
+                self._log("Could not refresh Downloader; falling back to cached official build.")
+                return target
+            raise
 
         if not self._is_valid_zip(target):
             try:
@@ -342,7 +364,6 @@ class UpdateAllOfflineRunner:
                 pass
             except Exception:
                 pass
-
             raise RuntimeError("Downloaded official Downloader ZIP is invalid or incomplete.")
 
         return target

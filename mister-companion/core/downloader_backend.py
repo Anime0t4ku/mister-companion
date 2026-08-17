@@ -517,9 +517,11 @@ def check_named_database_online(connection, db_id: str, log=None):
 
 
 def check_named_database_local(sd_root, db_id: str, log=None):
-    version = get_downloader_version_local(sd_root)
-    args = ["--check", db_id] if _supports_filtered_check(version) else ["--check"]
-    result = run_downloader_offline(sd_root, args=args, progress=log)
+    # PC-launcher/offline mode must check the SD card's real Downloader
+    # configuration as a whole.  Do not pass Install Center database IDs on
+    # the command line: let Downloader discover every configured database from
+    # downloader.ini/drop-ins, then select this database from its result.
+    result = run_downloader_offline(sd_root, args=["--check"], progress=log)
     output = "\n".join(result.output_lines)
     if not result.ok:
         raise DownloaderCommandError(result.errors[-1] if result.errors else "Offline Downloader check failed.", output, unsupported=_unsupported(output))
@@ -534,13 +536,14 @@ def _inspect_single_database_online(connection, db_id: str, version, log=None):
     return parse_named_check_state(output, db_id, allow_unscoped=_supports_filtered_check(version))
 
 
-def _inspect_single_database_local(sd_root, db_id: str, version, log=None):
-    args = ["--check", db_id] if _supports_filtered_check(version) else ["--check"]
-    result = run_downloader_offline(sd_root, args=args, progress=log)
+def _inspect_single_database_local(sd_root, db_id: str, version=None, log=None):
+    # Kept for callers that need a single state, but offline mode intentionally
+    # performs a global PC-launcher check and maps the requested ID afterward.
+    result = run_downloader_offline(sd_root, args=["--check"], progress=log)
     output = "\n".join(result.output_lines)
     if not result.ok:
         raise DownloaderCommandError(result.errors[-1] if result.errors else "Offline Downloader check failed.", output, unsupported=_unsupported(output))
-    return parse_named_check_state(output, db_id, allow_unscoped=_supports_filtered_check(version))
+    return parse_named_check_state(output, db_id)
 
 
 def inspect_named_databases_online(connection, db_ids, log=None):
@@ -562,21 +565,22 @@ def inspect_named_databases_online(connection, db_ids, log=None):
 
 
 def inspect_named_databases_local(sd_root, db_ids, log=None):
-    """Inspect several databases with one offline Downloader invocation, retrying only ambiguous results individually."""
+    """Inspect SD-card databases with one global PC-launcher check.
+
+    Offline mode deliberately does not pass database IDs to Downloader.  The
+    SD card's downloader.ini files are the source of truth for which databases
+    exist.  We run one plain ``--check`` and map Downloader's per-database
+    output back to the IDs requested by Companion.
+    """
     ids = list(dict.fromkeys(str(db_id).strip() for db_id in db_ids if str(db_id).strip()))
     if not ids:
         return {}
-    version = get_downloader_version_local(sd_root)
-    args = ["--check", *ids] if _supports_filtered_check(version) else ["--check"]
-    result = run_downloader_offline(sd_root, args=args, progress=log)
+    result = run_downloader_offline(sd_root, args=["--check"], progress=log)
     output = "\n".join(result.output_lines)
+    states = {db_id: parse_named_check_state(output, db_id) for db_id in ids}
+
     if not result.ok:
         raise DownloaderCommandError(result.errors[-1] if result.errors else "Offline Downloader check failed.", output, unsupported=_unsupported(output))
-    states = {db_id: parse_named_check_state(output, db_id) for db_id in ids}
-    if _supports_filtered_check(version):
-        for db_id, state in list(states.items()):
-            if not state.get("recognized"):
-                states[db_id] = _inspect_single_database_local(sd_root, db_id, version, log=None)
     return states
 
 
@@ -594,6 +598,30 @@ def parse_named_check_state(output: str, db_id: str, allow_unscoped: bool = Fals
     if short_id:
         aliases.add(short_id)
     normalized_short = re.sub(r"[^a-z0-9]+", "", short_id)
+
+    # Downloader's PC launcher can emit stable DLP1/LTSV events. Prefer those
+    # when present; this is what offline Install Center checks request.
+    machine_events = []
+    for raw_line in (output or "").splitlines():
+        if not raw_line.startswith("DLP1\t"):
+            continue
+        fields = {}
+        for token in raw_line.split("\t")[1:]:
+            if ":" in token:
+                key, value = token.split(":", 1)
+                fields[key.strip().lower()] = value.strip()
+        event = fields.get("event", "").lower()
+        event_db = fields.get("db", "").lower()
+        if event_db and (event_db in aliases or re.sub(r"[^a-z0-9]+", "", event_db.rsplit("/", 1)[-1]) == normalized_short):
+            machine_events.append(event)
+
+    if machine_events:
+        if "check_db_need_update" in machine_events:
+            return {"installed": True, "update_available": True, "recognized": True}
+        if "check_db_up_to_date" in machine_events:
+            return {"installed": True, "update_available": False, "recognized": True}
+        if "check_db_fail" in machine_events:
+            return {"installed": True, "update_available": False, "recognized": False}
 
     lines = [(line or "").lower() for line in (output or "").splitlines()]
     relevant = []

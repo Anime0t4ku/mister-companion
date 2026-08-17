@@ -629,6 +629,9 @@ class DeviceTab(QWidget):
         self.connected_status_label.setText("● Connected")
         self.connected_status_label.setStyleSheet("font-weight: bold; color: #00aa00;")
         self.disconnect_button.setText("Disconnect")
+        # Offline SD mode can leave this button disabled. A successful online
+        # connection must always restore the normal Disconnect action.
+        self.disconnect_button.setEnabled(True)
         self.device_actions_group.setVisible(True)
         self.update_connected_identity()
         self.refresh_button.setEnabled(True)

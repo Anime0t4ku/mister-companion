@@ -1495,6 +1495,7 @@ class InstallCenterTab(QWidget):
         self.output.setVisible(False)
         main_layout.addWidget(self.output)
         self.global_check_in_progress = False
+        self._pending_status_refresh = False
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -1514,14 +1515,26 @@ class InstallCenterTab(QWidget):
 
     def refresh_status(self, lightweight=False, force_images=False):
         if self.load_worker is not None and self.load_worker.isRunning():
+            # Do not lose a post-install/mode-change status refresh simply because
+            # the previous load is still finishing.
+            self._pending_status_refresh = True
             return
 
+        self._pending_status_refresh = False
         self.status_label.setText("Loading Install Center in the background...")
         self.status_label.setStyleSheet("color: #1e88e5; font-weight: bold;")
         self.refresh_button.setEnabled(False)
         self.global_check_button.setEnabled(False)
 
-        self.load_worker = InstallCenterLoadWorker(self.main_window, check_latest=False, force_images=force_images)
+        # In offline mode the install-state scan is the important part. Reuse cached
+        # thumbnails so image networking cannot keep the status worker alive after
+        # the SD-card state has already been determined.
+        self.load_worker = InstallCenterLoadWorker(
+            self.main_window,
+            check_latest=False,
+            force_images=force_images,
+            skip_image_download=self.is_offline_mode(),
+        )
         self.load_worker.result.connect(self.on_load_result)
         self.load_worker.error.connect(self.on_load_error)
         self.load_worker.finished.connect(self.on_load_finished)
@@ -1625,6 +1638,9 @@ class InstallCenterTab(QWidget):
         self.load_worker = None
         self.refresh_button.setEnabled(True)
         self.global_check_button.setEnabled(True)
+        if self._pending_status_refresh:
+            self._pending_status_refresh = False
+            QTimer.singleShot(0, lambda: self.refresh_status(lightweight=True))
 
 
     def rebuild_status_filter(self):
