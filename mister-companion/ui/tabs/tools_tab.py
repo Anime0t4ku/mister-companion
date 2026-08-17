@@ -1107,6 +1107,10 @@ class ToolsTab(QWidget):
         output_row.addWidget(browse_output)
         layout.addLayout(output_row)
 
+        self.chd_remove_source = QCheckBox("Remove BIN/CUE after successful conversion")
+        self.chd_remove_source.setToolTip("For CUE jobs, remove the CUE and only the BIN files referenced by that CUE after the CHD has been created successfully.")
+        layout.addWidget(self.chd_remove_source)
+
         self.chd_table = QTableWidget(0, 5)
         self.chd_table.setHorizontalHeaderLabels(["Input", "Source", "Output", "Destination", "Status"])
         self.chd_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -1303,6 +1307,72 @@ class ToolsTab(QWidget):
                 sftp.close()
         return descriptor
 
+    def _remove_local_cue_sources(self, cue_path, worker=None):
+        cue_path = Path(cue_path)
+        refs = descriptor_references(cue_path)
+        for ref in refs:
+            ref_path = Path(ref.replace("\\", os.sep))
+            if ref_path.suffix.lower() != ".bin":
+                continue
+            target = ref_path if ref_path.is_absolute() else cue_path.parent / ref_path
+            if target.exists() and target.is_file():
+                try:
+                    target.unlink()
+                    if worker:
+                        worker.status.emit(f"LOG:Removed source BIN: {target.name}")
+                except OSError as exc:
+                    if worker:
+                        worker.status.emit(f"LOG:Could not remove source BIN {target.name}: {exc}")
+        if cue_path.exists() and cue_path.is_file():
+            try:
+                cue_path.unlink()
+                if worker:
+                    worker.status.emit(f"LOG:Removed source CUE: {cue_path.name}")
+            except OSError as exc:
+                if worker:
+                    worker.status.emit(f"LOG:Could not remove source CUE {cue_path.name}: {exc}")
+
+    def _remove_remote_cue_sources(self, remote_cue, local_cue, worker=None):
+        refs = descriptor_references(local_cue)
+        remote_dir = posixpath.dirname(remote_cue)
+        targets = []
+        for ref in refs:
+            normalized = ref.replace("\\", "/")
+            if PurePosixPath(normalized).suffix.lower() == ".bin":
+                targets.append(posixpath.normpath(posixpath.join(remote_dir, normalized)))
+        targets.append(remote_cue)
+        sftp = self.connection.client.open_sftp()
+        try:
+            for target in targets:
+                try:
+                    sftp.remove(target)
+                    if worker:
+                        worker.status.emit(f"LOG:Removed source: {PurePosixPath(target).name}")
+                except FileNotFoundError:
+                    pass
+                except OSError as exc:
+                    if worker:
+                        worker.status.emit(f"LOG:Could not remove source {PurePosixPath(target).name}: {exc}")
+        finally:
+            sftp.close()
+
+    def _remove_chd_source(self, source_path, source_location, worker=None):
+        name = PurePosixPath(str(source_path).replace("\\", "/")).name
+        try:
+            if source_location == REMOTE:
+                sftp = self.connection.client.open_sftp()
+                try:
+                    sftp.remove(source_path)
+                finally:
+                    sftp.close()
+            else:
+                Path(source_path).unlink()
+            if worker:
+                worker.status.emit(f"LOG:Removed source CHD: {name}")
+        except OSError as exc:
+            if worker:
+                worker.status.emit(f"LOG:Could not remove source CHD {name}: {exc}")
+
     def _chd_start_queue(self):
         if not self.chd_jobs:
             QMessageBox.information(self, "CHD Converter", "The queue is empty.")
@@ -1311,6 +1381,7 @@ class ToolsTab(QWidget):
             QMessageBox.warning(self, "CHD Converter", "Download CHDman first.")
             return
         self.chd_start.setEnabled(False)
+        remove_sources = self.chd_remove_source.isChecked()
         self.chd_log.clear()
         self.chd_transfer_progress.setValue(0)
         has_remote_transfer = any(job["source"] == REMOTE or job["destination"] == REMOTE for job in self.chd_jobs if job["status"] != "Completed")
@@ -1348,6 +1419,11 @@ class ToolsTab(QWidget):
                             remote_dir = posixpath.dirname(job["output"])
                             for output in outputs:
                                 self._upload_remote_file(output, remote_dir, worker, target_name=output.name)
+                        if remove_sources and PurePosixPath(str(job["input"]).replace("\\", "/")).suffix.lower() == ".cue":
+                            if job["source"] == REMOTE:
+                                self._remove_remote_cue_sources(job["input"], local_input, worker)
+                            else:
+                                self._remove_local_cue_sources(job["input"], worker)
                     job["status"] = "Completed"
                     worker.status.emit(f"TABLE:{index}:Completed")
                 except Exception as exc:
@@ -1447,6 +1523,10 @@ class ToolsTab(QWidget):
         browse.clicked.connect(self._chd_extract_browse_output)
         output_row.addWidget(browse)
         layout.addLayout(output_row)
+
+        self.chd_extract_remove_source = QCheckBox("Remove CHD after successful extraction")
+        self.chd_extract_remove_source.setToolTip("Remove the source CHD only after all extracted files have been written successfully.")
+        layout.addWidget(self.chd_extract_remove_source)
 
         self.chd_extract_table = QTableWidget(0, 6)
         self.chd_extract_table.setHorizontalHeaderLabels(["Input", "Source", "Format", "Output", "Destination", "Status"])
@@ -1577,6 +1657,7 @@ class ToolsTab(QWidget):
             QMessageBox.warning(self, "CHD Extractor", "Download CHDman first.")
             return
         self.chd_extract_start.setEnabled(False)
+        remove_sources = self.chd_extract_remove_source.isChecked()
         self.chd_extract_log.clear()
         self.chd_extract_progress.setValue(0)
         has_remote_transfer = any(job["source"] == REMOTE or job["destination"] == REMOTE for job in self.chd_extract_jobs if job["status"] != "Completed")
@@ -1613,6 +1694,8 @@ class ToolsTab(QWidget):
                                     raise FileExistsError(f"Output already exists: {target}")
                             for output in outputs:
                                 shutil.copy2(output, destination_dir / output.name)
+                        if remove_sources:
+                            self._remove_chd_source(job["input"], job["source"], worker)
                     worker.status.emit(f"TABLE:{index}:Completed")
                 except Exception as exc:
                     failures += 1
