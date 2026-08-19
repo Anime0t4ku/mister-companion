@@ -1204,13 +1204,90 @@ def _run_cdrdao_write_with_compatibility(command: list[str], output_callback, cw
     _run_streaming(retry_command, output_callback, cwd)
 
 
-def _cdrdao_accepts_cue(cue: Path) -> tuple[bool, list[str]]:
-    """Preflight a CUE with cdrdao without touching the writable disc.
+def _cue_needs_audio_swap(cue: Path) -> bool:
+    """Return True when CD-DA tracks are stored as raw BINARY sectors.
 
-    cdrdao 1.2+ contains the cue2toc parser internally. ``show-toc`` is a
-    parser/readability check, so it lets us safely choose between native CUE
-    handling and the legacy standalone cue2toc conversion before a write starts.
+    WAVE audio is already interpreted as little-endian by cdrdao and must not
+    be forced through --swap. Standard game CUE/BIN audio lives under a BINARY
+    FILE entry and does need the swap.
     """
+    try:
+        text = cue.read_text(encoding="utf-8-sig", errors="replace")
+    except OSError:
+        return False
+    file_kind = ""
+    for line in text.splitlines():
+        match = re.match(r'(?i)^\s*FILE\s+(?:"[^"]+"|\S+)\s+(\S+)', line)
+        if match:
+            file_kind = match.group(1).upper()
+            continue
+        if re.match(r"(?i)^\s*TRACK\s+\d+\s+AUDIO(?:\s|$)", line):
+            if file_kind == "BINARY":
+                return True
+    return False
+
+
+def _cue_single_binary_file(cue: Path) -> Path | None:
+    """Return the single BINARY file referenced by a CUE, if it has exactly one."""
+    try:
+        text = cue.read_text(encoding="utf-8-sig", errors="replace")
+    except OSError:
+        return None
+    entries = re.findall(
+        r'(?im)^\s*FILE\s+(?:"([^"]+)"|(\S+))\s+(\S+)\s*$',
+        text,
+    )
+    if len(entries) != 1:
+        return None
+    quoted, plain, kind = entries[0]
+    if kind.upper() != "BINARY":
+        return None
+    source = Path(quoted or plain)
+    if not source.is_absolute():
+        source = cue.parent / source
+    return source if source.is_file() else None
+
+
+def _stage_native_single_bin_cue(cue: Path, temp_dir: Path) -> Path | None:
+    """Stage a single-BIN CUE for cdrdao's native CUE parser.
+
+    cdrdao's native parser supports cuts within a binary image, unlike the
+    standalone cue2toc utility, but it expects the BIN to share the CUE's base
+    name. Stage an image.cue/image.bin pair without modifying the user's files.
+    """
+    source_bin = _cue_single_binary_file(cue)
+    if source_bin is None:
+        return None
+    staged_cue = temp_dir / "image.cue"
+    staged_bin = temp_dir / "image.bin"
+
+    # cdrdao's native CUE parser resolves the BIN from the CUE basename
+    # (image.cue -> image.bin). Rewrite the one FILE statement to match
+    # the staged filename; copying the original CUE unchanged would make
+    # cdrdao look for the user's original BIN name inside this temp folder
+    # and incorrectly fall back to cue2toc.
+    text = cue.read_text(encoding="utf-8-sig", errors="replace")
+    text, count = re.subn(
+        r'(?im)^\s*FILE\s+(?:"[^"]+"|\S+)\s+BINARY\s*$',
+        'FILE "image.bin" BINARY',
+        text,
+        count=1,
+    )
+    if count != 1:
+        return None
+    staged_cue.write_text(text, encoding="utf-8", newline="\n")
+
+    try:
+        os.link(source_bin, staged_bin)
+    except OSError:
+        # Hard links can fail across filesystems or on some removable/network
+        # volumes. Copying is slower but keeps the operation automatic.
+        shutil.copy2(source_bin, staged_bin)
+    return staged_cue
+
+
+def _cdrdao_accepts_cue(cue: Path) -> tuple[bool, list[str]]:
+    """Preflight a CUE with cdrdao without touching the writable disc."""
     command = [str(cdrdao_executable()), "show-toc", str(cue)]
     proc = subprocess.run(
         command,
@@ -1253,31 +1330,42 @@ def burn_cue(device: str, cue_path: str | Path, speed: int | None = None, log_ca
         progress_callback(0, "")
     _linux_unmount_optical(device)
 
-    # Prefer cdrdao's native CUE parser. This avoids making the standalone
-    # cue2toc utility a mandatory compatibility bottleneck for game images.
-    # Preflight with show-toc first so a parser/layout failure is detected
-    # before any write command can touch the disc.
-    direct_cue_ok, direct_cue_output = _cdrdao_accepts_cue(cue)
+    needs_audio_swap = _cue_needs_audio_swap(cue)
 
-    with tempfile.TemporaryDirectory(prefix="mister-companion-burn-") as tmp:
-        burn_description: Path = cue
-        burn_cwd = cue.parent
+    # Native cdrdao CUE handling can represent cuts inside a shared BIN that
+    # standalone cue2toc cannot. For a single-BIN image, stage a matching
+    # image.cue/image.bin pair so cdrdao's native parser can always find it.
+    # Multi-file CUEs fall back to cue2toc, which preserves their FILE layout.
+    try:
+        temp_context = tempfile.TemporaryDirectory(prefix="mister-companion-burn-", dir=str(cue.parent))
+    except OSError:
+        temp_context = tempfile.TemporaryDirectory(prefix="mister-companion-burn-")
+
+    with temp_context as tmp:
+        tmp_dir = Path(tmp)
+        staged_cue = _stage_native_single_bin_cue(cue, tmp_dir)
+        native_cue = staged_cue or cue
+        direct_cue_ok, direct_cue_output = _cdrdao_accepts_cue(native_cue)
+
+        burn_description: Path = native_cue if direct_cue_ok else cue
+        burn_cwd = native_cue.parent if direct_cue_ok else cue.parent
 
         if direct_cue_ok:
             if log_callback:
-                log_callback("CUE accepted by cdrdao. Burning directly from CUE/BIN...")
+                if staged_cue is not None:
+                    log_callback("Preparing CUE/BIN image for direct cdrdao burning...")
+                else:
+                    log_callback("CUE accepted by cdrdao. Burning directly...")
         else:
             if log_callback:
                 log_callback("Direct CUE parsing was not accepted. Trying cue2toc compatibility conversion...")
-            toc = Path(tmp) / "image.toc"
+            toc = tmp_dir / "image.toc"
             conversion_output: list[str] = []
 
             def capture_conversion(line: str) -> None:
                 conversion_output.append(line.rstrip())
 
             try:
-                # Do not use -q here: if compatibility conversion also fails,
-                # retain the real parser diagnostics instead of only exit code 1.
                 _run_streaming(
                     [str(cue2toc_executable()), "-o", str(toc), str(cue)],
                     capture_conversion,
@@ -1300,6 +1388,11 @@ def burn_cue(device: str, cue_path: str | Path, speed: int | None = None, log_ca
         command = [str(cdrdao_executable()), "write", "--device", device]
         if speed:
             command += ["--speed", str(speed)]
+        if needs_audio_swap:
+            # Standard raw CUE/BIN CD-DA is little-endian. cdrdao's raw TOC/CUE
+            # audio input defaults to big-endian; --swap corrects AUDIO samples
+            # only. Data-track sectors are never byte-swapped.
+            command.append("--swap")
         command.append(str(burn_description))
         state = {"percent": 0}
 
@@ -1314,7 +1407,6 @@ def burn_cue(device: str, cue_path: str | Path, speed: int | None = None, log_ca
         progress_callback(100, "")
     if log_callback:
         log_callback("Disc written successfully.")
-
 
 
 _JOLIET_COMPONENT_LIMIT = 64
