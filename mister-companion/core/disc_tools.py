@@ -1204,6 +1204,29 @@ def _run_cdrdao_write_with_compatibility(command: list[str], output_callback, cw
     _run_streaming(retry_command, output_callback, cwd)
 
 
+def _cdrdao_accepts_cue(cue: Path) -> tuple[bool, list[str]]:
+    """Preflight a CUE with cdrdao without touching the writable disc.
+
+    cdrdao 1.2+ contains the cue2toc parser internally. ``show-toc`` is a
+    parser/readability check, so it lets us safely choose between native CUE
+    handling and the legacy standalone cue2toc conversion before a write starts.
+    """
+    command = [str(cdrdao_executable()), "show-toc", str(cue)]
+    proc = subprocess.run(
+        command,
+        cwd=str(cue.parent),
+        env=_tool_env(),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        **_windows_no_console_kwargs(),
+    )
+    lines = (proc.stdout or "").splitlines()
+    return proc.returncode == 0, lines
+
+
 def burn_cue(device: str, cue_path: str | Path, speed: int | None = None, log_callback=None, progress_callback=None) -> None:
     cue = Path(cue_path)
     if _is_macos():
@@ -1229,20 +1252,64 @@ def burn_cue(device: str, cue_path: str | Path, speed: int | None = None, log_ca
     if progress_callback:
         progress_callback(0, "")
     _linux_unmount_optical(device)
+
+    # Prefer cdrdao's native CUE parser. This avoids making the standalone
+    # cue2toc utility a mandatory compatibility bottleneck for game images.
+    # Preflight with show-toc first so a parser/layout failure is detected
+    # before any write command can touch the disc.
+    direct_cue_ok, direct_cue_output = _cdrdao_accepts_cue(cue)
+
     with tempfile.TemporaryDirectory(prefix="mister-companion-burn-") as tmp:
-        toc = Path(tmp) / "image.toc"
-        _run_streaming([str(cue2toc_executable()), "-q", "-o", str(toc), str(cue)], log_callback, cue.parent)
+        burn_description: Path = cue
+        burn_cwd = cue.parent
+
+        if direct_cue_ok:
+            if log_callback:
+                log_callback("CUE accepted by cdrdao. Burning directly from CUE/BIN...")
+        else:
+            if log_callback:
+                log_callback("Direct CUE parsing was not accepted. Trying cue2toc compatibility conversion...")
+            toc = Path(tmp) / "image.toc"
+            conversion_output: list[str] = []
+
+            def capture_conversion(line: str) -> None:
+                conversion_output.append(line.rstrip())
+
+            try:
+                # Do not use -q here: if compatibility conversion also fails,
+                # retain the real parser diagnostics instead of only exit code 1.
+                _run_streaming(
+                    [str(cue2toc_executable()), "-o", str(toc), str(cue)],
+                    capture_conversion,
+                    cue.parent,
+                )
+            except DiscToolError as exc:
+                details = [line for line in conversion_output if line.strip()]
+                if not details:
+                    details = [line for line in direct_cue_output if line.strip()]
+                if details:
+                    tail = "\n".join(details[-12:])
+                    raise DiscToolError(f"Unable to parse this CUE image for burning.\n{tail}") from exc
+                raise
+
+            burn_description = toc
+            burn_cwd = cue.parent
+            if log_callback:
+                log_callback("CUE converted successfully. Continuing with compatibility TOC...")
+
         command = [str(cdrdao_executable()), "write", "--device", device]
         if speed:
             command += ["--speed", str(speed)]
-        command.append(str(toc))
+        command.append(str(burn_description))
         state = {"percent": 0}
+
         def output(line):
             m = re.search(r"Wrote\s+(\d+(?:\.\d+)?)\s+of\s+(\d+(?:\.\d+)?)\s+MB", line, re.IGNORECASE)
             if m and float(m.group(2)) > 0:
                 state["percent"] = max(0, min(100, int(float(m.group(1)) * 100 / float(m.group(2)))))
             _burn_output_handler(line, log_callback, progress_callback, state)
-        _run_cdrdao_write_with_compatibility(command, output, cue.parent)
+
+        _run_cdrdao_write_with_compatibility(command, output, burn_cwd)
     if progress_callback:
         progress_callback(100, "")
     if log_callback:
