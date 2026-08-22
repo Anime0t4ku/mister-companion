@@ -288,6 +288,17 @@ SUPPORTED_SYSTEMS = {
         "label": "Neo Geo Pocket",
         "screenscraper_id": 25,
         "extensions": [".ngp", ".ngc", ".zip", ".7z"],
+        "extension_screenscraper_ids": {".ngc": 82},
+    },
+    "NeoGeoPocket-Color": {
+        "label": "Neo Geo Pocket Color",
+        "screenscraper_id": 82,
+        "extensions": [".ngc", ".zip", ".7z"],
+    },
+    "NGPC": {
+        "label": "Neo Geo Pocket Color",
+        "screenscraper_id": 82,
+        "extensions": [".ngc", ".zip", ".7z"],
     },
     "NES": {
         "label": "NES",

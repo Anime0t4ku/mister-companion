@@ -22,8 +22,8 @@ CUSTOM_RESOLUTION_VALUE = "Custom Resolution"
 
 SCALING_MAP = {
     "0": "Disabled",
-    "1": "Low Latency",
-    "2": "Exact Refresh",
+    "1": "Exact Refresh",
+    "2": "Low Latency",
 }
 
 SCALING_REVERSE_MAP = {value: key for key, value in SCALING_MAP.items()}
@@ -346,7 +346,7 @@ def easy_mode_values_from_ini_settings(settings):
 
     values["scaling"] = SCALING_MAP.get(
         settings.get("vsync_adjust", "1").strip(),
-        "Low Latency",
+        "Exact Refresh",
     )
 
     dvi = settings.get("dvi_mode", "0").strip()

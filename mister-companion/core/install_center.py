@@ -162,6 +162,12 @@ from core.scripts_misterfin import (
     uninstall_misterfin,
     uninstall_misterfin_local,
 )
+from core.scripts_mister_monitor import (
+    install_or_update_mister_monitor,
+    install_or_update_mister_monitor_local,
+    uninstall_mister_monitor,
+    uninstall_mister_monitor_local,
+)
 from core.scripts_user_profiles import (
     install_or_update_user_profiles,
     install_or_update_user_profiles_local,
@@ -247,6 +253,7 @@ DOWNLOADER_HANDLER_DATABASES = {
     "megavgmdrive": "MultiDatabases/megavgmdrive",
     "physical_disc_cores": "MultiDatabases/physical-disc",
     "misterfin": "MultiDatabases/misterfin",
+    "mister_monitor": "chipster6502/MiSTer_monitor_DB",
     "user_profiles": "BertSVG/MiSTer_FPGA_User_Profiles",
     "collection_launcher": "MultiDatabases/collection-launcher",
     "mister_hifi": "MultiDatabases/mister-hifi",
@@ -269,6 +276,8 @@ def _downloader_database_url(db_id: str) -> str | None:
         return "https://raw.githubusercontent.com/theypsilon/RetroAchievementsDB_MiSTer/db/db.json.zip"
     if db_id == "BertSVG/MiSTer_FPGA_User_Profiles":
         return "https://raw.githubusercontent.com/BertSVG/MiSTer_FPGA_User_Profiles/db/db.json.zip"
+    if db_id == "chipster6502/MiSTer_monitor_DB":
+        return "https://raw.githubusercontent.com/chipster6502/MiSTer_monitor_DB/db/db.json.zip"
     return None
 
 
@@ -431,6 +440,7 @@ CATEGORY_FALLBACK = [
 FALLBACK_ITEMS = [
     ("update_all", "scripts", "script", "update_all", "update_all", "theypsilon", "update_all keeps your MiSTer FPGA setup up to date by downloading cores, scripts, databases, tools, and optional community content from configured update sources."),
     ("misterfin", "scripts", "script", "misterfin", "MiSTerFin", "MiSTerFin project", "MiSTerFin is a Jellyfin media client for MiSTer. It runs as ARM software from the Scripts menu on the standard menu core, uses the regular MiSTer framebuffer, and plays server-transcoded media through its bundled mplayer-arm."),
+    ("mister_monitor", "scripts", "script", "mister_monitor", "MiSTer Monitor", "chipster6502", "Displays real-time game artwork and system information from MiSTer on supported ESP32-based screens."),
     ("user_profiles", "scripts", "script", "user_profiles", "User Profiles", "BertSVG", "Adds user profiles to the MiSTer FPGA Project."),
     ("collection_launcher", "scripts", "script", "collection_launcher", "Collection Launcher", "Anime0t4ku", "Launch a GUI for user defined Game Collections."),
     ("mister_hifi", "scripts", "script", "mister_hifi", "MiSTer Hi-Fi", "Anime0t4ku", "A Music Player with lossless audio formats support for MiSTer FPGA."),
@@ -478,6 +488,7 @@ SCRIPT_STATUS_ATTRS = {
 SCRIPT_INSTALLERS = {
     "update_all": (install_update_all, install_update_all_local, uninstall_update_all, uninstall_update_all_local),
     "misterfin": (install_or_update_misterfin, install_or_update_misterfin_local, uninstall_misterfin, uninstall_misterfin_local),
+    "mister_monitor": (install_or_update_mister_monitor, install_or_update_mister_monitor_local, uninstall_mister_monitor, uninstall_mister_monitor_local),
     "user_profiles": (install_or_update_user_profiles, install_or_update_user_profiles_local, uninstall_user_profiles, uninstall_user_profiles_local),
     "collection_launcher": (install_or_update_collection_launcher, install_or_update_collection_launcher_local, uninstall_collection_launcher, uninstall_collection_launcher_local),
     "mister_hifi": (install_or_update_mister_hifi, install_or_update_mister_hifi_local, uninstall_mister_hifi, uninstall_mister_hifi_local),
@@ -1520,7 +1531,7 @@ def run_uninstall(item: dict, context: InstallCenterContext, log: Callable[[str]
                 uninstall_local(context.sd_root, force=force_downloader)
             else:
                 uninstall_online(context.connection, force=force_downloader)
-        elif handler in {"misterfin", "user_profiles", "collection_launcher", "mister_hifi", "disc_tools"}:
+        elif handler in {"misterfin", "mister_monitor", "user_profiles", "collection_launcher", "mister_hifi", "disc_tools"}:
             if context.offline:
                 uninstall_local(context.sd_root, log, force=force_downloader)
             else:

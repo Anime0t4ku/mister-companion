@@ -781,6 +781,7 @@ class ZapScraperRom:
     zip_inner_path: str = ""
     scraper_lookup_name: str = ""
     skip_hashes: bool = False
+    screenscraper_id: int = 0
 
 
 @dataclass
@@ -812,6 +813,7 @@ class ZapScraperSystem:
                     "zip_inner_path": rom.zip_inner_path,
                     "scraper_lookup_name": rom.scraper_lookup_name,
                     "skip_hashes": rom.skip_hashes,
+                    "screenscraper_id": rom.screenscraper_id,
                 }
                 for rom in self.roms
             ],
@@ -1016,6 +1018,19 @@ def scan_games_folder(
     return [system.to_dict() for system in systems]
 
 
+def _screenscraper_id_for_extension(system_folder: str, extension: str) -> int:
+    info = SUPPORTED_SYSTEMS.get(system_folder, {})
+    extension_ids = info.get("extension_screenscraper_ids") or {}
+    normalized_extension = str(extension or "").lower()
+    return int(
+        extension_ids.get(
+            normalized_extension,
+            info.get("screenscraper_id", 0),
+        )
+        or 0
+    )
+
+
 def _scan_zip_contents(
     zip_path: Path,
     system_path: Path,
@@ -1053,6 +1068,10 @@ def _scan_zip_contents(
                         stem=inner_path.stem,
                         size=info.file_size,
                         zip_inner_path=inner_name,
+                        screenscraper_id=_screenscraper_id_for_extension(
+                            system_folder,
+                            inner_path.suffix,
+                        ),
                     )
                 )
     except Exception:
@@ -1226,6 +1245,10 @@ def scan_system_folder(
                 filename=path.name,
                 stem=path.stem,
                 size=size,
+                screenscraper_id=_screenscraper_id_for_extension(
+                    system_folder,
+                    path.suffix,
+                ),
             )
         )
 
@@ -2429,6 +2452,11 @@ def plan_scrape_actions(
     actions = []
 
     for rom in system.get("roms", []):
+        screenscraper_system_id = int(
+            rom.get("screenscraper_id")
+            or system.get("screenscraper_id")
+            or 0
+        )
         relative_path = rom.get("relative_path") or to_recalbox_relative_path(
             Path(rom["path"]),
             system_path,
@@ -2439,7 +2467,7 @@ def plan_scrape_actions(
                 "system_folder": system.get("folder"),
                 "system_label": system.get("label"),
                 "system_path": str(system_path),
-                "screenscraper_system_id": system.get("screenscraper_id"),
+                "screenscraper_system_id": screenscraper_system_id,
                 "rom": rom,
                 "relative_path": relative_path,
             }
@@ -2461,7 +2489,7 @@ def plan_scrape_actions(
                     "system_folder": system.get("folder"),
                     "system_label": system.get("label"),
                     "system_path": str(system_path),
-                    "screenscraper_system_id": system.get("screenscraper_id"),
+                    "screenscraper_system_id": screenscraper_system_id,
                     "rom": rom,
                     "relative_path": relative_path,
                     "needs_metadata": True,
@@ -2520,7 +2548,7 @@ def plan_scrape_actions(
                 "system_folder": system.get("folder"),
                 "system_label": system.get("label"),
                 "system_path": str(system_path),
-                "screenscraper_system_id": system.get("screenscraper_id"),
+                "screenscraper_system_id": screenscraper_system_id,
                 "rom": rom,
                 "relative_path": relative_path,
                 "needs_metadata": needs_metadata,
@@ -4616,7 +4644,11 @@ def build_zaparoo_companion_review_items(
                 "system_path": str(system_path),
                 "system_folder": system.get("folder", ""),
                 "system_label": system.get("label", ""),
-                "screenscraper_system_id": system.get("screenscraper_id", 0),
+                "screenscraper_system_id": int(
+                    rom.get("screenscraper_id")
+                    or system.get("screenscraper_id", 0)
+                    or 0
+                ),
                 "is_in_gamelist": child is not None,
             }
         )
@@ -4874,7 +4906,11 @@ def build_gamelist_review_items(system: dict[str, Any]) -> list[dict[str, Any]]:
                 "system_path": str(system_path),
                 "system_folder": system.get("folder", ""),
                 "system_label": system.get("label", ""),
-                "screenscraper_system_id": system.get("screenscraper_id", 0),
+                "screenscraper_system_id": int(
+                    rom.get("screenscraper_id")
+                    or system.get("screenscraper_id", 0)
+                    or 0
+                ),
             }
         )
 
