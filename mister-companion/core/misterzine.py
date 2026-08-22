@@ -170,7 +170,7 @@ def entry_zaparoo_command(entry: dict) -> str:
     if mra:
         if not mra.startswith("/"):
             mra = f"/media/fat/{mra.lstrip('/')}"
-        return f"**launch:{mra}"
+        return mra
 
     system = str(item.get("system", "") or item.get("core", "") or "").strip()
     if system:

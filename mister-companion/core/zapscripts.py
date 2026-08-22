@@ -842,7 +842,7 @@ def launch_media(connection, item: dict, timeout: int = 5):
 
     path = item.get("path")
     if path:
-        return run_zaparoo_command(connection, f"**launch:{path}", timeout=timeout)
+        return run_zaparoo_command(connection, path, timeout=timeout)
 
     zap_script = item.get("zapScript") or item.get("zap_script")
     if zap_script:
