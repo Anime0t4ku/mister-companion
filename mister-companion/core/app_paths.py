@@ -30,7 +30,10 @@ def generated_data_root(default_root=None, create: bool = True) -> Path:
     elif default_root is not None:
         root = Path(default_root)
     else:
-        root = Path(".")
+        # Keep portable data beside the application. The process working
+        # directory is not reliable, particularly when Windows launches the
+        # packaged app from Start/Search.
+        root = app_base_dir()
 
     if create:
         root.mkdir(parents=True, exist_ok=True)

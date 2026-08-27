@@ -5,7 +5,6 @@ from core.app_paths import generated_path
 
 
 ZAPLAUNCHER_DIR = generated_path("zaplauncher")
-ZAPLAUNCHER_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def _sanitize(name: str) -> str:
@@ -28,6 +27,7 @@ def _get_cache_name(profile_name: str | None, ip: str) -> str:
 
 
 def get_media_db_path(profile_name: str | None, ip: str) -> Path:
+    ZAPLAUNCHER_DIR.mkdir(parents=True, exist_ok=True)
     name = _get_cache_name(profile_name, ip)
     return ZAPLAUNCHER_DIR / f"{name}_media.db"
 
