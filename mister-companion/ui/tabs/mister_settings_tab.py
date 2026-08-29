@@ -17,6 +17,7 @@ from core.config import save_config
 from core.device_actions import return_to_menu_remote
 from core.mister_ini import (
     CUSTOM_RESOLUTION_VALUE,
+    NOT_SET_VALUE,
     build_easy_mode_settings,
     easy_mode_values_from_ini_settings,
     parse_mister_ini,
@@ -152,42 +153,16 @@ class MiSTerSettingsRefreshWorker(QThread):
         return text
 
     def ensure_ini_files(self):
-        notice = ""
-
         if self.offline_mode:
             root = self.offline_root_path()
             if not root:
                 return [], "", "Select a valid MiSTer SD card first."
-
-            mister_ini_path = root / "MiSTer.ini"
-
-            if not mister_ini_path.exists():
-                default_text = self.download_default_mister_ini()
-                mister_ini_path.write_text(default_text, encoding="utf-8")
-                notice = "MiSTer.ini was missing, so it was created from the default template."
-
-            files = self.scan_offline_ini_files()
-            return files, notice, ""
+            return self.scan_offline_ini_files(), "", ""
 
         if not self.connection or not self.connection.is_connected():
             return [], "", "Connect to a MiSTer first."
 
-        files = self.scan_remote_ini_files()
-
-        if "MiSTer.ini" not in files:
-            default_text = self.download_default_mister_ini()
-
-            sftp = self.connection.client.open_sftp()
-            try:
-                with sftp.open("/media/fat/MiSTer.ini", "w") as f:
-                    f.write(default_text)
-            finally:
-                sftp.close()
-
-            notice = "MiSTer.ini was missing, so it was created from the default template."
-
-        files = self.scan_remote_ini_files()
-        return files, notice, ""
+        return self.scan_remote_ini_files(), "", ""
 
     def choose_selected_file(self, files):
         if not files:
@@ -254,6 +229,7 @@ class MiSTerSettingsRefreshWorker(QThread):
                         "ini_text": "",
                         "fonts": [],
                         "notice": "No MiSTer.ini or MiSTer_*.ini files found.",
+                        "missing_ini": True,
                     }
                 )
                 return
@@ -350,8 +326,6 @@ class MiSTerSettingsFontWorker(QThread):
 
 
 class MiSTerSettingsTab(QWidget):
-    DEFAULT_FONT_LINE = ";font=font/myfont.pf"
-
     ANALOGUE_PRESETS = [
         "RGBS (SCART)",
         "RGBHV (VGA 15 kHz)",
@@ -371,9 +345,12 @@ class MiSTerSettingsTab(QWidget):
         self.config_data = main_window.config_data
 
         self.cached_font_list = None
-        self.pending_font_selection = "Default"
+        self.pending_font_selection = NOT_SET_VALUE
         self.font_scan_scheduled = False
         self.ini_selector_loading = False
+        self.missing_ini_dialog_active = False
+        self.active_ini_filename = ""
+        self.loaded_ini_text = ""
 
         self.loading_settings = False
         self.syncing_modes = False
@@ -456,12 +433,14 @@ class MiSTerSettingsTab(QWidget):
 
         self.easy_hdmi_mode_combo = QComboBox()
         self.easy_hdmi_mode_combo.addItems([
+            NOT_SET_VALUE,
             "HD Output (Default)",
             "Direct Video (CRT / Scaler)"
         ])
 
         self.easy_resolution_combo = QComboBox()
         self.easy_resolution_combo.addItems([
+            NOT_SET_VALUE,
             "1280x720@60",
             "1024x768@60",
             "720x480@60",
@@ -481,6 +460,7 @@ class MiSTerSettingsTab(QWidget):
 
         self.easy_scaling_combo = QComboBox()
         self.easy_scaling_combo.addItems([
+            NOT_SET_VALUE,
             "Disabled",
             "Low Latency",
             "Exact Refresh"
@@ -488,12 +468,14 @@ class MiSTerSettingsTab(QWidget):
 
         self.easy_hdmi_audio_combo = QComboBox()
         self.easy_hdmi_audio_combo.addItems([
+            NOT_SET_VALUE,
             "Enabled",
             "Disabled (DVI Mode)"
         ])
 
         self.easy_hdr_combo = QComboBox()
         self.easy_hdr_combo.addItems([
+            NOT_SET_VALUE,
             "Disabled",
             "HLG HDR (recommended)",
             "DCI P3 HDR"
@@ -501,26 +483,30 @@ class MiSTerSettingsTab(QWidget):
 
         self.easy_hdmi_limited_combo = QComboBox()
         self.easy_hdmi_limited_combo.addItems([
+            NOT_SET_VALUE,
             "Full Range",
             "Limited Range"
         ])
 
         self.easy_analogue_combo = QComboBox()
-        self.easy_analogue_combo.addItems(self.ANALOGUE_PRESETS)
+        self.easy_analogue_combo.addItems([NOT_SET_VALUE] + self.ANALOGUE_PRESETS)
 
         self.easy_logo_combo = QComboBox()
         self.easy_logo_combo.addItems([
+            NOT_SET_VALUE,
             "Enabled",
             "Disabled"
         ])
 
         self.easy_recents_combo = QComboBox()
         self.easy_recents_combo.addItems([
+            NOT_SET_VALUE,
             "Off",
             "On"
         ])
 
         self.easy_font_combo = QComboBox()
+        self.easy_font_combo.addItem(NOT_SET_VALUE)
         self.easy_font_combo.addItem("Default")
 
         self.easy_amigavision_preset_combo = QComboBox()
@@ -537,6 +523,20 @@ class MiSTerSettingsTab(QWidget):
             "PAL, Large Text",
             "PAL, Small Text"
         ])
+
+        for combo in (
+            self.easy_hdmi_mode_combo,
+            self.easy_resolution_combo,
+            self.easy_scaling_combo,
+            self.easy_hdmi_audio_combo,
+            self.easy_hdr_combo,
+            self.easy_hdmi_limited_combo,
+            self.easy_analogue_combo,
+            self.easy_logo_combo,
+            self.easy_recents_combo,
+            self.easy_font_combo,
+        ):
+            self.disable_combo_value(combo, NOT_SET_VALUE)
 
         easy_layout.addWidget(QLabel("HDMI Mode"), 0, 0)
         easy_layout.addWidget(self.easy_hdmi_mode_combo, 0, 1)
@@ -651,15 +651,16 @@ class MiSTerSettingsTab(QWidget):
         for combo in self.easy_mode_combos():
             combo.currentIndexChanged.connect(self.on_easy_setting_changed)
 
-        self.easy_resolution_combo.setCurrentText("1920x1080@60")
-        self.easy_scaling_combo.setCurrentText("Exact Refresh")
-        self.easy_hdmi_audio_combo.setCurrentText("Enabled")
-        self.easy_hdr_combo.setCurrentText("Disabled")
-        self.easy_hdmi_limited_combo.setCurrentText("Full Range")
-        self.set_analogue_combo_value("RGBS (SCART)")
-        self.easy_logo_combo.setCurrentText("Enabled")
-        self.easy_recents_combo.setCurrentText("Off")
-        self.easy_font_combo.setCurrentText("Default")
+        self.easy_hdmi_mode_combo.setCurrentText(NOT_SET_VALUE)
+        self.easy_resolution_combo.setCurrentText(NOT_SET_VALUE)
+        self.easy_scaling_combo.setCurrentText(NOT_SET_VALUE)
+        self.easy_hdmi_audio_combo.setCurrentText(NOT_SET_VALUE)
+        self.easy_hdr_combo.setCurrentText(NOT_SET_VALUE)
+        self.easy_hdmi_limited_combo.setCurrentText(NOT_SET_VALUE)
+        self.set_analogue_combo_value(NOT_SET_VALUE)
+        self.easy_logo_combo.setCurrentText(NOT_SET_VALUE)
+        self.easy_recents_combo.setCurrentText(NOT_SET_VALUE)
+        self.easy_font_combo.setCurrentText(NOT_SET_VALUE)
         self.easy_amigavision_preset_combo.setCurrentText("Disabled")
         self.easy_menu_crt_preset_combo.setCurrentText("Disabled")
 
@@ -682,6 +683,14 @@ class MiSTerSettingsTab(QWidget):
             self.easy_menu_crt_preset_combo,
         ]
 
+    def disable_combo_value(self, combo, value):
+        index = combo.findText(value)
+        if index < 0:
+            return
+        item = combo.model().item(index)
+        if item is not None:
+            item.setEnabled(False)
+
     def remove_custom_resolution_item(self):
         index = self.easy_resolution_combo.findText(CUSTOM_RESOLUTION_VALUE)
         if index >= 0:
@@ -701,7 +710,7 @@ class MiSTerSettingsTab(QWidget):
         return index
 
     def set_resolution_combo_value(self, value):
-        value = (value or "1920x1080@60").strip()
+        value = (value or NOT_SET_VALUE).strip()
 
         self.easy_resolution_combo.blockSignals(True)
 
@@ -712,7 +721,7 @@ class MiSTerSettingsTab(QWidget):
             self.remove_custom_resolution_item()
 
             if self.easy_resolution_combo.findText(value) < 0:
-                value = "1920x1080@60"
+                value = NOT_SET_VALUE
 
             self.easy_resolution_combo.setCurrentText(value)
 
@@ -737,7 +746,7 @@ class MiSTerSettingsTab(QWidget):
         return index
 
     def set_analogue_combo_value(self, value):
-        value = (value or "RGBS (SCART)").strip()
+        value = (value or NOT_SET_VALUE).strip()
 
         self.easy_analogue_combo.blockSignals(True)
 
@@ -748,7 +757,7 @@ class MiSTerSettingsTab(QWidget):
             self.remove_custom_analogue_item()
 
             if self.easy_analogue_combo.findText(value) < 0:
-                value = "RGBS (SCART)"
+                value = NOT_SET_VALUE
 
             self.easy_analogue_combo.setCurrentText(value)
 
@@ -759,7 +768,7 @@ class MiSTerSettingsTab(QWidget):
             return
 
         if self.easy_mode_radio.isChecked():
-            self.sync_easy_to_advanced()
+            self.sync_easy_to_advanced(self.sender())
 
     def on_advanced_text_changed(self):
         if self.loading_settings or self.syncing_modes:
@@ -768,7 +777,7 @@ class MiSTerSettingsTab(QWidget):
         if self.advanced_mode_radio.isChecked():
             self.sync_advanced_to_easy()
 
-    def sync_easy_to_advanced(self):
+    def sync_easy_to_advanced(self, changed_combo=None):
         if self.loading_settings or self.syncing_modes:
             return
 
@@ -787,12 +796,36 @@ class MiSTerSettingsTab(QWidget):
             if not current_text.strip():
                 current_text = "[MiSTer]\n"
 
-            updated_settings = self.build_easy_mode_settings()
+            setting_keys = {
+                self.easy_hdmi_mode_combo: {"direct_video"},
+                self.easy_resolution_combo: {"video_mode"},
+                self.easy_scaling_combo: {"vsync_adjust"},
+                self.easy_hdmi_audio_combo: {"dvi_mode"},
+                self.easy_hdr_combo: {"hdr"},
+                self.easy_hdmi_limited_combo: {"hdmi_limited"},
+                self.easy_analogue_combo: {
+                    "vga_mode", "composite_sync", "vga_sog",
+                    "vga_scaler", "forced_scandoubler",
+                },
+                self.easy_logo_combo: {"logo"},
+                self.easy_recents_combo: {"recents"},
+                self.easy_font_combo: {"font"},
+                self.easy_amigavision_preset_combo: {"__amigavision_preset"},
+                self.easy_menu_crt_preset_combo: {"__menu_crt_preset"},
+            }.get(changed_combo)
+
+            # Mode changes and background UI updates never rewrite the working
+            # document. Only a real Easy Mode control change reaches here.
+            if not setting_keys:
+                return
+
+            all_settings = self.build_easy_mode_settings()
+            updated_settings = {
+                key: value for key, value in all_settings.items()
+                if key in setting_keys
+                or key.removesuffix("_commented") in setting_keys
+            }
             new_ini_text = update_mister_ini_text(current_text, updated_settings)
-            new_ini_text = self.apply_font_setting_to_ini_text(
-                new_ini_text,
-                self.easy_font_combo.currentText().strip()
-            )
 
             self.advanced_text.blockSignals(True)
             self.advanced_text.setPlainText(new_ini_text)
@@ -919,133 +952,48 @@ class MiSTerSettingsTab(QWidget):
         files.sort(key=lambda item: (item != "MiSTer.ini", item.lower()))
         return files
 
-    def create_default_ini_if_none_exists(self):
-        if self.is_offline_mode():
-            root = self.offline_root_path()
-            if not root:
-                return False, "Select a valid MiSTer SD card first."
-
-            target = root / "MiSTer.ini"
-
-            if target.exists():
-                return True, ""
-
-            default_text = self.download_default_mister_ini()
-            target.write_text(default_text, encoding="utf-8")
-            return True, "MiSTer.ini was missing, so it was created from the default template."
-
-        if not self.connection.is_connected():
-            return False, "Connect to a MiSTer first."
-
-        existing_files = self.scan_remote_ini_files()
-
-        if "MiSTer.ini" in existing_files:
-            return True, ""
-
-        default_text = self.download_default_mister_ini()
-
-        sftp = self.connection.client.open_sftp()
-        try:
-            with sftp.open("/media/fat/MiSTer.ini", "w") as f:
-                f.write(default_text)
-        finally:
-            sftp.close()
-
-        return True, "MiSTer.ini was missing, so it was created from the default template."
-
     def handle_refresh_ini_file_list(self):
-        return self.refresh_ini_file_list()
-
-    def refresh_ini_file_list(self):
-        preferred = "MiSTer.ini"
-
-        connected_or_offline = self.connection.is_connected() or (
-            self.is_offline_mode() and bool(self.offline_root_path())
-        )
-
-        if connected_or_offline:
-            try:
-                ok, message = self.create_default_ini_if_none_exists()
-                if not ok:
-                    self.loading_settings = True
-                    self.advanced_text.blockSignals(True)
-                    self.advanced_text.setPlainText("")
-                    self.advanced_text.blockSignals(False)
-                    self.loading_settings = False
-                    self.set_mister_settings_enabled(False)
-                    self.set_notice(message or "No MiSTer.ini or MiSTer_*.ini files found.")
-                    return False
-
-                if message:
-                    self.set_notice(message)
-            except Exception as e:
-                self.loading_settings = True
-                self.advanced_text.blockSignals(True)
-                self.advanced_text.setPlainText("")
-                self.advanced_text.blockSignals(False)
-                self.loading_settings = False
-                self.set_mister_settings_enabled(False)
-                self.set_notice(f"Creating MiSTer.ini failed: {e}")
-                return False
-
-        if self.is_offline_mode():
-            files = self.scan_offline_ini_files()
-        elif self.connection.is_connected():
-            files = self.scan_remote_ini_files()
-        else:
-            files = []
-
-        self.ini_selector_loading = True
-        self.ini_file_combo.blockSignals(True)
-        self.ini_file_combo.clear()
-
-        for filename in files:
-            self.ini_file_combo.addItem(filename)
-
-        if files:
-            if preferred in files:
-                self.ini_file_combo.setCurrentText(preferred)
-            elif "MiSTer.ini" in files:
-                self.ini_file_combo.setCurrentText("MiSTer.ini")
-            else:
-                self.ini_file_combo.setCurrentIndex(0)
-
-        self.ini_file_combo.blockSignals(False)
-        self.ini_selector_loading = False
-
-        has_files = bool(files)
-
-        self.ini_file_combo.setEnabled(connected_or_offline and has_files)
-        self.refresh_ini_files_button.setEnabled(connected_or_offline)
-
-        if not has_files and connected_or_offline:
-            self.loading_settings = True
-            self.advanced_text.blockSignals(True)
-            self.advanced_text.setPlainText("")
-            self.advanced_text.blockSignals(False)
-            self.loading_settings = False
-            self.set_mister_settings_enabled(False)
-            self.set_notice("No MiSTer.ini or MiSTer_*.ini files found.")
-            return False
-
-        if has_files:
-            self.remember_selected_ini_filename()
-            if "MiSTer.ini was missing" not in self.notice_label.text():
-                self.set_notice("")
-            return True
-
-        return False
+        self.refresh_tab_contents()
 
     def on_ini_file_selected(self):
         if self.ini_selector_loading:
             return
 
-        if not self.ini_file_combo.currentText().strip():
+        new_filename = self.normalize_ini_filename(self.ini_file_combo.currentText())
+        if not new_filename:
             return
+
+        if (
+            self.active_ini_filename
+            and new_filename != self.active_ini_filename
+            and self.has_unsaved_ini_changes()
+        ):
+            warning = QMessageBox(self)
+            warning.setIcon(QMessageBox.Icon.Warning)
+            warning.setWindowTitle("Unsaved MiSTer Settings")
+            warning.setText(
+                f"You have unsaved changes to {self.active_ini_filename}."
+            )
+            warning.setInformativeText(
+                f"Switching to {new_filename} will discard those changes. "
+                "Do you want to continue?"
+            )
+            switch_button = warning.addButton(
+                "Switch INI", QMessageBox.ButtonRole.DestructiveRole
+            )
+            warning.addButton(QMessageBox.StandardButton.Cancel)
+            warning.setDefaultButton(QMessageBox.StandardButton.Cancel)
+            warning.exec()
+
+            if warning.clickedButton() is not switch_button:
+                self.ini_file_combo.blockSignals(True)
+                self.ini_file_combo.setCurrentText(self.active_ini_filename)
+                self.ini_file_combo.blockSignals(False)
+                return
 
         self.remember_selected_ini_filename()
         self.cached_font_list = None
-        self.pending_font_selection = "Default"
+        self.pending_font_selection = NOT_SET_VALUE
         self.font_scan_scheduled = False
 
         self.loading_settings = True
@@ -1056,6 +1004,18 @@ class MiSTerSettingsTab(QWidget):
             self.loading_settings = False
 
         self.update_settings_mode()
+
+    def has_unsaved_ini_changes(self):
+        if not self.active_ini_filename:
+            return False
+        return self.advanced_text.toPlainText() != self.loaded_ini_text
+
+    def mark_current_ini_clean(self, ini_text, filename=None):
+        text = (ini_text or "").replace("\r\n", "\n").replace("\r", "\n")
+        self.loaded_ini_text = text
+        self.active_ini_filename = self.normalize_ini_filename(
+            filename or self.ini_file_combo.currentText()
+        )
 
     def download_default_mister_ini(self):
         response = requests.get(
@@ -1215,7 +1175,7 @@ class MiSTerSettingsTab(QWidget):
         self.retention_label.setStyleSheet("")
         self.set_notice("")
         self.cached_font_list = None
-        self.pending_font_selection = "Default"
+        self.pending_font_selection = NOT_SET_VALUE
         self.font_scan_scheduled = False
         self.set_mister_settings_enabled(False)
 
@@ -1302,7 +1262,9 @@ class MiSTerSettingsTab(QWidget):
             self.connection,
             offline_mode=offline_mode,
             sd_root=sd_root,
-            preferred_filename="MiSTer.ini",
+            preferred_filename=self.config_data.get(
+                "mister_settings_ini_file", "MiSTer.ini"
+            ),
         )
         self.refresh_worker.result.connect(self.on_refresh_worker_result)
         self.refresh_worker.failed.connect(self.on_refresh_worker_failed)
@@ -1318,6 +1280,7 @@ class MiSTerSettingsTab(QWidget):
         ini_text = result.get("ini_text") or ""
         notice = (result.get("notice") or "").strip()
         ok = bool(result.get("ok"))
+        missing_ini = bool(result.get("missing_ini"))
 
         self.loading_settings = True
         try:
@@ -1350,6 +1313,7 @@ class MiSTerSettingsTab(QWidget):
                 self.advanced_text.blockSignals(True)
                 self.advanced_text.setPlainText(ini_text)
                 self.advanced_text.blockSignals(False)
+                self.mark_current_ini_clean(ini_text, selected_filename)
 
                 settings = parse_mister_ini(ini_text)
                 values = easy_mode_values_from_ini_settings(settings)
@@ -1360,8 +1324,10 @@ class MiSTerSettingsTab(QWidget):
                 self.advanced_text.setPlainText("")
                 self.advanced_text.blockSignals(False)
                 self.cached_font_list = None
-                self.pending_font_selection = "Default"
+                self.pending_font_selection = NOT_SET_VALUE
                 self.font_scan_scheduled = False
+                self.active_ini_filename = ""
+                self.loaded_ini_text = ""
         finally:
             self.loading_settings = False
 
@@ -1378,6 +1344,73 @@ class MiSTerSettingsTab(QWidget):
             self.apply_connected_state()
 
         self.update_settings_mode()
+
+        if missing_ini:
+            QTimer.singleShot(0, self.prompt_to_create_missing_ini)
+
+    def prompt_to_create_missing_ini(self):
+        if self.missing_ini_dialog_active:
+            return
+
+        if self.is_offline_mode():
+            if not self.offline_root_path():
+                return
+        elif not self.connection.is_connected():
+            return
+
+        self.missing_ini_dialog_active = True
+        try:
+            dialog = QMessageBox(self)
+            dialog.setIcon(QMessageBox.Icon.Question)
+            dialog.setWindowTitle("No MiSTer INI File Found")
+            dialog.setText("No MiSTer configuration file was found on this device.")
+            dialog.setInformativeText(
+                "Would you like to create a blank MiSTer.ini, or create one "
+                "using the official MiSTer template?"
+            )
+            template_button = dialog.addButton(
+                "Create from Template", QMessageBox.ButtonRole.AcceptRole
+            )
+            blank_button = dialog.addButton(
+                "Create Blank File", QMessageBox.ButtonRole.ActionRole
+            )
+            dialog.addButton(QMessageBox.StandardButton.Cancel)
+            dialog.setDefaultButton(template_button)
+            dialog.exec()
+
+            clicked = dialog.clickedButton()
+            if clicked is template_button:
+                ini_text = self.download_default_mister_ini()
+            elif clicked is blank_button:
+                ini_text = "[MiSTer]\n"
+            else:
+                return
+
+            if self.is_offline_mode():
+                target = self.offline_root_path() / "MiSTer.ini"
+                target.write_text(ini_text, encoding="utf-8")
+            else:
+                sftp = self.connection.client.open_sftp()
+                try:
+                    with sftp.open("/media/fat/MiSTer.ini", "w") as handle:
+                        handle.write(ini_text)
+                finally:
+                    sftp.close()
+
+            self.config_data["mister_settings_ini_file"] = "MiSTer.ini"
+            try:
+                save_config(self.config_data)
+            except Exception:
+                pass
+            self.refresh_tab_contents()
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Create MiSTer.ini Failed",
+                f"Unable to create MiSTer.ini:\n{e}",
+            )
+        finally:
+            self.missing_ini_dialog_active = False
 
     def on_refresh_worker_failed(self, detail):
         if self.is_offline_mode():
@@ -1398,16 +1431,10 @@ class MiSTerSettingsTab(QWidget):
         ) and self.ini_file_combo.count() > 0
 
         if self.easy_mode_radio.isChecked():
-            if enabled:
-                self.sync_advanced_to_easy()
-
             self.advanced_text.setMinimumHeight(0)
             self.easy_scroll_area.show()
             self.advanced_group.hide()
         else:
-            if enabled:
-                self.sync_easy_to_advanced()
-
             self.advanced_text.setMinimumHeight(420)
             self.easy_scroll_area.hide()
             self.advanced_group.show()
@@ -1460,15 +1487,16 @@ class MiSTerSettingsTab(QWidget):
     def set_font_combo_loading(self):
         self.easy_font_combo.blockSignals(True)
         self.easy_font_combo.clear()
-        self.easy_font_combo.addItem("Default")
+        self.easy_font_combo.addItem(NOT_SET_VALUE)
+        self.disable_combo_value(self.easy_font_combo, NOT_SET_VALUE)
         self.easy_font_combo.addItem("Scanning fonts...")
         self.easy_font_combo.setCurrentText("Scanning fonts...")
         self.easy_font_combo.setEnabled(False)
         self.easy_font_combo.setStyleSheet("color: #1e88e5; font-weight: bold;")
         self.easy_font_combo.blockSignals(False)
 
-    def populate_font_combo(self, selected_font="Default"):
-        current = (selected_font or "Default").strip()
+    def populate_font_combo(self, selected_font=NOT_SET_VALUE):
+        current = (selected_font or NOT_SET_VALUE).strip()
 
         if self.cached_font_list is not None:
             self._populate_font_combo_from_list(self.cached_font_list, current)
@@ -1481,12 +1509,14 @@ class MiSTerSettingsTab(QWidget):
             self.font_scan_scheduled = True
             QTimer.singleShot(0, self.start_font_scan)
 
-    def _populate_font_combo_from_list(self, fonts, selected_font="Default"):
-        current = (selected_font or "Default").strip()
+    def _populate_font_combo_from_list(self, fonts, selected_font=NOT_SET_VALUE):
+        current = (selected_font or NOT_SET_VALUE).strip()
 
         self.easy_font_combo.blockSignals(True)
         self.easy_font_combo.setStyleSheet("")
         self.easy_font_combo.clear()
+        self.easy_font_combo.addItem(NOT_SET_VALUE)
+        self.disable_combo_value(self.easy_font_combo, NOT_SET_VALUE)
         self.easy_font_combo.addItem("Default")
 
         for font_name in fonts:
@@ -1495,7 +1525,7 @@ class MiSTerSettingsTab(QWidget):
         if current != "Default" and self.easy_font_combo.findText(current) == -1:
             self.easy_font_combo.addItem(current)
 
-        self.easy_font_combo.setCurrentText(current if current else "Default")
+        self.easy_font_combo.setCurrentText(current if current else NOT_SET_VALUE)
         self.easy_font_combo.setEnabled(
             (
                 self.connection.is_connected()
@@ -1516,12 +1546,12 @@ class MiSTerSettingsTab(QWidget):
         if offline_mode:
             if not self.offline_root_path():
                 self.font_scan_scheduled = False
-                self._populate_font_combo_from_list([], "Default")
+                self._populate_font_combo_from_list([], NOT_SET_VALUE)
                 return
         else:
             if not self.connection.is_connected():
                 self.font_scan_scheduled = False
-                self._populate_font_combo_from_list([], "Default")
+                self._populate_font_combo_from_list([], NOT_SET_VALUE)
                 return
 
         self.font_worker = MiSTerSettingsFontWorker(
@@ -1554,61 +1584,16 @@ class MiSTerSettingsTab(QWidget):
 
     def extract_font_selection_from_ini_text(self, ini_text):
         if not ini_text:
-            return "Default"
+            return NOT_SET_VALUE
 
         match = re.search(
-            r"(?mi)^(?!\s*;)\s*font\s*=\s*font/([^\r\n/]+\.pf)\s*$",
+            r"(?mi)^(?!\s*;)\s*font\s*=\s*font/([^\r\n/]+\.pf)\s*(?:;.*)?$",
             ini_text
         )
         if match:
             return match.group(1).strip()
 
-        return "Default"
-
-    def apply_font_setting_to_ini_text(self, ini_text, selected_font):
-        text = (ini_text or "").replace("\r\n", "\n").replace("\r", "\n")
-        font_line = self.DEFAULT_FONT_LINE
-
-        selected_font = (selected_font or "").strip()
-        if selected_font and selected_font != "Default":
-            font_line = f"font=font/{selected_font}"
-
-        lines = text.splitlines()
-        if not lines:
-            lines = ["[MiSTer]"]
-
-        mister_start = None
-        mister_end = len(lines)
-
-        for i, line in enumerate(lines):
-            if line.strip().lower() == "[mister]":
-                mister_start = i
-                break
-
-        if mister_start is None:
-            lines.append("[MiSTer]")
-            lines.append(font_line)
-            return "\n".join(lines).rstrip("\n") + "\n"
-
-        for i in range(mister_start + 1, len(lines)):
-            stripped = lines[i].strip()
-            if stripped.startswith("[") and stripped.endswith("]"):
-                mister_end = i
-                break
-
-        font_replaced = False
-
-        for i in range(mister_start + 1, mister_end):
-            if re.match(r"^\s*;?\s*font\s*=", lines[i], flags=re.IGNORECASE):
-                lines[i] = font_line
-                font_replaced = True
-                break
-
-        if not font_replaced:
-            insert_index = mister_end
-            lines.insert(insert_index, font_line)
-
-        return "\n".join(lines).rstrip("\n") + "\n"
+        return NOT_SET_VALUE
 
     def collect_easy_mode_values(self):
         return {
@@ -1627,15 +1612,15 @@ class MiSTerSettingsTab(QWidget):
         }
 
     def apply_easy_mode_values(self, values):
-        self.easy_hdmi_mode_combo.setCurrentText(values.get("hdmi_mode", "HD Output (Default)"))
-        self.set_resolution_combo_value(values.get("resolution", "1920x1080@60"))
-        self.easy_scaling_combo.setCurrentText(values.get("scaling", "Exact Refresh"))
-        self.easy_hdmi_audio_combo.setCurrentText(values.get("hdmi_audio", "Enabled"))
-        self.easy_hdr_combo.setCurrentText(values.get("hdr", "Disabled"))
-        self.easy_hdmi_limited_combo.setCurrentText(values.get("hdmi_limited", "Full Range"))
-        self.set_analogue_combo_value(values.get("analogue", "RGBS (SCART)"))
-        self.easy_logo_combo.setCurrentText(values.get("logo", "Enabled"))
-        self.easy_recents_combo.setCurrentText(values.get("recents", "Off"))
+        self.easy_hdmi_mode_combo.setCurrentText(values.get("hdmi_mode", NOT_SET_VALUE))
+        self.set_resolution_combo_value(values.get("resolution", NOT_SET_VALUE))
+        self.easy_scaling_combo.setCurrentText(values.get("scaling", NOT_SET_VALUE))
+        self.easy_hdmi_audio_combo.setCurrentText(values.get("hdmi_audio", NOT_SET_VALUE))
+        self.easy_hdr_combo.setCurrentText(values.get("hdr", NOT_SET_VALUE))
+        self.easy_hdmi_limited_combo.setCurrentText(values.get("hdmi_limited", NOT_SET_VALUE))
+        self.set_analogue_combo_value(values.get("analogue", NOT_SET_VALUE))
+        self.easy_logo_combo.setCurrentText(values.get("logo", NOT_SET_VALUE))
+        self.easy_recents_combo.setCurrentText(values.get("recents", NOT_SET_VALUE))
         self.easy_amigavision_preset_combo.setCurrentText(
             values.get("amigavision_preset", "Disabled")
         )
@@ -1643,7 +1628,7 @@ class MiSTerSettingsTab(QWidget):
             values.get("menu_crt_preset", "Disabled")
         )
 
-        font_value = values.get("font", "Default")
+        font_value = values.get("font", NOT_SET_VALUE)
         self.populate_font_combo(font_value)
 
         self.update_easy_mode_state()
@@ -1701,6 +1686,7 @@ class MiSTerSettingsTab(QWidget):
                 (ini_text or "").replace("\r\n", "\n").replace("\r", "\n")
             )
             self.advanced_text.blockSignals(False)
+            self.mark_current_ini_clean(ini_text)
             return
 
         if not self.connection.is_connected():
@@ -1715,6 +1701,7 @@ class MiSTerSettingsTab(QWidget):
             (ini_text or "").replace("\r\n", "\n").replace("\r", "\n")
         )
         self.advanced_text.blockSignals(False)
+        self.mark_current_ini_clean(ini_text)
 
     def build_easy_mode_settings(self):
         return build_easy_mode_settings(self.collect_easy_mode_values())
@@ -1910,32 +1897,13 @@ class MiSTerSettingsTab(QWidget):
             return False
 
     def build_new_ini_text(self, ini_text):
-        if self.easy_mode_radio.isChecked():
-            current_text = self.advanced_text.toPlainText()
-
-            if current_text.strip():
-                base_text = current_text
-            else:
-                base_text = ini_text
-
-            updated_settings = self.build_easy_mode_settings()
-            new_ini_text = update_mister_ini_text(base_text, updated_settings)
-            new_ini_text = self.apply_font_setting_to_ini_text(
-                new_ini_text,
-                self.easy_font_combo.currentText().strip()
-            )
-            return self.normalize_ini_text(
-                new_ini_text,
-                ensure_trailing_newline=True
-            )
-
-        advanced_text = self.normalize_ini_text(
-            self.advanced_text.toPlainText(),
-            ensure_trailing_newline=True
-        )
+        advanced_text = self.advanced_text.toPlainText().replace("\r\n", "\n").replace("\r", "\n")
 
         if not advanced_text.strip():
             raise ValueError("Advanced editor is empty.")
+
+        if not advanced_text.endswith("\n"):
+            advanced_text += "\n"
 
         return advanced_text
 

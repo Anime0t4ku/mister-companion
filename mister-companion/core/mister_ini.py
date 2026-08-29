@@ -1,3 +1,6 @@
+import re
+
+
 RESOLUTION_MAP = {
     "0": "1280x720@60",
     "1": "1024x768@60",
@@ -19,6 +22,7 @@ RESOLUTION_MAP = {
 RESOLUTION_REVERSE_MAP = {value: key for key, value in RESOLUTION_MAP.items()}
 
 CUSTOM_RESOLUTION_VALUE = "Custom Resolution"
+NOT_SET_VALUE = "Not Set"
 
 SCALING_MAP = {
     "0": "Disabled",
@@ -27,8 +31,6 @@ SCALING_MAP = {
 }
 
 SCALING_REVERSE_MAP = {value: key for key, value in SCALING_MAP.items()}
-
-DEFAULT_FONT_LINE = ";font=font/myfont.pf"
 
 AMIGAVISION_PRESET_KEY = "__amigavision_preset"
 MENU_CRT_PRESET_KEY = "__menu_crt_preset"
@@ -331,45 +333,63 @@ def parse_mister_ini(text):
 def easy_mode_values_from_ini_settings(settings):
     values = {}
 
-    direct_video = settings.get("direct_video", "0").strip()
-    values["hdmi_mode"] = (
-        "Direct Video (CRT / Scaler)"
-        if direct_video in ("1", "2")
-        else "HD Output (Default)"
-    )
+    direct_video = settings.get("direct_video", "").strip()
+    if not direct_video:
+        values["hdmi_mode"] = NOT_SET_VALUE
+    else:
+        values["hdmi_mode"] = (
+            "Direct Video (CRT / Scaler)"
+            if direct_video in ("1", "2")
+            else "HD Output (Default)"
+        )
 
     video_mode = settings.get("video_mode", "").strip()
     values["resolution"] = RESOLUTION_MAP.get(
         video_mode,
-        CUSTOM_RESOLUTION_VALUE if video_mode else "1920x1080@60",
+        CUSTOM_RESOLUTION_VALUE if video_mode else NOT_SET_VALUE,
     )
 
     values["scaling"] = SCALING_MAP.get(
-        settings.get("vsync_adjust", "1").strip(),
-        "Exact Refresh",
+        settings.get("vsync_adjust", "").strip(),
+        NOT_SET_VALUE,
     )
 
-    dvi = settings.get("dvi_mode", "0").strip()
-    values["hdmi_audio"] = "Disabled (DVI Mode)" if dvi == "1" else "Enabled"
+    dvi = settings.get("dvi_mode", "").strip()
+    values["hdmi_audio"] = (
+        NOT_SET_VALUE if not dvi else
+        "Disabled (DVI Mode)" if dvi == "1" else "Enabled"
+    )
 
-    hdr = settings.get("hdr", "0").strip()
+    hdr = settings.get("hdr", "").strip()
     if hdr == "1":
         values["hdr"] = "HLG HDR (recommended)"
     elif hdr == "2":
         values["hdr"] = "DCI P3 HDR"
-    else:
+    elif hdr:
         values["hdr"] = "Disabled"
+    else:
+        values["hdr"] = NOT_SET_VALUE
 
-    limited = settings.get("hdmi_limited", "0").strip()
-    values["hdmi_limited"] = "Limited Range" if limited == "1" else "Full Range"
+    limited = settings.get("hdmi_limited", "").strip()
+    values["hdmi_limited"] = (
+        NOT_SET_VALUE if not limited else
+        "Limited Range" if limited == "1" else "Full Range"
+    )
 
-    vga_mode = settings.get("vga_mode", "rgb").strip().lower()
-    composite_sync = settings.get("composite_sync", "1").strip()
-    vga_sog = settings.get("vga_sog", "0").strip()
-    vga_scaler = settings.get("vga_scaler", "0").strip()
-    forced_scandoubler = settings.get("forced_scandoubler", "0").strip()
+    vga_mode = settings.get("vga_mode", "").strip().lower()
+    composite_sync = settings.get("composite_sync", "").strip()
+    vga_sog = settings.get("vga_sog", "").strip()
+    vga_scaler = settings.get("vga_scaler", "").strip()
+    forced_scandoubler = settings.get("forced_scandoubler", "").strip()
 
-    if (
+    analogue_values_present = all((
+        vga_mode, composite_sync, vga_sog, vga_scaler, forced_scandoubler
+    ))
+
+    if not analogue_values_present:
+        values["analogue"] = NOT_SET_VALUE
+
+    elif (
         vga_mode == "rgb"
         and composite_sync == "1"
         and vga_sog == "0"
@@ -435,17 +455,17 @@ def easy_mode_values_from_ini_settings(settings):
     else:
         values["analogue"] = "Custom"
 
-    logo = settings.get("logo", "1").strip()
-    values["logo"] = "Disabled" if logo == "0" else "Enabled"
+    logo = settings.get("logo", "").strip()
+    values["logo"] = NOT_SET_VALUE if not logo else "Disabled" if logo == "0" else "Enabled"
 
-    recents = settings.get("recents", "0").strip()
-    values["recents"] = "On" if recents == "1" else "Off"
+    recents = settings.get("recents", "").strip()
+    values["recents"] = NOT_SET_VALUE if not recents else "On" if recents == "1" else "Off"
 
     font_value = settings.get("font", "").strip()
     if font_value.startswith("font/"):
         values["font"] = font_value.split("/", 1)[1].strip()
     else:
-        values["font"] = "Default"
+        values["font"] = NOT_SET_VALUE
 
     values["amigavision_preset"] = settings.get("amigavision_preset", "Disabled")
     values["menu_crt_preset"] = settings.get("menu_crt_preset", "Disabled")
@@ -457,20 +477,33 @@ def build_easy_mode_settings(easy_values):
     settings = {}
 
     hdmi_mode = easy_values.get("hdmi_mode", "").strip()
-    settings["direct_video"] = "1" if hdmi_mode == "Direct Video (CRT / Scaler)" else "0"
+    if hdmi_mode == NOT_SET_VALUE:
+        settings["direct_video_commented"] = "0"
+    else:
+        settings["direct_video"] = "1" if hdmi_mode == "Direct Video (CRT / Scaler)" else "0"
 
     resolution = easy_values.get("resolution", "").strip()
     if resolution in RESOLUTION_REVERSE_MAP:
         settings["video_mode"] = RESOLUTION_REVERSE_MAP[resolution]
+    elif resolution == NOT_SET_VALUE:
+        settings["video_mode_commented"] = "8"
 
     scaling = easy_values.get("scaling", "").strip()
-    settings["vsync_adjust"] = SCALING_REVERSE_MAP.get(scaling, "1")
+    if scaling == NOT_SET_VALUE:
+        settings["vsync_adjust_commented"] = "1"
+    else:
+        settings["vsync_adjust"] = SCALING_REVERSE_MAP.get(scaling, "1")
 
     audio = easy_values.get("hdmi_audio", "").strip()
-    settings["dvi_mode"] = "0" if audio == "Enabled" else "1"
+    if audio == NOT_SET_VALUE:
+        settings["dvi_mode_commented"] = "0"
+    else:
+        settings["dvi_mode"] = "0" if audio == "Enabled" else "1"
 
     hdr = easy_values.get("hdr", "").strip()
-    if hdr in ("HLG HDR (recommended)", "HLG HDR (1, recommended)", "Enabled"):
+    if hdr == NOT_SET_VALUE:
+        settings["hdr_commented"] = "0"
+    elif hdr in ("HLG HDR (recommended)", "HLG HDR (1, recommended)", "Enabled"):
         settings["hdr"] = "1"
     elif hdr in ("DCI P3 HDR", "DCI P3 HDR (2)"):
         settings["hdr"] = "2"
@@ -478,11 +511,21 @@ def build_easy_mode_settings(easy_values):
         settings["hdr"] = "0"
 
     limited = easy_values.get("hdmi_limited", "").strip()
-    settings["hdmi_limited"] = "1" if limited == "Limited Range" else "0"
+    if limited == NOT_SET_VALUE:
+        settings["hdmi_limited_commented"] = "0"
+    else:
+        settings["hdmi_limited"] = "1" if limited == "Limited Range" else "0"
 
     analogue = easy_values.get("analogue", "").strip()
 
-    if analogue == "RGBS (SCART)":
+    if analogue == NOT_SET_VALUE:
+        for key, value in (
+            ("vga_mode", "rgb"), ("composite_sync", "1"), ("vga_sog", "0"),
+            ("vga_scaler", "0"), ("forced_scandoubler", "0")
+        ):
+            settings[f"{key}_commented"] = value
+
+    elif analogue == "RGBS (SCART)":
         settings["vga_mode"] = "rgb"
         settings["composite_sync"] = "1"
         settings["vga_sog"] = "0"
@@ -532,13 +575,19 @@ def build_easy_mode_settings(easy_values):
         settings["forced_scandoubler"] = "0"
 
     logo = easy_values.get("logo", "").strip()
-    settings["logo"] = "1" if logo == "Enabled" else "0"
+    if logo == NOT_SET_VALUE:
+        settings["logo_commented"] = "1"
+    else:
+        settings["logo"] = "1" if logo == "Enabled" else "0"
 
     recents = easy_values.get("recents", "Off").strip()
-    settings["recents"] = "1" if recents == "On" else "0"
+    if recents == NOT_SET_VALUE:
+        settings["recents_commented"] = "0"
+    else:
+        settings["recents"] = "1" if recents == "On" else "0"
 
     font = easy_values.get("font", "").strip()
-    if font and font != "Default":
+    if font and font not in ("Default", NOT_SET_VALUE):
         settings["font"] = f"font/{font}"
     else:
         settings["font_commented"] = "font/myfont.pf"
@@ -576,28 +625,47 @@ def _line_indent(line):
 
 
 def _format_setting_line(existing_line, key, value, commented=False):
-    indent = _line_indent(existing_line or "")
+    line = str(existing_line or "")
+    match = re.match(
+        r"^(\s*);?\s*([^=;\s]+)(\s*=\s*)([^;]*?)(\s*)(;.*)?$",
+        line,
+    )
+    if not match:
+        indent = _line_indent(line)
+        return f"{indent}{';' if commented else ''}{key}={value}"
+
+    indent, _old_key, equals, _old_value, value_spacing, inline_comment = match.groups()
     prefix = ";" if commented else ""
-    return f"{indent}{prefix}{key}={value}"
+    return f"{indent}{prefix}{key}{equals}{value}{value_spacing}{inline_comment or ''}"
 
 
 def _append_missing_settings(new_lines, updated_settings, replaced_keys):
+    additions = []
+
     for key, value in updated_settings.items():
         if key.startswith("__"):
+            continue
+
+        if key.endswith("_commented"):
+            # Selecting Not Set can comment an existing line, but it must not
+            # manufacture a new commented default when the key was absent.
             continue
 
         if key in replaced_keys:
             continue
 
-        if key == "font_commented":
-            if "font" in replaced_keys or "font_commented" in replaced_keys:
-                continue
-            new_lines.append(DEFAULT_FONT_LINE)
-            replaced_keys.add("font")
-            replaced_keys.add("font_commented")
-        else:
-            new_lines.append(f"{key}={value}")
-            replaced_keys.add(key)
+        additions.append(f"{key}={value}")
+        replaced_keys.add(key)
+
+    if not additions:
+        return
+
+    trailing_blank_lines = []
+    while new_lines and not new_lines[-1].strip():
+        trailing_blank_lines.insert(0, new_lines.pop())
+
+    new_lines.extend(additions)
+    new_lines.extend(trailing_blank_lines)
 
 
 def _append_amigavision_preset_block(new_lines, updated_settings):
@@ -655,9 +723,6 @@ def update_mister_ini_text(ini_text, updated_settings):
                     _append_menu_crt_preset_block(new_lines, updated_settings)
                     post_mister_blocks_inserted = True
 
-                if new_lines and new_lines[-1].strip():
-                    new_lines.append("")
-
             in_mister_section = _is_mister_section_header(stripped)
 
             if in_mister_section:
@@ -685,10 +750,31 @@ def update_mister_ini_text(ini_text, updated_settings):
                         continue
 
                     if "font_commented" in updated_settings:
-                        new_lines.append(DEFAULT_FONT_LINE)
+                        new_lines.append(
+                            _format_setting_line(
+                                line,
+                                "font",
+                                _value or updated_settings["font_commented"],
+                                commented=True,
+                            )
+                        )
                         replaced_keys.add("font")
                         replaced_keys.add("font_commented")
                         continue
+
+                commented_key = f"{key}_commented"
+                if commented_key in updated_settings:
+                    new_lines.append(
+                        _format_setting_line(
+                            line,
+                            key,
+                            _value or updated_settings[commented_key],
+                            commented=True,
+                        )
+                    )
+                    replaced_keys.add(key)
+                    replaced_keys.add(commented_key)
+                    continue
 
                 if key in updated_settings and key != "font_commented":
                     new_lines.append(
