@@ -200,6 +200,14 @@ from core.extras_solarus import (
     uninstall_solarus,
     uninstall_solarus_local,
 )
+from core.extras_mister_dvd import (
+    get_mister_dvd_status,
+    get_mister_dvd_status_local,
+    install_or_update_mister_dvd,
+    install_or_update_mister_dvd_local,
+    uninstall_mister_dvd,
+    uninstall_mister_dvd_local,
+)
 
 from core.scripts_version_check import apply_script_update_status, supports_script_update_check
 from core.downloader_backend import (
@@ -259,6 +267,7 @@ DOWNLOADER_HANDLER_DATABASES = {
     "mister_hifi": "MultiDatabases/mister-hifi",
     "disc_tools": "MultiDatabases/disc-tools",
     "solarus": "MultiDatabases/solarus",
+    "mister_dvd": "MultiDatabases/mister-dvd",
 }
 
 
@@ -466,6 +475,7 @@ FALLBACK_ITEMS = [
     ("mister_duke3d", "extras", "extra", "mister_duke3d", "MiSTer Duke3D", "neofreno", "MiSTer Duke3D installs the Duke Nukem 3D port for MiSTer. Provide your own DUKE3D.GRP game data file."),
     ("dreamster", "extras", "extra", "dreamster", "DreamSTer", "skmp", "DreamSTer is an emulation core that uses partial FPGA output to run Dreamcast software on MiSTer. It is currently in pre-release."),
     ("solarus", "extras", "extra", "solarus", "Solarus", "Solarus Team", "A port of the Solarus 2D action-RPG engine to MiSTer FPGA, supporting Zelda-like games such as The Legend of Zelda: Mystery of Solarus DX, Ocean's Heart, Yarntown, and many more."),
+    ("mister_dvd", "extras", "extra", "mister_dvd", "MiSTer DVD", "owenb321", "An FPGA-based DVD-Video player core for MiSTer, built on MiSTer_MPEG2 and the MPEG2FPGA hardware decoder. Supports DVD menus, navigation, subtitles, and in-fabric audio/video decoding."),
     ("zaparoo_frontend", "extras", "extra", "zaparoo_frontend", "Zaparoo Frontend", "Zaparoo Project", "Zaparoo Frontend provides a controller-friendly interface for browsing and launching content. It is installed as part of Zaparoo; uninstall it completely from the main Zaparoo entry."),
     ("ranny_snice_wallpapers", "wallpaper_packs", "wallpaper_pack", "ranny_snice_wallpapers", "Ranny Snice Wallpapers", "Ranny Snice", "A collection of MiSTer menu wallpapers by Ranny Snice, available in both 16:9 and 4:3 versions."),
     ("pcn_challenge_wallpapers", "wallpaper_packs", "wallpaper_pack", "pcn_challenge_wallpapers", "PCN Challenge Wallpapers", "Pixel Cherry Ninja", "Wallpapers created during PCN livestreams based on audience requests."),
@@ -519,6 +529,7 @@ EXTRA_HANDLERS = {
     "physical_disc_cores": (get_physical_disc_status, get_physical_disc_status_local, install_or_update_physical_disc, install_or_update_physical_disc_local, uninstall_physical_disc, uninstall_physical_disc_local),
     "retroachievement_cores": (get_ra_cores_status, get_ra_cores_status_local, install_or_update_ra_cores, install_or_update_ra_cores_local, uninstall_ra_cores, uninstall_ra_cores_local),
     "solarus": (get_solarus_status, get_solarus_status_local, install_or_update_solarus, install_or_update_solarus_local, uninstall_solarus, uninstall_solarus_local),
+    "mister_dvd": (get_mister_dvd_status, get_mister_dvd_status_local, install_or_update_mister_dvd, install_or_update_mister_dvd_local, uninstall_mister_dvd, uninstall_mister_dvd_local),
 }
 
 @dataclass
@@ -1554,7 +1565,7 @@ def run_uninstall(item: dict, context: InstallCenterContext, log: Callable[[str]
         if not functions:
             raise RuntimeError("This entry does not have an Install Center uninstaller yet.")
         uninstall_online, uninstall_local = functions[4], functions[5]
-        if handler in {"retroachievement_cores", "3s_arm", "3sx_mister", "dreamster", "mister_duke3d", "mister_quake", "mms2_gb_core", "paprium_megadrive", "sonic_mania_mister", "megavgmdrive", "physical_disc_cores", "solarus"}:
+        if handler in {"retroachievement_cores", "3s_arm", "3sx_mister", "dreamster", "mister_duke3d", "mister_quake", "mms2_gb_core", "paprium_megadrive", "sonic_mania_mister", "megavgmdrive", "physical_disc_cores", "solarus", "mister_dvd"}:
             if context.offline:
                 uninstall_local(context.sd_root, log, force=force_downloader)
             else:
