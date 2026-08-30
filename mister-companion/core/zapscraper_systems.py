@@ -123,6 +123,11 @@ SUPPORTED_SYSTEMS = {
         "extensions": [],
         "amigavision_listings": ["listings/games.txt"],
     },
+    "AmigaCD32": {
+        "label": "Amiga CD32",
+        "screenscraper_id": 130,
+        "extensions": [".cue", ".chd", ".iso"],
+    },
     "Astrocade": {
         "label": "Bally Astrocade",
         "screenscraper_id": 44,

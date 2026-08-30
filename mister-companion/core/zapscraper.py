@@ -2157,8 +2157,40 @@ def _zaparoo_action_already_complete(
     system_path = action.get("system_path")
     rom = action.get("rom") or {}
     rom_filename = rom.get("filename") or Path(rom.get("path", "")).name
+    primary_relative_path = str(action.get("relative_path") or "").strip()
+    identity_key = _rom_identity_key(rom, primary_relative_path)
+
+    # Archive members intentionally share the Zaparoo-facing ZIP path, but
+    # ZapScraper must track each member independently. A shared gamelist child
+    # therefore cannot prove that this specific member has already been handled.
+    if identity_key and identity_key != primary_relative_path:
+        cached_entry = cache.get(identity_key) if isinstance(cache, dict) else None
+        cached_parent_id = (
+            str(cached_entry.get("screenscraper_id") or "").strip()
+            if isinstance(cached_entry, dict)
+            else ""
+        )
+        parent = parents_by_id.get(cached_parent_id) if cached_parent_id else None
+        if parent is None:
+            return False
+
+        has_metadata = game_has_metadata(parent)
+        if skip_games_with_metadata_ignore_incomplete_media and has_metadata:
+            return True
+
+        metadata_ok = has_metadata if skip_existing_metadata else False
+        media_ok = _zaparoo_selected_media_complete(
+            system_path,
+            parent,
+            media_source_names=media_source_names,
+            cache=cache,
+            cache_relative_path=identity_key,
+            crt_mode=crt_mode,
+        )
+        return metadata_ok and media_ok
+
     possible_paths = [
-        str(action.get("relative_path") or "").strip(),
+        primary_relative_path,
         f"./{rom_filename}",
     ]
 
@@ -2383,10 +2415,11 @@ def filter_systems_for_pending_scrape(
             if not isinstance(rom, dict) or not relative_path:
                 continue
 
-            if relative_path in seen_paths:
+            identity_key = _rom_identity_key(rom, relative_path)
+            if identity_key in seen_paths:
                 continue
 
-            seen_paths.add(relative_path)
+            seen_paths.add(identity_key)
             roms.append(rom)
 
         if not roms:
@@ -2628,15 +2661,48 @@ def create_placeholder_metadata_from_rom(rom: dict[str, Any], region: str = "") 
     return metadata
 
 
-def clean_rom_display_name(name: str) -> str:
+_SAFE_FILENAME_METADATA_PATTERNS = (
+    re.compile(r"^(?:usa|us|europe|eu|japan|jp|world|wor|korea|kr|asia|australia|au|brazil|br|canada|ca)(?:\s*,\s*(?:usa|us|europe|eu|japan|jp|world|wor|korea|kr|asia|australia|au|brazil|br|canada|ca))*$", re.IGNORECASE),
+    re.compile(r"^(?:en|fr|de|es|it|ja|jp|pt|nl|sv|no|da|fi|ko|zh)(?:\s*,\s*(?:en|fr|de|es|it|ja|jp|pt|nl|sv|no|da|fi|ko|zh))*$", re.IGNORECASE),
+    re.compile(r"^(?:rev(?:ision)?|ver(?:sion)?|v)\s*[a-z0-9.]+$", re.IGNORECASE),
+    re.compile(r"^(?:disc|disk|side|track)\s*[a-z0-9]+(?:\s+of\s+\d+)?$", re.IGNORECASE),
+    re.compile(r"^(?:beta|demo|prototype|proto|sample|promo)$", re.IGNORECASE),
+    re.compile(r"^[!]$"),
+)
+
+
+def _is_safe_filename_metadata_tag(value: str) -> bool:
+    tag = re.sub(r"\s+", " ", str(value or "").strip())
+    if not tag:
+        return True
+    return any(pattern.fullmatch(tag) for pattern in _SAFE_FILENAME_METADATA_PATTERNS)
+
+
+def _strip_safe_filename_metadata(name: str) -> str:
     value = str(name or "")
 
-    value = re.sub(r"\([^)]*\)", "", value)
-    value = re.sub(r"\[[^\]]*\]", "", value)
-    value = re.sub(r"\{[^}]*\}", "", value)
-    value = re.sub(r"\s+", " ", value)
-    value = value.strip(" -_.")
+    def replace(match):
+        inner = match.group(1)
+        return " " if _is_safe_filename_metadata_tag(inner) else f" {inner} "
 
+    value = re.sub(r"\(([^)]*)\)", replace, value)
+    value = re.sub(r"\[([^\]]*)\]", replace, value)
+    value = re.sub(r"\{([^}]*)\}", replace, value)
+    value = re.sub(r"\s+", " ", value)
+    return value.strip(" -_.")
+
+
+def _rom_identity_key(rom: dict[str, Any] | None, relative_path: str = "") -> str:
+    rom = rom if isinstance(rom, dict) else {}
+    path = str(relative_path or rom.get("relative_path") or "").strip()
+    inner = str(rom.get("zip_inner_path") or "").replace("\\", "/").strip("/")
+    if inner:
+        return f"{path}::zip::{inner}"
+    return path
+
+
+def clean_rom_display_name(name: str) -> str:
+    value = _strip_safe_filename_metadata(str(name or ""))
     return value or str(name or "Unknown Game")
 
 
@@ -3884,6 +3950,8 @@ def apply_zaparoo_companion_scrape_result(
     parent = get_or_create_zaparoo_parent_entry(tree, screenscraper_id)
     update_zaparoo_parent_metadata(parent, metadata)
 
+    cache_identity = _rom_identity_key(rom, relative_path)
+
     _check_stopped(stop_checker)
     media_paths = download_zaparoo_companion_media_assets(
         system_path=system_path,
@@ -3896,7 +3964,7 @@ def apply_zaparoo_companion_scrape_result(
         log_callback=log_callback,
         crt_mode=crt_mode,
         cache=cache,
-        cache_relative_path=relative_path,
+        cache_relative_path=cache_identity,
     )
 
     _check_stopped(stop_checker)
@@ -3911,7 +3979,7 @@ def apply_zaparoo_companion_scrape_result(
 
     update_cache_entry(
         cache,
-        relative_path,
+        cache_identity,
         screenscraper_id=screenscraper_id,
         metadata_scraped=True,
         image_source_name="Zaparoo Companion",
@@ -3968,15 +4036,9 @@ def _match_rom_region_lang(game: dict[str, Any], rom_filename: str) -> tuple[str
 
 
 def _slugify_rom_filename(filename: str) -> str:
-    name = Path(str(filename or "")).stem
-    cut = len(name)
-    for char in "([":
-        idx = name.find(char)
-        if idx != -1:
-            cut = min(cut, idx)
-    name = name[:cut].strip()
-    name = re.sub(r"\s+", "_", name)
-    return name.lower()
+    name = _strip_safe_filename_metadata(Path(str(filename or "")).stem)
+    name = re.sub(r"[^\w]+", "_", name, flags=re.UNICODE).strip("_")
+    return name.casefold()
 
 
 def _action_output_relative_path(action: dict[str, Any], rom_filename: str) -> str:
@@ -4593,6 +4655,7 @@ def build_zaparoo_companion_review_items(
 
     parents = get_zaparoo_parent_entries_by_id(tree)
     children = get_zaparoo_child_entries_by_path(tree)
+    cache = load_zapscraper_cache(system_path)
     media_source_names = normalize_zaparoo_media_source_names(media_source_names)
 
     items: list[dict[str, Any]] = []
@@ -4604,9 +4667,16 @@ def build_zaparoo_companion_review_items(
             system_path,
         )
 
+        identity_key = _rom_identity_key(rom, relative_path)
         child = children.get(relative_path)
         child_data = zaparoo_child_entry_to_dict(child)
         parent_id = child_data.get("parentid", "")
+
+        cached_entry = cache.get(identity_key) if isinstance(cache, dict) else None
+        cached_parent_id = str(cached_entry.get("screenscraper_id") or "").strip() if isinstance(cached_entry, dict) else ""
+        if cached_parent_id and cached_parent_id in parents:
+            parent_id = cached_parent_id
+
         parent = parents.get(parent_id)
         parent_data = zaparoo_parent_entry_to_dict(parent, system_path) if parent is not None else {}
 
@@ -4653,10 +4723,10 @@ def build_zaparoo_companion_review_items(
             }
         )
 
-        seen_paths.add(relative_path)
+        seen_paths.add(identity_key)
 
     for relative_path, child in children.items():
-        if relative_path in seen_paths:
+        if relative_path in seen_paths or any(key.startswith(f"{relative_path}::zip::") for key in seen_paths):
             continue
 
         child_data = zaparoo_child_entry_to_dict(child)

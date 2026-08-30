@@ -8,6 +8,7 @@ from PyQt6.QtGui import QImage, QKeySequence, QPalette, QPixmap, QShortcut
 from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
+    QDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -244,6 +245,237 @@ class ManualPreviewArea(QScrollArea):
         super().focusOutEvent(event)
 
 
+class ManualFullscreenViewer(QDialog):
+    def __init__(self, manuals_tab):
+        super().__init__(manuals_tab)
+        self.manuals_tab = manuals_tab
+        self.pdf_document = manuals_tab.pdf_document
+        self.page_count = manuals_tab.page_count
+        self.current_page = manuals_tab.current_page
+        self.zoom_factor = manuals_tab.zoom_factor
+        self.zoom_fit_mode = manuals_tab.zoom_fit_mode
+
+        self.setWindowTitle("PDF Viewer")
+        self.setModal(True)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(8)
+
+        toolbar = QHBoxLayout()
+        toolbar.setSpacing(8)
+
+        self.previous_page_button = QPushButton("Back")
+        self.previous_page_button.clicked.connect(self.previous_page)
+
+        self.page_label = QLabel()
+        self.page_label.setMinimumWidth(100)
+        self.page_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self.next_page_button = QPushButton("Next")
+        self.next_page_button.clicked.connect(self.next_page)
+
+        self.zoom_out_button = QPushButton("-")
+        self.zoom_out_button.setToolTip("Zoom out")
+        self.zoom_out_button.clicked.connect(self.zoom_out)
+
+        self.zoom_label = QLabel("Fit")
+        self.zoom_label.setMinimumWidth(60)
+        self.zoom_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self.zoom_in_button = QPushButton("+")
+        self.zoom_in_button.setToolTip("Zoom in")
+        self.zoom_in_button.clicked.connect(self.zoom_in)
+
+        self.zoom_fit_button = QPushButton("Fit")
+        self.zoom_fit_button.clicked.connect(self.zoom_to_fit)
+
+        self.exit_fullscreen_button = QPushButton("Exit Fullscreen")
+        self.exit_fullscreen_button.clicked.connect(self.close)
+
+        toolbar.addWidget(self.previous_page_button)
+        toolbar.addWidget(self.page_label)
+        toolbar.addWidget(self.next_page_button)
+        toolbar.addStretch()
+        toolbar.addWidget(self.zoom_out_button)
+        toolbar.addWidget(self.zoom_label)
+        toolbar.addWidget(self.zoom_in_button)
+        toolbar.addWidget(self.zoom_fit_button)
+        toolbar.addStretch()
+        toolbar.addWidget(self.exit_fullscreen_button)
+        layout.addLayout(toolbar)
+
+        self.viewer_status_label = QLabel()
+        self.viewer_status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.viewer_status_label.setWordWrap(True)
+
+        self.page_image_label = QLabel()
+        self.page_image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.page_image_label.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Expanding,
+        )
+
+        self.scroll_area = ManualPreviewArea()
+        self.scroll_area.zoom_requested.connect(self.adjust_zoom_from_wheel)
+        self.scroll_area.set_active(True)
+
+        viewer_holder = QWidget()
+        viewer_holder.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        viewer_holder.setStyleSheet("background: transparent; border: none;")
+        viewer_holder_layout = QVBoxLayout(viewer_holder)
+        viewer_holder_layout.setContentsMargins(0, 0, 0, 0)
+        viewer_holder_layout.addWidget(self.viewer_status_label)
+        viewer_holder_layout.addWidget(self.page_image_label, 1)
+        self.scroll_area.setWidget(viewer_holder)
+        layout.addWidget(self.scroll_area, 1)
+
+        for key, callback in (
+            (Qt.Key.Key_Left, self.previous_page),
+            (Qt.Key.Key_Up, self.previous_page),
+            (Qt.Key.Key_Right, self.next_page),
+            (Qt.Key.Key_Down, self.next_page),
+            (Qt.Key.Key_Escape, self.close),
+        ):
+            shortcut = QShortcut(QKeySequence(key), self, activated=callback)
+            shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+
+        self.render_current_page()
+
+    def render_current_page(self, preserve_scroll=False):
+        if not self.pdf_document or self.page_count <= 0:
+            self.update_controls()
+            return
+
+        h_bar = self.scroll_area.horizontalScrollBar()
+        v_bar = self.scroll_area.verticalScrollBar()
+        h_ratio = h_bar.value() / h_bar.maximum() if preserve_scroll and h_bar.maximum() > 0 else 0.5
+        v_ratio = v_bar.value() / v_bar.maximum() if preserve_scroll and v_bar.maximum() > 0 else 0.5
+
+        page_size = self.pdf_document.pagePointSize(self.current_page).toSize()
+        viewport_width = max(1, self.scroll_area.viewport().width() - 40)
+        viewport_height = max(1, self.scroll_area.viewport().height() - 40)
+
+        if page_size.width() > 0 and page_size.height() > 0:
+            fit_scale = min(viewport_width / page_size.width(), viewport_height / page_size.height())
+        elif page_size.width() > 0:
+            fit_scale = viewport_width / page_size.width()
+        else:
+            fit_scale = 1.0
+
+        fit_scale = max(0.1, fit_scale)
+        render_scale = fit_scale if self.zoom_fit_mode else fit_scale * self.zoom_factor
+        target_size = QSize(
+            max(1, int(page_size.width() * render_scale)),
+            max(1, int(page_size.height() * render_scale)),
+        )
+
+        image = self.pdf_document.render(self.current_page, target_size)
+        if image.isNull():
+            self.viewer_status_label.setText("Could not render PDF page.")
+            return
+
+        if image.format() != QImage.Format.Format_ARGB32:
+            image = image.convertToFormat(QImage.Format.Format_ARGB32)
+
+        self.viewer_status_label.clear()
+        self.page_image_label.setPixmap(QPixmap.fromImage(image))
+        self.page_image_label.adjustSize()
+        widget = self.scroll_area.widget()
+        if widget is not None:
+            widget.adjustSize()
+
+        self.scroll_area.set_has_pdf(True)
+        self.update_controls()
+        QApplication.processEvents()
+        self.update_pan_state()
+
+        if preserve_scroll:
+            h_bar.setValue(int(h_bar.maximum() * h_ratio))
+            v_bar.setValue(int(v_bar.maximum() * v_ratio))
+
+    def set_zoom_factor(self, zoom_factor):
+        if not self.pdf_document or self.page_count <= 0:
+            return
+        self.zoom_fit_mode = False
+        self.zoom_factor = max(0.5, min(4.0, float(zoom_factor)))
+        self.render_current_page(preserve_scroll=True)
+
+    def zoom_in(self):
+        self.set_zoom_factor(self.zoom_factor + 0.1)
+
+    def zoom_out(self):
+        self.set_zoom_factor(self.zoom_factor - 0.1)
+
+    def zoom_to_fit(self):
+        if not self.pdf_document or self.page_count <= 0:
+            return
+        self.zoom_fit_mode = True
+        self.zoom_factor = 1.0
+        self.render_current_page()
+
+    def adjust_zoom_from_wheel(self, direction):
+        self.set_zoom_factor(self.zoom_factor + (0.1 if direction > 0 else -0.1))
+
+    def previous_page(self):
+        if not self.pdf_document or self.current_page <= 0:
+            return
+        self.current_page -= 1
+        self.zoom_factor = 1.0
+        self.zoom_fit_mode = True
+        self.render_current_page()
+
+    def next_page(self):
+        if not self.pdf_document or self.current_page >= self.page_count - 1:
+            return
+        self.current_page += 1
+        self.zoom_factor = 1.0
+        self.zoom_fit_mode = True
+        self.render_current_page()
+
+    def update_pan_state(self):
+        can_pan = bool(
+            self.pdf_document
+            and self.page_count > 0
+            and not self.zoom_fit_mode
+            and (
+                self.scroll_area.horizontalScrollBar().maximum() > 0
+                or self.scroll_area.verticalScrollBar().maximum() > 0
+            )
+        )
+        self.scroll_area.set_can_pan(can_pan)
+
+    def update_controls(self):
+        has_pdf = bool(self.pdf_document and self.page_count > 0)
+        self.previous_page_button.setEnabled(has_pdf and self.current_page > 0)
+        self.next_page_button.setEnabled(has_pdf and self.current_page < self.page_count - 1)
+        self.zoom_out_button.setEnabled(has_pdf and not self.zoom_fit_mode and self.zoom_factor > 0.5)
+        self.zoom_in_button.setEnabled(has_pdf and (self.zoom_fit_mode or self.zoom_factor < 4.0))
+        self.zoom_fit_button.setEnabled(has_pdf and not self.zoom_fit_mode)
+
+        self.page_label.setText(
+            f"Page {self.current_page + 1} / {self.page_count}" if has_pdf else ""
+        )
+        self.zoom_label.setText(
+            "Fit" if not has_pdf or self.zoom_fit_mode else f"{int(round(self.zoom_factor * 100))}%"
+        )
+        self.update_pan_state()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if self.pdf_document and self.page_count > 0:
+            self.render_current_page(preserve_scroll=not self.zoom_fit_mode)
+
+    def closeEvent(self, event):
+        if self.manuals_tab.pdf_document is self.pdf_document:
+            self.manuals_tab.current_page = self.current_page
+            self.manuals_tab.zoom_factor = self.zoom_factor
+            self.manuals_tab.zoom_fit_mode = self.zoom_fit_mode
+            self.manuals_tab.render_current_page(preserve_scroll=not self.zoom_fit_mode)
+        self.manuals_tab.fullscreen_viewer = None
+        super().closeEvent(event)
+
+
 class ManualsTab(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -271,6 +503,7 @@ class ManualsTab(QWidget):
         self.page_count = 0
         self.zoom_factor = 1.0
         self.zoom_fit_mode = True
+        self.fullscreen_viewer = None
 
         root_layout = QVBoxLayout(self)
         root_layout.setContentsMargins(10, 10, 10, 10)
@@ -323,11 +556,15 @@ class ManualsTab(QWidget):
         self.zoom_fit_button = QPushButton("Fit")
         self.zoom_fit_button.clicked.connect(self.zoom_to_fit)
 
+        self.fullscreen_button = QPushButton("Fullscreen")
+        self.fullscreen_button.clicked.connect(self.open_fullscreen_viewer)
+
         zoom_layout.addStretch()
         zoom_layout.addWidget(self.zoom_out_button)
         zoom_layout.addWidget(self.zoom_label)
         zoom_layout.addWidget(self.zoom_in_button)
         zoom_layout.addWidget(self.zoom_fit_button)
+        zoom_layout.addWidget(self.fullscreen_button)
         zoom_layout.addStretch()
         viewer_layout.addLayout(zoom_layout)
 
@@ -730,6 +967,13 @@ class ManualsTab(QWidget):
         self.render_current_page()
 
     def close_current_pdf_document(self):
+        if self.fullscreen_viewer is not None:
+            try:
+                self.fullscreen_viewer.close()
+            except Exception:
+                pass
+            self.fullscreen_viewer = None
+
         try:
             self.page_image_label.clear()
             self.page_image_label.setPixmap(QPixmap())
@@ -877,6 +1121,7 @@ class ManualsTab(QWidget):
         self.zoom_out_button.setEnabled(has_pdf and not self.zoom_fit_mode and self.zoom_factor > 0.5)
         self.zoom_in_button.setEnabled(has_pdf and (self.zoom_fit_mode or self.zoom_factor < 4.0))
         self.zoom_fit_button.setEnabled(has_pdf and not self.zoom_fit_mode)
+        self.fullscreen_button.setEnabled(has_pdf)
 
         if not has_pdf:
             self.zoom_label.setText("Fit")
@@ -886,6 +1131,21 @@ class ManualsTab(QWidget):
             self.zoom_label.setText("Fit")
         else:
             self.zoom_label.setText(f"{int(round(self.zoom_factor * 100))}%")
+
+    def open_fullscreen_viewer(self):
+        if not self.pdf_document or self.page_count <= 0:
+            return
+
+        if self.fullscreen_viewer is not None:
+            try:
+                self.fullscreen_viewer.raise_()
+                self.fullscreen_viewer.activateWindow()
+                return
+            except Exception:
+                self.fullscreen_viewer = None
+
+        self.fullscreen_viewer = ManualFullscreenViewer(self)
+        self.fullscreen_viewer.showFullScreen()
 
     def previous_page(self):
         if not self.pdf_document or self.page_count <= 0:
