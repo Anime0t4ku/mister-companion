@@ -1073,6 +1073,12 @@ class InstallCenterDetailsDialog(QDialog):
                 enabled=installed,
                 min_width=220,
             )
+            add_button(
+                "Manage Overrides",
+                lambda: self.call_install_center_action("manage_physical_disc_overrides"),
+                enabled=(installed and auto_enabled),
+                min_width=170,
+            )
         elif handler == "zaparoo_frontend":
             add_button("Disable", lambda: self.call_install_center_action("disable_zaparoo_frontend"), enabled=self.status.get("disable_enabled", False), min_width=170)
 

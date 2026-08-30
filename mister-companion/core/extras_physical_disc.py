@@ -25,6 +25,19 @@ PHYSICAL_DISC_DB_ID = "MultiDatabases/physical-disc"
 PHYSICAL_DISC_DB_URL = "https://raw.githubusercontent.com/theypsilon/MultiDatabases_MiSTer/db/physical-disc/db.json"
 PHYSICAL_DISC_BINARY = "/media/fat/MiSTer_Physical-CD"
 MISTER_INI_PATH = "/media/fat/MiSTer.ini"
+
+AUDIO_CD_OVERRIDES = {
+    "A0CD-PSX",
+    "A0CD-Saturn",
+    "A0CD-MegaCD",
+    "A0CD-TurboGrafx16-CD",
+    "A0CD-NeoGeoCD",
+    "A0CD-CDi",
+    "A0CD-3DO",
+    "MISTERHIFI",
+}
+DVD_OVERRIDES = {"HYBRID", "FPGA"}
+
 PHYSICAL_DISC_FILES = (
     PHYSICAL_DISC_BINARY,
     "/media/fat/_Physical Disc Cores/3DO.mgl",
@@ -85,6 +98,108 @@ def get_auto_disc_detection_state(connection):
 
 def get_auto_disc_detection_state_local(sd_root):
     return _auto_disc_detection_state_from_text(_read_local_text(sd_root, MISTER_INI_PATH))
+
+
+def _auto_disc_menu_section(text):
+    for section in _menu_sections(text):
+        main_match = _main_setting(section.group("body"))
+        if main_match and _is_auto_disc_main(main_match.group("value")):
+            return section
+    return None
+
+
+def _menu_override_value(body, key):
+    match = re.search(
+        rf"(?mi)^[ \t]*{re.escape(key)}[ \t]*=[ \t]*(?P<value>[^\n;#]*?)[ \t]*(?:[;#].*)?$",
+        body,
+    )
+    return match.group("value").strip() if match else ""
+
+
+def _physical_disc_overrides_state_from_text(text):
+    normalized = _normalize_ini_text(text)
+    section = _auto_disc_menu_section(normalized)
+    if not section:
+        return {
+            "available": False,
+            "audio_cd": "",
+            "dvd": "",
+        }
+    body = section.group("body")
+    return {
+        "available": True,
+        "audio_cd": _menu_override_value(body, "AUDIOCD"),
+        "dvd": _menu_override_value(body, "DVD"),
+    }
+
+
+def get_physical_disc_overrides(connection):
+    if not connection.is_connected():
+        raise RuntimeError("Not connected to MiSTer.")
+    return _physical_disc_overrides_state_from_text(_read_remote_text(connection, MISTER_INI_PATH))
+
+
+def get_physical_disc_overrides_local(sd_root):
+    return _physical_disc_overrides_state_from_text(_read_local_text(sd_root, MISTER_INI_PATH))
+
+
+def _set_physical_disc_overrides_text(text, audio_cd="", dvd=""):
+    normalized = _normalize_ini_text(text)
+    section = _auto_disc_menu_section(normalized)
+    if not section:
+        raise RuntimeError("Enable Auto Disc Detection before managing overrides.")
+
+    audio_cd = str(audio_cd or "").strip()
+    dvd = str(dvd or "").strip()
+    if audio_cd and audio_cd not in AUDIO_CD_OVERRIDES:
+        raise ValueError(f"Unsupported Audio CD override: {audio_cd}")
+    if dvd and dvd not in DVD_OVERRIDES:
+        raise ValueError(f"Unsupported DVD override: {dvd}")
+
+    body = section.group("body")
+    body = re.sub(r"(?mi)^[ \t]*(?:AUDIOCD|DVD)[ \t]*=[^\n]*(?:\n|$)", "", body)
+
+    override_lines = []
+    if audio_cd:
+        override_lines.append(f"AUDIOCD={audio_cd}")
+    if dvd:
+        override_lines.append(f"DVD={dvd}")
+
+    if override_lines:
+        main_match = _main_setting(body)
+        block = "\n".join(override_lines) + "\n"
+        if main_match:
+            insert_at = main_match.end()
+            if insert_at < len(body) and body[insert_at:insert_at + 1] == "\n":
+                insert_at += 1
+            elif insert_at == len(body):
+                block = "\n" + block
+            body = body[:insert_at] + block + body[insert_at:]
+        else:
+            body = block + body
+
+    updated = normalized[:section.start("body")] + body + normalized[section.end("body"):]
+    return re.sub(r"\n{3,}", "\n\n", updated).rstrip("\n") + "\n"
+
+
+def set_physical_disc_overrides(connection, audio_cd="", dvd=""):
+    if not connection.is_connected():
+        raise RuntimeError("Not connected to MiSTer.")
+    current = _read_remote_text(connection, MISTER_INI_PATH)
+    updated = _set_physical_disc_overrides_text(current, audio_cd=audio_cd, dvd=dvd)
+    changed = updated != _normalize_ini_text(current)
+    if changed:
+        _write_remote_text(connection, MISTER_INI_PATH, updated)
+    return {"changed": changed}
+
+
+def set_physical_disc_overrides_local(sd_root, audio_cd="", dvd=""):
+    current = _read_local_text(sd_root, MISTER_INI_PATH)
+    updated = _set_physical_disc_overrides_text(current, audio_cd=audio_cd, dvd=dvd)
+    changed = updated != _normalize_ini_text(current)
+    if changed:
+        _write_local_text(sd_root, MISTER_INI_PATH, updated)
+    return {"changed": changed}
 
 
 def _enable_auto_disc_detection_text(text, replace_existing=False):

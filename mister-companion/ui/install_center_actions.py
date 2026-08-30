@@ -39,6 +39,7 @@ from ui.dialogs.cifs_config_dialog import CifsConfigDialog
 from ui.dialogs.dav_browser_config_dialog import DavBrowserConfigDialog
 from ui.dialogs.ftp_save_sync_config_dialog import FtpSaveSyncConfigDialog
 from ui.dialogs.ra_cores_config_dialog import RetroAchievementsConfigDialog
+from ui.dialogs.physical_disc_overrides_dialog import PhysicalDiscOverridesDialog
 from ui.dialogs.ra_viewer_config_dialog import RAViewerConfigDialog
 from ui.dialogs.update_all_config_dialog import UpdateAllConfigDialog
 
@@ -112,6 +113,23 @@ class InstallCenterActions:
             self.refresh()
         except Exception as exc:
             QMessageBox.critical(self.tab, "Auto Disc Detection", str(exc))
+
+    def manage_physical_disc_overrides(self):
+        offline = self.is_offline_mode()
+        if offline:
+            root = self._require_sd()
+            if not root:
+                return
+            dialog = PhysicalDiscOverridesDialog(parent=self.tab, sd_root=root)
+        else:
+            if not self._require_online():
+                return
+            dialog = PhysicalDiscOverridesDialog(parent=self.tab, connection=self.connection)
+
+        if dialog.exec():
+            if dialog.changed and not offline:
+                return_to_menu_remote(self.connection)
+            self.refresh()
 
     def configure_update_all(self, installed=True):
         if not installed:
