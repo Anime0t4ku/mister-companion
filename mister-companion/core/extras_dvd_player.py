@@ -1,4 +1,5 @@
 import os
+import re
 
 from core.downloader_backend import (
     ensure_database_source_local,
@@ -20,20 +21,121 @@ from core.extras_common import (
     _copy_local_file_to_sd,
     _ensure_local_dir,
     _ensure_remote_dir,
+    _normalize_ini_text_for_append,
     _path_exists,
     _path_exists_local,
+    _read_local_text,
+    _read_remote_text,
+    _write_local_text,
+    _write_remote_text,
 )
 
 DVD_PLAYER_DB_ID = "MultiDatabases/dvd-player"
 DVD_PLAYER_DB_URL = "https://raw.githubusercontent.com/theypsilon/MultiDatabases_MiSTer/db/dvd-player/db.json"
 REMOTE_LIB_DIR = "/media/fat/DVD/lib"
 REMOTE_LIBDVDCSS_PATH = "/media/fat/DVD/lib/libdvdcss.so.2"
+REMOTE_INI_PATH = "/media/fat/MiSTer.ini"
+INI_SECTION = "DVD-Player"
+INI_MAIN = "MiSTer_DVD"
+INI_BLOCK = f"[{INI_SECTION}]\nmain={INI_MAIN}\n"
 
 
-def _status(state, *, css_present: bool, check_latest=False):
+def _ini_entry_present(text: str) -> bool:
+    normalized = (text or "").replace("\r\n", "\n")
+    pattern = re.compile(
+        rf"(?ms)^\[{re.escape(INI_SECTION)}\]\s*$.*?^main\s*=\s*{re.escape(INI_MAIN)}\s*$"
+    )
+    return bool(pattern.search(normalized))
+
+
+def _ensure_ini_entry_text(text: str) -> tuple[str, bool]:
+    normalized = (text or "").replace("\r\n", "\n")
+    if _ini_entry_present(normalized):
+        return normalized, False
+
+    section_pattern = re.compile(
+        rf"(?ms)^\[{re.escape(INI_SECTION)}\]\s*$\n(?P<body>.*?)(?=^\[|\Z)"
+    )
+    match = section_pattern.search(normalized)
+    if match:
+        body = match.group("body")
+        main_pattern = re.compile(r"(?m)^main\s*=.*$")
+        if main_pattern.search(body):
+            new_body = main_pattern.sub(f"main={INI_MAIN}", body, count=1)
+        else:
+            new_body = f"main={INI_MAIN}\n" + body
+        updated = normalized[:match.start("body")] + new_body + normalized[match.end("body"):]
+        return updated, True
+
+    updated = _normalize_ini_text_for_append(normalized.rstrip("\n")) + INI_BLOCK
+    return updated, True
+
+
+def _remove_ini_entry_text(text: str) -> tuple[str, bool]:
+    normalized = (text or "").replace("\r\n", "\n")
+    if not normalized:
+        return normalized, False
+
+    section_pattern = re.compile(
+        rf"(?ms)^\[{re.escape(INI_SECTION)}\]\s*$\n(?P<body>.*?)(?=^\[|\Z)"
+    )
+    match = section_pattern.search(normalized)
+    if not match:
+        return normalized, False
+
+    body = match.group("body")
+    target_main = re.compile(rf"(?m)^main\s*=\s*{re.escape(INI_MAIN)}\s*\n?")
+    if not target_main.search(body):
+        return normalized, False
+
+    new_body = target_main.sub("", body, count=1)
+    if not new_body.strip():
+        updated = normalized[:match.start()] + normalized[match.end():]
+    else:
+        updated = normalized[:match.start("body")] + new_body + normalized[match.end("body"):]
+
+    updated = re.sub(r"\n{3,}", "\n\n", updated).strip("\n")
+    if updated:
+        updated += "\n"
+    return updated, True
+
+
+def _ensure_ini_entry(connection) -> bool:
+    current = _read_remote_text(connection, REMOTE_INI_PATH)
+    updated, changed = _ensure_ini_entry_text(current)
+    if changed:
+        _write_remote_text(connection, REMOTE_INI_PATH, updated)
+    return changed
+
+
+def _ensure_ini_entry_local(sd_root: str) -> bool:
+    current = _read_local_text(sd_root, REMOTE_INI_PATH)
+    updated, changed = _ensure_ini_entry_text(current)
+    if changed:
+        _write_local_text(sd_root, REMOTE_INI_PATH, updated)
+    return changed
+
+
+def _remove_ini_entry(connection) -> bool:
+    current = _read_remote_text(connection, REMOTE_INI_PATH)
+    updated, changed = _remove_ini_entry_text(current)
+    if changed:
+        _write_remote_text(connection, REMOTE_INI_PATH, updated)
+    return changed
+
+
+def _remove_ini_entry_local(sd_root: str) -> bool:
+    current = _read_local_text(sd_root, REMOTE_INI_PATH)
+    updated, changed = _remove_ini_entry_text(current)
+    if changed:
+        _write_local_text(sd_root, REMOTE_INI_PATH, updated)
+    return changed
+
+
+def _status(state, *, css_present: bool, ini_present: bool, check_latest=False):
     installed = bool(state.get("installed"))
     update_available = bool(state.get("update_available")) if check_latest else False
-    return {
+    status = {
         "installed": installed,
         "update_available": update_available,
         "status_text": "Update available" if update_available else "Installed" if installed else "Not installed",
@@ -43,6 +145,15 @@ def _status(state, *, css_present: bool, check_latest=False):
         "libdvdcss_present": bool(css_present),
         "upload_enabled": bool(installed and not css_present),
     }
+    if installed and not ini_present:
+        status.update({
+            "status_text": "⚠ MiSTer.ini entry missing",
+            "install_label": "Add INI Entry",
+            "install_enabled": True,
+            "update_available": False,
+            "repair_action": True,
+        })
+    return status
 
 
 def get_dvd_player_status(connection, check_latest=False):
@@ -57,6 +168,7 @@ def get_dvd_player_status(connection, check_latest=False):
     return _status(
         state,
         css_present=installed and _path_exists(connection, REMOTE_LIBDVDCSS_PATH),
+        ini_present=_ini_entry_present(_read_remote_text(connection, REMOTE_INI_PATH)),
         check_latest=check_latest,
     )
 
@@ -71,6 +183,7 @@ def get_dvd_player_status_local(sd_root, check_latest=False):
     return _status(
         state,
         css_present=installed and _path_exists_local(sd_root, REMOTE_LIBDVDCSS_PATH),
+        ini_present=_ini_entry_present(_read_local_text(sd_root, REMOTE_INI_PATH)),
         check_latest=check_latest,
     )
 
@@ -78,18 +191,37 @@ def get_dvd_player_status_local(sd_root, check_latest=False):
 def install_or_update_dvd_player(connection, log):
     if not connection.is_connected():
         raise RuntimeError("Not connected to MiSTer.")
+
+    states = inspect_named_databases_online(connection, [DVD_PLAYER_DB_ID], log=None)
+    installed = bool((states.get(DVD_PLAYER_DB_ID) or {}).get("installed"))
+    if installed and not _ini_entry_present(_read_remote_text(connection, REMOTE_INI_PATH)):
+        if _ensure_ini_entry(connection):
+            log("Added [DVD-Player] main=MiSTer_DVD to MiSTer.ini.\n")
+        return
+
     original = ensure_database_source_online(connection, DVD_PLAYER_DB_ID, DVD_PLAYER_DB_URL)
     try:
         run_named_database_online(connection, DVD_PLAYER_DB_ID, log=log)
+        if _ensure_ini_entry(connection):
+            log("Added [DVD-Player] main=MiSTer_DVD to MiSTer.ini.\n")
     except Exception:
         restore_online(connection, original)
         raise
 
 
 def install_or_update_dvd_player_local(sd_root, log):
+    states = inspect_named_databases_local(sd_root, [DVD_PLAYER_DB_ID], log=None)
+    installed = bool((states.get(DVD_PLAYER_DB_ID) or {}).get("installed"))
+    if installed and not _ini_entry_present(_read_local_text(sd_root, REMOTE_INI_PATH)):
+        if _ensure_ini_entry_local(sd_root):
+            log("Added [DVD-Player] main=MiSTer_DVD to MiSTer.ini.\n")
+        return
+
     original = ensure_database_source_local(sd_root, DVD_PLAYER_DB_ID, DVD_PLAYER_DB_URL)
     try:
         run_named_database_local(sd_root, DVD_PLAYER_DB_ID, log=log)
+        if _ensure_ini_entry_local(sd_root):
+            log("Added [DVD-Player] main=MiSTer_DVD to MiSTer.ini.\n")
     except Exception:
         restore_local(sd_root, original)
         raise
@@ -165,6 +297,8 @@ def uninstall_dvd_player(connection, log, force=False):
             ensure_database_source_online(connection, DVD_PLAYER_DB_ID, DVD_PLAYER_DB_URL, filter_value="!all")
             run_named_database_online(connection, DVD_PLAYER_DB_ID, log=log)
             remove_database_source_online(connection, DVD_PLAYER_DB_ID)
+        if _remove_ini_entry(connection):
+            log("Removed [DVD-Player] main=MiSTer_DVD from MiSTer.ini.\n")
     except Exception:
         restore_online(connection, original)
         raise
@@ -181,6 +315,8 @@ def uninstall_dvd_player_local(sd_root, log, force=False):
             ensure_database_source_local(sd_root, DVD_PLAYER_DB_ID, DVD_PLAYER_DB_URL, filter_value="!all")
             run_named_database_local(sd_root, DVD_PLAYER_DB_ID, log=log)
             remove_database_source_local(sd_root, DVD_PLAYER_DB_ID)
+        if _remove_ini_entry_local(sd_root):
+            log("Removed [DVD-Player] main=MiSTer_DVD from MiSTer.ini.\n")
     except Exception:
         restore_local(sd_root, original)
         raise
