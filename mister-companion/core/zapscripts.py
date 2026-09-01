@@ -785,7 +785,11 @@ def fetch_media_from_db_cache(
     Download media.db from MiSTer and read it into ZapScripts-compatible entries.
     """
     download_media_db(connection, local_path)
-    return read_media_db_entries(local_path, progress_callback=progress_callback)
+    return read_media_db_entries(
+        local_path,
+        progress_callback=progress_callback,
+        include_missing=False,
+    )
 
 
 def list_scripts(connection) -> list[dict]:

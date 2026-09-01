@@ -89,6 +89,8 @@ DOWNLOADER_UPDATE_HANDLERS = frozenset({
     "mister_hifi",
     "disc_tools",
     "solarus",
+    "mister_dvd",
+    "dvd_player",
 })
 
 
@@ -1050,6 +1052,10 @@ class InstallCenterDetailsDialog(QDialog):
 
         if handler == "3s_arm":
             add_button("Upload SF33RD.AFS", lambda: self.call_install_center_action("upload_sf33rd_afs", self.output), enabled=self.status.get("upload_enabled", context_ready), min_width=190)
+        elif handler == "dvd_player":
+            css_present = bool(self.status.get("libdvdcss_present"))
+            css_text = "libdvdcss.so.2 Uploaded" if css_present else "Upload libdvdcss.so.2"
+            add_button(css_text, lambda: self.call_install_center_action("upload_dvd_player_libdvdcss", self.output), enabled=self.status.get("upload_enabled", False), min_width=210)
         elif handler == "sonic_mania_mister":
             add_button("Upload Data.rsdk", lambda: self.call_install_center_action("upload_sonic_mania_data_rsdk", self.output), enabled=self.status.get("upload_enabled", context_ready), min_width=190)
         elif handler == "mister_quake":

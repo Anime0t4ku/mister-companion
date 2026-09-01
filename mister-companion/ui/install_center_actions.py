@@ -24,6 +24,7 @@ from core.scripts_actions import (
     toggle_syncthing_start_on_boot_local,
 )
 from core.extras_3s_arm import upload_3sx_afs, upload_3sx_afs_local
+from core.extras_dvd_player import upload_libdvdcss, upload_libdvdcss_local
 from core.extras_sonic_mania import upload_sonic_mania_data_rsdk, upload_sonic_mania_data_rsdk_local
 from core.extras_mister_quake import upload_mister_quake_paks, upload_mister_quake_paks_local
 from core.extras_mister_duke3d import upload_mister_duke3d_grp, upload_mister_duke3d_grp_local
@@ -295,6 +296,17 @@ class InstallCenterActions:
 
     def upload_sf33rd_afs(self, output_widget=None):
         self._upload_file("Select SF33RD.AFS", "AFS Files (SF33RD.AFS *.afs *.AFS);;All Files (*)", upload_3sx_afs_local, upload_3sx_afs, "SF33RD.AFS copied.", "SF33RD.AFS uploaded.", output_widget)
+
+    def upload_dvd_player_libdvdcss(self, output_widget=None):
+        self._upload_file(
+            "Select libdvdcss.so.2",
+            "libdvdcss Library (libdvdcss.so.2);;All Files (*)",
+            upload_libdvdcss_local,
+            upload_libdvdcss,
+            "libdvdcss.so.2 copied.",
+            "libdvdcss.so.2 uploaded.",
+            output_widget,
+        )
 
     def upload_sonic_mania_data_rsdk(self, output_widget=None):
         self._upload_file("Select Data.rsdk", "Sonic Mania Data File (Data.rsdk *.rsdk *.RSDK);;All Files (*)", upload_sonic_mania_data_rsdk_local, upload_sonic_mania_data_rsdk, "Data.rsdk copied.", "Data.rsdk uploaded.", output_widget)

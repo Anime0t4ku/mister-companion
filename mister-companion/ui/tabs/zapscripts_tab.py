@@ -74,10 +74,11 @@ class ZapScriptsLoadWorker(QThread):
                     if sys.platform == "darwin":
                         entries = read_media_db_entries_macos_fast(
                             self.db_path,
+                            include_missing=False,
                             cancel_callback=self.isInterruptionRequested,
                         )
                     else:
-                        entries = read_media_db_entries(self.db_path)
+                        entries = read_media_db_entries(self.db_path, include_missing=False)
                 except Exception as e:
                     if str(e) in {"__LOAD_CANCELLED__", "__SCAN_ABORTED__"}:
                         return
