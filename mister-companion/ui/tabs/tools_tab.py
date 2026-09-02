@@ -67,6 +67,15 @@ from core.rom_patcher import (
     detect_patch_format,
     validation_label,
 )
+from core.video_converter import (
+    FFMPEG_VERSION,
+    convert_video,
+    download_ffmpeg,
+    has_ffmpeg,
+    output_channel_choices,
+    probe_video,
+    remove_ffmpeg,
+)
 from ui.dialogs.remote_file_picker_dialog import RemoteFilePickerDialog
 
 
@@ -74,6 +83,10 @@ LOCAL = "This PC"
 REMOTE = "MiSTer"
 CHD_INPUT_EXTS = {".cue", ".gdi", ".iso"}
 CHD_EXTRACT_INPUT_EXTS = {".chd"}
+VIDEO_INPUT_EXTS = {
+    ".3gp", ".asf", ".avi", ".flv", ".m2ts", ".m4v", ".mkv", ".mov",
+    ".mp4", ".mpeg", ".mpg", ".mts", ".ogm", ".ogv", ".ts", ".vob", ".webm", ".wmv",
+}
 DISC_WORK_DIR = generated_path("tools", "disc_temp", default_root=Path(__file__).resolve().parents[2])
 
 
@@ -104,6 +117,9 @@ class ToolsTab(QWidget):
         self.drive_scan_worker = None
         self.chd_jobs: list[dict] = []
         self.chd_extract_jobs: list[dict] = []
+        self.video_probe_info = None
+        self.video_local_source = None
+        self.video_source_temp = None
         self._build_ui()
         self.update_connection_state()
 
@@ -116,12 +132,14 @@ class ToolsTab(QWidget):
         self.patcher_page = self._build_patcher()
         self.chd_page = self._build_chd()
         self.chd_extract_page = self._build_chd_extract()
+        self.video_convert_page = self._build_video_convert()
         self.disc_to_image_page = self._build_disc_to_image()
         self.image_to_disc_page = self._build_image_to_disc()
         self.stack.addWidget(self.home_page)
         self.stack.addWidget(self.patcher_page)
         self.stack.addWidget(self.chd_page)
         self.stack.addWidget(self.chd_extract_page)
+        self.stack.addWidget(self.video_convert_page)
         self.stack.addWidget(self.disc_to_image_page)
         self.stack.addWidget(self.image_to_disc_page)
 
@@ -139,6 +157,7 @@ class ToolsTab(QWidget):
             ("ROM Patcher", "Apply IPS, IPS32, BPS, UPS and PPF patches. The source ROM is never overwritten.", lambda: self.stack.setCurrentWidget(self.patcher_page)),
             ("CHD Converter", "Queue CUE/GDI/ISO → CHD conversions with independent PC or MiSTer input/output locations.", lambda: self.stack.setCurrentWidget(self.chd_page)),
             ("CHD Extractor", "Extract CHD images to CUE/BIN, GDI or ISO with independent PC or MiSTer input/output locations.", lambda: self.stack.setCurrentWidget(self.chd_extract_page)),
+            ("MiSTer Video Converter", "Convert videos to PAL or NTSC DVD-compatible MPEG-2 for the MiSTer DVD core, with selectable audio and optional burned-in subtitles.", lambda: self.stack.setCurrentWidget(self.video_convert_page)),
             ("Disc to Image", "Rip a physical game CD locally to BIN/CUE, with optional CHD conversion, then save to PC or MiSTer.", lambda: self._open_disc_page(self.disc_to_image_page)),
             ("Image to Disc", "Burn BIN/CUE game discs or MSU-1 / MD+ folders from PC or MiSTer using the PC optical drive.", lambda: self._open_disc_page(self.image_to_disc_page)),
         ):
@@ -245,7 +264,7 @@ class ToolsTab(QWidget):
             combo.setCurrentText(LOCAL)
 
     def update_connection_state(self, lightweight=True):
-        for combo_name in ("rom_location", "patch_location", "output_location", "chd_input_location", "chd_output_location", "chd_extract_input_location", "chd_extract_output_location", "disc_output_location", "burn_source_location"):
+        for combo_name in ("rom_location", "patch_location", "output_location", "chd_input_location", "chd_output_location", "chd_extract_input_location", "chd_extract_output_location", "video_input_location", "video_output_location", "disc_output_location", "burn_source_location"):
             combo = getattr(self, combo_name, None)
             if combo:
                 self._sync_location_combo(combo)
@@ -253,6 +272,8 @@ class ToolsTab(QWidget):
             self._refresh_chdman_status()
         if hasattr(self, "disc_cdrdao_status"):
             self._refresh_cdrdao_status()
+        if hasattr(self, "video_ffmpeg_status"):
+            self._refresh_ffmpeg_status()
 
     def _browse_rom(self):
         if self.rom_location.currentText() == REMOTE:
@@ -439,6 +460,435 @@ class ToolsTab(QWidget):
         self.patch_button.setEnabled(True)
         self.patch_status.setText("Patch failed.")
         QMessageBox.critical(self, "ROM Patcher", message)
+
+    def _build_video_convert(self):
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.addWidget(self._back_button())
+        title = QLabel("MiSTer Video Converter")
+        title.setStyleSheet("font-size: 20px; font-weight: 600;")
+        layout.addWidget(title)
+        description = QLabel(
+            "Create DVD-compatible MPEG-2 videos for the MiSTer DVD core. HD and 4K sources are supported, "
+            "and detected HDR video is automatically converted to SDR."
+        )
+        description.setWordWrap(True)
+        layout.addWidget(description)
+
+        tool_row = QHBoxLayout()
+        self.video_ffmpeg_status = QLabel()
+        tool_row.addWidget(self.video_ffmpeg_status, 1)
+        self.video_download_ffmpeg = QPushButton("Download FFmpeg")
+        self.video_download_ffmpeg.clicked.connect(self._download_ffmpeg_clicked)
+        tool_row.addWidget(self.video_download_ffmpeg)
+        self.video_remove_ffmpeg = QPushButton("Remove")
+        self.video_remove_ffmpeg.clicked.connect(self._remove_ffmpeg_clicked)
+        tool_row.addWidget(self.video_remove_ffmpeg)
+        layout.addLayout(tool_row)
+        self.video_ffmpeg_progress = QProgressBar()
+        self.video_ffmpeg_progress.setRange(0, 100)
+        self.video_ffmpeg_progress.setVisible(False)
+        layout.addWidget(self.video_ffmpeg_progress)
+
+        input_row = QHBoxLayout()
+        input_row.addWidget(QLabel("Source video:"))
+        self.video_input_location = self._location_combo()
+        input_row.addWidget(self.video_input_location)
+        self.video_input_path = QLineEdit()
+        self.video_input_path.setReadOnly(True)
+        input_row.addWidget(self.video_input_path, 1)
+        self.video_browse_input = QPushButton("Browse")
+        self.video_browse_input.clicked.connect(self._video_browse_input)
+        input_row.addWidget(self.video_browse_input)
+        layout.addLayout(input_row)
+
+        output_row = QHBoxLayout()
+        output_row.addWidget(QLabel("Output MPEG:"))
+        self.video_output_location = self._location_combo()
+        output_row.addWidget(self.video_output_location)
+        self.video_output_path = QLineEdit()
+        output_row.addWidget(self.video_output_path, 1)
+        self.video_browse_output = QPushButton("Browse")
+        self.video_browse_output.clicked.connect(self._video_browse_output_clicked)
+        output_row.addWidget(self.video_browse_output)
+        layout.addLayout(output_row)
+
+        standard_row = QHBoxLayout()
+        standard_row.addWidget(QLabel("Output format:"))
+        self.video_standard = QComboBox()
+        self.video_standard.addItem("NTSC DVD (720×480)", "ntsc")
+        self.video_standard.addItem("PAL DVD (720×576)", "pal")
+        standard_row.addWidget(self.video_standard)
+        standard_row.addStretch(1)
+        layout.addLayout(standard_row)
+
+        audio_row = QHBoxLayout()
+        audio_row.addWidget(QLabel("Audio source:"))
+        self.video_audio_stream = QComboBox()
+        self.video_audio_stream.setEnabled(False)
+        self.video_audio_stream.currentIndexChanged.connect(self._video_audio_changed)
+        audio_row.addWidget(self.video_audio_stream, 1)
+        layout.addLayout(audio_row)
+
+        channels_row = QHBoxLayout()
+        channels_row.addWidget(QLabel("Output channels:"))
+        self.video_audio_channels = QComboBox()
+        self.video_audio_channels.setEnabled(False)
+        channels_row.addWidget(self.video_audio_channels, 1)
+        layout.addLayout(channels_row)
+
+        subtitle_row = QHBoxLayout()
+        subtitle_row.addWidget(QLabel("Burn in subtitles:"))
+        self.video_subtitle_stream = QComboBox()
+        self.video_subtitle_stream.addItem("None", None)
+        self.video_subtitle_stream.setEnabled(False)
+        subtitle_row.addWidget(self.video_subtitle_stream, 1)
+        layout.addLayout(subtitle_row)
+
+        self.video_source_info = QLabel("Select a source video to inspect its audio and subtitle streams.")
+        self.video_source_info.setWordWrap(True)
+        layout.addWidget(self.video_source_info)
+
+        action_row = QHBoxLayout()
+        action_row.addStretch(1)
+        self.video_start = QPushButton("Convert Video")
+        self.video_start.setEnabled(False)
+        self.video_start.clicked.connect(self._video_start_clicked)
+        action_row.addWidget(self.video_start)
+        layout.addLayout(action_row)
+
+        self.video_status = QLabel("")
+        self.video_status.setWordWrap(True)
+        layout.addWidget(self.video_status)
+        self.video_progress = QProgressBar()
+        self.video_progress.setRange(0, 100)
+        self.video_progress.setValue(0)
+        self.video_progress.setVisible(False)
+        layout.addWidget(self.video_progress)
+        self.video_log = QTextEdit()
+        self.video_log.setReadOnly(True)
+        self.video_log.setMaximumHeight(170)
+        layout.addWidget(self.video_log)
+        layout.addStretch(1)
+
+        self.video_input_location.currentTextChanged.connect(self._video_source_location_changed)
+        self.video_output_location.currentTextChanged.connect(self._video_output_location_changed)
+        self.video_output_path.textChanged.connect(self._video_update_start_state)
+        self._refresh_ffmpeg_status()
+        return page
+
+    def _refresh_ffmpeg_status(self):
+        installed = has_ffmpeg()
+        self.video_ffmpeg_status.setText(f"FFmpeg {FFMPEG_VERSION}: {'Ready' if installed else 'Not downloaded'}")
+        self.video_download_ffmpeg.setVisible(not installed)
+        self.video_remove_ffmpeg.setVisible(installed)
+        self._video_update_start_state()
+
+    def _set_ffmpeg_download_state(self, downloading):
+        self.video_download_ffmpeg.setEnabled(not downloading)
+        self.video_remove_ffmpeg.setEnabled(not downloading)
+        self.video_ffmpeg_progress.setVisible(downloading)
+        if downloading:
+            self.video_ffmpeg_progress.setValue(0)
+
+    def _download_ffmpeg_clicked(self):
+        self._set_ffmpeg_download_state(True)
+
+        def work(worker):
+            return download_ffmpeg(lambda done, total: worker.progress.emit(self._transfer_percent(done, total)))
+
+        self.worker = ToolWorker(work, self)
+        self.worker.progress.connect(self.video_ffmpeg_progress.setValue)
+        self.worker.succeeded.connect(self._ffmpeg_downloaded)
+        self.worker.failed.connect(self._ffmpeg_download_failed)
+        self.worker.start()
+
+    def _ffmpeg_downloaded(self, _result):
+        self._set_ffmpeg_download_state(False)
+        self.video_ffmpeg_progress.setValue(100)
+        self._refresh_ffmpeg_status()
+
+    def _ffmpeg_download_failed(self, message):
+        self._set_ffmpeg_download_state(False)
+        QMessageBox.critical(self, "FFmpeg", message)
+
+    def _remove_ffmpeg_clicked(self):
+        remove_ffmpeg()
+        self._refresh_ffmpeg_status()
+
+    def _cleanup_video_source(self):
+        self.video_local_source = None
+        if self.video_source_temp is not None:
+            try:
+                self.video_source_temp.cleanup()
+            except Exception:
+                pass
+            self.video_source_temp = None
+
+    def _video_source_location_changed(self, _text=None):
+        if not hasattr(self, "video_input_path"):
+            return
+        self._cleanup_video_source()
+        self.video_probe_info = None
+        self.video_input_path.clear()
+        self.video_audio_stream.clear()
+        self.video_audio_stream.setEnabled(False)
+        self.video_audio_channels.clear()
+        self.video_audio_channels.setEnabled(False)
+        self.video_subtitle_stream.clear()
+        self.video_subtitle_stream.addItem("None", None)
+        self.video_subtitle_stream.setEnabled(False)
+        self.video_source_info.setText("Select a source video to inspect its audio and subtitle streams.")
+        self._video_update_start_state()
+
+    def _video_output_location_changed(self, _text=None):
+        if not hasattr(self, "video_output_path"):
+            return
+        self.video_output_path.clear()
+        self._video_suggest_output()
+
+    def _video_browse_input(self):
+        if not has_ffmpeg():
+            QMessageBox.warning(self, "MiSTer Video Converter", "Download FFmpeg first.")
+            return
+        if self.video_input_location.currentText() == REMOTE:
+            path = RemoteFilePickerDialog.get_open_file(
+                self.connection, self, title="Select Video from MiSTer", filters=sorted(VIDEO_INPUT_EXTS)
+            )
+        else:
+            path, _ = QFileDialog.getOpenFileName(
+                self, "Select Video", filter="Video files (*.3gp *.asf *.avi *.flv *.m2ts *.m4v *.mkv *.mov *.mp4 *.mpeg *.mpg *.mts *.ogm *.ogv *.ts *.vob *.webm *.wmv);;All files (*.*)"
+            )
+        if not path:
+            return
+        self._cleanup_video_source()
+        self.video_probe_info = None
+        self.video_input_path.setText(path)
+        self.video_output_path.clear()
+        self._video_suggest_output()
+        self._video_prepare_source(path, self.video_input_location.currentText())
+
+    def _video_default_output_name(self):
+        raw = self.video_input_path.text().strip().replace("\\", "/")
+        stem = PurePosixPath(raw).stem or "converted-video"
+        return f"{stem}-MiSTer-DVD.mpg"
+
+    def _video_suggest_output(self):
+        if not self.video_input_path.text().strip() or self.video_output_path.text().strip():
+            return
+        name = self._video_default_output_name()
+        if self.video_output_location.currentText() == LOCAL and self.video_input_location.currentText() == LOCAL:
+            self.video_output_path.setText(str(Path(self.video_input_path.text()).with_name(name)))
+        elif self.video_output_location.currentText() == REMOTE and self.video_input_location.currentText() == REMOTE:
+            self.video_output_path.setText(posixpath.join(posixpath.dirname(self.video_input_path.text()), name))
+
+    def _video_browse_output_clicked(self):
+        default_name = self._video_default_output_name()
+        if self.video_output_location.currentText() == REMOTE:
+            path = RemoteFilePickerDialog.get_save_file(
+                self.connection, self, title="Save MPEG Video on MiSTer", default_name=default_name
+            )
+        else:
+            start = self.video_output_path.text().strip() or default_name
+            path, _ = QFileDialog.getSaveFileName(self, "Save MPEG Video", start, "MPEG video (*.mpg);;All files (*.*)")
+        if path:
+            if not path.lower().endswith((".mpg", ".mpeg")):
+                path += ".mpg"
+            self.video_output_path.setText(path)
+
+    def _video_prepare_source(self, path, location):
+        self.video_browse_input.setEnabled(False)
+        self.video_input_location.setEnabled(False)
+        self.video_start.setEnabled(False)
+        self.video_progress.setVisible(True)
+        self.video_progress.setRange(0, 100)
+        self.video_progress.setValue(0)
+        self.video_status.setText("Inspecting video streams...")
+        self.video_log.clear()
+        if location == REMOTE:
+            self.video_source_temp = tempfile.TemporaryDirectory(prefix="mister-companion-video-source-")
+
+        def work(worker):
+            if location == REMOTE:
+                local_path = self._download_remote_file(
+                    path, Path(self.video_source_temp.name), worker, status_prefix="VIDEOSTATUS:"
+                )
+            else:
+                local_path = Path(path)
+            worker.status.emit("VIDEOSTATUS:Inspecting audio and subtitle streams...")
+            info = probe_video(local_path)
+            return {"path": local_path, "probe": info}
+
+        self.worker = ToolWorker(work, self)
+        self.worker.progress.connect(self.video_progress.setValue)
+        self.worker.status.connect(self._video_worker_status)
+        self.worker.succeeded.connect(self._video_source_ready)
+        self.worker.failed.connect(self._video_source_failed)
+        self.worker.start()
+
+    def _video_source_ready(self, result):
+        self.video_browse_input.setEnabled(True)
+        self.video_input_location.setEnabled(True)
+        self.video_progress.setValue(100)
+        self.video_progress.setVisible(False)
+        self.video_local_source = Path(result["path"])
+        self.video_probe_info = result["probe"]
+        self.video_audio_stream.clear()
+        for stream in self.video_probe_info["audio"]:
+            self.video_audio_stream.addItem(stream["label"], stream["ordinal"])
+        self.video_audio_stream.setEnabled(bool(self.video_probe_info["audio"]))
+        self.video_subtitle_stream.clear()
+        self.video_subtitle_stream.addItem("None", None)
+        for stream in self.video_probe_info["subtitles"]:
+            self.video_subtitle_stream.addItem(stream["label"], stream["ordinal"])
+        self.video_subtitle_stream.setEnabled(bool(self.video_probe_info["subtitles"]))
+        self._video_audio_changed()
+        width = self.video_probe_info.get("width", 0)
+        height = self.video_probe_info.get("height", 0)
+        hdr_note = " HDR detected; it will automatically be converted to SDR." if self.video_probe_info.get("hdr") else " SDR source."
+        self.video_source_info.setText(
+            f"Source: {width}×{height}.{hdr_note} Select the audio track, output channels and optional subtitle track."
+        )
+        self.video_status.setText("Video streams ready.")
+        self._video_update_start_state()
+
+    def _video_source_failed(self, message):
+        self.video_browse_input.setEnabled(True)
+        self.video_input_location.setEnabled(True)
+        self.video_progress.setVisible(False)
+        self.video_status.setText("Could not inspect the selected video.")
+        self._cleanup_video_source()
+        self.video_probe_info = None
+        self._video_update_start_state()
+        QMessageBox.critical(self, "MiSTer Video Converter", message)
+
+    def _video_audio_changed(self, _index=None):
+        self.video_audio_channels.clear()
+        if not self.video_probe_info or self.video_audio_stream.currentIndex() < 0:
+            self.video_audio_channels.setEnabled(False)
+            return
+        ordinal = self.video_audio_stream.currentData()
+        stream = self.video_probe_info["audio"][int(ordinal)]
+        for label, channels in output_channel_choices(stream):
+            self.video_audio_channels.addItem(label, channels)
+        self.video_audio_channels.setEnabled(self.video_audio_channels.count() > 0)
+
+    def _video_update_start_state(self):
+        if not hasattr(self, "video_start"):
+            return
+        ready = bool(
+            has_ffmpeg() and self.video_probe_info and self.video_local_source
+            and self.video_output_path.text().strip() and self.video_audio_stream.currentIndex() >= 0
+        )
+        self.video_start.setEnabled(ready)
+
+    def _video_start_clicked(self):
+        if not self.video_probe_info or not self.video_local_source:
+            QMessageBox.warning(self, "MiSTer Video Converter", "Select and inspect a source video first.")
+            return
+        output = self.video_output_path.text().strip()
+        if not output:
+            QMessageBox.warning(self, "MiSTer Video Converter", "Select an output MPEG file first.")
+            return
+        destination = self.video_output_location.currentText()
+        if destination == REMOTE and not self._is_remote_allowed():
+            QMessageBox.warning(self, "MiSTer Video Converter", "Connect to MiSTer in Online mode first.")
+            return
+        if destination == LOCAL and Path(output).exists():
+            QMessageBox.warning(self, "MiSTer Video Converter", "The output file already exists. Choose a new file name.")
+            return
+
+        self.video_start.setEnabled(False)
+        self.video_browse_input.setEnabled(False)
+        self.video_browse_output.setEnabled(False)
+        self.video_input_location.setEnabled(False)
+        self.video_output_location.setEnabled(False)
+        self.video_log.clear()
+        self.video_progress.setRange(0, 0)
+        self.video_progress.setVisible(True)
+        self.video_status.setText("Starting FFmpeg and preparing video filters...")
+        standard = self.video_standard.currentData()
+        audio_ordinal = int(self.video_audio_stream.currentData())
+        subtitle_ordinal = self.video_subtitle_stream.currentData()
+        channels = self.video_audio_channels.currentData()
+
+        def work(worker):
+            def conversion_progress(percent, speed):
+                suffix = f" – {speed}" if speed else ""
+                worker.status.emit(f"VIDEOSTATUS:Converting video – {percent}%{suffix}")
+                worker.progress.emit(percent)
+
+            def conversion_log(line):
+                worker.status.emit("LOG:" + line)
+
+            worker.status.emit("LOG:Preparing DVD conversion settings...")
+            if self.video_probe_info.get("hdr"):
+                worker.status.emit("LOG:Initialising HDR-to-SDR tone mapping...")
+            if subtitle_ordinal is not None:
+                worker.status.emit("LOG:Initialising embedded subtitle renderer...")
+            worker.status.emit("LOG:Starting FFmpeg and waiting for the first encoded frame...")
+
+            if destination == REMOTE:
+                self._ensure_remote_output_new(output)
+                with tempfile.TemporaryDirectory(prefix="mister-companion-video-output-") as tmp:
+                    local_output = Path(tmp) / PurePosixPath(output).name
+                    result = convert_video(
+                        self.video_local_source, local_output, self.video_probe_info, standard,
+                        audio_ordinal, subtitle_ordinal, channels, conversion_progress, conversion_log,
+                    )
+                    worker.status.emit("VIDEOSTATUS:Uploading converted video to MiSTer...")
+                    self._upload_remote_file(
+                        result, posixpath.dirname(output), worker,
+                        status_prefix="VIDEOSTATUS:", target_name=PurePosixPath(output).name,
+                    )
+                return output
+            result = convert_video(
+                self.video_local_source, Path(output), self.video_probe_info, standard,
+                audio_ordinal, subtitle_ordinal, channels, conversion_progress, conversion_log,
+            )
+            return str(result)
+
+        self.worker = ToolWorker(work, self)
+        self.worker.progress.connect(self.video_progress.setValue)
+        self.worker.status.connect(self._video_worker_status)
+        self.worker.succeeded.connect(self._video_conversion_done)
+        self.worker.failed.connect(self._video_conversion_failed)
+        self.worker.start()
+
+    def _video_worker_status(self, text):
+        if text.startswith("VIDEOBUSY:"):
+            self.video_progress.setRange(0, 0)
+            self.video_status.setText(text[len("VIDEOBUSY:"):])
+        elif text.startswith("VIDEOSTATUS:"):
+            if self.video_progress.minimum() == 0 and self.video_progress.maximum() == 0:
+                self.video_progress.setRange(0, 100)
+            self.video_status.setText(text[len("VIDEOSTATUS:"):])
+        elif text.startswith("LOG:"):
+            self.video_log.append(text[len("LOG:"):])
+        else:
+            self.video_log.append(text)
+
+    def _video_conversion_done(self, output):
+        self.video_browse_input.setEnabled(True)
+        self.video_browse_output.setEnabled(True)
+        self.video_input_location.setEnabled(True)
+        self.video_output_location.setEnabled(True)
+        self.video_progress.setRange(0, 100)
+        self.video_progress.setValue(100)
+        self.video_status.setText("Conversion complete – 100%")
+        self._video_update_start_state()
+        QMessageBox.information(self, "MiSTer Video Converter", f"Video converted successfully.\n\n{output}")
+
+    def _video_conversion_failed(self, message):
+        self.video_browse_input.setEnabled(True)
+        self.video_browse_output.setEnabled(True)
+        self.video_input_location.setEnabled(True)
+        self.video_output_location.setEnabled(True)
+        self.video_progress.setRange(0, 100)
+        self.video_progress.setValue(0)
+        self.video_status.setText("Conversion failed.")
+        self._video_update_start_state()
+        QMessageBox.critical(self, "MiSTer Video Converter", message)
 
     
     def _open_disc_page(self, page):
