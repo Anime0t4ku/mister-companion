@@ -1,6 +1,8 @@
 import json
+import re
 from pathlib import Path
 
+from core.app_paths import generated_path
 from core.extras_zaparoo_launcher import (
     MISTER_INI_PATH,
     _mister_ini_text_has_zaparoo_launcher_entries,
@@ -11,6 +13,8 @@ from core.extras_zaparoo_launcher import (
 
 JSON_PATH = "/media/fat/Scripts/.config/update_all/update_all.json"
 ARCADE_ORGANIZER_INI_PATH = "/media/fat/Scripts/update_arcade-organizer.ini"
+CUSTOM_SOURCES_INI_PATH = "/media/fat/downloader_custom_sources.ini"
+CUSTOM_SOURCES_METADATA_PATH = generated_path("update_all_extra_sources.json")
 
 ZAPAROO_SECTION = "ZaparooProject/Zaparoo_MiSTer"
 ZAPAROO_DB_URL = "https://raw.githubusercontent.com/ZaparooProject/Zaparoo_MiSTer/db/db.json.zip"
@@ -204,6 +208,188 @@ def remove_local_file(sd_root, path):
             local.unlink()
     except Exception:
         pass
+
+
+def read_custom_sources_metadata():
+    try:
+        return CUSTOM_SOURCES_METADATA_PATH.read_text(encoding="utf-8", errors="ignore")
+    except Exception:
+        return ""
+
+
+def write_custom_sources_metadata(text):
+    if text:
+        CUSTOM_SOURCES_METADATA_PATH.parent.mkdir(parents=True, exist_ok=True)
+        CUSTOM_SOURCES_METADATA_PATH.write_text(text, encoding="utf-8")
+    elif CUSTOM_SOURCES_METADATA_PATH.exists():
+        CUSTOM_SOURCES_METADATA_PATH.unlink()
+
+
+def normalize_database_id(database_id):
+    value = str(database_id or "").strip()
+    while value.startswith("["):
+        value = value[1:].lstrip()
+    while value.endswith("]"):
+        value = value[:-1].rstrip()
+    if not value or "[" in value or "]" in value or "\n" in value or "\r" in value:
+        raise ValueError("Enter a valid database ID.")
+    return f"[{value}]"
+
+
+def _parse_custom_sources_ini(text):
+    lines = str(text or "").splitlines(keepends=True)
+    sections = []
+    unmanaged = []
+    current = []
+
+    def finish(block):
+        if not block:
+            return
+        header = block[0].strip()
+        if not (header.startswith("[") and header.endswith("]")):
+            unmanaged.extend(block)
+            return
+        try:
+            database_id = normalize_database_id(header)
+        except ValueError:
+            unmanaged.extend(block)
+            return
+        db_url = ""
+        for line in block[1:]:
+            stripped = line.strip()
+            if stripped.lower().startswith("db_url") and "=" in stripped:
+                db_url = stripped.split("=", 1)[1].strip()
+                break
+        if not db_url:
+            unmanaged.extend(block)
+            return
+        sections.append({
+            "database_id": database_id,
+            "db_url": db_url,
+            "ini_block": "".join(block).rstrip("\r\n"),
+        })
+
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            finish(current)
+            current = [line]
+        else:
+            current.append(line)
+    finish(current)
+    return sections, "".join(unmanaged)
+
+
+def parse_custom_source_entry(text):
+    normalized_lines = []
+    for line in str(text or "").replace("db\\_url", "db_url").splitlines():
+        stripped = line.strip()
+        if stripped.lower().startswith("db_url") and "=" in line:
+            prefix, value = line.split("=", 1)
+            value = value.strip()
+            markdown_link = re.fullmatch(r"\[(https?://[^\]]+)\]\((https?://[^)]+)\)", value)
+            if markdown_link:
+                value = markdown_link.group(2)
+            line = f"{prefix.rstrip()} = {value}"
+        normalized_lines.append(line)
+
+    sections, _unmanaged = _parse_custom_sources_ini("\n".join(normalized_lines))
+    if len(sections) != 1:
+        return None
+    return sections[0]
+
+
+def _load_custom_sources_data(ini_text, metadata_text):
+    active_sections, unmanaged_text = _parse_custom_sources_ini(ini_text)
+    try:
+        raw_metadata = json.loads(metadata_text or "[]")
+        if not isinstance(raw_metadata, list):
+            raw_metadata = []
+    except Exception:
+        raw_metadata = []
+
+    sources = []
+    by_id = {}
+    for item in raw_metadata:
+        if not isinstance(item, dict):
+            continue
+        try:
+            database_id = normalize_database_id(item.get("database_id", ""))
+        except ValueError:
+            continue
+        source = {
+            "display_name": str(item.get("display_name") or database_id[1:-1]).strip(),
+            "database_id": database_id,
+            "db_url": str(item.get("db_url") or "").strip(),
+            "ini_block": str(item.get("ini_block") or "").rstrip("\r\n"),
+            "enabled": False,
+        }
+        sources.append(source)
+        by_id[database_id.lower()] = source
+
+    for section in active_sections:
+        key = section["database_id"].lower()
+        source = by_id.get(key)
+        if source is None:
+            source = {
+                "display_name": section["database_id"][1:-1],
+                "database_id": section["database_id"],
+                "db_url": section["db_url"],
+                "ini_block": section["ini_block"],
+                "enabled": True,
+            }
+            sources.append(source)
+            by_id[key] = source
+        else:
+            source["ini_block"] = section["ini_block"]
+            source["enabled"] = True
+
+    return sources, unmanaged_text
+
+
+def _replace_custom_source_header_and_url(source):
+    database_id = normalize_database_id(source.get("database_id", ""))
+    db_url = str(source.get("db_url") or "").strip()
+    block = str(source.get("ini_block") or "").splitlines()
+    if not block:
+        return f"{database_id}\ndb_url = {db_url}"
+    block[0] = database_id
+    replaced = False
+    for index in range(1, len(block)):
+        stripped = block[index].strip()
+        if stripped.lower().startswith("db_url") and "=" in stripped:
+            indent = block[index][:len(block[index]) - len(block[index].lstrip())]
+            block[index] = f"{indent}db_url = {db_url}"
+            replaced = True
+            break
+    if not replaced:
+        block.insert(1, f"db_url = {db_url}")
+    return "\n".join(block).rstrip()
+
+
+def _prepare_custom_sources_files(config):
+    sources = config.get("custom_sources", [])
+    metadata = []
+    enabled_blocks = []
+    for source in sources:
+        block = _replace_custom_source_header_and_url(source)
+        item = {
+            "display_name": str(source.get("display_name") or "").strip(),
+            "database_id": normalize_database_id(source.get("database_id", "")),
+            "db_url": str(source.get("db_url") or "").strip(),
+            "ini_block": block,
+        }
+        metadata.append(item)
+        if source.get("enabled", False):
+            enabled_blocks.append(block)
+
+    unmanaged = str(config.get("custom_sources_unmanaged_text") or "").strip()
+    ini_parts = ([unmanaged] if unmanaged else []) + enabled_blocks
+    ini_text = "\n\n".join(part for part in ini_parts if part).rstrip()
+    if ini_text:
+        ini_text += "\n"
+    metadata_text = json.dumps(metadata, indent=4) + "\n" if metadata else ""
+    return ini_text, metadata_text
 
 
 def read_downloader_files(sftp):
@@ -540,13 +726,20 @@ def load_update_all_config(connection):
         arcade_org_ini = read_remote_text(sftp, ARCADE_ORGANIZER_INI_PATH, "")
         mister_ini = read_remote_text(sftp, MISTER_INI_PATH, "")
 
-        return _build_config_data(
+        data = _build_config_data(
             ini_data,
             json_data,
             arcade_org_ini,
             files["manualsdb"],
             mister_ini,
         )
+        data["custom_sources"], data["custom_sources_unmanaged_text"] = (
+            _load_custom_sources_data(
+                read_remote_text(sftp, CUSTOM_SOURCES_INI_PATH, ""),
+                read_custom_sources_metadata(),
+            )
+        )
+        return data
     finally:
         sftp.close()
 
@@ -569,13 +762,20 @@ def load_update_all_config_local(sd_root):
     arcade_org_ini = read_local_text(sd_root, ARCADE_ORGANIZER_INI_PATH, "")
     mister_ini = read_local_text(sd_root, MISTER_INI_PATH, "")
 
-    return _build_config_data(
+    data = _build_config_data(
         ini_data,
         json_data,
         arcade_org_ini,
         files["manualsdb"],
         mister_ini,
     )
+    data["custom_sources"], data["custom_sources_unmanaged_text"] = (
+        _load_custom_sources_data(
+            read_local_text(sd_root, CUSTOM_SOURCES_INI_PATH, ""),
+            read_custom_sources_metadata(),
+        )
+    )
+    return data
 
 
 def normalize_ini_lines(lines):
@@ -1043,6 +1243,13 @@ def save_update_all_config(connection, config):
         else:
             remove_remote_file(sftp, paths["manualsdb"])
 
+        custom_ini, custom_metadata = _prepare_custom_sources_files(config)
+        if custom_ini:
+            write_remote_text(sftp, CUSTOM_SOURCES_INI_PATH, custom_ini)
+        else:
+            remove_remote_file(sftp, CUSTOM_SOURCES_INI_PATH)
+        write_custom_sources_metadata(custom_metadata)
+
         _save_remote_zaparoo_frontend_state(
             sftp,
             bool(config.get("zaparoo_frontend", False)),
@@ -1094,6 +1301,13 @@ def save_update_all_config_local(sd_root, config):
         write_local_text(sd_root, paths["manualsdb"], manualsdb_ini)
     else:
         remove_local_file(sd_root, paths["manualsdb"])
+
+    custom_ini, custom_metadata = _prepare_custom_sources_files(config)
+    if custom_ini:
+        write_local_text(sd_root, CUSTOM_SOURCES_INI_PATH, custom_ini)
+    else:
+        remove_local_file(sd_root, CUSTOM_SOURCES_INI_PATH)
+    write_custom_sources_metadata(custom_metadata)
 
     _save_local_zaparoo_frontend_state(
         sd_root,

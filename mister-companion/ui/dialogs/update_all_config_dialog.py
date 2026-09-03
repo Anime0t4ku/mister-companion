@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -27,6 +28,10 @@ from core.update_all_config import (
     save_update_all_config_local,
 )
 from ui.dialogs.manuals_db_config_dialog import ManualsDbConfigDialog
+from ui.dialogs.extra_sources_dialog import (
+    ExtraSourceEditorDialog,
+    ManageExtraSourcesDialog,
+)
 
 
 class UpdateAllConfigDialog(QDialog):
@@ -37,6 +42,9 @@ class UpdateAllConfigDialog(QDialog):
         self.offline_mode = bool(sd_root)
 
         self.manualsdb_selected = []
+        self.custom_sources = []
+        self.custom_source_checks = []
+        self.custom_sources_unmanaged_text = ""
 
         self.retro_pending_code = ""
         self.retro_pending_link = ""
@@ -278,6 +286,10 @@ class UpdateAllConfigDialog(QDialog):
         self.manualsdb_config_button.clicked.connect(self.on_manualsdb_configure)
 
         retro_group = self._group("RetroAccount", self.right_column_layout)
+        retro_group.setSizePolicy(
+            QSizePolicy.Policy.Preferred,
+            QSizePolicy.Policy.Maximum,
+        )
 
         self.retro_status_label = QLabel("Status: Not logged in")
         self.retro_status_label.setStyleSheet("font-weight: bold;")
@@ -357,9 +369,38 @@ class UpdateAllConfigDialog(QDialog):
         retro_login_layout.addLayout(retro_button_row)
 
         retro_group.layout().addWidget(self.retro_login_widget)
-        retro_group.layout().addStretch()
-
         self._set_retro_ui_state("idle")
+
+        extra_sources_group = self._group("Extra Sources", self.right_column_layout)
+        extra_sources_group.setSizePolicy(
+            QSizePolicy.Policy.Preferred,
+            QSizePolicy.Policy.Maximum,
+        )
+        extra_sources_description = QLabel(
+            "Manage custom Downloader databases. The source list is shared, "
+            "while selections are saved per MiSTer."
+        )
+        extra_sources_description.setWordWrap(True)
+        extra_sources_group.layout().addWidget(extra_sources_description)
+
+        self.custom_sources_widget = QWidget()
+        self.custom_sources_layout = QVBoxLayout(self.custom_sources_widget)
+        self.custom_sources_layout.setContentsMargins(0, 0, 0, 0)
+        self.custom_sources_layout.setSpacing(6)
+        extra_sources_group.layout().addWidget(self.custom_sources_widget)
+
+        extra_sources_buttons = QHBoxLayout()
+        self.add_custom_source_button = QPushButton("Add")
+        self.edit_custom_sources_button = QPushButton("Edit")
+        extra_sources_buttons.addWidget(self.add_custom_source_button)
+        extra_sources_buttons.addWidget(self.edit_custom_sources_button)
+        extra_sources_buttons.addStretch()
+        extra_sources_group.layout().addLayout(extra_sources_buttons)
+
+        self.add_custom_source_button.clicked.connect(self.on_add_custom_source)
+        self.edit_custom_sources_button.clicked.connect(self.on_edit_custom_sources)
+        self._refresh_custom_sources()
+        self.right_column_layout.addStretch()
 
         self.content_layout.addStretch()
 
@@ -617,6 +658,54 @@ class UpdateAllConfigDialog(QDialog):
         enabled = self.manualsdb_check.isChecked()
         self.manualsdb_config_button.setEnabled(enabled)
 
+    def _sync_custom_source_checks(self):
+        for source, checkbox in zip(self.custom_sources, self.custom_source_checks):
+            source["enabled"] = checkbox.isChecked()
+
+    def _refresh_custom_sources(self):
+        while self.custom_sources_layout.count():
+            item = self.custom_sources_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+
+        self.custom_source_checks = []
+        if not self.custom_sources:
+            empty_label = QLabel("No extra sources added.")
+            empty_label.setStyleSheet("color: gray;")
+            self.custom_sources_layout.addWidget(empty_label)
+        else:
+            for source in self.custom_sources:
+                checkbox = QCheckBox(
+                    str(source.get("display_name") or source.get("database_id") or "")
+                )
+                checkbox.setChecked(bool(source.get("enabled", False)))
+                checkbox.setToolTip(
+                    f'{source.get("database_id", "")}\n{source.get("db_url", "")}'
+                )
+                self.custom_sources_layout.addWidget(checkbox)
+                self.custom_source_checks.append(checkbox)
+        self.edit_custom_sources_button.setEnabled(bool(self.custom_sources))
+
+    def on_add_custom_source(self):
+        self._sync_custom_source_checks()
+        dialog = ExtraSourceEditorDialog(
+            existing_ids=[source.get("database_id", "") for source in self.custom_sources],
+            parent=self,
+        )
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            source = dialog.get_source()
+            source["enabled"] = True
+            self.custom_sources.append(source)
+            self._refresh_custom_sources()
+
+    def on_edit_custom_sources(self):
+        self._sync_custom_source_checks()
+        dialog = ManageExtraSourcesDialog(self.custom_sources, self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self.custom_sources = dialog.get_sources()
+            self._refresh_custom_sources()
+
     def on_manualsdb_configure(self):
         dialog = ManualsDbConfigDialog(self.manualsdb_selected, self)
 
@@ -693,6 +782,9 @@ class UpdateAllConfigDialog(QDialog):
 
         self.manualsdb_selected = list(data.get("manualsdb_selected", []))
         self.manualsdb_check.setChecked(data.get("manualsdb", False))
+        self.custom_sources = list(data.get("custom_sources", []))
+        self.custom_sources_unmanaged_text = data.get("custom_sources_unmanaged_text", "")
+        self._refresh_custom_sources()
 
         self.update_jt_beta_state()
         self.update_wallpaper_state()
@@ -700,6 +792,7 @@ class UpdateAllConfigDialog(QDialog):
         self.update_manualsdb_state()
 
     def collect_config(self):
+        self._sync_custom_source_checks()
         return {
             "main_cores": self.main_cores_check.isChecked(),
             "main_source": self.main_source_combo.currentText(),
@@ -751,6 +844,8 @@ class UpdateAllConfigDialog(QDialog):
             "ranny_wallpapers_source": self.ranny_wallpapers_source_combo.currentText(),
             "manualsdb": self.manualsdb_check.isChecked(),
             "manualsdb_selected": list(self.manualsdb_selected),
+            "custom_sources": list(self.custom_sources),
+            "custom_sources_unmanaged_text": self.custom_sources_unmanaged_text,
         }
 
     def on_save(self):
