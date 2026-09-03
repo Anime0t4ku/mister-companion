@@ -977,6 +977,7 @@ class InstallCenterDetailsDialog(QDialog):
         elif handler == "mister_hifi":
             smb_text = "Manage SMB Shares" if self.mister_hifi_smb_config_exists() else "Add SMB Share"
             self.mister_hifi_smb_button = add_button(smb_text, self.open_mister_hifi_smb_manager, enabled=installed, min_width=190)
+            add_button("Manage Radio Stations", self.open_mister_hifi_radio_manager, enabled=installed, min_width=210)
             add_button("Uninstall", self.uninstall, enabled=installed, min_width=170)
         else:
             add_button("Uninstall", self.uninstall, enabled=installed)
@@ -1033,6 +1034,19 @@ class InstallCenterDetailsDialog(QDialog):
                 self.mister_hifi_smb_button.setText(text)
         except Exception as exc:
             QMessageBox.critical(self, "MiSTer Hi-Fi", f"Unable to open the SMB Share Manager.\n\n{exc}")
+
+    def open_mister_hifi_radio_manager(self):
+        try:
+            from ui.dialogs.mister_hifi_radio_dialog import MisterHiFiRadioDialog
+            sd_root = None
+            connection = self.tab.connection
+            if self.tab.is_offline_mode():
+                sd_root = self.tab.main_window.get_offline_sd_root() if hasattr(self.tab.main_window, "get_offline_sd_root") else ""
+                connection = None
+            dialog = MisterHiFiRadioDialog(connection=connection, parent=self, sd_root=sd_root)
+            dialog.exec()
+        except Exception as exc:
+            QMessageBox.critical(self, "MiSTer Hi-Fi", f"Unable to open the Radio Station Manager.\n\n{exc}")
 
 
     def add_extra_action_buttons(self, actions, context_ready):
