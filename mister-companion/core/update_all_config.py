@@ -255,17 +255,20 @@ def _parse_custom_sources_ini(text):
             unmanaged.extend(block)
             return
         db_url = ""
+        description = ""
         for line in block[1:]:
             stripped = line.strip()
-            if stripped.lower().startswith("db_url") and "=" in stripped:
+            if not db_url and re.match(r"(?i)^db_url\s*=", stripped):
                 db_url = stripped.split("=", 1)[1].strip()
-                break
+            elif not description and re.match(r"(?i)^description\s*=", stripped):
+                description = stripped.split("=", 1)[1].strip()
         if not db_url:
             unmanaged.extend(block)
             return
         sections.append({
             "database_id": database_id,
             "db_url": db_url,
+            "description": description,
             "ini_block": "".join(block).rstrip("\r\n"),
         })
 
@@ -284,7 +287,7 @@ def parse_custom_source_entry(text):
     normalized_lines = []
     for line in str(text or "").replace("db\\_url", "db_url").splitlines():
         stripped = line.strip()
-        if stripped.lower().startswith("db_url") and "=" in line:
+        if re.match(r"(?i)^db_url\s*=", stripped):
             prefix, value = line.split("=", 1)
             value = value.strip()
             markdown_link = re.fullmatch(r"\[(https?://[^\]]+)\]\((https?://[^)]+)\)", value)
@@ -332,7 +335,7 @@ def _load_custom_sources_data(ini_text, metadata_text):
         source = by_id.get(key)
         if source is None:
             source = {
-                "display_name": section["database_id"][1:-1],
+                "display_name": section.get("description") or section["database_id"][1:-1],
                 "database_id": section["database_id"],
                 "db_url": section["db_url"],
                 "ini_block": section["ini_block"],
@@ -350,20 +353,35 @@ def _load_custom_sources_data(ini_text, metadata_text):
 def _replace_custom_source_header_and_url(source):
     database_id = normalize_database_id(source.get("database_id", ""))
     db_url = str(source.get("db_url") or "").strip()
+    description = str(source.get("display_name") or "").strip()
     block = str(source.get("ini_block") or "").splitlines()
     if not block:
-        return f"{database_id}\ndb_url = {db_url}"
+        return f"{database_id}\ndb_url = {db_url}\ndescription = {description}"
     block[0] = database_id
-    replaced = False
+    url_replaced = False
+    description_replaced = False
     for index in range(1, len(block)):
         stripped = block[index].strip()
-        if stripped.lower().startswith("db_url") and "=" in stripped:
+        if not url_replaced and re.match(r"(?i)^db_url\s*=", stripped):
             indent = block[index][:len(block[index]) - len(block[index].lstrip())]
             block[index] = f"{indent}db_url = {db_url}"
-            replaced = True
-            break
-    if not replaced:
+            url_replaced = True
+        elif not description_replaced and re.match(r"(?i)^description\s*=", stripped):
+            indent = block[index][:len(block[index]) - len(block[index].lstrip())]
+            block[index] = f"{indent}description = {description}"
+            description_replaced = True
+    if not url_replaced:
         block.insert(1, f"db_url = {db_url}")
+    if not description_replaced:
+        url_index = next(
+            (
+                index
+                for index, line in enumerate(block)
+                if re.match(r"(?i)^db_url\s*=", line.strip())
+            ),
+            0,
+        )
+        block.insert(url_index + 1, f"description = {description}")
     return "\n".join(block).rstrip()
 
 

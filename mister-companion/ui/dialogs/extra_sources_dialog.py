@@ -82,6 +82,8 @@ class ExtraSourceEditorDialog(QDialog):
             return
         self.id_edit.setText(parsed["database_id"])
         self.url_edit.setText(parsed["db_url"])
+        if parsed.get("description"):
+            self.name_edit.setText(parsed["description"])
         self.source["ini_block"] = parsed["ini_block"]
 
     def _save(self):
