@@ -53,7 +53,14 @@ from core.install_center import (
     uninstall_wallpaper_pack,
     open_wallpaper_folder,
 )
-from core.file_browser import list_directory, join_remote_path, parent_path, DEFAULT_ROOT
+from core.file_browser import (
+    DEFAULT_ROOT,
+    available_roots,
+    join_remote_path,
+    list_directory,
+    parent_path,
+    root_for_path,
+)
 from core.downloader_backend import (
     DownloaderCommandError,
     DownloaderMissingDrivesError,
@@ -431,12 +438,20 @@ class InstallCenterFolderDialog(QDialog):
         self.setWindowTitle("Choose Install Folder")
         self.resize(620, 460)
         self.build_ui()
+        self.populate_roots()
         self.load_path(self.current_path)
 
     def build_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(14, 14, 14, 14)
         layout.setSpacing(8)
+
+        storage_row = QHBoxLayout()
+        storage_row.addWidget(QLabel("Storage:"))
+        self.storage_combo = QComboBox()
+        self.storage_combo.currentIndexChanged.connect(self.storage_changed)
+        storage_row.addWidget(self.storage_combo, 1)
+        layout.addLayout(storage_row)
 
         self.path_label = QLabel(self.current_path)
         self.path_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
@@ -460,7 +475,7 @@ class InstallCenterFolderDialog(QDialog):
         self.select_button = QPushButton("Use This Folder")
         self.cancel_button = QPushButton("Cancel")
         self.up_button.clicked.connect(self.go_up)
-        self.games_button.clicked.connect(lambda: self.load_path("/media/fat/games"))
+        self.games_button.clicked.connect(self.load_games_folder)
         self.select_button.clicked.connect(self.accept_current_folder)
         self.cancel_button.clicked.connect(self.reject)
         for button in (self.up_button, self.games_button, self.select_button, self.cancel_button):
@@ -468,6 +483,26 @@ class InstallCenterFolderDialog(QDialog):
             buttons.addWidget(button)
         buttons.addStretch()
         layout.addLayout(buttons)
+
+    def populate_roots(self):
+        self.storage_combo.blockSignals(True)
+        self.storage_combo.clear()
+        try:
+            roots = available_roots(self.connection)
+        except Exception:
+            roots = [{"name": "SD Card", "path": DEFAULT_ROOT, "available": True}]
+        for root in roots:
+            if root.get("available"):
+                self.storage_combo.addItem(root.get("name") or root.get("path"), root.get("path"))
+        self.storage_combo.blockSignals(False)
+
+    def storage_changed(self, index):
+        if index >= 0:
+            self.load_path(self.storage_combo.itemData(index))
+
+    def load_games_folder(self):
+        root = root_for_path(self.current_path) or DEFAULT_ROOT
+        self.load_path(join_remote_path(root, "games"))
 
     def load_path(self, path):
         self.current_path = path or "/media/fat/games"
@@ -477,6 +512,13 @@ class InstallCenterFolderDialog(QDialog):
             self.current_path = data.get("path", self.current_path)
             self.path_label.setText(self.current_path)
             self.entries = [entry for entry in data.get("entries", []) if entry.get("is_dir")]
+            current_root = root_for_path(self.current_path)
+            for index in range(self.storage_combo.count()):
+                if self.storage_combo.itemData(index) == current_root:
+                    self.storage_combo.blockSignals(True)
+                    self.storage_combo.setCurrentIndex(index)
+                    self.storage_combo.blockSignals(False)
+                    break
         except Exception as e:
             QMessageBox.warning(self, "Choose Install Folder", f"Could not load folder:\n{e}")
             self.entries = []
@@ -857,7 +899,12 @@ class InstallCenterDetailsDialog(QDialog):
                 QMessageBox.warning(self, "Choose Install Folder", "Please choose a folder inside the selected Offline SD card.")
                 return
         else:
-            remote_start = "/media/fat" + normalize_mister_relative_path(default_path)
+            normalized_start = normalize_mister_relative_path(default_path)
+            remote_start = (
+                normalized_start
+                if root_for_path(normalized_start).startswith("/media/usb")
+                else "/media/fat" + normalized_start
+            )
             dialog = InstallCenterFolderDialog(self.tab.connection, remote_start, self)
             if dialog.exec() != QDialog.DialogCode.Accepted or not dialog.selected_path:
                 return

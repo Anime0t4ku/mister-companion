@@ -1,20 +1,16 @@
 import os
+import re
 import shutil
 from pathlib import Path
 
 from core.app_paths import app_base_dir, generated_path
+from core.file_browser import available_roots
 from core.open_helpers import open_local_folder
 from shlex import quote
 
 
 REMOTE_SD_DOCS_ROOT = "/media/fat/docs"
-REMOTE_USB_DOCS_ROOT = "/media/usb0/docs"
 REMOTE_CIFS_DOCS_ROOT = "/media/fat/cifs/docs"
-REMOTE_DOCS_ROOTS = (
-    ("sd", REMOTE_SD_DOCS_ROOT),
-    ("usb", REMOTE_USB_DOCS_ROOT),
-    ("cifs", REMOTE_CIFS_DOCS_ROOT),
-)
 
 
 def get_manuals_cache_root() -> Path:
@@ -169,12 +165,19 @@ def remote_path_exists(connection, path: str) -> bool:
 
 
 def get_remote_docs_roots(connection):
-    """Return available manual roots in duplicate-priority order: SD, USB, CIFS."""
+    """Return available manual roots in duplicate-priority order: SD, USBs, CIFS."""
     if not connection or not connection.is_connected():
         return []
 
     roots = []
-    for source, path in REMOTE_DOCS_ROOTS:
+    candidates = [("sd", REMOTE_SD_DOCS_ROOT)]
+    for root in available_roots(connection):
+        path = str(root.get("path") or "")
+        if re.fullmatch(r"/media/usb\d+", path):
+            candidates.append(("usb", f"{path}/docs"))
+    candidates.append(("cifs", REMOTE_CIFS_DOCS_ROOT))
+
+    for source, path in candidates:
         if remote_path_exists(connection, path):
             roots.append((source, path))
     return roots

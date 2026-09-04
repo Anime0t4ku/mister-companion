@@ -1345,8 +1345,9 @@ def normalize_mister_relative_path(path: str, default="/games") -> str:
         text = default
     if text.startswith("/media/fat"):
         text = text[len("/media/fat"):]
-    if text.startswith("/media/usb0"):
-        text = text[len("/media/usb0"):]
+    elif re.match(r"^/media/usb\d+(?:/|$)", text):
+        text = normalize_remote_path(text)
+        return text if text != "/" else default
     if not text.startswith("/"):
         text = "/" + text
     text = normalize_remote_path(text)
@@ -1359,6 +1360,8 @@ def resolve_mister_relative_path(context: InstallCenterContext, relative_path: s
     relative_path = normalize_mister_relative_path(relative_path)
     if context.offline:
         return str(Path(context.sd_root).expanduser().resolve() / relative_path.strip("/"))
+    if re.match(r"^/media/usb\d+(?:/|$)", relative_path):
+        return relative_path
     return "/media/fat" + relative_path
 
 
