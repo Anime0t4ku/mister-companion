@@ -1,12 +1,14 @@
 import os
 import posixpath
+import re
 import shutil
 import stat
 from pathlib import Path
 
-SAFE_ROOTS = ["/media/fat", "/media/usb0"]
+SAFE_ROOTS = ["/media/fat"]
 DEFAULT_ROOT = "/media/fat"
 USB_ROOT = "/media/usb0"
+USB_ROOT_PATTERN = re.compile(r"^/media/usb(\d+)(?:/|$)")
 
 
 def normalize_remote_path(path):
@@ -22,6 +24,9 @@ def normalize_remote_path(path):
 def root_for_path(path):
     path = normalize_remote_path(path)
     matches = [root for root in SAFE_ROOTS if path == root or path.startswith(root + "/")]
+    usb_match = USB_ROOT_PATTERN.match(path)
+    if usb_match:
+        matches.append(f"/media/usb{usb_match.group(1)}")
     if not matches:
         return ""
     return max(matches, key=len)
@@ -98,11 +103,29 @@ def remote_exists(connection, path):
 
 
 def available_roots(connection):
+    mount_output = connection.run_command("awk '{print $2}' /proc/mounts 2>/dev/null") or ""
+    usb_roots = set()
+    for raw_path in str(mount_output).splitlines():
+        mount_path = (
+            raw_path.strip()
+            .replace("\\040", " ")
+            .replace("\\011", "\t")
+            .replace("\\134", "\\")
+        )
+        match = re.fullmatch(r"/media/usb(\d+)", mount_path)
+        if match:
+            usb_roots.add((int(match.group(1)), mount_path))
+
     sftp = connection.client.open_sftp()
     try:
         roots = [{"name": "SD Card", "path": DEFAULT_ROOT, "available": sftp_exists(sftp, DEFAULT_ROOT)}]
-        if sftp_exists(sftp, USB_ROOT):
-            roots.append({"name": "USB Drive", "path": USB_ROOT, "available": True})
+        for index, usb_root in sorted(usb_roots):
+            if sftp_exists(sftp, usb_root):
+                roots.append({
+                    "name": f"USB Drive {index}",
+                    "path": usb_root,
+                    "available": True,
+                })
         return roots
     finally:
         sftp.close()

@@ -1,8 +1,10 @@
 from core.downloader_backend import (
+    database_registered_local,
+    database_registered_online,
+    check_named_database_local,
+    check_named_database_online,
     ensure_database_source_local,
     ensure_database_source_online,
-    inspect_named_databases_local,
-    inspect_named_databases_online,
     remove_database_source_local,
     remove_database_source_online,
     restore_local,
@@ -33,13 +35,21 @@ def _status(state, check_latest=False):
 def get_solarus_status(connection, check_latest=False):
     if not connection.is_connected():
         raise RuntimeError("Not connected to MiSTer.")
-    states = inspect_named_databases_online(connection, [SOLARUS_DB_ID], log=None)
-    return _status(states.get(SOLARUS_DB_ID) or {}, check_latest=check_latest)
+    installed = database_registered_online(connection, SOLARUS_DB_ID)
+    state = {
+        "installed": installed,
+        "update_available": bool(check_latest and installed and check_named_database_online(connection, SOLARUS_DB_ID)),
+    }
+    return _status(state, check_latest=check_latest)
 
 
 def get_solarus_status_local(sd_root, check_latest=False):
-    states = inspect_named_databases_local(sd_root, [SOLARUS_DB_ID], log=None)
-    return _status(states.get(SOLARUS_DB_ID) or {}, check_latest=check_latest)
+    installed = database_registered_local(sd_root, SOLARUS_DB_ID)
+    state = {
+        "installed": installed,
+        "update_available": bool(check_latest and installed and check_named_database_local(sd_root, SOLARUS_DB_ID)),
+    }
+    return _status(state, check_latest=check_latest)
 
 
 def install_or_update_solarus(connection, log):

@@ -1,6 +1,8 @@
 import re
 
 from core.downloader_backend import (
+    database_registered_local,
+    database_registered_online,
     ensure_database_source_local,
     ensure_database_source_online,
     inspect_named_databases_local,
@@ -155,9 +157,8 @@ def _status(state: dict, *, ini_present: bool, check_latest: bool = False, updat
 def get_mister_dvd_status(connection, check_latest=False):
     if not connection.is_connected():
         raise RuntimeError("Not connected to MiSTer.")
-    states = inspect_named_databases_online(connection, [MISTER_DVD_DB_ID], log=None)
-    state = states.get(MISTER_DVD_DB_ID) or {}
-    update = bool(check_latest and state.get("installed") and check_named_database_online(connection, MISTER_DVD_DB_ID))
+    state = {"installed": database_registered_online(connection, MISTER_DVD_DB_ID)}
+    update = bool(check_latest and state["installed"] and check_named_database_online(connection, MISTER_DVD_DB_ID))
     return _status(
         state,
         ini_present=_ini_entry_present(_read_remote_text(connection, REMOTE_INI_PATH)),
@@ -167,9 +168,8 @@ def get_mister_dvd_status(connection, check_latest=False):
 
 
 def get_mister_dvd_status_local(sd_root, check_latest=False):
-    states = inspect_named_databases_local(sd_root, [MISTER_DVD_DB_ID], log=None)
-    state = states.get(MISTER_DVD_DB_ID) or {}
-    update = bool(check_latest and state.get("installed") and check_named_database_local(sd_root, MISTER_DVD_DB_ID))
+    state = {"installed": database_registered_local(sd_root, MISTER_DVD_DB_ID)}
+    update = bool(check_latest and state["installed"] and check_named_database_local(sd_root, MISTER_DVD_DB_ID))
     return _status(
         state,
         ini_present=_ini_entry_present(_read_local_text(sd_root, REMOTE_INI_PATH)),

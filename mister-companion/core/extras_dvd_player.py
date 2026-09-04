@@ -2,6 +2,8 @@ import os
 import re
 
 from core.downloader_backend import (
+    database_registered_local,
+    database_registered_online,
     ensure_database_source_local,
     ensure_database_source_online,
     inspect_named_databases_local,
@@ -159,9 +161,8 @@ def _status(state, *, css_present: bool, ini_present: bool, check_latest=False):
 def get_dvd_player_status(connection, check_latest=False):
     if not connection.is_connected():
         raise RuntimeError("Not connected to MiSTer.")
-    states = inspect_named_databases_online(connection, [DVD_PLAYER_DB_ID], log=None)
-    state = states.get(DVD_PLAYER_DB_ID) or {}
-    installed = bool(state.get("installed"))
+    installed = database_registered_online(connection, DVD_PLAYER_DB_ID)
+    state = {"installed": installed}
     if check_latest and installed:
         state = dict(state)
         state["update_available"] = bool(check_named_database_online(connection, DVD_PLAYER_DB_ID))
@@ -174,9 +175,8 @@ def get_dvd_player_status(connection, check_latest=False):
 
 
 def get_dvd_player_status_local(sd_root, check_latest=False):
-    states = inspect_named_databases_local(sd_root, [DVD_PLAYER_DB_ID], log=None)
-    state = states.get(DVD_PLAYER_DB_ID) or {}
-    installed = bool(state.get("installed"))
+    installed = database_registered_local(sd_root, DVD_PLAYER_DB_ID)
+    state = {"installed": installed}
     if check_latest and installed:
         state = dict(state)
         state["update_available"] = bool(check_named_database_local(sd_root, DVD_PLAYER_DB_ID))

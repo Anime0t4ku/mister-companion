@@ -857,6 +857,8 @@ def update_check_result_text(status: dict) -> str:
     status_text = str(status.get("status_text") or "")
     if status.get("latest_error") or "update check failed" in status_text.lower() or status.get("state") == "unknown":
         return "Update check failed."
+    if status.get("manual_install"):
+        return "Manual install found."
     if status.get("update_available"):
         return "Update available."
     if status.get("installed"):
@@ -864,6 +866,84 @@ def update_check_result_text(status: dict) -> str:
     if "not installed" in status_text.lower():
         return "Not installed."
     return status_text or "Update status unavailable."
+
+
+def _apply_downloader_managed_status(
+    handler: str,
+    context: InstallCenterContext,
+    status: dict,
+    *,
+    check_latest: bool = False,
+    presence_state: dict | None = None,
+) -> dict:
+    """Apply one consistent file/registration status to a Downloader-backed item."""
+    db_id = DOWNLOADER_HANDLER_DATABASES.get(handler)
+    if not db_id:
+        return dict(status or {})
+
+    presence = presence_state
+    if presence is None:
+        presence = (
+            _cheap_downloader_presence_local(context.sd_root, [db_id])
+            if context.offline
+            else _cheap_downloader_presence_online(context.connection, [db_id])
+        ).get(db_id) or {}
+    if not presence.get("recognized"):
+        return dict(status or {})
+
+    files_present = bool(presence.get("installed"))
+    registered = (
+        database_registered_local(context.sd_root, db_id)
+        if context.offline
+        else database_registered_online(context.connection, db_id)
+    )
+    result = dict(status or {})
+    result["installed"] = files_present
+    result["update_available"] = False
+    result["manual_install"] = bool(files_present and not registered)
+
+    if result["manual_install"]:
+        result.update({
+            "state": "manual_install",
+            "status_text": "Manual install found",
+            "install_label": "Migrate / Update",
+            "install_enabled": True,
+            "uninstall_enabled": False,
+            "repair_action": False,
+        })
+        return result
+
+    if not files_present:
+        result.update({
+            "state": "not_installed",
+            "status_text": "Not installed",
+            "install_label": "Install",
+            "install_enabled": True,
+            "uninstall_enabled": False,
+        })
+        return result
+
+    result["state"] = "installed"
+    result.setdefault("uninstall_enabled", True)
+    if result.get("repair_action"):
+        return result
+
+    update_available = False
+    if check_latest:
+        states = (
+            inspect_named_databases_local(context.sd_root, [db_id], log=None)
+            if context.offline
+            else inspect_named_databases_online(context.connection, [db_id], log=None)
+        )
+        update_available = bool((states.get(db_id) or {}).get("update_available"))
+    result.update({
+        "state": "update_available" if update_available else "installed",
+        "status_text": "Update available" if update_available else "Installed",
+        "update_available": update_available,
+        "install_label": "Update" if update_available else "Installed",
+        "install_enabled": update_available,
+    })
+    return result
 
 
 def check_item_status(item: dict, context: InstallCenterContext, check_latest: bool = False, log=None) -> dict:
@@ -878,24 +958,9 @@ def check_item_status(item: dict, context: InstallCenterContext, check_latest: b
 
     if item_type == "script" or category == "scripts":
         if handler in DOWNLOADER_HANDLER_DATABASES:
-            db_id = DOWNLOADER_HANDLER_DATABASES[handler]
-            if check_latest:
-                present = (_cheap_downloader_presence_local(context.sd_root, [db_id]) if context.offline else _cheap_downloader_presence_online(context.connection, [db_id])).get(db_id, False)
-                if present:
-                    _adopt_downloader_database_if_missing(context, db_id)
-            states = inspect_named_databases_local(context.sd_root, [db_id], log=None) if context.offline else inspect_named_databases_online(context.connection, [db_id], log=None)
-            state = states.get(db_id) or {}
-            installed = bool(state.get("installed"))
-            update_available = bool(state.get("update_available")) if check_latest else False
-            return {
-                "state": "update_available" if update_available else "installed" if installed else "not_installed",
-                "status_text": "Update available" if update_available else "Installed" if installed else "Not installed",
-                "installed": installed,
-                "update_available": update_available,
-                "install_label": "Update" if update_available else "Installed" if installed else "Install",
-                "install_enabled": update_available or not installed,
-                "uninstall_enabled": installed,
-            }
+            return _apply_downloader_managed_status(
+                handler, context, {}, check_latest=check_latest
+            )
         scripts_status = get_scripts_status_local(context.sd_root) if context.offline else get_scripts_status(context.connection)
         if handler == "zaparoo":
             try:
@@ -925,7 +990,17 @@ def check_item_status(item: dict, context: InstallCenterContext, check_latest: b
             log=log,
         )
     if item_type in {"extra", "core"} or category in {"extras", "cores"}:
-        return _extra_status(handler, context, check_latest, log=log)
+        status = _extra_status(
+            handler,
+            context,
+            check_latest and handler not in DOWNLOADER_HANDLER_DATABASES,
+            log=log,
+        )
+        if handler in DOWNLOADER_HANDLER_DATABASES:
+            status = _apply_downloader_managed_status(
+                handler, context, status, check_latest=check_latest
+            )
+        return status
     if item_type == "rom" or category == "roms":
         return check_rom_status(item, context)
     if item_type == "wallpaper_pack" or category == "wallpaper_packs":
@@ -1056,31 +1131,16 @@ def check_all_status(catalog: dict, context: InstallCenterContext, check_latest:
             except Exception as e:
                 results[item_id] = {"state": "unknown", "status_text": f"Status unknown ({e})", "installed": False, "update_available": False}
 
-            db_id = DOWNLOADER_HANDLER_DATABASES.get(handler)
-            downloader_state = downloader_install_states.get(db_id) if db_id else None
             status = dict(results.get(item_id) or {})
-            if downloader_state and downloader_state.get("recognized"):
-                installed = bool(downloader_state.get("installed"))
-                status["installed"] = installed
-                status["update_available"] = False
-                if installed:
-                    status["state"] = "installed"
-                    status.setdefault("uninstall_enabled", True)
-                    if not status.get("repair_action") and status.get("state") != "unknown":
-                        current_text = str(status.get("status_text") or "")
-                        if "not installed" in current_text.lower() or "missing files" in current_text.lower():
-                            status["status_text"] = "Installed"
-                            status["install_label"] = "Installed"
-                            status["install_enabled"] = False
-                else:
-                    status.update({
-                        "state": "not_installed",
-                        "status_text": "Not installed",
-                        "install_label": "Install",
-                        "install_enabled": True,
-                        "uninstall_enabled": False,
-                    })
-                results[item_id] = status
+            if handler in DOWNLOADER_HANDLER_DATABASES:
+                db_id = DOWNLOADER_HANDLER_DATABASES[handler]
+                results[item_id] = _apply_downloader_managed_status(
+                    handler,
+                    context,
+                    status,
+                    check_latest=False,
+                    presence_state=downloader_install_states.get(db_id),
+                )
 
             if check_latest and log and handler not in DOWNLOADER_HANDLER_DATABASES:
                 log(update_check_result_text(results[item_id]) + "\n")
@@ -1092,7 +1152,7 @@ def check_all_status(catalog: dict, context: InstallCenterContext, check_latest:
             handler = item.get("handler") or item_id
             db_id = DOWNLOADER_HANDLER_DATABASES.get(handler)
             status = results.get(item_id) or {}
-            if db_id and status.get("installed") and not status.get("repair_action"):
+            if db_id and status.get("installed") and not status.get("repair_action") and not status.get("manual_install"):
                 downloader_items.append((item, db_id))
 
         if downloader_items:
