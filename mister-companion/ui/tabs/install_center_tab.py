@@ -2058,17 +2058,34 @@ class InstallCenterTab(QWidget):
     def open_item_details(self, list_item):
         if list_item is None:
             return
+
+        # QListWidget can emit both itemClicked and itemActivated for the same
+        # user action on some platforms/styles.  Because the details window is
+        # modal, handling both signals without a guard can enter a second
+        # dialog.exec() while the first one is already running and crash Qt.
+        if self.active_details_dialog is not None:
+            try:
+                self.active_details_dialog.raise_()
+                self.active_details_dialog.activateWindow()
+            except RuntimeError:
+                self.active_details_dialog = None
+            else:
+                return
+
         item_id = list_item.data(Qt.ItemDataRole.UserRole) or ""
         self.current_item_id = item_id
         item = self.item_by_id(item_id)
         if not item:
             return
         status = self.statuses.get(item_id, {})
+
         dialog = InstallCenterDetailsDialog(self, item, status, self)
         self.active_details_dialog = dialog
-        dialog.exec()
-        if self.active_details_dialog is dialog:
-            self.active_details_dialog = None
+        try:
+            dialog.exec()
+        finally:
+            if self.active_details_dialog is dialog:
+                self.active_details_dialog = None
 
 
     def open_updates_dialog(self):
