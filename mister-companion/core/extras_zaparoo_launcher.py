@@ -809,25 +809,50 @@ from core.downloader_backend import ensure_source_online, ensure_source_local, r
 
 def get_zaparoo_launcher_status(connection, check_latest: bool = False):
     if not connection.is_connected():
-        return {"installed":False,"files_installed":False,"frontend_enabled":False,"update_available":False,"status_text":"Needs connection","install_label":"Install","install_enabled":False,"uninstall_enabled":False}
+        return {
+            "installed": False,
+            "files_installed": False,
+            "frontend_enabled": False,
+            "update_available": False,
+            "state": "needs_connection",
+            "status_text": "Needs connection",
+            "install_label": "Install",
+            "install_enabled": False,
+            "uninstall_enabled": False,
+            "toggle_enabled": False,
+        }
+
     files = _zaparoo_launcher_files_installed(connection)
     enabled = _mister_ini_has_zaparoo_launcher_entries(connection) if files else False
-    update = check_database_online(connection) if (check_latest and files) else False
-    if not files: text,label,install_enabled = "Not installed","Install",True
-    elif not enabled: text,label,install_enabled = "Installed but disabled","Enable",True
-    elif update: text,label,install_enabled = "Update available","Update",True
-    else: text,label,install_enabled = "Installed and enabled","Installed",False
-    return {"installed":files,"files_installed":files,"frontend_enabled":enabled,"update_available":update,"state":"update_available" if update else "installed" if files else "not_installed","status_text":text,"install_label":label,"install_enabled":install_enabled,"uninstall_enabled":False,"disable_enabled":bool(files and enabled)}
+    return {
+        "installed": files,
+        "files_installed": files,
+        "frontend_enabled": enabled,
+        "update_available": False,
+        "state": "installed" if files else "not_installed",
+        "status_text": "Installed and enabled" if enabled else "Installed but disabled" if files else "Not installed",
+        "install_label": "Installed" if files else "Install",
+        "install_enabled": not files,
+        "uninstall_enabled": False,
+        "toggle_enabled": files,
+    }
+
 
 def get_zaparoo_launcher_status_local(sd_root: str, check_latest: bool = False):
     files = _zaparoo_launcher_files_installed_local(sd_root)
     enabled = _mister_ini_has_zaparoo_launcher_entries_local(sd_root) if files else False
-    update = check_database_local(sd_root) if (check_latest and files) else False
-    if not files: text,label,install_enabled = "Not installed","Install",True
-    elif not enabled: text,label,install_enabled = "Installed but disabled","Enable",True
-    elif update: text,label,install_enabled = "Update available","Update",True
-    else: text,label,install_enabled = "Installed and enabled","Installed",False
-    return {"installed":files,"files_installed":files,"frontend_enabled":enabled,"update_available":update,"state":"update_available" if update else "installed" if files else "not_installed","status_text":text,"install_label":label,"install_enabled":install_enabled,"uninstall_enabled":False,"disable_enabled":bool(files and enabled)}
+    return {
+        "installed": files,
+        "files_installed": files,
+        "frontend_enabled": enabled,
+        "update_available": False,
+        "state": "installed" if files else "not_installed",
+        "status_text": "Installed and enabled" if enabled else "Installed but disabled" if files else "Not installed",
+        "install_label": "Installed" if files else "Install",
+        "install_enabled": not files,
+        "uninstall_enabled": False,
+        "toggle_enabled": files,
+    }
 
 def install_or_update_zaparoo_launcher(connection, log):
     if _zaparoo_launcher_files_installed(connection):

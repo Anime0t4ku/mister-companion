@@ -257,7 +257,6 @@ ROM_MANIFEST_REMOTE_PATH = "/media/fat/Scripts/.config/mister_companion/install_
 
 DOWNLOADER_HANDLER_DATABASES = {
     "zaparoo": "ZaparooProject/Zaparoo_MiSTer",
-    "zaparoo_frontend": "ZaparooProject/Zaparoo_MiSTer",
     "retroachievement_cores": "theypsilon/RetroAchievementsDB_MiSTer",
     "3s_arm": "MultiDatabases/3s-arm",
     "3sx_mister": "MultiDatabases/3s-arm",
@@ -279,6 +278,8 @@ DOWNLOADER_HANDLER_DATABASES = {
     "mister_dvd": "MultiDatabases/mister-dvd",
     "dvd_player": "MultiDatabases/dvd-player",
 }
+
+UPDATE_CHECK_EXCLUDED_HANDLERS = {"zaparoo_frontend"}
 
 
 _DOWNLOADER_MARKER_CACHE = {}
@@ -994,7 +995,7 @@ def check_item_status(item: dict, context: InstallCenterContext, check_latest: b
         status = _extra_status(
             handler,
             context,
-            check_latest and handler not in DOWNLOADER_HANDLER_DATABASES,
+            check_latest and handler not in DOWNLOADER_HANDLER_DATABASES and handler not in UPDATE_CHECK_EXCLUDED_HANDLERS,
             log=log,
         )
         if handler in DOWNLOADER_HANDLER_DATABASES:
@@ -1104,9 +1105,13 @@ def check_all_status(catalog: dict, context: InstallCenterContext, check_latest:
 
             try:
                 item_name = item.get("name") or item_id or "item"
-                if log:
+                if log and not (check_latest and handler in UPDATE_CHECK_EXCLUDED_HANDLERS):
                     log(f"Checking {item_name}...\n")
-                item_check_latest = bool(check_latest and handler not in DOWNLOADER_HANDLER_DATABASES)
+                item_check_latest = bool(
+                    check_latest
+                    and handler not in DOWNLOADER_HANDLER_DATABASES
+                    and handler not in UPDATE_CHECK_EXCLUDED_HANDLERS
+                )
                 if item_type == "script" or category == "scripts":
                     if handler == "zaparoo":
                         results[item_id] = get_zaparoo_update_status_local(context.sd_root, check_latest=item_check_latest, log=log) if context.offline else get_zaparoo_update_status(context.connection, check_latest=item_check_latest, log=log)
@@ -1143,7 +1148,12 @@ def check_all_status(catalog: dict, context: InstallCenterContext, check_latest:
                     presence_state=downloader_install_states.get(db_id),
                 )
 
-            if check_latest and log and handler not in DOWNLOADER_HANDLER_DATABASES:
+            if (
+                check_latest
+                and log
+                and handler not in DOWNLOADER_HANDLER_DATABASES
+                and handler not in UPDATE_CHECK_EXCLUDED_HANDLERS
+            ):
                 log(update_check_result_text(results[item_id]) + "\n")
 
     if check_latest:

@@ -1109,7 +1109,23 @@ class InstallCenterDetailsDialog(QDialog):
         if install_enabled is None:
             install_enabled = not installed or update_available
         add_button(install_text, self.install_or_update, enabled=install_enabled, min_width=170)
-        add_button("Check for Updates", self.check_for_updates, enabled=installed, min_width=170)
+
+        if handler == "zaparoo_frontend":
+            frontend_enabled = bool(self.status.get("frontend_enabled"))
+            toggle_text = "Disable" if frontend_enabled else "Enable"
+            toggle_callback = (
+                lambda: self.call_install_center_action("disable_zaparoo_frontend")
+                if frontend_enabled
+                else self.install_or_update()
+            )
+            add_button(
+                toggle_text,
+                toggle_callback,
+                enabled=self.status.get("toggle_enabled", installed),
+                min_width=170,
+            )
+        else:
+            add_button("Check for Updates", self.check_for_updates, enabled=installed, min_width=170)
 
         if handler == "3s_arm":
             add_button("Upload SF33RD.AFS", lambda: self.call_install_center_action("upload_sf33rd_afs", self.output), enabled=self.status.get("upload_enabled", context_ready), min_width=190)
@@ -1146,8 +1162,6 @@ class InstallCenterDetailsDialog(QDialog):
                 enabled=(installed and auto_enabled),
                 min_width=170,
             )
-        elif handler == "zaparoo_frontend":
-            add_button("Disable", lambda: self.call_install_center_action("disable_zaparoo_frontend"), enabled=self.status.get("disable_enabled", False), min_width=170)
 
         if handler != "zaparoo_frontend":
             add_button("Uninstall", self.uninstall, enabled=self.status.get("uninstall_enabled", installed), min_width=170)
