@@ -55,53 +55,96 @@ class ConnectionTab(QWidget):
         outer_layout.setSpacing(0)
 
         self.state_stack = QStackedWidget()
+        self.state_stack.setObjectName("ConnectionStateStack")
         outer_layout.addWidget(self.state_stack)
 
         self.connection_page = QWidget()
+        self.connection_page.setObjectName("ConnectionPage")
         main_layout = QVBoxLayout(self.connection_page)
-        main_layout.setContentsMargins(12, 12, 12, 12)
-        main_layout.setSpacing(12)
+        main_layout.setContentsMargins(18, 18, 18, 18)
+        main_layout.setSpacing(14)
         self.state_stack.addWidget(self.connection_page)
 
         self.device_dashboard = DeviceTab(self.main_window)
         self.state_stack.addWidget(self.device_dashboard)
         self.state_stack.setCurrentWidget(self.connection_page)
 
-        self.connection_status_label = QLabel("Status: Disconnected")
-        self.connection_status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.connection_status_label.setStyleSheet("font-weight: bold;")
-        main_layout.addWidget(self.connection_status_label)
+        # Keep the Connection tab styling palette-based so every built-in and
+        # custom theme continues to supply the actual colors.
+        self.connection_page.setStyleSheet(
+            """
+            QStackedWidget#ConnectionStateStack,
+            QWidget#ConnectionPage {
+                background: transparent;
+            }
 
-        self.content_row = QHBoxLayout()
-        self.content_row.setSpacing(12)
-        main_layout.addLayout(self.content_row, stretch=1)
+            QWidget#ConnectionPage QFrame#StatusBanner,
+            QWidget#ConnectionPage QFrame#ModeCard {
+                background-color: palette(alternate-base);
+                border: 1px solid palette(button);
+                border-radius: 10px;
+            }
 
-        self.connection_group = QGroupBox("Connection")
-        self.connection_group.setSizePolicy(
-            QSizePolicy.Policy.Expanding,
-            QSizePolicy.Policy.Expanding,
+            QWidget#ConnectionPage QGroupBox#ConnectionShell {
+                background: transparent;
+                border: none;
+                margin: 0px;
+                padding: 0px;
+            }
+
+            QWidget#ConnectionPage QGroupBox#ConnectionShell::title {
+                color: transparent;
+                background: transparent;
+                padding: 0px;
+            }
+
+            QWidget#ConnectionPage QGroupBox#ConnectionCard,
+            QWidget#ConnectionPage QGroupBox#SupportCard {
+                background-color: palette(alternate-base);
+                border: 1px solid palette(button);
+                border-radius: 12px;
+                margin-top: 18px;
+                padding: 14px;
+                font-weight: 700;
+            }
+
+            QWidget#ConnectionPage QGroupBox#ConnectionCard::title,
+            QWidget#ConnectionPage QGroupBox#SupportCard::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                left: 14px;
+                padding: 0px 7px;
+                background: transparent;
+                color: palette(highlight);
+            }
+
+            QWidget#ConnectionPage QLabel#SectionHint {
+                color: palette(text);
+            }
+
+            QWidget#ConnectionPage QPushButton#PrimaryAction {
+                background-color: palette(highlight);
+                color: palette(highlighted-text);
+                border-color: palette(highlight);
+                font-weight: 700;
+            }
+            """
         )
 
-        connection_layout = QVBoxLayout()
-        connection_layout.setContentsMargins(12, 14, 12, 12)
-        connection_layout.setSpacing(12)
-        self.connection_group.setLayout(connection_layout)
-
         header_row = QHBoxLayout()
-        header_row.setSpacing(8)
+        header_row.setContentsMargins(2, 0, 2, 0)
+        header_row.setSpacing(12)
 
         header_text_layout = QVBoxLayout()
         header_text_layout.setContentsMargins(0, 0, 0, 0)
-        header_text_layout.setSpacing(2)
+        header_text_layout.setSpacing(3)
 
         header_title = QLabel("Connection")
-        header_title.setStyleSheet("font-weight: bold; font-size: 15px;")
-        header_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        header_title.setStyleSheet("font-weight: 700; font-size: 19px;")
 
         self.mode_hint_label = QLabel("Choose Online / SSH or Offline / SD Card mode.")
-        self.mode_hint_label.setStyleSheet("color: gray;")
+        self.mode_hint_label.setObjectName("SectionHint")
         self.mode_hint_label.setWordWrap(True)
-        self.mode_hint_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         header_text_layout.addWidget(header_title)
         header_text_layout.addWidget(self.mode_hint_label)
@@ -110,73 +153,90 @@ class ConnectionTab(QWidget):
         set_text_button_min_width(self.show_support_button, 100)
         self.show_support_button.hide()
 
-        show_support_button_width = self.show_support_button.minimumWidth()
+        header_row.addLayout(header_text_layout, stretch=1)
+        header_row.addWidget(self.show_support_button, alignment=Qt.AlignmentFlag.AlignTop)
+        main_layout.addLayout(header_row)
 
-        self.show_support_button_placeholder = QWidget()
-        self.show_support_button_placeholder.setMinimumWidth(show_support_button_width)
-        self.show_support_button_placeholder.setSizePolicy(
-            QSizePolicy.Policy.Minimum,
-            QSizePolicy.Policy.Fixed,
+        self.status_banner = QFrame()
+        self.status_banner.setObjectName("StatusBanner")
+        status_layout = QHBoxLayout(self.status_banner)
+        status_layout.setContentsMargins(14, 9, 14, 9)
+        status_layout.setSpacing(8)
+
+        status_caption = QLabel("Connection status")
+        status_caption.setStyleSheet("font-weight: 600;")
+        self.connection_status_label = QLabel("Status: Disconnected")
+        self.connection_status_label.setStyleSheet("font-weight: 700;")
+        self.connection_status_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+
+        status_layout.addWidget(status_caption)
+        status_layout.addStretch()
+        status_layout.addWidget(self.connection_status_label)
+        self.status_banner.setMaximumWidth(820)
+        status_row = QHBoxLayout()
+        status_row.setContentsMargins(0, 0, 0, 0)
+        status_row.addStretch(1)
+        status_row.addWidget(self.status_banner)
+        status_row.addStretch(1)
+        main_layout.addLayout(status_row)
+
+        self.content_row = QHBoxLayout()
+        self.content_row.setSpacing(14)
+        main_layout.addLayout(self.content_row, stretch=1)
+
+        self.connection_group = QGroupBox("")
+        self.connection_group.setObjectName("ConnectionShell")
+        self.connection_group.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Expanding,
         )
+        # Keep the Connection options visually centered instead of allowing
+        # the card stack to stretch across the full tab width.
+        self.connection_group.setMaximumWidth(820)
 
-        self.show_support_button_container = QWidget()
-        self.show_support_button_container.setMinimumWidth(show_support_button_width)
-        self.show_support_button_container.setSizePolicy(
-            QSizePolicy.Policy.Minimum,
-            QSizePolicy.Policy.Fixed,
-        )
-
-        show_support_button_layout = QHBoxLayout(self.show_support_button_container)
-        show_support_button_layout.setContentsMargins(0, 0, 0, 0)
-        show_support_button_layout.setSpacing(0)
-        show_support_button_layout.addWidget(self.show_support_button)
-
-        header_row.addWidget(self.show_support_button_placeholder)
-        header_row.addStretch()
-        header_row.addLayout(header_text_layout)
-        header_row.addStretch()
-        header_row.addWidget(self.show_support_button_container)
-
-        connection_layout.addLayout(header_row)
+        connection_layout = QVBoxLayout()
+        connection_layout.setContentsMargins(0, 0, 0, 0)
+        connection_layout.setSpacing(12)
+        self.connection_group.setLayout(connection_layout)
 
         self.mode_frame = QFrame()
-        mode_layout = QHBoxLayout()
-        mode_layout.setContentsMargins(10, 10, 10, 10)
-        mode_layout.setSpacing(12)
-        self.mode_frame.setLayout(mode_layout)
+        self.mode_frame.setObjectName("ModeCard")
+        mode_layout = QHBoxLayout(self.mode_frame)
+        mode_layout.setContentsMargins(14, 11, 14, 11)
+        mode_layout.setSpacing(14)
 
+        mode_label = QLabel("Mode")
+        mode_label.setStyleSheet("font-weight: 700;")
         self.online_mode_radio = QRadioButton("Online / SSH")
         self.offline_mode_radio = QRadioButton("Offline / SD Card")
         self.online_mode_radio.setChecked(True)
 
-        mode_label = QLabel("Mode:")
-        mode_layout.addStretch()
         mode_layout.addWidget(mode_label)
+        mode_layout.addStretch()
         mode_layout.addWidget(self.online_mode_radio)
         mode_layout.addWidget(self.offline_mode_radio)
-        mode_layout.addStretch()
-
         connection_layout.addWidget(self.mode_frame)
 
         self.online_controls_widget = QWidget()
-        online_layout = QVBoxLayout()
+        online_layout = QVBoxLayout(self.online_controls_widget)
         online_layout.setContentsMargins(0, 0, 0, 0)
         online_layout.setSpacing(12)
-        self.online_controls_widget.setLayout(online_layout)
 
         self.saved_group = QGroupBox("Saved Device Profiles")
-        saved_layout = QGridLayout()
-        saved_layout.setContentsMargins(10, 12, 10, 10)
-        saved_layout.setHorizontalSpacing(8)
-        saved_layout.setVerticalSpacing(8)
+        self.saved_group.setObjectName("ConnectionCard")
+        saved_layout = QHBoxLayout(self.saved_group)
+        saved_layout.setContentsMargins(16, 18, 16, 14)
+        saved_layout.setSpacing(10)
 
+        profile_label = QLabel("Profile")
+        profile_label.setStyleSheet("font-weight: 600;")
         self.profile_selector = QComboBox()
         self.profile_selector.setPlaceholderText("Select Device")
         self.profile_selector.setCurrentIndex(-1)
         self.profile_selector.setMinimumWidth(260)
-        self.profile_selector.setMaximumWidth(360)
+        self.profile_selector.setMaximumWidth(420)
         self.profile_selector.setSizePolicy(
-            QSizePolicy.Policy.Fixed,
+            QSizePolicy.Policy.Expanding,
             QSizePolicy.Policy.Fixed,
         )
 
@@ -184,80 +244,69 @@ class ConnectionTab(QWidget):
         set_text_button_min_width(self.edit_profile_btn, 80)
         self.delete_profile_btn = QPushButton("Delete")
         set_text_button_min_width(self.delete_profile_btn, 80)
-        saved_center_row = QHBoxLayout()
-        saved_center_row.setSpacing(8)
-        saved_center_row.addStretch()
-        saved_center_row.addWidget(QLabel("Profile:"))
-        saved_center_row.addWidget(self.profile_selector)
-        saved_center_row.addWidget(self.edit_profile_btn)
-        saved_center_row.addWidget(self.delete_profile_btn)
-        saved_center_row.addStretch()
 
-        saved_layout.addLayout(saved_center_row, 0, 0)
-
-        self.saved_group.setLayout(saved_layout)
+        saved_layout.addStretch(1)
+        saved_layout.addWidget(profile_label)
+        saved_layout.addWidget(self.profile_selector, stretch=1)
+        saved_layout.addWidget(self.edit_profile_btn)
+        saved_layout.addWidget(self.delete_profile_btn)
+        saved_layout.addStretch(1)
         online_layout.addWidget(self.saved_group)
 
         self.details_group = QGroupBox("Connection Details")
-        details_layout = QGridLayout()
-        details_layout.setContentsMargins(10, 12, 10, 10)
-        details_layout.setHorizontalSpacing(8)
-        details_layout.setVerticalSpacing(8)
+        self.details_group.setObjectName("ConnectionCard")
+        details_layout = QGridLayout(self.details_group)
+        details_layout.setContentsMargins(16, 20, 16, 14)
+        details_layout.setHorizontalSpacing(10)
+        details_layout.setVerticalSpacing(6)
 
         self.ip_input = QLineEdit()
         self.ip_input.setPlaceholderText("MiSTer IP")
-        self.ip_input.setMinimumWidth(100)
-        self.ip_input.setMaximumWidth(140)
+        self.ip_input.setMinimumWidth(150)
 
         self.user_input = QLineEdit()
         self.user_input.setText("root")
-        self.user_input.setMinimumWidth(100)
-        self.user_input.setMaximumWidth(140)
+        self.user_input.setMinimumWidth(130)
 
         self.pass_input = QLineEdit()
         self.pass_input.setText("1")
         self.pass_input.setEchoMode(QLineEdit.EchoMode.Password)
-        self.pass_input.setMinimumWidth(100)
-        self.pass_input.setMaximumWidth(140)
+        self.pass_input.setMinimumWidth(130)
 
         self.scan_btn = QPushButton("Scan Network")
         self.scan_btn.setMinimumWidth(150)
 
-        details_center_layout = QVBoxLayout()
-        details_center_layout.setContentsMargins(0, 0, 0, 0)
-        details_center_layout.setSpacing(8)
+        ip_label = QLabel("IP Address")
+        user_label = QLabel("Username")
+        pass_label = QLabel("Password")
+        for label in (ip_label, user_label, pass_label):
+            label.setStyleSheet("font-weight: 600;")
 
-        details_row = QHBoxLayout()
-        details_row.setSpacing(8)
-        details_row.addStretch()
-        details_row.addWidget(QLabel("IP Address:"))
-        details_row.addWidget(self.ip_input)
-        details_row.addWidget(QLabel("Username:"))
-        details_row.addWidget(self.user_input)
-        details_row.addWidget(QLabel("Password:"))
-        details_row.addWidget(self.pass_input)
-        details_row.addStretch()
-
-        scan_row = QHBoxLayout()
-        scan_row.setContentsMargins(0, 4, 0, 0)
-        scan_row.addStretch()
-        scan_row.addWidget(self.scan_btn)
-        scan_row.addStretch()
-
-        details_center_layout.addLayout(details_row)
-        details_center_layout.addLayout(scan_row)
-
-        details_layout.addLayout(details_center_layout, 0, 0)
-
-        self.details_group.setLayout(details_layout)
+        details_layout.addWidget(ip_label, 0, 0)
+        details_layout.addWidget(user_label, 0, 1)
+        details_layout.addWidget(pass_label, 0, 2)
+        details_layout.addWidget(self.ip_input, 1, 0)
+        details_layout.addWidget(self.user_input, 1, 1)
+        details_layout.addWidget(self.pass_input, 1, 2)
+        details_layout.addWidget(
+            self.scan_btn,
+            1,
+            3,
+            alignment=Qt.AlignmentFlag.AlignHCenter,
+        )
+        details_layout.setColumnStretch(0, 2)
+        details_layout.setColumnStretch(1, 1)
+        details_layout.setColumnStretch(2, 1)
         online_layout.addWidget(self.details_group)
 
         self.actions_group = QGroupBox("Actions")
-        actions_layout = QHBoxLayout()
-        actions_layout.setContentsMargins(10, 12, 10, 10)
-        actions_layout.setSpacing(8)
+        self.actions_group.setObjectName("ConnectionCard")
+        actions_layout = QHBoxLayout(self.actions_group)
+        actions_layout.setContentsMargins(16, 20, 16, 14)
+        actions_layout.setSpacing(10)
 
         self.connect_btn = QPushButton("Connect")
+        self.connect_btn.setObjectName("PrimaryAction")
         self.connect_btn.setMinimumWidth(120)
 
         self.connect_save_btn = QPushButton("Connect && Save")
@@ -266,26 +315,24 @@ class ConnectionTab(QWidget):
         self.save_profile_btn = QPushButton("Save Only")
         self.save_profile_btn.setMinimumWidth(110)
 
-        actions_layout.addStretch()
+        actions_layout.addStretch(1)
         actions_layout.addWidget(self.connect_btn)
         actions_layout.addWidget(self.connect_save_btn)
         actions_layout.addWidget(self.save_profile_btn)
-        actions_layout.addStretch()
-
-        self.actions_group.setLayout(actions_layout)
+        actions_layout.addStretch(1)
         online_layout.addWidget(self.actions_group)
 
         self.advanced_group = QGroupBox("Advanced SSH Options")
-        advanced_layout = QVBoxLayout()
-        advanced_layout.setContentsMargins(10, 12, 10, 10)
-        advanced_layout.setSpacing(8)
+        self.advanced_group.setObjectName("ConnectionCard")
+        advanced_layout = QVBoxLayout(self.advanced_group)
+        advanced_layout.setContentsMargins(16, 20, 16, 14)
+        advanced_layout.setSpacing(10)
 
         self.advanced_ssh_warning_label = QLabel(
             "Only enable these if you know you need them."
         )
         self.advanced_ssh_warning_label.setStyleSheet("color: #f39c12;")
         self.advanced_ssh_warning_label.setWordWrap(True)
-        self.advanced_ssh_warning_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self.use_ssh_agent_checkbox = QCheckBox("Use OS SSH Agent")
         self.use_ssh_agent_checkbox.setChecked(
@@ -304,52 +351,45 @@ class ConnectionTab(QWidget):
         )
 
         ssh_options_row = QHBoxLayout()
-        ssh_options_row.setSpacing(12)
-        ssh_options_row.addStretch()
+        ssh_options_row.setSpacing(18)
         ssh_options_row.addWidget(self.use_ssh_agent_checkbox)
         ssh_options_row.addWidget(self.look_for_ssh_keys_checkbox)
         ssh_options_row.addStretch()
 
         advanced_layout.addWidget(self.advanced_ssh_warning_label)
         advanced_layout.addLayout(ssh_options_row)
-
-        self.advanced_group.setLayout(advanced_layout)
         online_layout.addWidget(self.advanced_group)
 
         connection_layout.addWidget(self.online_controls_widget)
 
         self.offline_group = QGroupBox("Offline SD Card")
-        offline_layout = QVBoxLayout()
-        offline_layout.setContentsMargins(10, 12, 10, 10)
-        offline_layout.setSpacing(10)
+        self.offline_group.setObjectName("ConnectionCard")
+        offline_layout = QVBoxLayout(self.offline_group)
+        offline_layout.setContentsMargins(16, 20, 16, 14)
+        offline_layout.setSpacing(12)
 
         offline_info_label = QLabel(
             "Offline Mode works directly on the selected MiSTer SD card. "
             "Enable Remember SD location to keep the latest selected path after closing MiSTer Companion."
         )
         offline_info_label.setWordWrap(True)
-        offline_info_label.setStyleSheet("color: gray;")
-        offline_info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        offline_info_label.setObjectName("SectionHint")
 
         offline_row = QHBoxLayout()
-        offline_row.setSpacing(8)
-        offline_row.addStretch()
+        offline_row.setSpacing(10)
 
         self.offline_sd_input = QLineEdit()
         self.offline_sd_input.setPlaceholderText("MiSTer SD card root")
         self.offline_sd_input.setText(self.selected_sd_root())
         self.offline_sd_input.setMinimumWidth(320)
-        self.offline_sd_input.setMaximumWidth(520)
+        self.offline_sd_input.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
         self.browse_sd_btn = QPushButton("Browse...")
         set_text_button_min_width(self.browse_sd_btn, 100)
-        offline_row.addWidget(self.offline_sd_input)
+        offline_row.addStretch(1)
+        offline_row.addWidget(self.offline_sd_input, stretch=1)
         offline_row.addWidget(self.browse_sd_btn)
-        offline_row.addStretch()
-
-        remember_sd_row = QHBoxLayout()
-        remember_sd_row.setSpacing(8)
-        remember_sd_row.addStretch()
+        offline_row.addStretch(1)
 
         self.remember_sd_location_checkbox = QCheckBox("Remember SD location")
         self.remember_sd_location_checkbox.setChecked(
@@ -361,11 +401,8 @@ class ConnectionTab(QWidget):
             "When enabled, MiSTer Companion remembers the latest selected Offline Mode SD card path after closing."
         )
 
-        remember_sd_row.addWidget(self.remember_sd_location_checkbox)
-        remember_sd_row.addStretch()
-
         offline_actions_row = QHBoxLayout()
-        offline_actions_row.setSpacing(8)
+        offline_actions_row.setSpacing(10)
 
         self.open_sd_btn = QPushButton("Open SD Card")
         self.open_sd_btn.setMinimumWidth(120)
@@ -374,31 +411,34 @@ class ConnectionTab(QWidget):
         self.eject_sd_btn.setMinimumWidth(120)
 
         self.load_sd_btn = QPushButton("Load SD Card")
+        self.load_sd_btn.setObjectName("PrimaryAction")
         self.load_sd_btn.setMinimumWidth(120)
 
-        offline_actions_row.addStretch()
+        offline_actions_row.addStretch(1)
         offline_actions_row.addWidget(self.open_sd_btn)
         offline_actions_row.addWidget(self.eject_sd_btn)
         offline_actions_row.addWidget(self.load_sd_btn)
-        offline_actions_row.addStretch()
+        offline_actions_row.addStretch(1)
 
         self.offline_sd_status_label = QLabel("")
-        self.offline_sd_status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         offline_layout.addWidget(offline_info_label)
         offline_layout.addLayout(offline_row)
-        offline_layout.addLayout(remember_sd_row)
+        offline_layout.addWidget(self.remember_sd_location_checkbox)
         offline_layout.addLayout(offline_actions_row)
         offline_layout.addWidget(self.offline_sd_status_label)
 
-        self.offline_group.setLayout(offline_layout)
         connection_layout.addWidget(self.offline_group)
-
         connection_layout.addStretch()
 
-        self.content_row.addWidget(self.connection_group, stretch=1)
+        # Center the Connection content area. The support panel is added to
+        # the same centered cluster below, so hiding it naturally leaves the
+        # Connection options centered on their own.
+        self.content_row.addStretch(1)
+        self.content_row.addWidget(self.connection_group)
 
         self.support_group = QGroupBox("Thank You")
+        self.support_group.setObjectName("SupportCard")
         self.support_group.setMinimumWidth(320)
         self.support_group.setMaximumWidth(380)
         self.support_group.setSizePolicy(
@@ -406,8 +446,8 @@ class ConnectionTab(QWidget):
             QSizePolicy.Policy.Expanding,
         )
 
-        support_layout = QVBoxLayout()
-        support_layout.setContentsMargins(16, 16, 16, 16)
+        support_layout = QVBoxLayout(self.support_group)
+        support_layout.setContentsMargins(18, 22, 18, 18)
         support_layout.setSpacing(12)
 
         support_header_row = QHBoxLayout()
@@ -417,12 +457,11 @@ class ConnectionTab(QWidget):
         set_text_button_min_width(self.hide_support_button, 70)
         support_header_row.addStretch()
         support_header_row.addWidget(self.hide_support_button)
-        support_header_row.addStretch()
 
         self.support_headline_label = QLabel("Thank you for using MiSTer Companion!")
         self.support_headline_label.setWordWrap(True)
         self.support_headline_label.setTextFormat(Qt.TextFormat.PlainText)
-        self.support_headline_label.setStyleSheet("font-size: 15px; font-weight: bold;")
+        self.support_headline_label.setStyleSheet("font-size: 15px; font-weight: 700;")
 
         self.support_message_label = QLabel(
             "I really appreciate everyone who uses Companion and the other MiSTer "
@@ -439,21 +478,21 @@ class ConnectionTab(QWidget):
         self.support_message_label.setTextFormat(Qt.TextFormat.PlainText)
 
         self.patreon_button = QPushButton("Patreon")
+        self.patreon_button.setObjectName("PrimaryAction")
         set_text_button_min_width(self.patreon_button, 120)
 
         self.dismiss_support_button = QPushButton("Don't show this again")
         set_text_button_min_width(self.dismiss_support_button, 170)
 
         support_button_row = QHBoxLayout()
-        support_button_row.setSpacing(8)
-        support_button_row.addStretch()
+        support_button_row.addStretch(1)
         support_button_row.addWidget(self.patreon_button)
-        support_button_row.addStretch()
+        support_button_row.addStretch(1)
 
         dismiss_row = QHBoxLayout()
-        dismiss_row.addStretch()
+        dismiss_row.addStretch(1)
         dismiss_row.addWidget(self.dismiss_support_button)
-        dismiss_row.addStretch()
+        dismiss_row.addStretch(1)
 
         support_layout.addLayout(support_header_row)
         support_layout.addWidget(self.support_headline_label)
@@ -462,10 +501,9 @@ class ConnectionTab(QWidget):
         support_layout.addStretch()
         support_layout.addLayout(dismiss_row)
 
-        self.support_group.setLayout(support_layout)
         self.support_group.hide()
-
         self.content_row.addWidget(self.support_group)
+        self.content_row.addStretch(1)
 
     def connect_signals(self):
         self.online_mode_radio.toggled.connect(self.handle_mode_changed)
