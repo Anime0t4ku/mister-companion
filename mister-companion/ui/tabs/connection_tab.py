@@ -29,7 +29,6 @@ from core.sd_eject import eject_sd_card_path
 PATREON_URL = "https://www.patreon.com/Anime0t4ku"
 CONFIG_SHOW_SUPPORT_MESSAGE = "show_support_message"
 
-
 class ConnectionTab(QWidget):
     def __init__(self, main_window):
         super().__init__()
@@ -69,8 +68,6 @@ class ConnectionTab(QWidget):
         self.state_stack.addWidget(self.device_dashboard)
         self.state_stack.setCurrentWidget(self.connection_page)
 
-        # Keep the Connection tab styling palette-based so every built-in and
-        # custom theme continues to supply the actual colors.
         self.connection_page.setStyleSheet(
             """
             QStackedWidget#ConnectionStateStack,
@@ -190,8 +187,6 @@ class ConnectionTab(QWidget):
             QSizePolicy.Policy.Expanding,
             QSizePolicy.Policy.Expanding,
         )
-        # Keep the Connection options visually centered instead of allowing
-        # the card stack to stretch across the full tab width.
         self.connection_group.setMaximumWidth(820)
 
         connection_layout = QVBoxLayout()
@@ -431,9 +426,6 @@ class ConnectionTab(QWidget):
         connection_layout.addWidget(self.offline_group)
         connection_layout.addStretch()
 
-        # Center the Connection content area. The support panel is added to
-        # the same centered cluster below, so hiding it naturally leaves the
-        # Connection options centered on their own.
         self.content_row.addStretch(1)
         self.content_row.addWidget(self.connection_group)
 
