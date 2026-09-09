@@ -1,16 +1,15 @@
-import sys
-
 from PyQt6.QtCore import QThread, Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QCheckBox,
-    QDialog,
-    QDialogButtonBox,
+    QFrame,
     QGroupBox,
     QHBoxLayout,
     QLabel,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QVBoxLayout,
+    QWidget,
 )
 
 from core import mc_updater
@@ -33,7 +32,7 @@ class MCUpdaterCheckWorker(QThread):
             self.error.emit(str(e))
 
 
-class AppSettingsDialog(QDialog):
+class AppSettingsTab(QWidget):
     def __init__(self, main_window):
         super().__init__(main_window)
 
@@ -44,23 +43,30 @@ class AppSettingsDialog(QDialog):
         self.mc_updater_update_available = False
         self.show_mc_updater_settings = mc_updater.updater_supported()
 
-        self.setWindowTitle("App Settings")
-        self.setMinimumWidth(520)
-
         self.build_ui()
         self.load_values()
         if self.show_mc_updater_settings:
             self.refresh_mc_updater_state()
 
     def build_ui(self):
-        main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(16, 16, 16, 16)
-        main_layout.setSpacing(12)
+        page_layout = QHBoxLayout(self)
+        page_layout.setContentsMargins(16, 16, 16, 16)
+        page_layout.setSpacing(20)
+
+        settings_scroll = QScrollArea()
+        settings_scroll.setWidgetResizable(True)
+        settings_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        settings_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
+        settings_panel = QWidget()
+        settings_layout = QVBoxLayout(settings_panel)
+        settings_layout.setContentsMargins(0, 0, 0, 0)
+        settings_layout.setSpacing(12)
 
         title_label = QLabel("App Settings")
-        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         title_label.setStyleSheet("font-weight: bold; font-size: 16px;")
-        main_layout.addWidget(title_label)
+        settings_layout.addWidget(title_label)
 
         updates_group = QGroupBox("Updates")
         updates_layout = QVBoxLayout(updates_group)
@@ -70,7 +76,6 @@ class AppSettingsDialog(QDialog):
         updates_layout.addWidget(self.check_updates_on_startup_check)
 
         update_row = QHBoxLayout()
-        update_row.addStretch()
         self.check_updates_now_button = QPushButton("Check for Updates Now")
         self.check_updates_now_button.setMinimumWidth(180)
         self.check_updates_now_button.clicked.connect(self.check_for_updates_now)
@@ -92,7 +97,6 @@ class AppSettingsDialog(QDialog):
             mc_updater_layout.addWidget(self.mc_updater_status_label)
 
             mc_updater_check_row = QHBoxLayout()
-            mc_updater_check_row.addStretch()
             self.mc_updater_check_button = QPushButton("Check for MC-Updater Updates")
             self.prepare_mc_updater_button(self.mc_updater_check_button, 230)
             self.mc_updater_check_button.clicked.connect(self.check_mc_updater_updates)
@@ -101,7 +105,6 @@ class AppSettingsDialog(QDialog):
             mc_updater_layout.addLayout(mc_updater_check_row)
 
             mc_updater_action_row = QHBoxLayout()
-            mc_updater_action_row.addStretch()
 
             self.mc_updater_install_button = QPushButton("Install MC-Updater")
             self.prepare_mc_updater_button(self.mc_updater_install_button, 170)
@@ -117,7 +120,7 @@ class AppSettingsDialog(QDialog):
             mc_updater_layout.addLayout(mc_updater_action_row)
 
             updates_layout.addWidget(mc_updater_group)
-        main_layout.addWidget(updates_group)
+        settings_layout.addWidget(updates_group)
 
         notices_group = QGroupBox("Notices")
         notices_layout = QVBoxLayout(notices_group)
@@ -133,7 +136,7 @@ class AppSettingsDialog(QDialog):
         notices_layout.addWidget(self.show_zapscripts_scan_notice_check)
         notices_layout.addWidget(self.show_support_message_check)
 
-        main_layout.addWidget(notices_group)
+        settings_layout.addWidget(notices_group)
 
         community_group = QGroupBox("Community")
         community_layout = QVBoxLayout(community_group)
@@ -146,7 +149,6 @@ class AppSettingsDialog(QDialog):
         community_layout.addWidget(community_text)
 
         community_row = QHBoxLayout()
-        community_row.addStretch()
 
         self.support_button = QPushButton("Support the App")
         self.support_button.setMinimumWidth(150)
@@ -161,21 +163,42 @@ class AppSettingsDialog(QDialog):
         community_row.addStretch()
         community_layout.addLayout(community_row)
 
-        main_layout.addWidget(community_group)
+        settings_layout.addWidget(community_group)
 
-        self.buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
-        )
-        self.buttons.accepted.connect(self.save_and_accept)
-        self.buttons.rejected.connect(self.reject)
-        main_layout.addWidget(self.buttons)
+        action_row = QHBoxLayout()
+        self.reset_button = QPushButton("Reset Changes")
+        self.reset_button.clicked.connect(self.load_values)
+        action_row.addWidget(self.reset_button)
 
+        self.save_button = QPushButton("Save Settings")
+        self.save_button.clicked.connect(self.save_settings)
+        action_row.addWidget(self.save_button)
+        action_row.addStretch()
+        settings_layout.addLayout(action_row)
+        settings_layout.addStretch()
+
+        settings_scroll.setWidget(settings_panel)
+        page_layout.addWidget(settings_scroll, 3)
+
+        patreon_panel = QGroupBox("Patreon")
+        patreon_layout = QVBoxLayout(patreon_panel)
+        patreon_layout.setContentsMargins(18, 18, 18, 18)
+        patreon_layout.addStretch()
+
+        patreon_placeholder = QLabel("Patreon options will be available here.")
+        patreon_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        patreon_placeholder.setWordWrap(True)
+        patreon_layout.addWidget(patreon_placeholder)
+
+        patreon_layout.addStretch()
+        page_layout.addWidget(patreon_panel, 2)
 
     def prepare_mc_updater_button(self, button: QPushButton, minimum_width: int):
         button.setMinimumWidth(minimum_width)
         button.setMinimumHeight(max(34, button.fontMetrics().height() + 16))
 
     def load_values(self):
+        self.config_data = self.main_window.config_data
         self.check_updates_on_startup_check.setChecked(
             bool(self.config_data.get("check_updates_on_startup", True))
         )
@@ -259,18 +282,11 @@ class AppSettingsDialog(QDialog):
         self.mc_updater_install_button.setText("Install MC-Updater")
         self.mc_updater_install_button.setEnabled(False)
 
-    def save_and_accept(self):
-        self.config_data["check_updates_on_startup"] = self.check_updates_on_startup_check.isChecked()
-        self.config_data["hide_setup_notice"] = not self.show_setup_notice_check.isChecked()
-        self.config_data["hide_update_all_warning"] = not self.show_update_all_warning_check.isChecked()
-        self.config_data["hide_zapscripts_scan_notice"] = not self.show_zapscripts_scan_notice_check.isChecked()
-        self.config_data["show_support_message"] = self.show_support_message_check.isChecked()
-        save_config(self.config_data)
-        self.main_window.config_data = self.config_data
+    def save_settings(self):
+        self.save_current_values()
         connection_tab = getattr(self.main_window, "connection_tab", None)
         if connection_tab is not None and hasattr(connection_tab, "apply_support_message_preference"):
             connection_tab.apply_support_message_preference()
-        self.accept()
 
     def check_for_updates_now(self):
         self.save_current_values()
