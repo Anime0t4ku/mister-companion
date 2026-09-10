@@ -496,8 +496,12 @@ class FileManagerTab(QWidget):
 
     def build_ui(self):
         root_layout = QVBoxLayout(self)
-        root_layout.setContentsMargins(12, 12, 12, 12)
+        root_layout.setContentsMargins(18, 18, 18, 18)
         root_layout.setSpacing(8)
+
+        header_title = QLabel("File Manager")
+        header_title.setStyleSheet("font-weight: 700; font-size: 19px;")
+        root_layout.addWidget(header_title)
 
         toolbar = QHBoxLayout()
         toolbar.setSpacing(8)

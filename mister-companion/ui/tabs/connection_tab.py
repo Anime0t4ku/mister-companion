@@ -119,12 +119,6 @@ class ConnectionTab(QWidget):
                 color: palette(text);
             }
 
-            QWidget#ConnectionPage QPushButton#PrimaryAction {
-                background-color: palette(highlight);
-                color: palette(highlighted-text);
-                border-color: palette(highlight);
-                font-weight: 700;
-            }
             """
         )
 

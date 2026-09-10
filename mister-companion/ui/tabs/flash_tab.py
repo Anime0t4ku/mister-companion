@@ -180,18 +180,19 @@ class FlashTab(QWidget):
                 color: palette(highlight);
             }
 
-            QWidget#FlashPage QPushButton#PrimaryAction {
-                background-color: palette(highlight);
-                color: palette(highlighted-text);
-                border-color: palette(highlight);
-                font-weight: 700;
-            }
             """
         )
 
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(18, 18, 18, 18)
         main_layout.setSpacing(14)
+
+        header_row = QHBoxLayout()
+        header_row.setContentsMargins(2, 0, 2, 0)
+        header_title = QLabel("Flash SD")
+        header_title.setStyleSheet("font-weight: 700; font-size: 19px;")
+        header_row.addWidget(header_title)
+        main_layout.addLayout(header_row)
 
         self.main_group = QGroupBox("")
         self.main_group.setObjectName("FlashShell")
@@ -203,10 +204,6 @@ class FlashTab(QWidget):
         group_layout = QVBoxLayout(self.main_group)
         group_layout.setContentsMargins(0, 0, 0, 0)
         group_layout.setSpacing(12)
-
-        header_title = QLabel("Flash SD")
-        header_title.setStyleSheet("font-weight: 700; font-size: 19px;")
-        group_layout.addWidget(header_title)
 
         installer_group = QGroupBox("Installer")
         installer_group.setObjectName("FlashCard")
