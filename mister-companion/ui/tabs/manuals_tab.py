@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import (
     QCheckBox,
     QDialog,
     QFrame,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -505,12 +506,38 @@ class ManualsTab(QWidget):
         self.zoom_fit_mode = True
         self.fullscreen_viewer = None
 
+        self.setObjectName("ManualsPage")
+        self.setStyleSheet(
+            """
+            QWidget#ManualsPage QGroupBox#ManualsCard {
+                background-color: palette(alternate-base);
+                border: 1px solid palette(button);
+                border-radius: 12px;
+                margin-top: 18px;
+                padding: 14px;
+                font-weight: 700;
+            }
+            QWidget#ManualsPage QGroupBox#ManualsCard::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                left: 14px;
+                padding: 0px 7px;
+                background: transparent;
+                color: palette(highlight);
+            }
+            """
+        )
+
         root_layout = QVBoxLayout(self)
-        root_layout.setContentsMargins(10, 10, 10, 10)
-        root_layout.setSpacing(8)
+        root_layout.setContentsMargins(18, 18, 18, 18)
+        root_layout.setSpacing(10)
+
+        header_title = QLabel("Manuals")
+        header_title.setStyleSheet("font-weight: 700; font-size: 19px;")
+        root_layout.addWidget(header_title)
 
         content_layout = QHBoxLayout()
-        content_layout.setSpacing(8)
+        content_layout.setSpacing(10)
         root_layout.addLayout(content_layout, 1)
 
         self.systems_list = QListWidget()
@@ -530,15 +557,11 @@ class ManualsTab(QWidget):
             1,
         )
 
-        viewer_panel = QFrame()
-        viewer_panel.setFrameShape(QFrame.Shape.StyledPanel)
+        viewer_panel = QGroupBox("PDF Viewer")
+        viewer_panel.setObjectName("ManualsCard")
         viewer_layout = QVBoxLayout(viewer_panel)
-        viewer_layout.setContentsMargins(8, 8, 8, 8)
+        viewer_layout.setContentsMargins(16, 20, 16, 14)
         viewer_layout.setSpacing(8)
-
-        viewer_title = QLabel("PDF Viewer")
-        viewer_title.setStyleSheet("font-weight: bold;")
-        viewer_layout.addWidget(viewer_title)
 
         zoom_layout = QHBoxLayout()
         zoom_layout.setSpacing(8)
@@ -653,17 +676,13 @@ class ManualsTab(QWidget):
         self._last_connection_state = None
 
     def wrap_panel(self, title, widget, extra_widget=None):
-        panel = QFrame()
-        panel.setFrameShape(QFrame.Shape.StyledPanel)
+        panel = QGroupBox(title)
+        panel.setObjectName("ManualsCard")
 
         layout = QVBoxLayout(panel)
-        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setContentsMargins(16, 20, 16, 14)
         layout.setSpacing(8)
 
-        label = QLabel(title)
-        label.setStyleSheet("font-weight: bold;")
-
-        layout.addWidget(label)
         if extra_widget is not None:
             layout.addWidget(extra_widget)
         layout.addWidget(widget, 1)

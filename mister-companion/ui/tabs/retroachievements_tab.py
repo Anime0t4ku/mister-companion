@@ -575,7 +575,7 @@ class AchievementDetailsDialog(QDialog):
         self.setMinimumSize(440, 320)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setContentsMargins(18, 18, 18, 18)
         layout.setSpacing(10)
 
         title = QLabel(achievement.get("title", "Achievement"))
@@ -747,7 +747,7 @@ class RetroAchievementsTab(QWidget):
         header_row.setSpacing(8)
 
         title = QLabel("RetroAchievements")
-        title.setStyleSheet("font-weight: bold; font-size: 16px;")
+        title.setStyleSheet("font-weight: 700; font-size: 19px;")
         title.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
 
         self.refresh_button = QPushButton("Refresh")
@@ -762,8 +762,9 @@ class RetroAchievementsTab(QWidget):
         layout.addLayout(header_row)
 
         self.login_group = QGroupBox("RetroAchievements Settings")
+        self.style_card(self.login_group)
         config_layout = QGridLayout(self.login_group)
-        config_layout.setContentsMargins(10, 12, 10, 10)
+        config_layout.setContentsMargins(16, 20, 16, 14)
         config_layout.setHorizontalSpacing(8)
         config_layout.setVerticalSpacing(8)
 
@@ -804,8 +805,9 @@ class RetroAchievementsTab(QWidget):
         layout.addWidget(self.status_label)
 
         self.summary_group = QGroupBox("Profile")
+        self.style_card(self.summary_group)
         summary_outer_layout = QHBoxLayout(self.summary_group)
-        summary_outer_layout.setContentsMargins(10, 12, 10, 10)
+        summary_outer_layout.setContentsMargins(16, 20, 16, 14)
         summary_outer_layout.setSpacing(12)
 
         self.profile_picture_label = QLabel()
@@ -856,9 +858,10 @@ class RetroAchievementsTab(QWidget):
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
 
-        left_widget = QWidget()
+        left_widget = QGroupBox("Games")
+        self.style_card(left_widget)
         left_layout = QVBoxLayout(left_widget)
-        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setContentsMargins(16, 20, 16, 14)
         left_layout.setSpacing(8)
 
         self.search_input = QLineEdit()
@@ -895,20 +898,11 @@ class RetroAchievementsTab(QWidget):
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(8)
 
-        self.achievements_group = QFrame()
-        self.achievements_group.setFrameShape(QFrame.Shape.StyledPanel)
-        self.achievements_group.setObjectName("AchievementsFrame")
-        self.achievements_group.setStyleSheet(
-            """
-            QFrame#AchievementsFrame {
-                border: 1px solid palette(mid);
-                border-radius: 4px;
-            }
-            """
-        )
+        self.achievements_group = QGroupBox("Achievements")
+        self.style_card(self.achievements_group)
 
         achievements_group_layout = QVBoxLayout(self.achievements_group)
-        achievements_group_layout.setContentsMargins(10, 10, 10, 10)
+        achievements_group_layout.setContentsMargins(16, 20, 16, 14)
         achievements_group_layout.setSpacing(8)
 
         game_header = QFrame()
@@ -1054,6 +1048,29 @@ class RetroAchievementsTab(QWidget):
         self.set_selector_combo.currentIndexChanged.connect(self.on_set_selector_changed)
         self.recent_games_list.itemClicked.connect(self.on_game_item_clicked)
         self.all_games_list.itemClicked.connect(self.on_game_item_clicked)
+
+    def style_card(self, group):
+        group.setObjectName("RetroAchievementsCard")
+        group.setStyleSheet(
+            """
+            QGroupBox#RetroAchievementsCard {
+                background-color: palette(alternate-base);
+                border: 1px solid palette(button);
+                border-radius: 12px;
+                margin-top: 18px;
+                padding: 14px;
+                font-weight: 700;
+            }
+            QGroupBox#RetroAchievementsCard::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                left: 14px;
+                padding: 0px 7px;
+                background: transparent;
+                color: palette(highlight);
+            }
+            """
+        )
 
     def install_resize_filters(self):
         self.setMouseTracking(True)

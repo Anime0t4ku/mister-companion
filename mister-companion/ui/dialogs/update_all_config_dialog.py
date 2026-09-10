@@ -5,6 +5,7 @@ from PyQt6.QtWidgets import (
     QComboBox,
     QDialog,
     QFrame,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
     QMessageBox,
@@ -67,43 +68,81 @@ class UpdateAllConfigDialog(QDialog):
         self.load_retro_status()
 
     def build_ui(self):
+        self.setObjectName("UpdateAllConfigDialog")
+        self.setStyleSheet(
+            """
+            QDialog#UpdateAllConfigDialog QScrollArea,
+            QDialog#UpdateAllConfigDialog QScrollArea > QWidget > QWidget,
+            QDialog#UpdateAllConfigDialog QWidget#UpdateAllConfigContent {
+                background: transparent;
+                border: none;
+            }
+
+            QDialog#UpdateAllConfigDialog QGroupBox#UpdateAllConfigCard {
+                background-color: palette(alternate-base);
+                border: 1px solid palette(button);
+                border-radius: 12px;
+                margin-top: 18px;
+                padding: 14px;
+                font-weight: 700;
+            }
+
+            QDialog#UpdateAllConfigDialog QGroupBox#UpdateAllConfigCard::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                left: 14px;
+                padding: 0px 7px;
+                background: transparent;
+                color: palette(highlight);
+            }
+
+            QDialog#UpdateAllConfigDialog QLabel#OfflineNotice {
+                color: palette(highlight);
+            }
+
+            QDialog#UpdateAllConfigDialog QLabel#MutedText {
+                color: palette(mid);
+            }
+            """
+        )
+
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(12, 12, 12, 12)
-        outer.setSpacing(10)
+        outer.setContentsMargins(18, 18, 18, 16)
+        outer.setSpacing(12)
 
         title = QLabel("Update_All Configuration")
-        title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-        title.setStyleSheet("font-weight: bold; font-size: 16px;")
+        title.setStyleSheet("font-weight: 700; font-size: 19px;")
         outer.addWidget(title)
 
         if self.offline_mode:
             offline_label = QLabel(
                 "Offline Mode: configuration will be saved directly to the selected SD card."
             )
+            offline_label.setObjectName("OfflineNotice")
             offline_label.setWordWrap(True)
-            offline_label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-            offline_label.setStyleSheet("color: #cc8400;")
             outer.addWidget(offline_label)
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
-        outer.addWidget(scroll)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        outer.addWidget(scroll, 1)
 
         content = QWidget()
+        content.setObjectName("UpdateAllConfigContent")
         self.content_layout = QVBoxLayout(content)
-        self.content_layout.setContentsMargins(4, 4, 4, 4)
-        self.content_layout.setSpacing(10)
+        self.content_layout.setContentsMargins(0, 0, 0, 0)
+        self.content_layout.setSpacing(12)
         scroll.setWidget(content)
 
         columns_layout = QHBoxLayout()
-        columns_layout.setSpacing(12)
+        columns_layout.setSpacing(14)
         self.content_layout.addLayout(columns_layout)
 
         self.left_column_layout = QVBoxLayout()
-        self.left_column_layout.setSpacing(10)
+        self.left_column_layout.setSpacing(12)
 
         self.right_column_layout = QVBoxLayout()
-        self.right_column_layout.setSpacing(10)
+        self.right_column_layout.setSpacing(12)
 
         columns_layout.addLayout(self.left_column_layout, 3)
         columns_layout.addLayout(self.right_column_layout, 2)
@@ -402,8 +441,6 @@ class UpdateAllConfigDialog(QDialog):
         self._refresh_custom_sources()
         self.right_column_layout.addStretch()
 
-        self.content_layout.addStretch()
-
         line = QFrame()
         line.setFrameShape(QFrame.Shape.HLine)
         outer.addWidget(line)
@@ -428,16 +465,11 @@ class UpdateAllConfigDialog(QDialog):
         self.retro_cancel_button.clicked.connect(self.on_retro_cancel)
 
     def _group(self, title, target_layout=None):
-        box = QFrame()
-        box.setFrameShape(QFrame.Shape.StyledPanel)
-        box.setStyleSheet("QFrame { border: 1px solid palette(mid); border-radius: 6px; }")
+        box = QGroupBox(title)
+        box.setObjectName("UpdateAllConfigCard")
         layout = QVBoxLayout(box)
-        layout.setContentsMargins(10, 10, 10, 10)
-        layout.setSpacing(6)
-
-        label = QLabel(title)
-        label.setStyleSheet("font-weight: bold;")
-        layout.addWidget(label)
+        layout.setContentsMargins(16, 20, 16, 14)
+        layout.setSpacing(7)
 
         if target_layout is None:
             self.content_layout.addWidget(box)
@@ -672,7 +704,7 @@ class UpdateAllConfigDialog(QDialog):
         self.custom_source_checks = []
         if not self.custom_sources:
             empty_label = QLabel("No extra sources added.")
-            empty_label.setStyleSheet("color: gray;")
+            empty_label.setObjectName("MutedText")
             self.custom_sources_layout.addWidget(empty_label)
         else:
             for source in self.custom_sources:

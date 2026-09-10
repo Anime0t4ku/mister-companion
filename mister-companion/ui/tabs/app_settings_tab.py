@@ -1,13 +1,15 @@
-from PyQt6.QtCore import QThread, Qt, pyqtSignal
+from PyQt6.QtCore import QEvent, QThread, QTimer, Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QCheckBox,
     QFrame,
     QGroupBox,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QMessageBox,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -49,149 +51,230 @@ class AppSettingsTab(QWidget):
             self.refresh_mc_updater_state()
 
     def build_ui(self):
-        page_layout = QHBoxLayout(self)
-        page_layout.setContentsMargins(16, 16, 16, 16)
-        page_layout.setSpacing(20)
+        self.setObjectName("AppSettingsPage")
+        self.setStyleSheet(
+            """
+            QWidget#AppSettingsPage QWidget#AppSettingsTransparent,
+            QWidget#AppSettingsPage QWidget#AppSettingsPanel,
+            QWidget#AppSettingsPage QWidget#AppSettingsInline {
+                background: transparent;
+            }
+
+            QWidget#AppSettingsPage QGroupBox#AppSettingsCard {
+                background-color: palette(alternate-base);
+                border: 1px solid palette(button);
+                border-radius: 12px;
+                margin-top: 18px;
+                padding: 10px;
+                font-weight: 700;
+            }
+
+            QWidget#AppSettingsPage QGroupBox#AppSettingsCard::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                left: 14px;
+                padding: 0px 7px;
+                background: transparent;
+                color: palette(highlight);
+            }
+
+            QWidget#AppSettingsPage QLabel#AppSettingsSectionTitle {
+                color: palette(highlight);
+                font-weight: 700;
+                background: transparent;
+            }
+            """
+        )
+
+        root_layout = QVBoxLayout(self)
+        root_layout.setContentsMargins(18, 18, 18, 18)
+        root_layout.setSpacing(10)
+
+        title_label = QLabel("App Settings")
+        title_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        title_label.setStyleSheet("font-weight: 700; font-size: 19px;")
+        root_layout.addWidget(title_label)
+
+        body = QWidget()
+        body.setObjectName("AppSettingsTransparent")
+        body_layout = QHBoxLayout(body)
+        body_layout.setContentsMargins(0, 0, 0, 0)
+        body_layout.setSpacing(28)
+        root_layout.addWidget(body, 1)
 
         settings_scroll = QScrollArea()
         settings_scroll.setWidgetResizable(True)
         settings_scroll.setFrameShape(QFrame.Shape.NoFrame)
         settings_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        settings_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        settings_scroll.setObjectName("AppSettingsTransparent")
 
         settings_panel = QWidget()
+        settings_panel.setObjectName("AppSettingsPanel")
+        self.settings_panel = settings_panel
         settings_layout = QVBoxLayout(settings_panel)
         settings_layout.setContentsMargins(0, 0, 0, 0)
-        settings_layout.setSpacing(12)
-
-        title_label = QLabel("App Settings")
-        title_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        title_label.setStyleSheet("font-weight: bold; font-size: 16px;")
-        settings_layout.addWidget(title_label)
+        settings_layout.setSpacing(8)
+        settings_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         updates_group = QGroupBox("Updates")
+        updates_group.setObjectName("AppSettingsCard")
         updates_layout = QVBoxLayout(updates_group)
-        updates_layout.setSpacing(8)
+        updates_layout.setContentsMargins(14, 18, 14, 10)
+        updates_layout.setSpacing(7)
 
+        updates_top_row = QHBoxLayout()
+        updates_top_row.setSpacing(10)
         self.check_updates_on_startup_check = QCheckBox("Check for updates on startup")
-        updates_layout.addWidget(self.check_updates_on_startup_check)
-
-        update_row = QHBoxLayout()
+        updates_top_row.addWidget(self.check_updates_on_startup_check)
+        updates_top_row.addStretch(1)
         self.check_updates_now_button = QPushButton("Check for Updates Now")
         self.check_updates_now_button.setMinimumWidth(180)
         self.check_updates_now_button.clicked.connect(self.check_for_updates_now)
-        update_row.addWidget(self.check_updates_now_button)
-        update_row.addStretch()
-        updates_layout.addLayout(update_row)
+        updates_top_row.addWidget(self.check_updates_now_button)
+        updates_layout.addLayout(updates_top_row)
 
         if self.show_mc_updater_settings:
-            mc_updater_group = QGroupBox("MC-Updater")
-            mc_updater_layout = QVBoxLayout(mc_updater_group)
-            mc_updater_layout.setSpacing(8)
+            mc_updater_widget = QWidget()
+            mc_updater_widget.setObjectName("AppSettingsInline")
+            mc_updater_layout = QVBoxLayout(mc_updater_widget)
+            mc_updater_layout.setContentsMargins(0, 2, 0, 0)
+            mc_updater_layout.setSpacing(6)
 
-            mc_updater_text = QLabel("MC-Updater enables automatic updates for MiSTer Companion.")
-            mc_updater_text.setWordWrap(True)
-            mc_updater_layout.addWidget(mc_updater_text)
+            mc_updater_title = QLabel("MC-Updater")
+            mc_updater_title.setObjectName("AppSettingsSectionTitle")
+            mc_updater_layout.addWidget(mc_updater_title)
 
+            mc_status_row = QHBoxLayout()
+            mc_status_row.setSpacing(10)
             self.mc_updater_status_label = QLabel("Status: Checking...")
             self.mc_updater_status_label.setWordWrap(True)
-            mc_updater_layout.addWidget(self.mc_updater_status_label)
-
-            mc_updater_check_row = QHBoxLayout()
+            mc_status_row.addWidget(self.mc_updater_status_label, 1)
             self.mc_updater_check_button = QPushButton("Check for MC-Updater Updates")
-            self.prepare_mc_updater_button(self.mc_updater_check_button, 230)
+            self.prepare_mc_updater_button(self.mc_updater_check_button, 210)
             self.mc_updater_check_button.clicked.connect(self.check_mc_updater_updates)
-            mc_updater_check_row.addWidget(self.mc_updater_check_button)
-            mc_updater_check_row.addStretch()
-            mc_updater_layout.addLayout(mc_updater_check_row)
+            mc_status_row.addWidget(self.mc_updater_check_button)
+            mc_updater_layout.addLayout(mc_status_row)
 
-            mc_updater_action_row = QHBoxLayout()
-
+            mc_action_row = QHBoxLayout()
+            mc_action_row.setSpacing(8)
+            mc_updater_text = QLabel("Automatic updates for MiSTer Companion")
+            mc_updater_text.setWordWrap(True)
+            mc_action_row.addWidget(mc_updater_text, 1)
             self.mc_updater_install_button = QPushButton("Install MC-Updater")
-            self.prepare_mc_updater_button(self.mc_updater_install_button, 170)
+            self.prepare_mc_updater_button(self.mc_updater_install_button, 150)
             self.mc_updater_install_button.clicked.connect(self.install_or_update_mc_updater)
-            mc_updater_action_row.addWidget(self.mc_updater_install_button)
-
+            mc_action_row.addWidget(self.mc_updater_install_button)
             self.mc_updater_remove_button = QPushButton("Remove MC-Updater")
-            self.prepare_mc_updater_button(self.mc_updater_remove_button, 170)
+            self.prepare_mc_updater_button(self.mc_updater_remove_button, 150)
             self.mc_updater_remove_button.clicked.connect(self.remove_mc_updater)
-            mc_updater_action_row.addWidget(self.mc_updater_remove_button)
-
-            mc_updater_action_row.addStretch()
-            mc_updater_layout.addLayout(mc_updater_action_row)
-
-            updates_layout.addWidget(mc_updater_group)
+            mc_action_row.addWidget(self.mc_updater_remove_button)
+            mc_updater_layout.addLayout(mc_action_row)
+            updates_layout.addWidget(mc_updater_widget)
         settings_layout.addWidget(updates_group)
 
         notices_group = QGroupBox("Notices")
-        notices_layout = QVBoxLayout(notices_group)
-        notices_layout.setSpacing(8)
+        notices_group.setObjectName("AppSettingsCard")
+        notices_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        notices_layout = QGridLayout(notices_group)
+        notices_layout.setContentsMargins(14, 18, 14, 10)
+        notices_layout.setHorizontalSpacing(20)
+        notices_layout.setVerticalSpacing(5)
 
         self.show_setup_notice_check = QCheckBox("Show setup notice")
         self.show_update_all_warning_check = QCheckBox("Show Update All warning")
         self.show_zapscripts_scan_notice_check = QCheckBox("Show ZapScripts scan notice")
         self.show_support_message_check = QCheckBox("Show support message")
 
-        notices_layout.addWidget(self.show_setup_notice_check)
-        notices_layout.addWidget(self.show_update_all_warning_check)
-        notices_layout.addWidget(self.show_zapscripts_scan_notice_check)
-        notices_layout.addWidget(self.show_support_message_check)
-
+        notices_layout.addWidget(self.show_setup_notice_check, 0, 0)
+        notices_layout.addWidget(self.show_update_all_warning_check, 0, 1)
+        notices_layout.addWidget(self.show_zapscripts_scan_notice_check, 1, 0)
+        notices_layout.addWidget(self.show_support_message_check, 1, 1)
         settings_layout.addWidget(notices_group)
 
         community_group = QGroupBox("Community")
-        community_layout = QVBoxLayout(community_group)
-        community_layout.setSpacing(8)
+        community_group.setObjectName("AppSettingsCard")
+        community_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        community_layout = QHBoxLayout(community_group)
+        community_layout.setContentsMargins(14, 18, 14, 10)
+        community_layout.setSpacing(10)
 
-        community_text = QLabel(
-            "Support continued development, report bugs, request features, or ask general questions."
-        )
+        community_text = QLabel("Support development, report bugs, request features, or ask questions.")
         community_text.setWordWrap(True)
-        community_layout.addWidget(community_text)
-
-        community_row = QHBoxLayout()
+        community_layout.addWidget(community_text, 1)
 
         self.support_button = QPushButton("Support the App")
-        self.support_button.setMinimumWidth(150)
+        self.support_button.setMinimumWidth(140)
         self.support_button.clicked.connect(self.open_support)
-        community_row.addWidget(self.support_button)
+        community_layout.addWidget(self.support_button)
 
         self.feedback_button = QPushButton("Report a Bug / Request Feature")
-        self.feedback_button.setMinimumWidth(210)
+        self.feedback_button.setMinimumWidth(200)
         self.feedback_button.clicked.connect(self.open_feedback)
-        community_row.addWidget(self.feedback_button)
-
-        community_row.addStretch()
-        community_layout.addLayout(community_row)
-
+        community_layout.addWidget(self.feedback_button)
         settings_layout.addWidget(community_group)
 
-        action_row = QHBoxLayout()
+        actions_group = QGroupBox("Actions")
+        actions_group.setObjectName("AppSettingsCard")
+        actions_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        actions_layout = QHBoxLayout(actions_group)
+        actions_layout.setContentsMargins(14, 18, 14, 10)
+        actions_layout.setSpacing(10)
+        actions_layout.addStretch(1)
+
         self.reset_button = QPushButton("Reset Changes")
         self.reset_button.clicked.connect(self.load_values)
-        action_row.addWidget(self.reset_button)
+        actions_layout.addWidget(self.reset_button)
 
         self.save_button = QPushButton("Save Settings")
         self.save_button.clicked.connect(self.save_settings)
-        action_row.addWidget(self.save_button)
-        action_row.addStretch()
-        settings_layout.addLayout(action_row)
-        settings_layout.addStretch()
+        actions_layout.addWidget(self.save_button)
+        actions_layout.addStretch(1)
+        settings_layout.addWidget(actions_group)
+        self.actions_group = actions_group
 
         settings_scroll.setWidget(settings_panel)
-        page_layout.addWidget(settings_scroll, 3)
+        settings_scroll.setAlignment(Qt.AlignmentFlag.AlignTop)
+        body_layout.addWidget(settings_scroll, 3)
 
         patreon_panel = QGroupBox("Patreon")
+        patreon_panel.setObjectName("AppSettingsCard")
+        self.patreon_panel = patreon_panel
         patreon_layout = QVBoxLayout(patreon_panel)
-        patreon_layout.setContentsMargins(18, 18, 18, 18)
-        patreon_layout.addStretch()
+        patreon_layout.setContentsMargins(18, 22, 18, 18)
+        patreon_layout.addStretch(1)
 
         patreon_placeholder = QLabel("Patreon options will be available here.")
         patreon_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
         patreon_placeholder.setWordWrap(True)
         patreon_layout.addWidget(patreon_placeholder)
 
-        patreon_layout.addStretch()
-        page_layout.addWidget(patreon_panel, 2)
+        patreon_layout.addStretch(1)
+        body_layout.addWidget(patreon_panel, 2, Qt.AlignmentFlag.AlignTop)
+
+        self.settings_panel.installEventFilter(self)
+        QTimer.singleShot(0, self.sync_patreon_height)
+
+
+    def eventFilter(self, obj, event):
+        if obj is getattr(self, "settings_panel", None) and event.type() in (
+            QEvent.Type.LayoutRequest,
+            QEvent.Type.Resize,
+        ):
+            QTimer.singleShot(0, self.sync_patreon_height)
+        return super().eventFilter(obj, event)
+
+    def sync_patreon_height(self):
+        settings_panel = getattr(self, "settings_panel", None)
+        actions_group = getattr(self, "actions_group", None)
+        patreon_panel = getattr(self, "patreon_panel", None)
+        if settings_panel is None or actions_group is None or patreon_panel is None:
+            return
+        bottom = actions_group.mapTo(settings_panel, actions_group.rect().bottomLeft()).y() + 1
+        top = settings_panel.layout().contentsMargins().top() if settings_panel.layout() else 0
+        target_height = max(0, bottom + top)
+        if target_height > 0 and patreon_panel.height() != target_height:
+            patreon_panel.setFixedHeight(target_height)
 
     def prepare_mc_updater_button(self, button: QPushButton, minimum_width: int):
         button.setMinimumWidth(minimum_width)

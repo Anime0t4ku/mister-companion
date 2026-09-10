@@ -172,7 +172,7 @@ class ConnectionTab(QWidget):
         main_layout.addLayout(status_row)
 
         self.content_row = QHBoxLayout()
-        self.content_row.setSpacing(14)
+        self.content_row.setSpacing(24)
         main_layout.addLayout(self.content_row, stretch=1)
 
         self.connection_group = QGroupBox("")
@@ -421,7 +421,10 @@ class ConnectionTab(QWidget):
         connection_layout.addStretch()
 
         self.content_row.addStretch(1)
-        self.content_row.addWidget(self.connection_group)
+        self.content_row.addWidget(
+            self.connection_group,
+            alignment=Qt.AlignmentFlag.AlignTop,
+        )
 
         self.support_group = QGroupBox("Thank You")
         self.support_group.setObjectName("SupportCard")
@@ -429,7 +432,7 @@ class ConnectionTab(QWidget):
         self.support_group.setMaximumWidth(380)
         self.support_group.setSizePolicy(
             QSizePolicy.Policy.Fixed,
-            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Fixed,
         )
 
         support_layout = QVBoxLayout(self.support_group)
@@ -488,8 +491,21 @@ class ConnectionTab(QWidget):
         support_layout.addLayout(dismiss_row)
 
         self.support_group.hide()
-        self.content_row.addWidget(self.support_group)
+        self.content_row.addWidget(
+            self.support_group,
+            alignment=Qt.AlignmentFlag.AlignTop,
+        )
         self.content_row.addStretch(1)
+
+        QTimer.singleShot(0, self.sync_support_height)
+
+    def sync_support_height(self):
+        if not hasattr(self, "support_group") or not hasattr(self, "connection_group"):
+            return
+        self.connection_group.adjustSize()
+        target_height = self.connection_group.sizeHint().height()
+        if target_height > 0:
+            self.support_group.setFixedHeight(target_height)
 
     def connect_signals(self):
         self.online_mode_radio.toggled.connect(self.handle_mode_changed)
@@ -549,6 +565,7 @@ class ConnectionTab(QWidget):
         else:
             self.support_group.show()
             self.show_support_button.hide()
+            QTimer.singleShot(0, self.sync_support_height)
 
     def show_support_message(self):
         if not self.is_support_message_enabled():
@@ -556,6 +573,7 @@ class ConnectionTab(QWidget):
         self.support_message_hidden = False
         self.support_group.show()
         self.show_support_button.hide()
+        QTimer.singleShot(0, self.sync_support_height)
 
     def hide_support_message(self):
         if not self.is_support_message_enabled():
@@ -678,6 +696,7 @@ class ConnectionTab(QWidget):
 
         self.online_controls_widget.setVisible(not is_offline)
         self.offline_group.setVisible(is_offline)
+        QTimer.singleShot(0, self.sync_support_height)
 
         if is_offline:
             self.mode_hint_label.setText("Offline Mode works directly on a selected MiSTer SD card.")

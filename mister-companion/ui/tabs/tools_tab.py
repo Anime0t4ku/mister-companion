@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import (
     QComboBox,
     QFileDialog,
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -124,8 +125,34 @@ class ToolsTab(QWidget):
         self.update_connection_state()
 
     def _build_ui(self):
+        self.setObjectName("ToolsPage")
+        self.setStyleSheet(
+            """
+            QWidget#ToolsPage QStackedWidget,
+            QWidget#ToolsPage QWidget#ToolsHomePage,
+            QWidget#ToolsPage QWidget#ToolsSubPage {
+                background: transparent;
+            }
+            QWidget#ToolsPage QFrame#ToolsHomeCard,
+            QWidget#ToolsPage QFrame#ToolWorkspace {
+                background-color: palette(alternate-base);
+                border: 1px solid palette(button);
+                border-radius: 12px;
+            }
+            QWidget#ToolsPage QLabel#ToolsEntryTitle {
+                font-weight: 700;
+                font-size: 16px;
+                background: transparent;
+            }
+            QWidget#ToolsPage QLabel#ToolsEntryDetail {
+                background: transparent;
+                color: palette(text);
+            }
+            """
+        )
         root = QVBoxLayout(self)
-        root.setContentsMargins(16, 16, 16, 16)
+        root.setContentsMargins(18, 18, 18, 18)
+        root.setSpacing(0)
         self.stack = QStackedWidget()
         root.addWidget(self.stack)
         self.home_page = self._build_home()
@@ -145,39 +172,69 @@ class ToolsTab(QWidget):
 
     def _build_home(self):
         page = QWidget()
+        page.setObjectName("ToolsHomePage")
         layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(14)
         title = QLabel("Tools")
-        title.setStyleSheet("font-size: 22px; font-weight: 600;")
+        title.setStyleSheet("font-weight: 700; font-size: 19px;")
         layout.addWidget(title)
-        subtitle = QLabel("Local and MiSTer-aware utilities. Remote sources are available while connected in Online mode.")
-        subtitle.setWordWrap(True)
-        layout.addWidget(subtitle)
-        layout.addSpacing(12)
-        for name, text, slot in (
+        grid = QGridLayout()
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setHorizontalSpacing(14)
+        grid.setVerticalSpacing(14)
+        entries = (
             ("ROM Patcher", "Apply IPS, IPS32, BPS, UPS and PPF patches. The source ROM is never overwritten.", lambda: self.stack.setCurrentWidget(self.patcher_page)),
-            ("CHD Converter", "Queue CUE/GDI/ISO → CHD conversions with independent PC or MiSTer input/output locations.", lambda: self.stack.setCurrentWidget(self.chd_page)),
-            ("CHD Extractor", "Extract CHD images to CUE/BIN, GDI or ISO with independent PC or MiSTer input/output locations.", lambda: self.stack.setCurrentWidget(self.chd_extract_page)),
-            ("MiSTer Video Converter", "Convert videos to PAL or NTSC DVD-compatible MPEG-2 for the MiSTer DVD core, with selectable audio and optional burned-in subtitles.", lambda: self.stack.setCurrentWidget(self.video_convert_page)),
-            ("Disc to Image", "Rip a physical game CD locally to BIN/CUE, with optional CHD conversion, then save to PC or MiSTer.", lambda: self._open_disc_page(self.disc_to_image_page)),
+            ("CHD Converter", "Queue CUE/GDI/ISO to CHD conversions using PC or MiSTer input and output locations.", lambda: self.stack.setCurrentWidget(self.chd_page)),
+            ("CHD Extractor", "Extract CHD images to CUE/BIN, GDI or ISO using PC or MiSTer input and output locations.", lambda: self.stack.setCurrentWidget(self.chd_extract_page)),
+            ("MiSTer Video Converter", "Create PAL or NTSC DVD-compatible MPEG-2 video for the MiSTer DVD core.", lambda: self.stack.setCurrentWidget(self.video_convert_page)),
+            ("Disc to Image", "Rip a physical game CD to BIN/CUE, optionally convert it to CHD, then save it to PC or MiSTer.", lambda: self._open_disc_page(self.disc_to_image_page)),
             ("Image to Disc", "Burn BIN/CUE game discs or MSU-1 / MD+ folders from PC or MiSTer using the PC optical drive.", lambda: self._open_disc_page(self.image_to_disc_page)),
-        ):
-            frame = QFrame()
-            frame.setFrameShape(QFrame.Shape.StyledPanel)
-            row = QHBoxLayout(frame)
-            labels = QVBoxLayout()
+        )
+        for index, (name, detail_text, slot) in enumerate(entries):
+            card = QFrame()
+            card.setObjectName("ToolsHomeCard")
+            card_layout = QVBoxLayout(card)
+            card_layout.setContentsMargins(18, 16, 18, 16)
+            card_layout.setSpacing(8)
             heading = QLabel(name)
-            heading.setStyleSheet("font-size: 16px; font-weight: 600;")
-            labels.addWidget(heading)
-            detail = QLabel(text)
+            heading.setObjectName("ToolsEntryTitle")
+            card_layout.addWidget(heading)
+            detail = QLabel(detail_text)
+            detail.setObjectName("ToolsEntryDetail")
             detail.setWordWrap(True)
-            labels.addWidget(detail)
-            row.addLayout(labels, 1)
+            card_layout.addWidget(detail, 1)
+            action_row = QHBoxLayout()
+            action_row.addStretch(1)
             button = QPushButton("Open")
             button.clicked.connect(slot)
-            row.addWidget(button)
-            layout.addWidget(frame)
+            action_row.addWidget(button)
+            card_layout.addLayout(action_row)
+            grid.addWidget(card, index // 2, index % 2)
+        layout.addLayout(grid)
         layout.addStretch(1)
         return page
+
+    def _tool_workspace_page(self, title_text):
+        page = QWidget()
+        page.setObjectName("ToolsSubPage")
+        outer = QVBoxLayout(page)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(14)
+        header = QHBoxLayout()
+        title = QLabel(title_text)
+        title.setStyleSheet("font-weight: 700; font-size: 19px;")
+        header.addWidget(title)
+        header.addStretch(1)
+        header.addWidget(self._back_button())
+        outer.addLayout(header)
+        workspace = QFrame()
+        workspace.setObjectName("ToolWorkspace")
+        content = QVBoxLayout(workspace)
+        content.setContentsMargins(18, 18, 18, 18)
+        content.setSpacing(12)
+        outer.addWidget(workspace, 1)
+        return page, content
 
     def _back_button(self):
         button = QPushButton("← Back to Tools")
@@ -192,12 +249,7 @@ class ToolsTab(QWidget):
         return combo
 
     def _build_patcher(self):
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.addWidget(self._back_button())
-        title = QLabel("ROM Patcher")
-        title.setStyleSheet("font-size: 20px; font-weight: 600;")
-        layout.addWidget(title)
+        page, layout = self._tool_workspace_page("ROM Patcher")
         self.rom_location, self.rom_path = self._path_row(layout, "ROM:", self._browse_rom)
         self.patch_location, self.patch_path = self._path_row(layout, "Patch:", self._browse_patch)
         self.output_location, self.output_path = self._path_row(layout, "Output:", self._browse_output)
@@ -462,12 +514,7 @@ class ToolsTab(QWidget):
         QMessageBox.critical(self, "ROM Patcher", message)
 
     def _build_video_convert(self):
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.addWidget(self._back_button())
-        title = QLabel("MiSTer Video Converter")
-        title.setStyleSheet("font-size: 20px; font-weight: 600;")
-        layout.addWidget(title)
+        page, layout = self._tool_workspace_page("MiSTer Video Converter")
         description = QLabel(
             "Create DVD-compatible MPEG-2 videos for the MiSTer DVD core. HD and 4K sources are supported, "
             "and detected HDR video is automatically converted to SDR."
@@ -918,12 +965,7 @@ class ToolsTab(QWidget):
         return status, install, remove, progress
 
     def _build_disc_to_image(self):
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.addWidget(self._back_button())
-        title = QLabel("Disc to Image")
-        title.setStyleSheet("font-size: 20px; font-weight: 600;")
-        layout.addWidget(title)
+        page, layout = self._tool_workspace_page("Disc to Image")
         self.disc_cdrdao_status, self.disc_install_cdrdao, self.disc_remove_cdrdao, self.disc_cdrdao_progress = self._cdrdao_controls(layout)
 
         row = QHBoxLayout()
@@ -977,12 +1019,7 @@ class ToolsTab(QWidget):
         return page
 
     def _build_image_to_disc(self):
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.addWidget(self._back_button())
-        title = QLabel("Image to Disc")
-        title.setStyleSheet("font-size: 20px; font-weight: 600;")
-        layout.addWidget(title)
+        page, layout = self._tool_workspace_page("Image to Disc")
         self.burn_cdrdao_status, self.burn_install_cdrdao, self.burn_remove_cdrdao, self.burn_cdrdao_progress = self._cdrdao_controls(layout)
 
         row = QHBoxLayout()
@@ -1513,12 +1550,7 @@ class ToolsTab(QWidget):
         return local_root
 
     def _build_chd(self):
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.addWidget(self._back_button())
-        title = QLabel("CHD Converter")
-        title.setStyleSheet("font-size: 20px; font-weight: 600;")
-        layout.addWidget(title)
+        page, layout = self._tool_workspace_page("CHD Converter")
         tool_row = QHBoxLayout()
         self.chd_tool_status = QLabel()
         tool_row.addWidget(self.chd_tool_status, 1)
@@ -1922,12 +1954,7 @@ class ToolsTab(QWidget):
         QMessageBox.critical(self, "CHD Converter", message)
 
     def _build_chd_extract(self):
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.addWidget(self._back_button())
-        title = QLabel("CHD Extractor")
-        title.setStyleSheet("font-size: 20px; font-weight: 600;")
-        layout.addWidget(title)
+        page, layout = self._tool_workspace_page("CHD Extractor")
         extract_tool_row = QHBoxLayout()
         self.chd_extract_tool_status = QLabel()
         extract_tool_row.addWidget(self.chd_extract_tool_status, 1)

@@ -335,7 +335,7 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.tools_tab, self.tab_icon("tools"), "Tools")
 
         self.app_settings_tab = AppSettingsTab(self)
-        self.tabs.addTab(self.app_settings_tab, self.tab_icon("settings"), "Settings")
+        self.tabs.addTab(self.app_settings_tab, self.tab_icon("settings"), "App Settings")
 
         self.wallpapers_tab = WallpapersTab(self)
 
@@ -378,7 +378,7 @@ class MainWindow(QMainWindow):
             ("ZapScripts", "zapscripts"),
             ("ZapScraper", "zapscraper"),
             ("Tools", "tools"),
-            ("Settings", "settings"),
+            ("App Settings", "settings"),
         ]
 
     def build_side_menu(self):
@@ -666,7 +666,7 @@ class MainWindow(QMainWindow):
             "ZapScripts": "zapscripts",
             "ZapScraper": "zapscraper",
             "SaveManager": "savemanager",
-            "Settings": "settings",
+            "App Settings": "settings",
         }
 
         for index in range(self.tabs.count()):

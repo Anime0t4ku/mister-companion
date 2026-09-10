@@ -157,8 +157,12 @@ class MiSTerZineTab(QWidget):
 
     def _build_ui(self):
         root = QVBoxLayout(self)
-        root.setContentsMargins(8, 8, 8, 8)
-        root.setSpacing(8)
+        root.setContentsMargins(18, 18, 18, 18)
+        root.setSpacing(10)
+
+        header_title = QLabel("MiSTerZine")
+        header_title.setStyleSheet("font-weight: 700; font-size: 19px;")
+        root.addWidget(header_title)
 
         controls = QHBoxLayout()
         self.search_edit = QLineEdit()

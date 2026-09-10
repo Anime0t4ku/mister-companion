@@ -392,14 +392,14 @@ class MiSTerSettingsTab(QWidget):
         content_row.addStretch(1)
 
         self.settings_shell = QWidget()
-        self.settings_shell.setMaximumWidth(1200)
-        self.settings_shell.setMinimumWidth(900)
+        self.settings_shell.setMaximumWidth(900)
+        self.settings_shell.setMinimumWidth(720)
         self.settings_shell.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self.settings_shell.setStyleSheet("QWidget#SettingsShell { background: transparent; }")
         self.settings_shell.setObjectName("SettingsShell")
         shell_layout = QVBoxLayout(self.settings_shell)
         shell_layout.setContentsMargins(0, 0, 0, 0)
-        shell_layout.setSpacing(10)
+        shell_layout.setSpacing(6)
 
         content_row.addWidget(self.settings_shell, 0)
         content_row.addStretch(1)
@@ -431,8 +431,8 @@ class MiSTerSettingsTab(QWidget):
         self.configuration_group = QGroupBox("Configuration")
         self.configuration_group.setObjectName("SettingsCard")
         configuration_layout = QVBoxLayout(self.configuration_group)
-        configuration_layout.setContentsMargins(14, 14, 14, 8)
-        configuration_layout.setSpacing(4)
+        configuration_layout.setContentsMargins(12, 10, 12, 8)
+        configuration_layout.setSpacing(2)
 
         ini_row = QHBoxLayout()
         ini_row.setContentsMargins(0, 0, 0, 0)
@@ -472,7 +472,6 @@ class MiSTerSettingsTab(QWidget):
         mode_row.addStretch()
 
         configuration_layout.addLayout(mode_row)
-        shell_layout.addWidget(self.configuration_group)
 
         self.notice_label = QLabel("")
         self.notice_label.setWordWrap(True)
@@ -484,9 +483,9 @@ class MiSTerSettingsTab(QWidget):
         self.easy_group = QGroupBox("Easy Mode")
         self.easy_group.setObjectName("SettingsCard")
         easy_layout = QGridLayout()
-        easy_layout.setContentsMargins(18, 22, 18, 18)
-        easy_layout.setHorizontalSpacing(12)
-        easy_layout.setVerticalSpacing(10)
+        easy_layout.setContentsMargins(18, 20, 18, 14)
+        easy_layout.setHorizontalSpacing(18)
+        easy_layout.setVerticalSpacing(5)
 
         self.easy_hdmi_mode_combo = QComboBox()
         self.easy_hdmi_mode_combo.addItems([
@@ -609,23 +608,21 @@ class MiSTerSettingsTab(QWidget):
             ("AmigaVision Preset", self.easy_amigavision_preset_combo),
             ("Menu CRT Preset", self.easy_menu_crt_preset_combo),
         ]
-        for index, (label_text, combo) in enumerate(easy_fields):
-            row = index % 6
-            column = 0 if index < 6 else 3
-            easy_layout.addWidget(QLabel(label_text), row, column)
-            easy_layout.addWidget(combo, row, column + 1)
+        for row, (label_text, combo) in enumerate(easy_fields):
+            label = QLabel(label_text)
+            label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            combo.setMinimumWidth(360)
+            easy_layout.addWidget(label, row, 0)
+            easy_layout.addWidget(combo, row, 1)
 
+        easy_layout.setColumnMinimumWidth(0, 160)
         easy_layout.setColumnStretch(1, 1)
-        easy_layout.setColumnMinimumWidth(2, 28)
-        easy_layout.setColumnStretch(4, 1)
         self.easy_group.setLayout(easy_layout)
-
         self.easy_group.setSizePolicy(
             QSizePolicy.Policy.Expanding,
-            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Preferred,
         )
-        self.easy_group.setMinimumHeight(360)
-        shell_layout.addWidget(self.easy_group, stretch=1)
+        shell_layout.addWidget(self.easy_group)
 
         self.advanced_group = QGroupBox("Advanced Mode")
         self.advanced_group.setObjectName("SettingsCard")
@@ -652,8 +649,8 @@ class MiSTerSettingsTab(QWidget):
         self.actions_group = QGroupBox("Actions")
         self.actions_group.setObjectName("SettingsCard")
         actions_layout = QVBoxLayout(self.actions_group)
-        actions_layout.setContentsMargins(14, 14, 14, 8)
-        actions_layout.setSpacing(5)
+        actions_layout.setContentsMargins(12, 10, 12, 8)
+        actions_layout.setSpacing(2)
 
         button_row = QHBoxLayout()
         button_row.addStretch()
@@ -673,7 +670,7 @@ class MiSTerSettingsTab(QWidget):
         retention_row = QHBoxLayout()
         retention_row.addStretch()
 
-        self.retention_label = QLabel("Backups to keep per device:")
+        self.retention_label = QLabel("Backups:")
         self.retention_spin = QSpinBox()
         self.retention_spin.setRange(1, 100)
         self.retention_spin.setValue(self.config_data.get("mister_settings_retention", 10))
@@ -684,8 +681,23 @@ class MiSTerSettingsTab(QWidget):
         retention_row.addWidget(self.open_backup_folder_button)
         retention_row.addStretch()
         actions_layout.addLayout(retention_row)
-        self.actions_group.setMaximumHeight(150)
-        shell_layout.addWidget(self.actions_group)
+        top_card_height = 128
+        self.configuration_group.setMinimumHeight(top_card_height)
+        self.configuration_group.setMaximumHeight(top_card_height)
+        self.actions_group.setMinimumHeight(top_card_height)
+        self.actions_group.setMaximumHeight(top_card_height)
+
+        top_cards = QWidget()
+        top_cards.setObjectName("SettingsTopCards")
+        top_cards.setStyleSheet("QWidget#SettingsTopCards { background: transparent; }")
+        top_cards.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        top_cards.setFixedHeight(top_card_height)
+        top_cards_layout = QHBoxLayout(top_cards)
+        top_cards_layout.setContentsMargins(0, 0, 0, 0)
+        top_cards_layout.setSpacing(10)
+        top_cards_layout.addWidget(self.configuration_group, 1)
+        top_cards_layout.addWidget(self.actions_group, 1)
+        shell_layout.insertWidget(0, top_cards)
 
         self.ini_file_combo.currentTextChanged.connect(self.on_ini_file_selected)
         self.refresh_ini_files_button.clicked.connect(self.handle_refresh_ini_file_list)
