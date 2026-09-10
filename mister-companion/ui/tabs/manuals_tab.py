@@ -48,6 +48,7 @@ from core.manuals import (
 )
 
 
+from ui.tab_header import create_tab_header
 class ManualsScanWorker(QThread):
     result = pyqtSignal(object)
     error = pyqtSignal(str)
@@ -532,9 +533,7 @@ class ManualsTab(QWidget):
         root_layout.setContentsMargins(18, 18, 18, 18)
         root_layout.setSpacing(10)
 
-        header_title = QLabel("Manuals")
-        header_title.setStyleSheet("font-weight: 700; font-size: 19px;")
-        root_layout.addWidget(header_title)
+        root_layout.addWidget(create_tab_header(self.main_window, "Manuals", "manuals"))
 
         content_layout = QHBoxLayout()
         content_layout.setSpacing(10)

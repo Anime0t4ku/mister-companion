@@ -675,6 +675,22 @@ class MainWindow(QMainWindow):
             if icon_name:
                 self.tabs.setTabIcon(index, self.tab_icon(icon_name))
 
+    def refresh_page_header_icons(self):
+        for label in self.findChildren(QLabel):
+            icon_name = label.property("tabHeaderIconName")
+            if not icon_name:
+                continue
+
+            try:
+                icon_size = int(label.property("tabHeaderIconSize") or 19)
+            except Exception:
+                icon_size = 19
+
+            color = label.palette().color(QPalette.ColorRole.WindowText).name()
+            label.setPixmap(
+                self.svg_icon(str(icon_name), color).pixmap(QSize(icon_size, icon_size))
+            )
+
     def is_online_mode(self) -> bool:
         return self.app_mode == APP_MODE_ONLINE
 
@@ -1064,6 +1080,7 @@ class MainWindow(QMainWindow):
             self.update_side_menu_logo(mode)
             self.update_theme_button_text()
             self.refresh_tab_icons()
+            self.refresh_page_header_icons()
             self.refresh_side_menu_icons()
             self.update_side_menu_style()
             current_widget = self.current_content_widget()

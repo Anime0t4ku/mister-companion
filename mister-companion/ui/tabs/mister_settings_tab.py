@@ -6,10 +6,10 @@ from pathlib import Path
 
 import requests
 from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal
-from PyQt6.QtGui import QFontDatabase, QFontMetricsF
+from PyQt6.QtGui import QFontDatabase, QFontMetricsF, QKeySequence, QShortcut, QTextCursor
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QGroupBox,
-    QLabel, QPushButton, QMessageBox, QComboBox, QTextEdit,
+    QLabel, QPushButton, QMessageBox, QComboBox, QLineEdit, QTextEdit,
     QRadioButton, QButtonGroup, QSpinBox, QSizePolicy, QDialog,
     QScrollArea
 )
@@ -35,6 +35,7 @@ from core.mister_settings_backup import (
     restore_mister_settings_backup,
     save_mister_settings_retention_setting,
 )
+from ui.tab_header import create_tab_header
 from ui.dialogs.restore_backup_dialog import RestoreBackupDialog
 
 
@@ -371,9 +372,7 @@ class MiSTerSettingsTab(QWidget):
         main_layout.setSpacing(0)
         self.setLayout(main_layout)
 
-        title_label = QLabel("MiSTer Settings")
-        title_label.setStyleSheet("font-weight: 700; font-size: 19px;")
-        main_layout.addWidget(title_label)
+        main_layout.addWidget(create_tab_header(self.main_window, "MiSTer Settings", "mister_settings"))
         main_layout.addSpacing(10)
 
         self.page_scroll_area = QScrollArea()
@@ -389,11 +388,8 @@ class MiSTerSettingsTab(QWidget):
         scroll_content.setStyleSheet("QWidget#SettingsScrollContent { background: transparent; }")
         content_row = QHBoxLayout(scroll_content)
         content_row.setContentsMargins(0, 0, 0, 0)
-        content_row.addStretch(1)
 
         self.settings_shell = QWidget()
-        self.settings_shell.setMaximumWidth(900)
-        self.settings_shell.setMinimumWidth(720)
         self.settings_shell.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self.settings_shell.setStyleSheet("QWidget#SettingsShell { background: transparent; }")
         self.settings_shell.setObjectName("SettingsShell")
@@ -401,8 +397,7 @@ class MiSTerSettingsTab(QWidget):
         shell_layout.setContentsMargins(0, 0, 0, 0)
         shell_layout.setSpacing(6)
 
-        content_row.addWidget(self.settings_shell, 0)
-        content_row.addStretch(1)
+        content_row.addWidget(self.settings_shell, 1)
         self.page_scroll_area.setWidget(scroll_content)
         main_layout.addWidget(self.page_scroll_area, 1)
 
@@ -618,16 +613,40 @@ class MiSTerSettingsTab(QWidget):
         easy_layout.setColumnMinimumWidth(0, 160)
         easy_layout.setColumnStretch(1, 1)
         self.easy_group.setLayout(easy_layout)
+        self.easy_group.setMinimumWidth(0)
+        self.easy_group.setMaximumWidth(900)
         self.easy_group.setSizePolicy(
             QSizePolicy.Policy.Expanding,
             QSizePolicy.Policy.Preferred,
         )
-        shell_layout.addWidget(self.easy_group)
+        shell_layout.addWidget(self.easy_group, 0, Qt.AlignmentFlag.AlignHCenter)
 
         self.advanced_group = QGroupBox("Advanced Mode")
         self.advanced_group.setObjectName("SettingsCard")
         advanced_layout = QVBoxLayout()
         advanced_layout.setContentsMargins(16, 20, 16, 14)
+        advanced_layout.setSpacing(8)
+
+        self.advanced_find_bar = QWidget()
+        self.advanced_find_bar.setObjectName("AdvancedFindBar")
+        self.advanced_find_bar.setStyleSheet("QWidget#AdvancedFindBar { background: transparent; }")
+        find_layout = QHBoxLayout(self.advanced_find_bar)
+        find_layout.setContentsMargins(0, 0, 0, 0)
+        find_layout.setSpacing(6)
+
+        self.advanced_find_edit = QLineEdit()
+        self.advanced_find_edit.setPlaceholderText("Find")
+        self.advanced_find_edit.setClearButtonEnabled(True)
+        self.advanced_find_previous_button = QPushButton("Previous")
+        self.advanced_find_next_button = QPushButton("Next")
+        self.advanced_find_count_label = QLabel("0 / 0")
+        self.advanced_find_count_label.setMinimumWidth(54)
+        self.advanced_find_count_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        find_layout.addWidget(self.advanced_find_edit, 1)
+        find_layout.addWidget(self.advanced_find_previous_button)
+        find_layout.addWidget(self.advanced_find_next_button)
+        find_layout.addWidget(self.advanced_find_count_label)
+        advanced_layout.addWidget(self.advanced_find_bar)
 
         self.advanced_text = QTextEdit()
         self.advanced_text.setAcceptRichText(False)
@@ -644,6 +663,10 @@ class MiSTerSettingsTab(QWidget):
 
         advanced_layout.addWidget(self.advanced_text)
         self.advanced_group.setLayout(advanced_layout)
+        self.advanced_group.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Expanding,
+        )
         shell_layout.addWidget(self.advanced_group, stretch=1)
 
         self.actions_group = QGroupBox("Actions")
@@ -687,17 +710,19 @@ class MiSTerSettingsTab(QWidget):
         self.actions_group.setMinimumHeight(top_card_height)
         self.actions_group.setMaximumHeight(top_card_height)
 
-        top_cards = QWidget()
-        top_cards.setObjectName("SettingsTopCards")
-        top_cards.setStyleSheet("QWidget#SettingsTopCards { background: transparent; }")
-        top_cards.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        top_cards.setFixedHeight(top_card_height)
-        top_cards_layout = QHBoxLayout(top_cards)
+        self.top_cards = QWidget()
+        self.top_cards.setObjectName("SettingsTopCards")
+        self.top_cards.setStyleSheet("QWidget#SettingsTopCards { background: transparent; }")
+        self.top_cards.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.top_cards.setMaximumWidth(900)
+        self.top_cards.setFixedHeight(top_card_height)
+        top_cards_layout = QHBoxLayout(self.top_cards)
         top_cards_layout.setContentsMargins(0, 0, 0, 0)
         top_cards_layout.setSpacing(10)
         top_cards_layout.addWidget(self.configuration_group, 1)
         top_cards_layout.addWidget(self.actions_group, 1)
-        shell_layout.insertWidget(0, top_cards)
+        shell_layout.insertWidget(0, self.top_cards, 0, Qt.AlignmentFlag.AlignHCenter)
+        QTimer.singleShot(0, self._sync_easy_group_width)
 
         self.ini_file_combo.currentTextChanged.connect(self.on_ini_file_selected)
         self.refresh_ini_files_button.clicked.connect(self.handle_refresh_ini_file_list)
@@ -714,7 +739,20 @@ class MiSTerSettingsTab(QWidget):
         self.open_backup_folder_button.clicked.connect(self.open_mister_settings_folder)
 
         self.advanced_text.textChanged.connect(self.on_advanced_text_changed)
+        self.advanced_find_edit.textChanged.connect(self.on_advanced_find_text_changed)
+        self.advanced_find_edit.returnPressed.connect(self.find_next_advanced_match)
+        self.advanced_find_previous_button.clicked.connect(self.find_previous_advanced_match)
+        self.advanced_find_next_button.clicked.connect(self.find_next_advanced_match)
 
+        self.advanced_find_shortcut = QShortcut(QKeySequence.StandardKey.Find, self)
+        self.advanced_find_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        self.advanced_find_shortcut.activated.connect(self.open_advanced_find)
+        self.advanced_find_previous_shortcut = QShortcut(QKeySequence("Shift+Return"), self.advanced_find_edit)
+        self.advanced_find_previous_shortcut.setContext(Qt.ShortcutContext.WidgetShortcut)
+        self.advanced_find_previous_shortcut.activated.connect(self.find_previous_advanced_match)
+        self.advanced_find_previous_enter_shortcut = QShortcut(QKeySequence("Shift+Enter"), self.advanced_find_edit)
+        self.advanced_find_previous_enter_shortcut.setContext(Qt.ShortcutContext.WidgetShortcut)
+        self.advanced_find_previous_enter_shortcut.activated.connect(self.find_previous_advanced_match)
         for combo in self.easy_mode_combos():
             combo.currentIndexChanged.connect(self.on_easy_setting_changed)
 
@@ -838,11 +876,100 @@ class MiSTerSettingsTab(QWidget):
             self.sync_easy_to_advanced(self.sender())
 
     def on_advanced_text_changed(self):
+        if hasattr(self, "advanced_find_edit") and self.advanced_find_edit.text():
+            self.refresh_advanced_find()
+
         if self.loading_settings or self.syncing_modes:
             return
 
         if self.advanced_mode_radio.isChecked():
             self.sync_advanced_to_easy()
+
+    def open_advanced_find(self):
+        if not self.advanced_mode_radio.isChecked():
+            return
+
+        selected_text = self.advanced_text.textCursor().selectedText()
+        if selected_text and "\n" not in selected_text and "\u2029" not in selected_text:
+            self.advanced_find_edit.setText(selected_text)
+        self.advanced_find_edit.setFocus()
+        self.advanced_find_edit.selectAll()
+        self.refresh_advanced_find()
+
+    def on_advanced_find_text_changed(self, *_):
+        self.refresh_advanced_find(select_first=True)
+
+    def advanced_find_matches(self):
+        query = self.advanced_find_edit.text()
+        if not query:
+            return []
+
+        matches = []
+        document = self.advanced_text.document()
+        cursor = QTextCursor(document)
+        while True:
+            match = document.find(query, cursor)
+            if match.isNull():
+                break
+            matches.append((match.selectionStart(), match.selectionEnd()))
+            cursor = QTextCursor(match)
+            cursor.setPosition(match.selectionEnd())
+        return matches
+
+    def refresh_advanced_find(self, select_first=False):
+        matches = self.advanced_find_matches()
+        if not matches:
+            self.advanced_find_count_label.setText("0 / 0")
+            return
+
+        current = self.advanced_text.textCursor()
+        current_start = current.selectionStart()
+        current_end = current.selectionEnd()
+        index = -1
+        for i, (start, end) in enumerate(matches):
+            if start == current_start and end == current_end:
+                index = i
+                break
+
+        if select_first or index < 0:
+            position = current.position()
+            index = next((i for i, (start, _) in enumerate(matches) if start >= position), 0)
+            self.select_advanced_find_match(matches, index)
+
+        self.advanced_find_count_label.setText(f"{index + 1} / {len(matches)}")
+
+    def select_advanced_find_match(self, matches, index):
+        if not matches:
+            return
+        index %= len(matches)
+        start, end = matches[index]
+        cursor = self.advanced_text.textCursor()
+        cursor.setPosition(start)
+        cursor.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
+        self.advanced_text.setTextCursor(cursor)
+        self.advanced_text.ensureCursorVisible()
+        self.advanced_find_count_label.setText(f"{index + 1} / {len(matches)}")
+
+    def find_next_advanced_match(self):
+        matches = self.advanced_find_matches()
+        if not matches:
+            self.advanced_find_count_label.setText("0 / 0")
+            return
+        cursor = self.advanced_text.textCursor()
+        end = cursor.selectionEnd()
+        index = next((i for i, (start, _) in enumerate(matches) if start >= end), 0)
+        self.select_advanced_find_match(matches, index)
+
+    def find_previous_advanced_match(self):
+        matches = self.advanced_find_matches()
+        if not matches:
+            self.advanced_find_count_label.setText("0 / 0")
+            return
+        cursor = self.advanced_text.textCursor()
+        start = cursor.selectionStart()
+        previous = [i for i, (_, end) in enumerate(matches) if end <= start]
+        index = previous[-1] if previous else len(matches) - 1
+        self.select_advanced_find_match(matches, index)
 
     def sync_easy_to_advanced(self, changed_combo=None):
         if self.loading_settings or self.syncing_modes:
@@ -1488,6 +1615,17 @@ class MiSTerSettingsTab(QWidget):
     def on_refresh_worker_finished(self):
         self.refresh_worker = None
 
+    def _sync_easy_group_width(self):
+        if not hasattr(self, "top_cards") or not hasattr(self, "easy_group"):
+            return
+        width = self.top_cards.width()
+        if width > 0:
+            self.easy_group.setFixedWidth(width)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        QTimer.singleShot(0, self._sync_easy_group_width)
+
     def update_settings_mode(self):
         enabled = (
             (self.is_offline_mode() and bool(self.offline_root_path()))
@@ -1495,10 +1633,15 @@ class MiSTerSettingsTab(QWidget):
         ) and self.ini_file_combo.count() > 0
 
         if self.easy_mode_radio.isChecked():
+            self.settings_shell.setMaximumWidth(900)
+            self.settings_shell.setMinimumWidth(720)
             self.advanced_text.setMinimumHeight(0)
             self.easy_group.show()
             self.advanced_group.hide()
+            QTimer.singleShot(0, self._sync_easy_group_width)
         else:
+            self.settings_shell.setMaximumWidth(16777215)
+            self.settings_shell.setMinimumWidth(0)
             self.advanced_text.setMinimumHeight(420)
             self.easy_group.hide()
             self.advanced_group.show()

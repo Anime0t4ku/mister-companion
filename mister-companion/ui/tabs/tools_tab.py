@@ -77,6 +77,7 @@ from core.video_converter import (
     probe_video,
     remove_ffmpeg,
 )
+from ui.tab_header import create_tab_header
 from ui.dialogs.remote_file_picker_dialog import RemoteFilePickerDialog
 
 
@@ -176,9 +177,7 @@ class ToolsTab(QWidget):
         layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(14)
-        title = QLabel("Tools")
-        title.setStyleSheet("font-weight: 700; font-size: 19px;")
-        layout.addWidget(title)
+        layout.addWidget(create_tab_header(self.main_window, "Tools", "tools"))
         grid = QGridLayout()
         grid.setContentsMargins(0, 0, 0, 0)
         grid.setHorizontalSpacing(14)

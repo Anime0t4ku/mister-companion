@@ -50,6 +50,7 @@ from core.zapscraper_systems import (
     get_zaparoo_companion_media_folder,
     get_zaparoo_companion_media_names,
 )
+from ui.tab_header import create_tab_header
 from ui.dialogs.zapscraper_gamelist_dialog import ZapScraperGamelistDialog
 from ui.dialogs.zapscraper_gamelist_dialog_mode1 import ZapScraperGamelistDialogMode1
 from ui.scaling import set_text_button_min_width
@@ -787,9 +788,7 @@ class ZapScraperTab(QWidget):
 
         header_row = QHBoxLayout()
         header_row.setContentsMargins(2, 0, 2, 0)
-        header_title = QLabel("ZapScraper")
-        header_title.setStyleSheet("font-weight: 700; font-size: 19px;")
-        header_row.addWidget(header_title)
+        header_row.addWidget(create_tab_header(self.main_window, "ZapScraper", "zapscraper"))
         layout.addLayout(header_row)
 
         scroll = QScrollArea()

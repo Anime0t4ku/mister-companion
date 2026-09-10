@@ -16,6 +16,7 @@ from PyQt6.QtWidgets import (
 
 from core import mc_updater
 from core.config import save_config
+from ui.tab_header import create_tab_header
 from ui.dialogs.mc_updater_progress_dialog import MCUpdaterProgressDialog
 
 
@@ -90,10 +91,7 @@ class AppSettingsTab(QWidget):
         root_layout.setContentsMargins(18, 18, 18, 18)
         root_layout.setSpacing(10)
 
-        title_label = QLabel("App Settings")
-        title_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        title_label.setStyleSheet("font-weight: 700; font-size: 19px;")
-        root_layout.addWidget(title_label)
+        root_layout.addWidget(create_tab_header(self.main_window, "App Settings", "settings"))
 
         body = QWidget()
         body.setObjectName("AppSettingsTransparent")

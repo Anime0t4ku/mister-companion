@@ -18,6 +18,7 @@ from PyQt6.QtWidgets import (
     QMessageBox,
 )
 
+from ui.tab_header import create_tab_header
 from ui.scaling import set_text_button_min_width
 from core.config import load_config, save_config
 from core.zapscripts import (
@@ -239,9 +240,7 @@ class ZapScriptsTab(QWidget):
             """
         )
 
-        title = QLabel("ZapScripts")
-        title.setStyleSheet("font-weight: 700; font-size: 19px;")
-        layout.addWidget(title)
+        layout.addWidget(create_tab_header(self.main_window, "ZapScripts", "zapscripts"))
 
         self.offline_message = QLabel("ZapScripts is not available in Offline Mode.")
         self.offline_message.setAlignment(Qt.AlignmentFlag.AlignCenter)

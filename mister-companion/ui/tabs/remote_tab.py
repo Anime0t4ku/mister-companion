@@ -22,6 +22,7 @@ from core.remote_daemon import (
 )
 
 
+from ui.tab_header import create_tab_header
 class RemoteDaemonStatusWorker(QThread):
     result = pyqtSignal(object)
     error = pyqtSignal(str)
@@ -139,9 +140,7 @@ class RemoteTab(QWidget):
         header_layout.setContentsMargins(2, 0, 2, 0)
         header_layout.setSpacing(3)
 
-        title_label = QLabel("Remote")
-        title_label.setStyleSheet("font-weight: 700; font-size: 19px;")
-        header_layout.addWidget(title_label)
+        header_layout.addWidget(create_tab_header(self.main_window, "Remote", "remote"))
         outer_layout.addLayout(header_layout)
 
         self.offline_label = QLabel("Remote not available in Offline Mode.")

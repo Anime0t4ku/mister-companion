@@ -25,6 +25,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from ui.tab_header import create_tab_header
 from ui.scaling import set_text_button_min_width
 from core.config import save_config
 from core.ra_image_cache import RAImageWorker, cache_path_for_url, get_cached_image_bytes
@@ -746,9 +747,7 @@ class RetroAchievementsTab(QWidget):
         header_row = QHBoxLayout()
         header_row.setSpacing(8)
 
-        title = QLabel("RetroAchievements")
-        title.setStyleSheet("font-weight: 700; font-size: 19px;")
-        title.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+        title = create_tab_header(self.main_window, "RetroAchievements", "retroachievements")
 
         self.refresh_button = QPushButton("Refresh")
         set_text_button_min_width(self.refresh_button, 90)

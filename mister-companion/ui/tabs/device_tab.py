@@ -7,6 +7,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtGui import QPixmap
 
+from ui.tab_header import create_tab_header
 from ui.scaling import set_text_button_min_width
 from core.device_actions import (
     disable_smb_offline,
@@ -214,9 +215,7 @@ class DeviceTab(QWidget):
 
         header_row = QHBoxLayout()
         header_row.setContentsMargins(2, 0, 2, 0)
-        header_title = QLabel("Device")
-        header_title.setStyleSheet("font-weight: 700; font-size: 19px;")
-        header_row.addWidget(header_title)
+        header_row.addWidget(create_tab_header(self.main_window, "Device", "connection"))
         main_layout.addLayout(header_row)
 
         centered_row = QHBoxLayout()

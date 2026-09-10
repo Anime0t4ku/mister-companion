@@ -30,6 +30,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from ui.tab_header import create_tab_header
 from ui.scaling import set_text_button_min_width
 from ui.update_all_runner import handle_update_all_result, prepare_update_all_task, UpdateAllOutputDialog
 from ui.install_center_actions import InstallCenterActions
@@ -1529,9 +1530,7 @@ class InstallCenterTab(QWidget):
         header_row.setContentsMargins(2, 0, 2, 0)
         header_row.setSpacing(8)
 
-        title = QLabel("Install Center")
-        title.setStyleSheet("font-weight: 700; font-size: 19px;")
-        header_row.addWidget(title)
+        header_row.addWidget(create_tab_header(self.main_window, "Install Center", "scripts"))
         header_row.addStretch()
 
         self.global_check_button = QPushButton("Check for Updates")

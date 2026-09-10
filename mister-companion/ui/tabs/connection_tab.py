@@ -21,6 +21,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from ui.tab_header import create_tab_header
 from ui.scaling import set_text_button_min_width
 from ui.tabs.device_tab import DeviceTab
 from core.config import save_config
@@ -130,8 +131,7 @@ class ConnectionTab(QWidget):
         header_text_layout.setContentsMargins(0, 0, 0, 0)
         header_text_layout.setSpacing(3)
 
-        header_title = QLabel("Connection")
-        header_title.setStyleSheet("font-weight: 700; font-size: 19px;")
+        header_title = create_tab_header(self.main_window, "Connection", "connection")
 
         self.mode_hint_label = QLabel("Choose Online / SSH or Offline / SD Card mode.")
         self.mode_hint_label.setObjectName("SectionHint")

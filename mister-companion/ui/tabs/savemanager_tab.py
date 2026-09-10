@@ -17,6 +17,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from ui.tab_header import create_tab_header
 from ui.scaling import set_text_button_min_width
 from core.savemanager import (
     SYNC_ROOT,
@@ -205,9 +206,7 @@ class SaveManagerTab(QWidget):
             """
         )
 
-        title = QLabel("SaveManager")
-        title.setStyleSheet("font-weight: 700; font-size: 19px;")
-        main_layout.addWidget(title)
+        main_layout.addWidget(create_tab_header(self.main_window, "SaveManager", "savemanager"))
 
         content_row = QHBoxLayout()
         content_row.setContentsMargins(0, 0, 0, 0)
