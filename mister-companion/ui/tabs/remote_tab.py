@@ -7,7 +7,6 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QSizePolicy,
-    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -94,7 +93,8 @@ class RemoteTab(QWidget):
         self.setObjectName("RemotePage")
         self.setStyleSheet(
             """
-            QWidget#RemotePage QWidget#RemoteOnlineContainer {
+            QWidget#RemotePage QWidget#RemoteOnlineContainer,
+            QWidget#RemotePage QWidget#RemoteControlsInner {
                 background: transparent;
             }
 
@@ -128,7 +128,6 @@ class RemoteTab(QWidget):
                 background: transparent;
                 color: palette(highlight);
             }
-
             """
         )
 
@@ -143,7 +142,6 @@ class RemoteTab(QWidget):
         title_label = QLabel("Remote")
         title_label.setStyleSheet("font-weight: 700; font-size: 19px;")
         header_layout.addWidget(title_label)
-
         outer_layout.addLayout(header_layout)
 
         self.offline_label = QLabel("Remote not available in Offline Mode.")
@@ -155,58 +153,52 @@ class RemoteTab(QWidget):
         self.online_container = QGroupBox("")
         self.online_container.setObjectName("RemoteShell")
         self.online_container.setMaximumWidth(1100)
-        self.online_container.setSizePolicy(
-            QSizePolicy.Policy.Expanding,
-            QSizePolicy.Policy.Expanding,
-        )
+        self.online_container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
         root_layout = QVBoxLayout(self.online_container)
         root_layout.setContentsMargins(0, 0, 0, 0)
-        root_layout.setSpacing(12)
+        root_layout.setSpacing(10)
 
         centered_row = QHBoxLayout()
         centered_row.setContentsMargins(0, 0, 0, 0)
         centered_row.addStretch(1)
-        centered_row.addWidget(self.online_container, 1)
+        centered_row.addWidget(self.online_container, 1, Qt.AlignmentFlag.AlignTop)
         centered_row.addStretch(1)
-        outer_layout.addLayout(centered_row, 1)
+        outer_layout.addLayout(centered_row)
+        outer_layout.addStretch(1)
 
         status_panel = QGroupBox("Status")
         status_panel.setObjectName("RemoteCard")
-        status_layout = QGridLayout(status_panel)
-        status_layout.setContentsMargins(16, 20, 16, 14)
-        status_layout.setHorizontalSpacing(18)
-        status_layout.setVerticalSpacing(8)
+        status_layout = QHBoxLayout(status_panel)
+        status_layout.setContentsMargins(16, 18, 16, 10)
+        status_layout.setSpacing(10)
+        status_layout.addStretch(1)
 
         installed_title = QLabel("Installed:")
-        installed_title.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        status_layout.addWidget(installed_title, 0, 0)
         self.installed_status_label = QLabel("Unknown")
         self.installed_status_label.setStyleSheet("font-weight: 700; background: transparent;")
-        status_layout.addWidget(self.installed_status_label, 0, 1)
-
         running_title = QLabel("Running:")
-        running_title.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        status_layout.addWidget(running_title, 0, 2)
         self.running_status_label = QLabel("Unknown")
         self.running_status_label.setStyleSheet("font-weight: 700; background: transparent;")
-        status_layout.addWidget(self.running_status_label, 0, 3)
-
         startup_title = QLabel("Start on boot:")
-        startup_title.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        status_layout.addWidget(startup_title, 0, 4)
         self.startup_status_label = QLabel("Unknown")
         self.startup_status_label.setStyleSheet("font-weight: 700; background: transparent;")
-        status_layout.addWidget(self.startup_status_label, 0, 5)
 
-        for column in range(6):
-            status_layout.setColumnStretch(column, 1)
+        status_layout.addWidget(installed_title)
+        status_layout.addWidget(self.installed_status_label)
+        status_layout.addSpacing(18)
+        status_layout.addWidget(running_title)
+        status_layout.addWidget(self.running_status_label)
+        status_layout.addSpacing(18)
+        status_layout.addWidget(startup_title)
+        status_layout.addWidget(self.startup_status_label)
+        status_layout.addStretch(1)
         root_layout.addWidget(status_panel)
 
         daemon_panel = QGroupBox("Daemon Management")
         daemon_panel.setObjectName("RemoteCard")
         daemon_layout = QVBoxLayout(daemon_panel)
-        daemon_layout.setContentsMargins(16, 20, 16, 14)
-        daemon_layout.setSpacing(10)
+        daemon_layout.setContentsMargins(16, 18, 16, 10)
+        daemon_layout.setSpacing(6)
 
         daemon_buttons = QHBoxLayout()
         daemon_buttons.setSpacing(8)
@@ -225,14 +217,19 @@ class RemoteTab(QWidget):
         daemon_buttons.addWidget(self.boot_button)
         daemon_buttons.addWidget(self.uninstall_button)
         daemon_buttons.addStretch(1)
-
         daemon_layout.addLayout(daemon_buttons)
+
+        self.daemon_message_label = QLabel("")
+        self.daemon_message_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.daemon_message_label.setWordWrap(True)
+        self.daemon_message_label.setVisible(False)
+        daemon_layout.addWidget(self.daemon_message_label)
         root_layout.addWidget(daemon_panel)
 
-        controls_panel = QGroupBox("Controller")
+        controls_panel = QGroupBox("Controls")
         controls_panel.setObjectName("RemoteCard")
         controls_layout = QVBoxLayout(controls_panel)
-        controls_layout.setContentsMargins(16, 20, 16, 14)
+        controls_layout.setContentsMargins(16, 20, 16, 12)
         controls_layout.setSpacing(12)
 
         controller_row = QHBoxLayout()
@@ -250,57 +247,32 @@ class RemoteTab(QWidget):
         controller_row.addSpacing(10)
         controller_row.addWidget(buttons_widget, 0, Qt.AlignmentFlag.AlignCenter)
         controller_row.addStretch(1)
-
-        controls_layout.addStretch(1)
         controls_layout.addLayout(controller_row)
-        controls_layout.addStretch(1)
 
-        root_layout.addWidget(controls_panel, 1)
-
-        keyboard_panel = QGroupBox("Keyboard Passthrough")
-        keyboard_panel.setObjectName("RemoteCard")
-        keyboard_layout = QVBoxLayout(keyboard_panel)
-        keyboard_layout.setContentsMargins(16, 20, 16, 14)
-        keyboard_layout.setSpacing(10)
+        keyboard_separator = QWidget()
+        keyboard_separator.setFixedHeight(1)
+        keyboard_separator.setStyleSheet("background-color: palette(button);")
+        controls_layout.addWidget(keyboard_separator)
 
         keyboard_row = QHBoxLayout()
-        keyboard_row.setSpacing(12)
+        keyboard_row.setContentsMargins(8, 0, 8, 0)
+        keyboard_row.setSpacing(10)
         keyboard_row.addStretch(1)
+
+        keyboard_label = QLabel("Keyboard Passthrough")
+        keyboard_label.setStyleSheet("font-weight: 700; background: transparent;")
+        keyboard_row.addWidget(keyboard_label)
+
+        keyboard_note = QLabel("Captures keyboard input while the Remote tab is active.")
+        keyboard_note.setWordWrap(True)
+        keyboard_row.addWidget(keyboard_note)
+
         self.keyboard_button = QPushButton("Enable")
         self.keyboard_button.setCheckable(True)
         keyboard_row.addWidget(self.keyboard_button)
-
-        keyboard_note = QLabel(
-            "Captures keyboard input only while the Remote tab is open and MiSTer Companion is focused. "
-            "A-Z, numbers, arrows, Enter, Space, function keys, and common modifiers are supported."
-        )
-        keyboard_note.setWordWrap(True)
-        keyboard_note.setMaximumWidth(720)
-        keyboard_row.addWidget(keyboard_note)
         keyboard_row.addStretch(1)
-
-        keyboard_layout.addLayout(keyboard_row)
-        root_layout.addWidget(keyboard_panel)
-
-        output_panel = QGroupBox("Output")
-        output_panel.setObjectName("RemoteCard")
-        output_layout = QVBoxLayout(output_panel)
-        output_layout.setContentsMargins(16, 20, 16, 14)
-        output_layout.setSpacing(10)
-
-        output_button_row = QHBoxLayout()
-        output_button_row.addStretch(1)
-        self.output_toggle_button = QPushButton("Show Output")
-        output_button_row.addWidget(self.output_toggle_button)
-        output_button_row.addStretch(1)
-        output_layout.addLayout(output_button_row)
-
-        self.log_box = QTextEdit()
-        self.log_box.setReadOnly(True)
-        self.log_box.setMinimumHeight(100)
-        self.log_box.setVisible(False)
-        output_layout.addWidget(self.log_box)
-        root_layout.addWidget(output_panel)
+        controls_layout.addLayout(keyboard_row)
+        root_layout.addWidget(controls_panel)
 
         self.refresh_button.clicked.connect(self.refresh_state)
         self.install_button.clicked.connect(lambda: self.run_daemon_command("install"))
@@ -308,7 +280,6 @@ class RemoteTab(QWidget):
         self.boot_button.clicked.connect(lambda: self.run_daemon_command("toggle-boot"))
         self.uninstall_button.clicked.connect(self.confirm_uninstall)
         self.keyboard_button.toggled.connect(self.on_keyboard_passthrough_toggled)
-        self.output_toggle_button.clicked.connect(self.toggle_output)
 
         self.bind_controller_button(self.up_button, "dpad", "up")
         self.bind_controller_button(self.down_button, "dpad", "down")
@@ -490,17 +461,14 @@ class RemoteTab(QWidget):
             return None
 
     def append_log(self, text: str):
-        self.log_box.append(str(text or ""))
-
-    def toggle_output(self):
-        visible = self.log_box.isVisible()
-        self.log_box.setVisible(not visible)
-        self.output_toggle_button.setText("Show Output" if visible else "Hide Output")
-
-    def show_output(self):
-        if not self.log_box.isVisible():
-            self.log_box.setVisible(True)
-            self.output_toggle_button.setText("Hide Output")
+        message = str(text or "").strip()
+        if not message:
+            return
+        lines = [line.strip() for line in message.splitlines() if line.strip()]
+        if not lines:
+            return
+        self.daemon_message_label.setText(lines[-1])
+        self.daemon_message_label.setVisible(True)
 
     def connected_host(self) -> str:
         return getattr(self.connection, "host", "") if self.connection else ""
@@ -604,8 +572,6 @@ class RemoteTab(QWidget):
             return
 
         try:
-            self.show_output()
-
             self.release_all_inputs()
             self.disconnect_remote_client()
             self.set_daemon_buttons_enabled(False)
