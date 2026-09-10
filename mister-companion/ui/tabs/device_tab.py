@@ -3,7 +3,7 @@ import sys
 from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal, QByteArray, QSize
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QGroupBox,
-    QLabel, QPushButton, QMessageBox, QProgressBar, QSizePolicy, QSlider, QToolButton
+    QLabel, QPushButton, QMessageBox, QProgressBar, QSizePolicy, QSlider, QToolButton, QFrame
 )
 from PyQt6.QtGui import QPixmap
 
@@ -189,14 +189,62 @@ class DeviceTab(QWidget):
         self.apply_disconnected_state()
 
     def build_ui(self):
-        main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(12, 12, 12, 12)
-        main_layout.setSpacing(10)
+        card_style = """
+            QGroupBox#DeviceCard {
+                background-color: palette(alternate-base);
+                border: 1px solid palette(button);
+                border-radius: 12px;
+                margin-top: 18px;
+                padding: 14px;
+                font-weight: 700;
+            }
+            QGroupBox#DeviceCard::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                left: 14px;
+                padding: 0px 7px;
+                background: transparent;
+                color: palette(highlight);
+            }
+        """
 
-        # Compact connected-device header.
-        header = QGroupBox()
-        header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(12, 8, 12, 8)
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(18, 18, 18, 18)
+        main_layout.setSpacing(14)
+
+        header_row = QHBoxLayout()
+        header_row.setContentsMargins(2, 0, 2, 0)
+        header_title = QLabel("Device")
+        header_title.setStyleSheet("font-weight: 700; font-size: 19px;")
+        header_row.addWidget(header_title)
+        main_layout.addLayout(header_row)
+
+        centered_row = QHBoxLayout()
+        centered_row.setContentsMargins(0, 0, 0, 0)
+        centered_row.addStretch(1)
+
+        self.device_shell = QWidget()
+        self.device_shell.setObjectName("DeviceShell")
+        self.device_shell.setStyleSheet("QWidget#DeviceShell { background: transparent; border: none; }")
+        self.device_shell.setMaximumWidth(1100)
+        self.device_shell.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Preferred,
+        )
+        shell_layout = QVBoxLayout(self.device_shell)
+        shell_layout.setContentsMargins(0, 0, 0, 0)
+        shell_layout.setSpacing(12)
+
+        status_banner = QFrame()
+        status_banner.setObjectName("DeviceStatusBanner")
+        status_banner.setStyleSheet(
+            "QFrame#DeviceStatusBanner { "
+            "background-color: palette(alternate-base); "
+            "border: 1px solid palette(button); "
+            "border-radius: 10px; }"
+        )
+        header_layout = QHBoxLayout(status_banner)
+        header_layout.setContentsMargins(14, 9, 14, 9)
         header_layout.setSpacing(10)
 
         self.connected_status_label = QLabel("● Connected")
@@ -213,12 +261,13 @@ class DeviceTab(QWidget):
         header_layout.addWidget(self.connected_identity_label)
         header_layout.addStretch()
         header_layout.addWidget(self.disconnect_button)
-        main_layout.addWidget(header)
+        shell_layout.addWidget(status_banner)
 
-        # Now Playing is intentionally conditional and consumes no space when idle.
         self.now_playing_group = QGroupBox("Now Playing")
+        self.now_playing_group.setObjectName("DeviceCard")
+        self.now_playing_group.setStyleSheet(card_style)
         now_playing_layout = QHBoxLayout(self.now_playing_group)
-        now_playing_layout.setContentsMargins(12, 7, 12, 7)
+        now_playing_layout.setContentsMargins(16, 20, 16, 14)
         self.now_playing_summary_label = QLabel("")
         self.now_playing_summary_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.now_playing_summary_label.setStyleSheet("font-weight: bold;")
@@ -227,12 +276,13 @@ class DeviceTab(QWidget):
         )
         now_playing_layout.addWidget(self.now_playing_summary_label)
         self.now_playing_group.setVisible(False)
-        main_layout.addWidget(self.now_playing_group)
+        shell_layout.addWidget(self.now_playing_group)
 
-        # MiSTer Hi-Fi mini player. Hidden unless the Hi-Fi websocket is active.
         self.hifi_group = QGroupBox("MiSTer Hi-Fi")
+        self.hifi_group.setObjectName("DeviceCard")
+        self.hifi_group.setStyleSheet(card_style)
         hifi_layout = QHBoxLayout(self.hifi_group)
-        hifi_layout.setContentsMargins(12, 8, 12, 8)
+        hifi_layout.setContentsMargins(16, 20, 16, 14)
         hifi_layout.setSpacing(10)
 
         self.hifi_art_label = QLabel("No Art")
@@ -267,7 +317,13 @@ class DeviceTab(QWidget):
         hifi_center.addLayout(progress_row)
         hifi_layout.addLayout(hifi_center, 1)
 
-        controls = QHBoxLayout()
+        controls_widget = QWidget(self.hifi_group)
+        controls_widget.setObjectName("HiFiControls")
+        controls_widget.setStyleSheet(
+            "QWidget#HiFiControls { background: transparent; border: none; }"
+        )
+        controls = QHBoxLayout(controls_widget)
+        controls.setContentsMargins(0, 0, 0, 0)
         controls.setSpacing(4)
         self.hifi_previous_button = QToolButton()
         self.hifi_play_button = QToolButton()
@@ -283,12 +339,12 @@ class DeviceTab(QWidget):
             button.setIconSize(QSize(22, 22))
             button.setFixedSize(34, 34)
             button.setAutoRaise(True)
-            button.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
             button.setStyleSheet(
-                "QToolButton, QToolButton:hover, QToolButton:pressed, "
-                "QToolButton:checked, QToolButton:disabled { "
-                "background: transparent; background-color: transparent; "
-                "border: 0px; padding: 0px; margin: 0px; }"
+                "QToolButton { background: transparent; border: 0px; "
+                "border-radius: 6px; padding: 0px; margin: 0px; } "
+                "QToolButton:hover { background-color: palette(button); } "
+                "QToolButton:pressed { background-color: palette(mid); } "
+                "QToolButton:disabled { background: transparent; }"
             )
             controls.addWidget(button)
 
@@ -296,7 +352,7 @@ class DeviceTab(QWidget):
         self.hifi_browse_button.setToolTip("Browse MiSTer Hi-Fi")
         set_text_button_min_width(self.hifi_browse_button, 90)
         controls.addWidget(self.hifi_browse_button)
-        hifi_layout.addLayout(controls)
+        hifi_layout.addWidget(controls_widget)
 
         self.hifi_previous_button.clicked.connect(lambda: self.hifi_send_control("previous"))
         self.hifi_play_button.clicked.connect(lambda: self.hifi_send_control("playpause"))
@@ -307,18 +363,19 @@ class DeviceTab(QWidget):
         self.hifi_progress.sliderReleased.connect(self.hifi_slider_released)
         self.hifi_progress.sliderMoved.connect(self.hifi_slider_moved)
         self.hifi_group.setVisible(False)
-        main_layout.addWidget(self.hifi_group)
+        shell_layout.addWidget(self.hifi_group)
 
         cards_grid = QGridLayout()
-        cards_grid.setHorizontalSpacing(10)
-        cards_grid.setVerticalSpacing(10)
+        cards_grid.setHorizontalSpacing(12)
+        cards_grid.setVerticalSpacing(12)
         cards_grid.setColumnStretch(0, 1)
         cards_grid.setColumnStretch(1, 1)
 
-        # Storage
         storage_group = QGroupBox("Storage")
+        storage_group.setObjectName("DeviceCard")
+        storage_group.setStyleSheet(card_style)
         storage_layout = QGridLayout(storage_group)
-        storage_layout.setContentsMargins(12, 8, 12, 8)
+        storage_layout.setContentsMargins(16, 20, 16, 14)
         storage_layout.setHorizontalSpacing(8)
         storage_layout.setVerticalSpacing(12)
 
@@ -349,14 +406,15 @@ class DeviceTab(QWidget):
         storage_layout.addWidget(self.usb_title_label, 1, 0)
         storage_layout.addWidget(self.usb_bar, 1, 1)
         storage_layout.addWidget(self.usb_label, 1, 2)
-        storage_layout.addWidget(self.refresh_button, 2, 2, alignment=Qt.AlignmentFlag.AlignRight)
+        storage_layout.addWidget(self.refresh_button, 2, 0, 1, 3, alignment=Qt.AlignmentFlag.AlignHCenter)
         storage_layout.setColumnStretch(1, 1)
 
-        # File sharing
         sharing_group = QGroupBox("File Sharing")
+        sharing_group.setObjectName("DeviceCard")
+        sharing_group.setStyleSheet(card_style)
         sharing_layout = QVBoxLayout(sharing_group)
-        sharing_layout.setContentsMargins(12, 8, 12, 8)
-        sharing_layout.setSpacing(6)
+        sharing_layout.setContentsMargins(16, 20, 16, 14)
+        sharing_layout.setSpacing(10)
         self.smb_status_label = QLabel("SMB: Unknown")
         self.smb_status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         sharing_actions = QHBoxLayout()
@@ -372,11 +430,12 @@ class DeviceTab(QWidget):
         sharing_layout.addWidget(self.smb_status_label)
         sharing_layout.addLayout(sharing_actions)
 
-        # Static wallpaper
         self.static_wallpaper_group = QGroupBox("Static Wallpaper")
+        self.static_wallpaper_group.setObjectName("DeviceCard")
+        self.static_wallpaper_group.setStyleSheet(card_style)
         wallpaper_layout = QVBoxLayout(self.static_wallpaper_group)
-        wallpaper_layout.setContentsMargins(12, 8, 12, 8)
-        wallpaper_layout.setSpacing(6)
+        wallpaper_layout.setContentsMargins(16, 20, 16, 14)
+        wallpaper_layout.setSpacing(10)
         self.static_wallpaper_status_label = QLabel("Static wallpaper: Unknown")
         self.static_wallpaper_status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         wallpaper_actions = QHBoxLayout()
@@ -390,11 +449,12 @@ class DeviceTab(QWidget):
         wallpaper_layout.addWidget(self.static_wallpaper_status_label)
         wallpaper_layout.addLayout(wallpaper_actions)
 
-        # Updates
         self.update_all_group = QGroupBox("Update All")
+        self.update_all_group.setObjectName("DeviceCard")
+        self.update_all_group.setStyleSheet(card_style)
         update_layout = QVBoxLayout(self.update_all_group)
-        update_layout.setContentsMargins(12, 8, 12, 8)
-        update_layout.setSpacing(6)
+        update_layout.setContentsMargins(16, 20, 16, 14)
+        update_layout.setSpacing(10)
         self.update_all_status_label = QLabel("update_all: Unknown")
         self.update_all_status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         update_actions = QHBoxLayout()
@@ -409,11 +469,12 @@ class DeviceTab(QWidget):
         update_layout.addLayout(update_actions)
         self.update_all_group.setVisible(False)
 
-        # Zaparoo
         self.zaparoo_group = QGroupBox("Zaparoo PIN Encryption")
+        self.zaparoo_group.setObjectName("DeviceCard")
+        self.zaparoo_group.setStyleSheet(card_style)
         zaparoo_layout = QVBoxLayout(self.zaparoo_group)
-        zaparoo_layout.setContentsMargins(12, 8, 12, 8)
-        zaparoo_layout.setSpacing(6)
+        zaparoo_layout.setContentsMargins(16, 20, 16, 14)
+        zaparoo_layout.setSpacing(10)
         self.zaparoo_status_label = QLabel("")
         self.zaparoo_status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.zaparoo_status_label.setWordWrap(True)
@@ -429,10 +490,11 @@ class DeviceTab(QWidget):
         zaparoo_layout.addLayout(zaparoo_actions)
         self.zaparoo_group.setVisible(False)
 
-        # Device actions
         self.device_actions_group = QGroupBox("Device Actions")
+        self.device_actions_group.setObjectName("DeviceCard")
+        self.device_actions_group.setStyleSheet(card_style)
         power_layout = QHBoxLayout(self.device_actions_group)
-        power_layout.setContentsMargins(12, 8, 12, 8)
+        power_layout.setContentsMargins(16, 20, 16, 14)
         power_layout.setSpacing(8)
         self.return_to_menu_button = QPushButton("Return to Menu")
         self.reboot_button = QPushButton("Reboot MiSTer")
@@ -447,7 +509,11 @@ class DeviceTab(QWidget):
         cards_grid.addWidget(self.update_all_group, 1, 1)
         cards_grid.addWidget(self.zaparoo_group, 2, 0)
         cards_grid.addWidget(self.device_actions_group, 2, 1)
-        main_layout.addLayout(cards_grid)
+        shell_layout.addLayout(cards_grid)
+
+        centered_row.addWidget(self.device_shell)
+        centered_row.addStretch(1)
+        main_layout.addLayout(centered_row)
         main_layout.addStretch(1)
 
         self.disconnect_button.clicked.connect(self.handle_disconnect_or_unload)

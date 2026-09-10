@@ -14,6 +14,7 @@ def configure_qt_high_dpi():
 
 configure_qt_high_dpi()
 
+from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import QApplication
 
 from core.config import load_config
@@ -32,6 +33,15 @@ def main():
 
     window = MainWindow(app)
     window.show()
+
+    def activate_main_window():
+        window.raise_()
+        window.activateWindow()
+        handle = window.windowHandle()
+        if handle is not None:
+            handle.requestActivate()
+
+    QTimer.singleShot(0, activate_main_window)
 
     sys.exit(app.exec())
 

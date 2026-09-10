@@ -6,6 +6,7 @@ from pathlib import Path
 
 import requests
 from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal
+from PyQt6.QtGui import QFontDatabase, QFontMetricsF
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QGroupBox,
     QLabel, QPushButton, QMessageBox, QComboBox, QTextEdit,
@@ -364,20 +365,74 @@ class MiSTerSettingsTab(QWidget):
         self.apply_disconnected_state()
 
     def build_ui(self):
+        self.setObjectName("MiSTerSettingsPage")
         main_layout = QVBoxLayout()
-        main_layout.setContentsMargins(12, 8, 12, 12)
-        main_layout.setSpacing(8)
-        main_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        main_layout.setContentsMargins(18, 18, 18, 18)
+        main_layout.setSpacing(0)
         self.setLayout(main_layout)
 
-        self.info_label = QLabel(
-            "MiSTer Settings allows you to edit MiSTer.ini and MiSTer_*.ini files with an Easy and Advanced mode.\n"
-            "Backups are stored locally on your PC in a separate MiSTerSettings folder.\n"
-            "Settings are only applied when you press Save."
+        title_label = QLabel("MiSTer Settings")
+        title_label.setStyleSheet("font-weight: 700; font-size: 19px;")
+        main_layout.addWidget(title_label)
+        main_layout.addSpacing(10)
+
+        self.page_scroll_area = QScrollArea()
+        self.page_scroll_area.setWidgetResizable(True)
+        self.page_scroll_area.setFrameShape(QScrollArea.Shape.NoFrame)
+        self.page_scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.page_scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.page_scroll_area.setStyleSheet("QScrollArea { background: transparent; border: none; }")
+        self.page_scroll_area.viewport().setAutoFillBackground(False)
+
+        scroll_content = QWidget()
+        scroll_content.setObjectName("SettingsScrollContent")
+        scroll_content.setStyleSheet("QWidget#SettingsScrollContent { background: transparent; }")
+        content_row = QHBoxLayout(scroll_content)
+        content_row.setContentsMargins(0, 0, 0, 0)
+        content_row.addStretch(1)
+
+        self.settings_shell = QWidget()
+        self.settings_shell.setMaximumWidth(1200)
+        self.settings_shell.setMinimumWidth(900)
+        self.settings_shell.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.settings_shell.setStyleSheet("QWidget#SettingsShell { background: transparent; }")
+        self.settings_shell.setObjectName("SettingsShell")
+        shell_layout = QVBoxLayout(self.settings_shell)
+        shell_layout.setContentsMargins(0, 0, 0, 0)
+        shell_layout.setSpacing(10)
+
+        content_row.addWidget(self.settings_shell, 0)
+        content_row.addStretch(1)
+        self.page_scroll_area.setWidget(scroll_content)
+        main_layout.addWidget(self.page_scroll_area, 1)
+
+        self.setStyleSheet(
+            """
+            QWidget#MiSTerSettingsPage QGroupBox#SettingsCard {
+                background-color: palette(alternate-base);
+                border: 1px solid palette(button);
+                border-radius: 12px;
+                margin-top: 18px;
+                padding: 14px;
+                font-weight: 700;
+            }
+
+            QWidget#MiSTerSettingsPage QGroupBox#SettingsCard::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                left: 14px;
+                padding: 0px 7px;
+                background: transparent;
+                color: palette(highlight);
+            }
+            """
         )
-        self.info_label.setWordWrap(True)
-        self.info_label.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
-        main_layout.addWidget(self.info_label)
+
+        self.configuration_group = QGroupBox("Configuration")
+        self.configuration_group.setObjectName("SettingsCard")
+        configuration_layout = QVBoxLayout(self.configuration_group)
+        configuration_layout.setContentsMargins(14, 14, 14, 8)
+        configuration_layout.setSpacing(4)
 
         ini_row = QHBoxLayout()
         ini_row.setContentsMargins(0, 0, 0, 0)
@@ -394,7 +449,7 @@ class MiSTerSettingsTab(QWidget):
         ini_row.addWidget(self.refresh_ini_files_button)
         ini_row.addStretch()
 
-        main_layout.addLayout(ini_row)
+        configuration_layout.addLayout(ini_row)
 
         mode_row = QHBoxLayout()
         mode_row.setContentsMargins(0, 0, 0, 0)
@@ -416,20 +471,22 @@ class MiSTerSettingsTab(QWidget):
         mode_row.addWidget(self.advanced_mode_radio)
         mode_row.addStretch()
 
-        main_layout.addLayout(mode_row)
+        configuration_layout.addLayout(mode_row)
+        shell_layout.addWidget(self.configuration_group)
 
         self.notice_label = QLabel("")
         self.notice_label.setWordWrap(True)
         self.notice_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.notice_label.setStyleSheet("color: orange;")
         self.notice_label.hide()
-        main_layout.addWidget(self.notice_label)
+        shell_layout.addWidget(self.notice_label)
 
         self.easy_group = QGroupBox("Easy Mode")
+        self.easy_group.setObjectName("SettingsCard")
         easy_layout = QGridLayout()
-        easy_layout.setContentsMargins(12, 10, 12, 10)
-        easy_layout.setHorizontalSpacing(10)
-        easy_layout.setVerticalSpacing(8)
+        easy_layout.setContentsMargins(18, 22, 18, 18)
+        easy_layout.setHorizontalSpacing(12)
+        easy_layout.setVerticalSpacing(10)
 
         self.easy_hdmi_mode_combo = QComboBox()
         self.easy_hdmi_mode_combo.addItems([
@@ -538,55 +595,48 @@ class MiSTerSettingsTab(QWidget):
         ):
             self.disable_combo_value(combo, NOT_SET_VALUE)
 
-        easy_layout.addWidget(QLabel("HDMI Mode"), 0, 0)
-        easy_layout.addWidget(self.easy_hdmi_mode_combo, 0, 1)
-        easy_layout.addWidget(QLabel("Resolution"), 1, 0)
-        easy_layout.addWidget(self.easy_resolution_combo, 1, 1)
-        easy_layout.addWidget(QLabel("HDMI VSync Mode"), 2, 0)
-        easy_layout.addWidget(self.easy_scaling_combo, 2, 1)
-        easy_layout.addWidget(QLabel("HDMI Audio"), 3, 0)
-        easy_layout.addWidget(self.easy_hdmi_audio_combo, 3, 1)
-        easy_layout.addWidget(QLabel("HDR"), 4, 0)
-        easy_layout.addWidget(self.easy_hdr_combo, 4, 1)
-        easy_layout.addWidget(QLabel("HDMI Range"), 5, 0)
-        easy_layout.addWidget(self.easy_hdmi_limited_combo, 5, 1)
-        easy_layout.addWidget(QLabel("Analogue Output"), 6, 0)
-        easy_layout.addWidget(self.easy_analogue_combo, 6, 1)
-        easy_layout.addWidget(QLabel("MiSTer Logo"), 7, 0)
-        easy_layout.addWidget(self.easy_logo_combo, 7, 1)
-        easy_layout.addWidget(QLabel("Recents"), 8, 0)
-        easy_layout.addWidget(self.easy_recents_combo, 8, 1)
-        easy_layout.addWidget(QLabel("Font"), 9, 0)
-        easy_layout.addWidget(self.easy_font_combo, 9, 1)
-        easy_layout.addWidget(QLabel("AmigaVision Preset"), 10, 0)
-        easy_layout.addWidget(self.easy_amigavision_preset_combo, 10, 1)
-        easy_layout.addWidget(QLabel("Menu CRT Preset"), 11, 0)
-        easy_layout.addWidget(self.easy_menu_crt_preset_combo, 11, 1)
+        easy_fields = [
+            ("HDMI Mode", self.easy_hdmi_mode_combo),
+            ("Resolution", self.easy_resolution_combo),
+            ("HDMI VSync Mode", self.easy_scaling_combo),
+            ("HDMI Audio", self.easy_hdmi_audio_combo),
+            ("HDR", self.easy_hdr_combo),
+            ("HDMI Range", self.easy_hdmi_limited_combo),
+            ("Analogue Output", self.easy_analogue_combo),
+            ("MiSTer Logo", self.easy_logo_combo),
+            ("Recents", self.easy_recents_combo),
+            ("Font", self.easy_font_combo),
+            ("AmigaVision Preset", self.easy_amigavision_preset_combo),
+            ("Menu CRT Preset", self.easy_menu_crt_preset_combo),
+        ]
+        for index, (label_text, combo) in enumerate(easy_fields):
+            row = index % 6
+            column = 0 if index < 6 else 3
+            easy_layout.addWidget(QLabel(label_text), row, column)
+            easy_layout.addWidget(combo, row, column + 1)
 
         easy_layout.setColumnStretch(1, 1)
+        easy_layout.setColumnMinimumWidth(2, 28)
+        easy_layout.setColumnStretch(4, 1)
         self.easy_group.setLayout(easy_layout)
 
-        self.easy_scroll_area = QScrollArea()
-        self.easy_scroll_area.setWidgetResizable(True)
-        self.easy_scroll_area.setFrameShape(QScrollArea.Shape.NoFrame)
-        self.easy_scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.easy_scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        self.easy_scroll_area.setWidget(self.easy_group)
-        self.easy_scroll_area.setMinimumHeight(420)
-        self.easy_scroll_area.setSizePolicy(
+        self.easy_group.setSizePolicy(
             QSizePolicy.Policy.Expanding,
             QSizePolicy.Policy.Expanding,
         )
-
-        main_layout.addWidget(self.easy_scroll_area, stretch=1)
+        self.easy_group.setMinimumHeight(360)
+        shell_layout.addWidget(self.easy_group, stretch=1)
 
         self.advanced_group = QGroupBox("Advanced Mode")
+        self.advanced_group.setObjectName("SettingsCard")
         advanced_layout = QVBoxLayout()
-        advanced_layout.setContentsMargins(10, 10, 10, 10)
+        advanced_layout.setContentsMargins(16, 20, 16, 14)
 
         self.advanced_text = QTextEdit()
         self.advanced_text.setAcceptRichText(False)
-        self.advanced_text.setFontFamily("Consolas")
+        fixed_font = QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont)
+        self.advanced_text.setFont(fixed_font)
+        self.advanced_text.setTabStopDistance(QFontMetricsF(fixed_font).horizontalAdvance(" ") * 4)
         self.advanced_text.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
         self.advanced_text.setStyleSheet("")
         self.advanced_text.setMinimumHeight(0)
@@ -597,7 +647,13 @@ class MiSTerSettingsTab(QWidget):
 
         advanced_layout.addWidget(self.advanced_text)
         self.advanced_group.setLayout(advanced_layout)
-        main_layout.addWidget(self.advanced_group, stretch=1)
+        shell_layout.addWidget(self.advanced_group, stretch=1)
+
+        self.actions_group = QGroupBox("Actions")
+        self.actions_group.setObjectName("SettingsCard")
+        actions_layout = QVBoxLayout(self.actions_group)
+        actions_layout.setContentsMargins(14, 14, 14, 8)
+        actions_layout.setSpacing(5)
 
         button_row = QHBoxLayout()
         button_row.addStretch()
@@ -611,9 +667,8 @@ class MiSTerSettingsTab(QWidget):
         button_row.addWidget(self.backup_button)
         button_row.addWidget(self.restore_button)
         button_row.addWidget(self.defaults_button)
-
         button_row.addStretch()
-        main_layout.addLayout(button_row)
+        actions_layout.addLayout(button_row)
 
         retention_row = QHBoxLayout()
         retention_row.addStretch()
@@ -622,15 +677,15 @@ class MiSTerSettingsTab(QWidget):
         self.retention_spin = QSpinBox()
         self.retention_spin.setRange(1, 100)
         self.retention_spin.setValue(self.config_data.get("mister_settings_retention", 10))
-
         self.open_backup_folder_button = QPushButton("Open Backup Folder")
 
         retention_row.addWidget(self.retention_label)
         retention_row.addWidget(self.retention_spin)
         retention_row.addWidget(self.open_backup_folder_button)
         retention_row.addStretch()
-
-        main_layout.addLayout(retention_row)
+        actions_layout.addLayout(retention_row)
+        self.actions_group.setMaximumHeight(150)
+        shell_layout.addWidget(self.actions_group)
 
         self.ini_file_combo.currentTextChanged.connect(self.on_ini_file_selected)
         self.refresh_ini_files_button.clicked.connect(self.handle_refresh_ini_file_list)
@@ -1127,7 +1182,6 @@ class MiSTerSettingsTab(QWidget):
         self.defaults_button.setEnabled(self.ini_file_combo.count() > 0)
         self.retention_spin.setEnabled(True)
         self.open_backup_folder_button.setEnabled(True)
-        self.info_label.setStyleSheet("")
         self.retention_label.setStyleSheet("")
         self.set_mister_settings_enabled(self.ini_file_combo.count() > 0)
 
@@ -1145,7 +1199,6 @@ class MiSTerSettingsTab(QWidget):
         self.defaults_button.setEnabled(has_sd and has_ini)
         self.retention_spin.setEnabled(True)
         self.open_backup_folder_button.setEnabled(True)
-        self.info_label.setStyleSheet("")
         self.retention_label.setStyleSheet("")
 
         if has_sd:
@@ -1171,7 +1224,6 @@ class MiSTerSettingsTab(QWidget):
         self.defaults_button.setEnabled(False)
         self.retention_spin.setEnabled(False)
         self.open_backup_folder_button.setEnabled(False)
-        self.info_label.setStyleSheet("")
         self.retention_label.setStyleSheet("")
         self.set_notice("")
         self.cached_font_list = None
@@ -1432,11 +1484,11 @@ class MiSTerSettingsTab(QWidget):
 
         if self.easy_mode_radio.isChecked():
             self.advanced_text.setMinimumHeight(0)
-            self.easy_scroll_area.show()
+            self.easy_group.show()
             self.advanced_group.hide()
         else:
             self.advanced_text.setMinimumHeight(420)
-            self.easy_scroll_area.hide()
+            self.easy_group.hide()
             self.advanced_group.show()
 
         self.set_mister_settings_enabled(enabled)

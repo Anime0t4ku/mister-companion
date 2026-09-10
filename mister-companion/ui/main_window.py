@@ -152,6 +152,13 @@ class MainWindow(QMainWindow):
         self._closing = False
         self._tab_refresh_generation = 0
 
+        self.setWindowFlags(
+            Qt.WindowType.Window
+            | Qt.WindowType.WindowSystemMenuHint
+            | Qt.WindowType.WindowMinimizeButtonHint
+            | Qt.WindowType.WindowMaximizeButtonHint
+            | Qt.WindowType.WindowCloseButtonHint
+        )
         self.setMinimumSize(1100, 830)
 
         self.setWindowTitle(f"{APP_NAME} {APP_VERSION}")
@@ -221,7 +228,6 @@ class MainWindow(QMainWindow):
         content_layout.addLayout(bottom_bar)
 
         self.setCentralWidget(central_widget)
-        self._enable_button_hover_tracking()
         self.app.installEventFilter(self)
 
         self.set_connection_status("Status: Disconnected")
@@ -589,11 +595,6 @@ class MainWindow(QMainWindow):
             button.setMinimumHeight(s(28))
 
 
-    def _enable_button_hover_tracking(self):
-        for button in self.findChildren(QPushButton):
-            button.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
-            button.setMouseTracking(True)
-
     def changeEvent(self, event):
         if event.type() == QEvent.Type.ActivationChange:
             if hasattr(self, "remote_tab"):
@@ -602,10 +603,6 @@ class MainWindow(QMainWindow):
         super().changeEvent(event)
 
     def eventFilter(self, obj, event):
-        if isinstance(obj, QPushButton) and event.type() in {QEvent.Type.Polish, QEvent.Type.Show}:
-            obj.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
-            obj.setMouseTracking(True)
-
         if self._closing:
             return super().eventFilter(obj, event)
 

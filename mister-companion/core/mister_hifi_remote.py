@@ -96,7 +96,7 @@ class HiFiWebSocketListener:
         self._ws = None
         if ws is not None:
             try:
-                ws.close()
+                ws.abort()
             except Exception:
                 pass
 
