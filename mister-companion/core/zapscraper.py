@@ -936,9 +936,12 @@ def scan_games_folder(
         if callable(stop_checker) and stop_checker():
             break
 
-        games_folder = str(info.get("games_folder") or folder_name)
-        system_path = games_root / games_folder
         label = info.get("label", folder_name)
+        configured_folders = info.get("games_folders")
+        if isinstance(configured_folders, (list, tuple)) and configured_folders:
+            games_folders = [str(name) for name in configured_folders if str(name).strip()]
+        else:
+            games_folders = [str(info.get("games_folder") or folder_name)]
 
         if callable(progress_callback):
             progress_callback(
@@ -948,64 +951,76 @@ def scan_games_folder(
                 total_games_found,
             )
 
-        if not system_path.exists() or not system_path.is_dir():
-            continue
+        existing_folders = [
+            games_folder
+            for games_folder in games_folders
+            if (games_root / games_folder).exists() and (games_root / games_folder).is_dir()
+        ]
 
-        completed_checker = None
+        for games_folder in existing_folders:
+            if callable(stop_checker) and stop_checker():
+                break
 
-        if fast_skip_completed:
-            completed_checker = _make_completed_scrape_checker(
-                system_path=system_path,
-                system_folder=folder_name,
+            system_path = games_root / games_folder
+            completed_checker = None
+
+            if fast_skip_completed:
+                completed_checker = _make_completed_scrape_checker(
+                    system_path=system_path,
+                    system_folder=folder_name,
+                    system_label=label,
+                    screenscraper_system_id=int(info.get("screenscraper_id", 0)),
+                    image_source_name=image_source_name,
+                    skip_existing_metadata=skip_existing_metadata,
+                    skip_existing_images=skip_existing_images,
+                    skip_games_with_metadata_ignore_incomplete_media=skip_games_with_metadata_ignore_incomplete_media,
+                    update_changed_images=update_changed_images,
+                    output_format=output_format,
+                    zaparoo_media_source_names=zaparoo_media_source_names,
+                    crt_mode=crt_mode,
+                )
+
+            roms = scan_system_folder(
+                system_path,
+                folder_name,
+                progress_callback=progress_callback,
+                stop_checker=stop_checker,
+                system_index=system_index,
+                system_total=len(supported_items),
+                games_found_before=total_games_found,
                 system_label=label,
-                screenscraper_system_id=int(info.get("screenscraper_id", 0)),
-                image_source_name=image_source_name,
-                skip_existing_metadata=skip_existing_metadata,
-                skip_existing_images=skip_existing_images,
-                skip_games_with_metadata_ignore_incomplete_media=skip_games_with_metadata_ignore_incomplete_media,
-                update_changed_images=update_changed_images,
-                output_format=output_format,
-                zaparoo_media_source_names=zaparoo_media_source_names,
-                crt_mode=crt_mode,
+                completed_checker=completed_checker,
             )
 
-        roms = scan_system_folder(
-            system_path,
-            folder_name,
-            progress_callback=progress_callback,
-            stop_checker=stop_checker,
-            system_index=system_index,
-            system_total=len(supported_items),
-            games_found_before=total_games_found,
-            system_label=label,
-            completed_checker=completed_checker,
-        )
+            if callable(stop_checker) and stop_checker():
+                break
+
+            if not roms:
+                continue
+
+            total_games_found += len(roms)
+            result_label = label if len(existing_folders) == 1 else f"{label} ({games_folder})"
+
+            if callable(progress_callback):
+                progress_callback(
+                    f"Found {len(roms)} games in {result_label}.",
+                    system_index,
+                    len(supported_items),
+                    total_games_found,
+                )
+
+            systems.append(
+                ZapScraperSystem(
+                    folder=folder_name,
+                    label=result_label,
+                    path=system_path,
+                    screenscraper_id=int(info.get("screenscraper_id", 0)),
+                    roms=roms,
+                )
+            )
 
         if callable(stop_checker) and stop_checker():
             break
-
-        if not roms:
-            continue
-
-        total_games_found += len(roms)
-
-        if callable(progress_callback):
-            progress_callback(
-                f"Found {len(roms)} games in {label}.",
-                system_index,
-                len(supported_items),
-                total_games_found,
-            )
-
-        systems.append(
-            ZapScraperSystem(
-                folder=folder_name,
-                label=label,
-                path=system_path,
-                screenscraper_id=int(info.get("screenscraper_id", 0)),
-                roms=roms,
-            )
-        )
 
     if callable(progress_callback):
         progress_callback(

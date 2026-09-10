@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import (
     QFileDialog,
     QGridLayout,
     QGroupBox,
+    QInputDialog,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -1709,13 +1710,33 @@ class ZapScraperTab(QWidget):
         self.systems = systems or []
         self.systems_list.clear()
 
+        grouped = {}
+        order = []
         for system in self.systems:
-            count = int(system.get("count", 0))
-            text = f'{system.get("label", system.get("folder", "Unknown"))}    {count} games'
+            key = str(system.get("folder") or system.get("label") or system.get("path") or "")
+            if key not in grouped:
+                grouped[key] = []
+                order.append(key)
+            grouped[key].append(system)
+
+        for key in order:
+            source_systems = grouped[key]
+            first = source_systems[0]
+            count = sum(int(system.get("count", 0)) for system in source_systems)
+            label = first.get("label", first.get("folder", "Unknown"))
+            if " (" in label and len(source_systems) > 1:
+                label = label.split(" (", 1)[0]
+            display_system = first if len(source_systems) == 1 else {
+                "folder": first.get("folder"),
+                "label": label,
+                "count": count,
+                "_source_systems": source_systems,
+            }
+            text = f"{label}    {count} games"
             item = QListWidgetItem(text)
             item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
             item.setCheckState(Qt.CheckState.Checked)
-            item.setData(Qt.ItemDataRole.UserRole, system)
+            item.setData(Qt.ItemDataRole.UserRole, display_system)
             self.systems_list.addItem(item)
 
         if self.systems_list.count() > 0:
@@ -2248,6 +2269,22 @@ class ZapScraperTab(QWidget):
         if item is not None:
             system = item.data(Qt.ItemDataRole.UserRole)
             if isinstance(system, dict):
+                source_systems = system.get("_source_systems")
+                if isinstance(source_systems, list) and source_systems:
+                    if len(source_systems) == 1:
+                        return source_systems[0]
+                    choices = [Path(source.get("path", "")).name or str(source.get("path", "")) for source in source_systems]
+                    choice, ok = QInputDialog.getItem(
+                        self,
+                        "Review Gamelist",
+                        "Source folder:",
+                        choices,
+                        0,
+                        False,
+                    )
+                    if ok and choice in choices:
+                        return source_systems[choices.index(choice)]
+                    return None
                 return system
 
         selected = self.selected_systems()
@@ -2293,8 +2330,13 @@ class ZapScraperTab(QWidget):
 
         for index in range(self.systems_list.count()):
             item = self.systems_list.item(index)
-            if item.checkState() == Qt.CheckState.Checked:
-                selected.append(item.data(Qt.ItemDataRole.UserRole))
+            if item.checkState() != Qt.CheckState.Checked:
+                continue
+            system = item.data(Qt.ItemDataRole.UserRole)
+            if isinstance(system, dict) and isinstance(system.get("_source_systems"), list):
+                selected.extend(system["_source_systems"])
+            else:
+                selected.append(system)
 
         return selected
 
