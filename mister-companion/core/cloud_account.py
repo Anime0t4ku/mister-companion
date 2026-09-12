@@ -1760,6 +1760,7 @@ class CloudAccountClient:
         if not isinstance(session, dict):
             raise CloudApiError(500, result, "The server did not return a refreshed session.")
         self.store_session(session)
+        save_config(self.config_data)
 
     def _request(
         self,
