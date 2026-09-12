@@ -1,5 +1,6 @@
 import json
 import re
+import uuid
 from pathlib import Path
 
 from core.app_paths import generated_path
@@ -15,6 +16,8 @@ JSON_PATH = "/media/fat/Scripts/.config/update_all/update_all.json"
 ARCADE_ORGANIZER_INI_PATH = "/media/fat/Scripts/update_arcade-organizer.ini"
 CUSTOM_SOURCES_INI_PATH = "/media/fat/downloader_custom_sources.ini"
 CUSTOM_SOURCES_METADATA_PATH = generated_path("update_all_extra_sources.json")
+CUSTOM_SOURCES_PENDING_DELETIONS_PATH = generated_path("update_all_extra_sources_pending_deletions.json")
+CUSTOM_SOURCE_SYNC_ID_KEY = "_cloud_id"
 
 ZAPAROO_SECTION = "ZaparooProject/Zaparoo_MiSTer"
 ZAPAROO_DB_URL = "https://raw.githubusercontent.com/ZaparooProject/Zaparoo_MiSTer/db/db.json.zip"
@@ -55,7 +58,22 @@ MISTER_HIFI_DB_URL = "https://raw.githubusercontent.com/theypsilon/MultiDatabase
 MISTERFIN_SECTION = "MultiDatabases/misterfin"
 MISTERFIN_DB_URL = "https://raw.githubusercontent.com/theypsilon/MultiDatabases_MiSTer/db/misterfin/db.json.zip"
 
+MALDITA_CASTILLA_SECTION = "MultiDatabases/maldita-castilla"
+MALDITA_CASTILLA_DB_URL = "https://raw.githubusercontent.com/theypsilon/MultiDatabases_MiSTer/db/maldita-castilla/db.json"
+NBLOOD_SECTION = "MultiDatabases/nblood"
+NBLOOD_DB_URL = "https://raw.githubusercontent.com/theypsilon/MultiDatabases_MiSTer/db/nblood/db.json"
+
+DEGAUSS_SECTION = "degauss"
+DEGAUSS_DB_URL = "https://github.com/giancarloerra/Degauss/releases/latest/download/degauss.json.zip"
+MISTER_MONITOR_SECTION = "chipster6502/MiSTer_monitor_DB"
+MISTER_MONITOR_DB_URL = "https://raw.githubusercontent.com/chipster6502/MiSTer_monitor_DB/db/db.json.zip"
+DISC_TOOLS_SECTION = "MultiDatabases/disc-tools"
+DISC_TOOLS_DB_URL = "https://raw.githubusercontent.com/theypsilon/MultiDatabases_MiSTer/db/disc-tools/db.json"
+MISTER_DVD_SECTION = "MultiDatabases/mister-dvd"
+MISTER_DVD_DB_URL = "https://raw.githubusercontent.com/theypsilon/MultiDatabases_MiSTer/db/mister-dvd/db.json"
+
 MANUALSDB_PATH = "/media/fat/downloader_ajgowans_manualsdb.ini"
+ARTWORKDB_PATH = "/media/fat/downloader_chipster6502_artworkdb.ini"
 
 MISTER_FRONTIER_FILTERS = {
     "All Frontier Cores": "",
@@ -124,6 +142,50 @@ MANUALSDB_SOURCES = [
 
 MANUALSDB_IDS = [source_id for source_id, _label in MANUALSDB_SOURCES]
 
+ARTWORKDB_SOURCES = [
+    ("chipster6502/artworkdb-3do", "3DO", "https://raw.githubusercontent.com/chipster6502/artworkdb-misc/db/3do_box2d.json.zip"),
+    ("chipster6502/artworkdb-amigacd32", "Amiga CD32", "https://raw.githubusercontent.com/chipster6502/artworkdb-misc/db/amigacd32_box2d.json.zip"),
+    ("chipster6502/artworkdb-arcade", "Arcade", "https://raw.githubusercontent.com/chipster6502/artworkdb-arcade/db/arcade_box2d.json.zip"),
+    ("chipster6502/artworkdb-atari2600", "Atari 2600", "https://raw.githubusercontent.com/chipster6502/artworkdb-atari/db/atari2600_box2d.json.zip"),
+    ("chipster6502/artworkdb-atari5200", "Atari 5200", "https://raw.githubusercontent.com/chipster6502/artworkdb-atari/db/atari5200_box2d.json.zip"),
+    ("chipster6502/artworkdb-atari7800", "Atari 7800", "https://raw.githubusercontent.com/chipster6502/artworkdb-atari/db/atari7800_box2d.json.zip"),
+    ("chipster6502/artworkdb-atarilynx", "Atari Lynx", "https://raw.githubusercontent.com/chipster6502/artworkdb-atari/db/atarilynx_box2d.json.zip"),
+    ("chipster6502/artworkdb-cd-i", "CD-i", "https://raw.githubusercontent.com/chipster6502/artworkdb-misc/db/cd-i_box2d.json.zip"),
+    ("chipster6502/artworkdb-coleco", "Coleco", "https://raw.githubusercontent.com/chipster6502/artworkdb-misc/db/coleco_box2d.json.zip"),
+    ("chipster6502/artworkdb-fds", "Famicom Disk System", "https://raw.githubusercontent.com/chipster6502/artworkdb-nintendo-consoles/db/fds_box2d.json.zip"),
+    ("chipster6502/artworkdb-gameboy", "Game Boy", "https://raw.githubusercontent.com/chipster6502/artworkdb-nintendo-handhelds/db/gameboy_box2d.json.zip"),
+    ("chipster6502/artworkdb-gba", "Game Boy Advance", "https://raw.githubusercontent.com/chipster6502/artworkdb-nintendo-handhelds/db/gba_box2d.json.zip"),
+    ("chipster6502/artworkdb-gbc", "Game Boy Color", "https://raw.githubusercontent.com/chipster6502/artworkdb-nintendo-handhelds/db/gbc_box2d.json.zip"),
+    ("chipster6502/artworkdb-gamegear", "Game Gear", "https://raw.githubusercontent.com/chipster6502/artworkdb-sega/db/gamegear_box2d.json.zip"),
+    ("chipster6502/artworkdb-genesis", "Genesis", "https://raw.githubusercontent.com/chipster6502/artworkdb-sega/db/genesis_box2d.json.zip"),
+    ("chipster6502/artworkdb-intellivision", "Intellivision", "https://raw.githubusercontent.com/chipster6502/artworkdb-misc/db/intellivision_box2d.json.zip"),
+    ("chipster6502/artworkdb-jaguar", "Jaguar", "https://raw.githubusercontent.com/chipster6502/artworkdb-atari/db/jaguar_box2d.json.zip"),
+    ("chipster6502/artworkdb-megacd", "Mega CD", "https://raw.githubusercontent.com/chipster6502/artworkdb-sega/db/megacd_box2d.json.zip"),
+    ("chipster6502/artworkdb-n64", "Nintendo 64", "https://raw.githubusercontent.com/chipster6502/artworkdb-nintendo-consoles/db/n64_box2d.json.zip"),
+    ("chipster6502/artworkdb-neogeo", "Neo Geo", "https://raw.githubusercontent.com/chipster6502/artworkdb-snk/db/neogeo_box2d.json.zip"),
+    ("chipster6502/artworkdb-neogeo-cd", "Neo Geo CD", "https://raw.githubusercontent.com/chipster6502/artworkdb-snk/db/neogeo-cd_box2d.json.zip"),
+    ("chipster6502/artworkdb-neogeopocket", "Neo Geo Pocket", "https://raw.githubusercontent.com/chipster6502/artworkdb-snk/db/neogeopocket_box2d.json.zip"),
+    ("chipster6502/artworkdb-neogeopocket-color", "Neo Geo Pocket Color", "https://raw.githubusercontent.com/chipster6502/artworkdb-snk/db/neogeopocket-color_box2d.json.zip"),
+    ("chipster6502/artworkdb-nes", "NES", "https://raw.githubusercontent.com/chipster6502/artworkdb-nintendo-consoles/db/nes_box2d.json.zip"),
+    ("chipster6502/artworkdb-odyssey2", "Odyssey 2", "https://raw.githubusercontent.com/chipster6502/artworkdb-misc/db/odyssey2_box2d.json.zip"),
+    ("chipster6502/artworkdb-psx", "PlayStation", "https://raw.githubusercontent.com/chipster6502/artworkdb-sony/db/psx_box2d.json.zip"),
+    ("chipster6502/artworkdb-satellaview", "Satellaview", "https://raw.githubusercontent.com/chipster6502/artworkdb-nintendo-consoles/db/satellaview_box2d.json.zip"),
+    ("chipster6502/artworkdb-s32x", "Sega 32X", "https://raw.githubusercontent.com/chipster6502/artworkdb-sega/db/s32x_box2d.json.zip"),
+    ("chipster6502/artworkdb-sg-1000", "SG-1000", "https://raw.githubusercontent.com/chipster6502/artworkdb-sega/db/sg-1000_box2d.json.zip"),
+    ("chipster6502/artworkdb-sms", "Master System", "https://raw.githubusercontent.com/chipster6502/artworkdb-sega/db/sms_box2d.json.zip"),
+    ("chipster6502/artworkdb-snes", "SNES", "https://raw.githubusercontent.com/chipster6502/artworkdb-nintendo-consoles/db/snes_box2d.json.zip"),
+    ("chipster6502/artworkdb-saturn", "Saturn", "https://raw.githubusercontent.com/chipster6502/artworkdb-sega/db/saturn_box2d.json.zip"),
+    ("chipster6502/artworkdb-supergrafx", "SuperGrafx", "https://raw.githubusercontent.com/chipster6502/artworkdb-nec/db/supergrafx_box2d.json.zip"),
+    ("chipster6502/artworkdb-tgfx16", "TurboGrafx-16", "https://raw.githubusercontent.com/chipster6502/artworkdb-nec/db/tgfx16_box2d.json.zip"),
+    ("chipster6502/artworkdb-tgfx16-cd", "TurboGrafx-CD", "https://raw.githubusercontent.com/chipster6502/artworkdb-nec/db/tgfx16-cd_box2d.json.zip"),
+    ("chipster6502/artworkdb-vectrex", "Vectrex", "https://raw.githubusercontent.com/chipster6502/artworkdb-misc/db/vectrex_box2d.json.zip"),
+    ("chipster6502/artworkdb-virtualboy", "Virtual Boy", "https://raw.githubusercontent.com/chipster6502/artworkdb-nintendo-consoles/db/virtualboy_box2d.json.zip"),
+    ("chipster6502/artworkdb-wonderswan", "WonderSwan", "https://raw.githubusercontent.com/chipster6502/artworkdb-misc/db/wonderswan_box2d.json.zip"),
+    ("chipster6502/artworkdb-wonderswancolor", "WonderSwan Color", "https://raw.githubusercontent.com/chipster6502/artworkdb-misc/db/wonderswancolor_box2d.json.zip"),
+]
+
+ARTWORKDB_IDS = [source_id for source_id, _label, _url in ARTWORKDB_SOURCES]
+
 
 def split_downloader_paths():
     return {
@@ -131,6 +193,7 @@ def split_downloader_paths():
         "arcade": "/media/fat/downloader_arcade_roms_db.ini",
         "bios": "/media/fat/downloader_bios_db.ini",
         "manualsdb": MANUALSDB_PATH,
+        "artworkdb": ARTWORKDB_PATH,
     }
 
 
@@ -224,6 +287,107 @@ def write_custom_sources_metadata(text):
     elif CUSTOM_SOURCES_METADATA_PATH.exists():
         CUSTOM_SOURCES_METADATA_PATH.unlink()
 
+
+def read_custom_source_sync_entries():
+    try:
+        raw = json.loads(read_custom_sources_metadata() or "[]")
+    except Exception:
+        raw = []
+    if not isinstance(raw, list):
+        return []
+
+    entries = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        try:
+            database_id = normalize_database_id(item.get("database_id", ""))
+        except ValueError:
+            continue
+        entry = {
+            "display_name": str(item.get("display_name") or database_id[1:-1]).strip(),
+            "database_id": database_id,
+            "db_url": str(item.get("db_url") or "").strip(),
+            "ini_block": str(item.get("ini_block") or "").rstrip("\r\n"),
+        }
+        sync_id = str(item.get(CUSTOM_SOURCE_SYNC_ID_KEY) or "").strip().lower()
+        try:
+            if str(uuid.UUID(sync_id)) == sync_id and uuid.UUID(sync_id).version == 4:
+                entry[CUSTOM_SOURCE_SYNC_ID_KEY] = sync_id
+        except Exception:
+            pass
+        entries.append(entry)
+    return entries
+
+
+def write_custom_source_sync_entries(entries):
+    payload = []
+    for source in entries or []:
+        if not isinstance(source, dict):
+            continue
+        try:
+            database_id = normalize_database_id(source.get("database_id", ""))
+        except ValueError:
+            continue
+        block = _replace_custom_source_header_and_url(source)
+        item = {
+            "display_name": str(source.get("display_name") or database_id[1:-1]).strip(),
+            "database_id": database_id,
+            "db_url": str(source.get("db_url") or "").strip(),
+            "ini_block": block,
+        }
+        sync_id = str(source.get(CUSTOM_SOURCE_SYNC_ID_KEY) or "").strip().lower()
+        try:
+            if str(uuid.UUID(sync_id)) == sync_id and uuid.UUID(sync_id).version == 4:
+                item[CUSTOM_SOURCE_SYNC_ID_KEY] = sync_id
+        except Exception:
+            pass
+        payload.append(item)
+    write_custom_sources_metadata(json.dumps(payload, indent=4) + "\n" if payload else "")
+
+
+
+
+def read_custom_source_pending_deletions():
+    try:
+        raw = json.loads(CUSTOM_SOURCES_PENDING_DELETIONS_PATH.read_text(encoding="utf-8", errors="ignore") or "[]")
+    except Exception:
+        return []
+    if not isinstance(raw, list):
+        return []
+    result = []
+    for value in raw:
+        item_id = str(value or "").strip().lower()
+        try:
+            item_id = str(uuid.UUID(item_id))
+        except Exception:
+            continue
+        if item_id not in result:
+            result.append(item_id)
+    return result
+
+
+def queue_custom_source_pending_deletions(item_ids):
+    pending = set(read_custom_source_pending_deletions())
+    for value in item_ids or []:
+        item_id = str(value or "").strip().lower()
+        try:
+            item_id = str(uuid.UUID(item_id))
+        except Exception:
+            continue
+        pending.add(item_id)
+    if pending:
+        CUSTOM_SOURCES_PENDING_DELETIONS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        CUSTOM_SOURCES_PENDING_DELETIONS_PATH.write_text(
+            json.dumps(sorted(pending), indent=2) + "\n", encoding="utf-8"
+        )
+
+
+def clear_custom_source_pending_deletions():
+    try:
+        CUSTOM_SOURCES_PENDING_DELETIONS_PATH.unlink()
+    except FileNotFoundError:
+        pass
 
 def normalize_database_id(database_id):
     value = str(database_id or "").strip()
@@ -327,6 +491,12 @@ def _load_custom_sources_data(ini_text, metadata_text):
             "ini_block": str(item.get("ini_block") or "").rstrip("\r\n"),
             "enabled": False,
         }
+        sync_id = str(item.get(CUSTOM_SOURCE_SYNC_ID_KEY) or "").strip().lower()
+        try:
+            if str(uuid.UUID(sync_id)) == sync_id and uuid.UUID(sync_id).version == 4:
+                source[CUSTOM_SOURCE_SYNC_ID_KEY] = sync_id
+        except Exception:
+            pass
         sources.append(source)
         by_id[database_id.lower()] = source
 
@@ -397,6 +567,12 @@ def _prepare_custom_sources_files(config):
             "db_url": str(source.get("db_url") or "").strip(),
             "ini_block": block,
         }
+        sync_id = str(source.get(CUSTOM_SOURCE_SYNC_ID_KEY) or "").strip().lower()
+        try:
+            if str(uuid.UUID(sync_id)) == sync_id and uuid.UUID(sync_id).version == 4:
+                item[CUSTOM_SOURCE_SYNC_ID_KEY] = sync_id
+        except Exception:
+            pass
         metadata.append(item)
         if source.get("enabled", False):
             enabled_blocks.append(block)
@@ -417,6 +593,7 @@ def read_downloader_files(sftp):
         "arcade": read_remote_text(sftp, paths["arcade"], ""),
         "bios": read_remote_text(sftp, paths["bios"], ""),
         "manualsdb": read_remote_text(sftp, paths["manualsdb"], ""),
+        "artworkdb": read_remote_text(sftp, paths["artworkdb"], ""),
     }
 
 
@@ -427,6 +604,7 @@ def read_downloader_files_local(sd_root):
         "arcade": read_local_text(sd_root, paths["arcade"], ""),
         "bios": read_local_text(sd_root, paths["bios"], ""),
         "manualsdb": read_local_text(sd_root, paths["manualsdb"], ""),
+        "artworkdb": read_local_text(sd_root, paths["artworkdb"], ""),
     }
 
 
@@ -549,6 +727,47 @@ def normalize_manualsdb_selected(selected_ids):
     return selected
 
 
+def build_artworkdb_ini(selected_ids):
+    selected = normalize_artworkdb_selected(selected_ids)
+    sources_by_id = {
+        source_id: url
+        for source_id, _label, url in ARTWORKDB_SOURCES
+    }
+    lines = []
+
+    for source_id in selected:
+        if lines:
+            lines.append("")
+
+        lines += [
+            f"[{source_id}]",
+            f"db_url = {sources_by_id[source_id]}",
+        ]
+
+    if not lines:
+        return ""
+
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def parse_artworkdb_ini(text):
+    return [
+        source_id
+        for source_id in ARTWORKDB_IDS
+        if section_enabled_in_text(text, source_id)
+    ]
+
+
+def normalize_artworkdb_selected(selected_ids):
+    selected = []
+
+    for source_id in selected_ids or []:
+        if source_id in ARTWORKDB_IDS and source_id not in selected:
+            selected.append(source_id)
+
+    return selected
+
+
 def ensure_split_downloader_configs(sftp):
     paths = split_downloader_paths()
 
@@ -631,12 +850,20 @@ def ensure_split_downloader_configs_local(sd_root):
         write_local_text(sd_root, paths["bios"], "\n".join(bios_lines).rstrip() + "\n")
 
 
-def _build_config_data(ini_data, json_data, arcade_org_ini, manualsdb_ini="", mister_ini=""):
+def _build_config_data(
+    ini_data,
+    json_data,
+    arcade_org_ini,
+    manualsdb_ini="",
+    artworkdb_ini="",
+    mister_ini="",
+):
     def is_enabled(section):
         return section_enabled_in_text(ini_data, section)
 
     arcade_org_ini_enabled = "ARCADE_ORGANIZER=true" in arcade_org_ini
     manualsdb_selected = parse_manualsdb_ini(manualsdb_ini)
+    artworkdb_selected = parse_artworkdb_ini(artworkdb_ini)
 
     data = {
         "main_cores": is_enabled("distribution_mister"),
@@ -680,6 +907,13 @@ def _build_config_data(ini_data, json_data, arcade_org_ini, manualsdb_ini="", mi
         "test_suite_240p": is_enabled(TEST_SUITE_240P_SECTION),
         "mister_hifi": is_enabled(MISTER_HIFI_SECTION),
         "misterfin": is_enabled(MISTERFIN_SECTION),
+        "degauss": is_enabled(DEGAUSS_SECTION),
+        "mister_monitor": is_enabled(MISTER_MONITOR_SECTION),
+        "disc_tools": is_enabled(DISC_TOOLS_SECTION),
+        "mister_dvd": is_enabled(MISTER_DVD_SECTION),
+
+        "maldita_castilla": is_enabled(MALDITA_CASTILLA_SECTION),
+        "nblood": is_enabled(NBLOOD_SECTION),
 
         "bios": is_enabled("bios_db"),
         "arcade_roms": is_enabled("arcade_roms_db"),
@@ -690,6 +924,8 @@ def _build_config_data(ini_data, json_data, arcade_org_ini, manualsdb_ini="", mi
         "anime0t4ku_mister_scripts": is_enabled("anime0t4ku_mister_scripts"),
         "manualsdb": bool(manualsdb_selected),
         "manualsdb_selected": manualsdb_selected,
+        "artworkdb": bool(artworkdb_selected),
+        "artworkdb_selected": artworkdb_selected,
 
         "ranny_wallpapers": is_enabled("Ranny-Snice/Ranny-Snice-Wallpapers"),
         "ranny_wallpapers_source": "All Wallpapers",
@@ -749,6 +985,7 @@ def load_update_all_config(connection):
             json_data,
             arcade_org_ini,
             files["manualsdb"],
+            files["artworkdb"],
             mister_ini,
         )
         data["custom_sources"], data["custom_sources_unmanaged_text"] = (
@@ -785,6 +1022,7 @@ def load_update_all_config_local(sd_root):
         json_data,
         arcade_org_ini,
         files["manualsdb"],
+        files["artworkdb"],
         mister_ini,
     )
     data["custom_sources"], data["custom_sources_unmanaged_text"] = (
@@ -983,6 +1221,8 @@ def _prepare_config_lines_and_json(config, main_lines, arcade_lines, bios_lines,
         (QUAKE_SECTION, "mister_quake", QUAKE_DB_URL),
         (SOLARUS_SECTION, "solarus_mister", SOLARUS_DB_URL),
         (THREE_S_ARM_SECTION, "three_s_arm", THREE_S_ARM_DB_URL),
+        (MALDITA_CASTILLA_SECTION, "maldita_castilla", MALDITA_CASTILLA_DB_URL),
+        (NBLOOD_SECTION, "nblood", NBLOOD_DB_URL),
     ]:
         main_lines = handle_simple_section(
             section,
@@ -1074,6 +1314,10 @@ def _prepare_config_lines_and_json(config, main_lines, arcade_lines, bios_lines,
         (TEST_SUITE_240P_SECTION, "test_suite_240p", TEST_SUITE_240P_DB_URL),
         (MISTER_HIFI_SECTION, "mister_hifi", MISTER_HIFI_DB_URL),
         (MISTERFIN_SECTION, "misterfin", MISTERFIN_DB_URL),
+        (DEGAUSS_SECTION, "degauss", DEGAUSS_DB_URL),
+        (MISTER_MONITOR_SECTION, "mister_monitor", MISTER_MONITOR_DB_URL),
+        (DISC_TOOLS_SECTION, "disc_tools", DISC_TOOLS_DB_URL),
+        (MISTER_DVD_SECTION, "mister_dvd", MISTER_DVD_DB_URL),
     ]:
         main_lines = handle_simple_section(
             section,
@@ -1213,6 +1457,18 @@ def _prepare_manualsdb_ini(config):
     return build_manualsdb_ini(selected)
 
 
+def _prepare_artworkdb_ini(config):
+    if not config.get("artworkdb", False):
+        return ""
+
+    selected = normalize_artworkdb_selected(config.get("artworkdb_selected", []))
+
+    if not selected:
+        selected = list(ARTWORKDB_IDS)
+
+    return build_artworkdb_ini(selected)
+
+
 def save_update_all_config(connection, config):
     sftp = connection.client.open_sftp()
     try:
@@ -1260,6 +1516,12 @@ def save_update_all_config(connection, config):
             write_remote_text(sftp, paths["manualsdb"], manualsdb_ini)
         else:
             remove_remote_file(sftp, paths["manualsdb"])
+
+        artworkdb_ini = _prepare_artworkdb_ini(config)
+        if artworkdb_ini:
+            write_remote_text(sftp, paths["artworkdb"], artworkdb_ini)
+        else:
+            remove_remote_file(sftp, paths["artworkdb"])
 
         custom_ini, custom_metadata = _prepare_custom_sources_files(config)
         if custom_ini:
@@ -1319,6 +1581,12 @@ def save_update_all_config_local(sd_root, config):
         write_local_text(sd_root, paths["manualsdb"], manualsdb_ini)
     else:
         remove_local_file(sd_root, paths["manualsdb"])
+
+    artworkdb_ini = _prepare_artworkdb_ini(config)
+    if artworkdb_ini:
+        write_local_text(sd_root, paths["artworkdb"], artworkdb_ini)
+    else:
+        remove_local_file(sd_root, paths["artworkdb"])
 
     custom_ini, custom_metadata = _prepare_custom_sources_files(config)
     if custom_ini:

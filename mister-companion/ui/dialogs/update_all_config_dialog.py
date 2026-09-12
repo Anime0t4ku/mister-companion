@@ -23,12 +23,15 @@ from core.retroaccount import (
     start_retroaccount_login,
 )
 from core.update_all_config import (
+    CUSTOM_SOURCE_SYNC_ID_KEY,
+    queue_custom_source_pending_deletions,
     load_update_all_config,
     load_update_all_config_local,
     save_update_all_config,
     save_update_all_config_local,
 )
 from ui.dialogs.manuals_db_config_dialog import ManualsDbConfigDialog
+from ui.dialogs.artwork_db_config_dialog import ArtworkDbConfigDialog
 from ui.dialogs.extra_sources_dialog import (
     ExtraSourceEditorDialog,
     ManageExtraSourcesDialog,
@@ -43,6 +46,7 @@ class UpdateAllConfigDialog(QDialog):
         self.offline_mode = bool(sd_root)
 
         self.manualsdb_selected = []
+        self.artworkdb_selected = []
         self.custom_sources = []
         self.custom_source_checks = []
         self.custom_sources_unmanaged_text = ""
@@ -216,6 +220,8 @@ class UpdateAllConfigDialog(QDialog):
         self.solarus_mister_check = QCheckBox("Solarus MiSTer")
         self.three_s_arm_check = QCheckBox("3S-ARM")
         self.mister_frontier_check = QCheckBox("MiSTer Frontier")
+        self.maldita_castilla_check = QCheckBox("Maldita Castilla MiSTer")
+        self.nblood_check = QCheckBox("NBlood")
 
         self.mister_frontier_source_combo = QComboBox()
         self.mister_frontier_source_combo.addItems([
@@ -236,6 +242,8 @@ class UpdateAllConfigDialog(QDialog):
             self.solarus_mister_check,
             self.three_s_arm_check,
             self.mister_frontier_check,
+            self.maldita_castilla_check,
+            self.nblood_check,
         ]:
             self._add(hybrid_group, widget)
 
@@ -260,6 +268,10 @@ class UpdateAllConfigDialog(QDialog):
         self.test_suite_240p_check = QCheckBox("240P Test Suites")
         self.mister_hifi_check = QCheckBox("MiSTer Hi-Fi")
         self.misterfin_check = QCheckBox("MiSTerFin")
+        self.degauss_check = QCheckBox("Degauss")
+        self.mister_monitor_check = QCheckBox("MiSTer Monitor")
+        self.disc_tools_check = QCheckBox("Disc Tools")
+        self.mister_dvd_check = QCheckBox("MiSTer DVD")
 
         for widget in [
             self.arcade_org_check,
@@ -273,10 +285,14 @@ class UpdateAllConfigDialog(QDialog):
             self._add(tools_group, widget)
 
         self._add(tools_group, self.zaparoo_frontend_check, indent=True)
+        self._add(tools_group, self.degauss_check)
         self._add(tools_group, self.anime0t4ku_mister_scripts_check)
         self._add(tools_group, self.test_suite_240p_check)
         self._add(tools_group, self.mister_hifi_check)
         self._add(tools_group, self.misterfin_check)
+        self._add(tools_group, self.mister_monitor_check)
+        self._add(tools_group, self.disc_tools_check)
+        self._add(tools_group, self.mister_dvd_check)
 
         extra_group = self._group("Extra Content", self.left_column_layout)
         self.bios_check = QCheckBox("BIOS Database")
@@ -288,6 +304,8 @@ class UpdateAllConfigDialog(QDialog):
         self.ranny_wallpapers_check = QCheckBox("Ranny Snice Wallpapers")
         self.manualsdb_check = QCheckBox("Game Manuals (EN) DB's")
         self.manualsdb_config_button = QPushButton("Configure")
+        self.artworkdb_check = QCheckBox("Game Artwork DB's")
+        self.artworkdb_config_button = QPushButton("Configure")
 
         self.ranny_wallpapers_source_combo = QComboBox()
         self.ranny_wallpapers_source_combo.addItems([
@@ -323,6 +341,15 @@ class UpdateAllConfigDialog(QDialog):
 
         self.manualsdb_check.toggled.connect(self.update_manualsdb_state)
         self.manualsdb_config_button.clicked.connect(self.on_manualsdb_configure)
+
+        artworkdb_row = QHBoxLayout()
+        artworkdb_row.addWidget(self.artworkdb_check)
+        artworkdb_row.addStretch()
+        artworkdb_row.addWidget(self.artworkdb_config_button)
+        extra_group.layout().addLayout(artworkdb_row)
+
+        self.artworkdb_check.toggled.connect(self.update_artworkdb_state)
+        self.artworkdb_config_button.clicked.connect(self.on_artworkdb_configure)
 
         retro_group = self._group("RetroAccount", self.right_column_layout)
         retro_group.setSizePolicy(
@@ -690,6 +717,9 @@ class UpdateAllConfigDialog(QDialog):
         enabled = self.manualsdb_check.isChecked()
         self.manualsdb_config_button.setEnabled(enabled)
 
+    def update_artworkdb_state(self):
+        self.artworkdb_config_button.setEnabled(self.artworkdb_check.isChecked())
+
     def _sync_custom_source_checks(self):
         for source, checkbox in zip(self.custom_sources, self.custom_source_checks):
             source["enabled"] = checkbox.isChecked()
@@ -735,7 +765,21 @@ class UpdateAllConfigDialog(QDialog):
         self._sync_custom_source_checks()
         dialog = ManageExtraSourcesDialog(self.custom_sources, self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            self.custom_sources = dialog.get_sources()
+            previous_ids = {
+                str(source.get(CUSTOM_SOURCE_SYNC_ID_KEY) or "").strip().lower()
+                for source in self.custom_sources
+                if str(source.get(CUSTOM_SOURCE_SYNC_ID_KEY) or "").strip()
+            }
+            updated_sources = dialog.get_sources()
+            current_ids = {
+                str(source.get(CUSTOM_SOURCE_SYNC_ID_KEY) or "").strip().lower()
+                for source in updated_sources
+                if str(source.get(CUSTOM_SOURCE_SYNC_ID_KEY) or "").strip()
+            }
+            removed_ids = previous_ids - current_ids
+            if removed_ids:
+                queue_custom_source_pending_deletions(removed_ids)
+            self.custom_sources = updated_sources
             self._refresh_custom_sources()
 
     def on_manualsdb_configure(self):
@@ -748,6 +792,17 @@ class UpdateAllConfigDialog(QDialog):
                 self.manualsdb_check.setChecked(True)
 
             self.update_manualsdb_state()
+
+    def on_artworkdb_configure(self):
+        dialog = ArtworkDbConfigDialog(self.artworkdb_selected, self)
+
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self.artworkdb_selected = dialog.get_selected_ids()
+
+            if self.artworkdb_selected:
+                self.artworkdb_check.setChecked(True)
+
+            self.update_artworkdb_state()
 
     def load_current_config(self):
         try:
@@ -789,6 +844,8 @@ class UpdateAllConfigDialog(QDialog):
         self.mister_frontier_source_combo.setCurrentText(
             data.get("mister_frontier_source", "All Frontier Cores")
         )
+        self.maldita_castilla_check.setChecked(data.get("maldita_castilla", False))
+        self.nblood_check.setChecked(data.get("nblood", False))
 
         self.arcade_org_check.setChecked(data["arcade_org"])
         self.mrext_check.setChecked(data["mrext"])
@@ -802,6 +859,10 @@ class UpdateAllConfigDialog(QDialog):
         self.test_suite_240p_check.setChecked(data.get("test_suite_240p", False))
         self.mister_hifi_check.setChecked(data.get("mister_hifi", False))
         self.misterfin_check.setChecked(data.get("misterfin", False))
+        self.degauss_check.setChecked(data.get("degauss", False))
+        self.mister_monitor_check.setChecked(data.get("mister_monitor", False))
+        self.disc_tools_check.setChecked(data.get("disc_tools", False))
+        self.mister_dvd_check.setChecked(data.get("mister_dvd", False))
 
         self.bios_check.setChecked(data["bios"])
         self.arcade_roms_check.setChecked(data["arcade_roms"])
@@ -814,6 +875,8 @@ class UpdateAllConfigDialog(QDialog):
 
         self.manualsdb_selected = list(data.get("manualsdb_selected", []))
         self.manualsdb_check.setChecked(data.get("manualsdb", False))
+        self.artworkdb_selected = list(data.get("artworkdb_selected", []))
+        self.artworkdb_check.setChecked(data.get("artworkdb", False))
         self.custom_sources = list(data.get("custom_sources", []))
         self.custom_sources_unmanaged_text = data.get("custom_sources_unmanaged_text", "")
         self._refresh_custom_sources()
@@ -822,6 +885,7 @@ class UpdateAllConfigDialog(QDialog):
         self.update_wallpaper_state()
         self.update_mister_frontier_state()
         self.update_manualsdb_state()
+        self.update_artworkdb_state()
 
     def collect_config(self):
         self._sync_custom_source_checks()
@@ -852,6 +916,8 @@ class UpdateAllConfigDialog(QDialog):
             "three_s_arm": self.three_s_arm_check.isChecked(),
             "mister_frontier": self.mister_frontier_check.isChecked(),
             "mister_frontier_source": self.mister_frontier_source_combo.currentText(),
+            "maldita_castilla": self.maldita_castilla_check.isChecked(),
+            "nblood": self.nblood_check.isChecked(),
 
             "arcade_org": self.arcade_org_check.isChecked(),
             "mrext": self.mrext_check.isChecked(),
@@ -865,6 +931,10 @@ class UpdateAllConfigDialog(QDialog):
             "test_suite_240p": self.test_suite_240p_check.isChecked(),
             "mister_hifi": self.mister_hifi_check.isChecked(),
             "misterfin": self.misterfin_check.isChecked(),
+            "degauss": self.degauss_check.isChecked(),
+            "mister_monitor": self.mister_monitor_check.isChecked(),
+            "disc_tools": self.disc_tools_check.isChecked(),
+            "mister_dvd": self.mister_dvd_check.isChecked(),
 
             "bios": self.bios_check.isChecked(),
             "arcade_roms": self.arcade_roms_check.isChecked(),
@@ -876,6 +946,8 @@ class UpdateAllConfigDialog(QDialog):
             "ranny_wallpapers_source": self.ranny_wallpapers_source_combo.currentText(),
             "manualsdb": self.manualsdb_check.isChecked(),
             "manualsdb_selected": list(self.manualsdb_selected),
+            "artworkdb": self.artworkdb_check.isChecked(),
+            "artworkdb_selected": list(self.artworkdb_selected),
             "custom_sources": list(self.custom_sources),
             "custom_sources_unmanaged_text": self.custom_sources_unmanaged_text,
         }

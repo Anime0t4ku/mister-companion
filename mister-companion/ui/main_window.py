@@ -39,8 +39,9 @@ from core.device_profiles import (
     get_profile_sync_roots,
     update_device,
 )
-from core.profile_folder_sync import profile_assigned_to_ip, profile_removed, profile_renamed
-from core.theme import apply_theme, make_scaler, theme_accent_color, theme_logo_mode, theme_text_color
+from core.profile_folder_sync import profile_assigned_to_ip
+from core.profile_identity import migrate_profile_identity, remove_profile_identity
+from core.theme import apply_custom_theme_preview, apply_theme, custom_theme_roles, make_scaler, theme_accent_color, theme_logo_mode, theme_text_color
 from core.updater import (
     check_for_update,
     launch_mc_updater,
@@ -204,8 +205,22 @@ class MainWindow(QMainWindow):
         bottom_bar.setContentsMargins(0, 0, 0, 0)
         bottom_bar.setSpacing(8)
 
-        self.connection_status_label = QLabel("Status: Disconnected")
+        self.connection_status_title_label = QLabel("MiSTer:")
+        self.connection_status_title_label.setStyleSheet("font-weight: bold;")
+        self.connection_status_label = QLabel("Disconnected")
+        self.connection_status_label.setStyleSheet("font-weight: bold; color: #e74c3c;")
+        bottom_bar.addWidget(self.connection_status_title_label)
         bottom_bar.addWidget(self.connection_status_label)
+
+        self.footer_cloud_title_label = QLabel("Cloud:")
+        self.footer_cloud_title_label.setStyleSheet("font-weight: bold;")
+        self.footer_cloud_status_label = QLabel("Inactive")
+        self.footer_cloud_status_label.setStyleSheet("font-weight: bold; color: #e74c3c;")
+        self.footer_cloud_title_label.hide()
+        self.footer_cloud_status_label.hide()
+        bottom_bar.addSpacing(8)
+        bottom_bar.addWidget(self.footer_cloud_title_label)
+        bottom_bar.addWidget(self.footer_cloud_status_label)
 
         bottom_bar.addStretch()
 
@@ -231,6 +246,7 @@ class MainWindow(QMainWindow):
         self.app.installEventFilter(self)
 
         self.set_connection_status("Status: Disconnected")
+        self.update_footer_cloud_status()
 
         saved_theme = str(self.config_data.get("theme_mode", "auto") or "auto").strip().lower()
 
@@ -428,10 +444,13 @@ class MainWindow(QMainWindow):
         if not hasattr(self, "side_menu_logo_label"):
             return
 
-        if not mode:
-            mode = self.config_data.get("theme_mode", "auto")
-
-        logo_mode = theme_logo_mode(mode)
+        preview = getattr(self, "_theme_preview_data", None)
+        if isinstance(preview, dict):
+            logo_mode = "dark" if custom_theme_roles(preview)["is_dark"] else "light"
+        else:
+            if not mode:
+                mode = self.config_data.get("theme_mode", "auto")
+            logo_mode = theme_logo_mode(mode)
         logo_path = LOGO_DARK_PATH if logo_mode == "dark" else LOGO_LIGHT_PATH
         if not logo_path.exists():
             self.side_menu_logo_label.clear()
@@ -455,8 +474,12 @@ class MainWindow(QMainWindow):
         self.update_side_menu_selection(self.tabs.currentIndex() if hasattr(self, "tabs") else 0)
 
     def side_menu_icon(self, icon_name: str, selected: bool = False) -> QIcon:
-        mode = self.config_data.get("theme_mode", "auto")
-        color = "#ffffff" if selected else theme_accent_color(mode)
+        preview = getattr(self, "_theme_preview_data", None)
+        if isinstance(preview, dict):
+            accent = custom_theme_roles(preview)["accent"]
+        else:
+            accent = theme_accent_color(self.config_data.get("theme_mode", "auto"))
+        color = "#ffffff" if selected else accent
         return self.svg_icon(icon_name, color)
 
     def update_side_menu_selection(self, index: int):
@@ -482,12 +505,18 @@ class MainWindow(QMainWindow):
         if not hasattr(self, "side_menu"):
             return
 
-        mode = self.config_data.get("theme_mode", "auto")
+        preview = getattr(self, "_theme_preview_data", None)
         palette = self.palette()
         button = palette.color(QPalette.ColorRole.Button).name()
         mid = palette.color(QPalette.ColorRole.Mid).name()
-        text = theme_text_color(mode)
-        accent = theme_accent_color(mode)
+        if isinstance(preview, dict):
+            roles = custom_theme_roles(preview)
+            text = roles["text"]
+            accent = roles["accent"]
+        else:
+            mode = self.config_data.get("theme_mode", "auto")
+            text = theme_text_color(mode)
+            accent = theme_accent_color(mode)
 
         self.side_menu.setStyleSheet(
             f"""
@@ -647,7 +676,12 @@ class MainWindow(QMainWindow):
         return QIcon(str(path))
 
     def tab_icon(self, name: str) -> QIcon:
-        return self.svg_icon(name, theme_accent_color(self.config_data.get("theme_mode", "auto")))
+        preview = getattr(self, "_theme_preview_data", None)
+        if isinstance(preview, dict):
+            color = custom_theme_roles(preview)["accent"]
+        else:
+            color = theme_accent_color(self.config_data.get("theme_mode", "auto"))
+        return self.svg_icon(name, color)
 
     def refresh_tab_icons(self):
         if not hasattr(self, "tabs"):
@@ -802,16 +836,10 @@ class MainWindow(QMainWindow):
 
     def apply_app_mode_state(self):
         if self.is_offline_mode():
-            if self.is_offline_sd_loaded():
-                self.set_connection_status(
-                    f"Status: Offline Mode, SD Card Loaded: {self.offline_sd_root}"
-                )
-            elif self.offline_sd_root:
-                self.set_connection_status(
-                    f"Status: Offline Mode, SD Card Selected: {self.offline_sd_root}"
-                )
+            if self.is_offline_sd_loaded() or self.offline_sd_root:
+                self.set_connection_status(f"SD Card: {self.offline_sd_root}")
             else:
-                self.set_connection_status("Status: Offline Mode, No SD Card Selected")
+                self.set_connection_status("SD Card: No SD Card Selected")
         else:
             if not self.connection.is_connected():
                 self.set_connection_status("Status: Disconnected")
@@ -1017,41 +1045,65 @@ class MainWindow(QMainWindow):
                 save_config(self.config_data)
 
     def set_connection_status(self, text: str):
-        self.connection_status_label.setText(text)
+        raw = str(text or "").strip()
+        if raw.lower().startswith("status:"):
+            raw = raw.split(":", 1)[1].strip()
 
-        if "Offline Mode" in text:
-            self.connection_status_label.setStyleSheet(
-                "color: #8b5cf6; font-weight: bold;"
-            )
-        elif "Connected" in text:
-            self.connection_status_label.setStyleSheet(
-                "color: #2ecc71; font-weight: bold;"
-            )
-        elif "Disconnected" in text:
-            self.connection_status_label.setStyleSheet(
-                "color: #e74c3c; font-weight: bold;"
-            )
-        elif "Connecting" in text:
-            self.connection_status_label.setStyleSheet(
-                "color: #f39c12; font-weight: bold;"
-            )
-        elif "Lost" in text:
-            self.connection_status_label.setStyleSheet(
-                "color: #f39c12; font-weight: bold;"
-            )
-        elif "Rebooting" in text:
-            self.connection_status_label.setStyleSheet(
-                "color: #f39c12; font-weight: bold;"
-            )
-        elif "Waiting" in text:
-            self.connection_status_label.setStyleSheet(
-                "color: #f39c12; font-weight: bold;"
-            )
+        if raw.lower().startswith("sd card:"):
+            value = raw.split(":", 1)[1].strip() or "No SD Card Selected"
+            self.connection_status_title_label.setText("SD Card:")
+            self.connection_status_label.setText(value)
+            color = "#3498db" if value.lower() != "no sd card selected" else "#e74c3c"
+            self.connection_status_label.setStyleSheet(f"color: {color}; font-weight: bold;")
         else:
-            self.connection_status_label.setStyleSheet("font-weight: bold;")
+            self.connection_status_title_label.setText("MiSTer:")
+            lowered = raw.lower()
+            if lowered.startswith("connected"):
+                value, color = "Connected", "#2ecc71"
+            elif "connecting" in lowered:
+                value, color = "Connecting", "#3498db"
+            elif "waiting" in lowered:
+                value, color = "Waiting", "#3498db"
+            elif "rebooting" in lowered:
+                value, color = "Rebooting", "#3498db"
+            elif "lost" in lowered:
+                value, color = "Connection Lost", "#e74c3c"
+            else:
+                value, color = "Disconnected", "#e74c3c"
+            self.connection_status_label.setText(value)
+            self.connection_status_label.setStyleSheet(f"color: {color}; font-weight: bold;")
 
         if hasattr(self, "connection_tab"):
             self.connection_tab.sync_status_from_main_window()
+
+    def update_footer_cloud_status(self):
+        if not hasattr(self, "footer_cloud_title_label"):
+            return
+
+        try:
+            from core.cloud_account import CloudAccountClient
+            cloud_client = CloudAccountClient(self.config_data)
+            linked = cloud_client.has_session() and bool(cloud_client.linked_device())
+        except Exception:
+            linked = False
+            cloud_client = None
+
+        self.footer_cloud_title_label.setVisible(linked)
+        self.footer_cloud_status_label.setVisible(linked)
+        if not linked:
+            return
+
+        if bool(getattr(self, "cloud_sync_in_progress", False)):
+            text, color = "Syncing", "#3498db"
+        else:
+            try:
+                active, _reason = cloud_client.cloud_sync_status()
+            except Exception:
+                active = False
+            text, color = ("Active", "#2ecc71") if active else ("Inactive", "#e74c3c")
+
+        self.footer_cloud_status_label.setText(text)
+        self.footer_cloud_status_label.setStyleSheet(f"font-weight: bold; color: {color};")
 
     def normalize_ui_scale_percent(self, value) -> int:
         try:
@@ -1072,6 +1124,7 @@ class MainWindow(QMainWindow):
         )
 
     def refresh_theme(self):
+        self._theme_preview_data = None
         mode = self.config_data.get("theme_mode", "auto")
         ui_scale_percent = self.get_ui_scale_percent()
         self.setUpdatesEnabled(False)
@@ -1134,9 +1187,32 @@ class MainWindow(QMainWindow):
         if self._closing:
             return
 
-        dialog = ThemePickerDialog(self.config_data.get("theme_mode", "auto"), self)
+        dialog = ThemePickerDialog(self.config_data.get("theme_mode", "auto"), self.config_data, self)
         dialog.theme_applied.connect(self.apply_theme_from_picker)
+        dialog.theme_preview_requested.connect(self.preview_theme_from_picker)
+        dialog.theme_preview_restore.connect(self.restore_theme_from_picker)
         dialog.exec()
+
+    def preview_theme_from_picker(self, theme: dict):
+        if self._closing or not isinstance(theme, dict):
+            return
+        ui_scale_percent = self.get_ui_scale_percent()
+        self.setUpdatesEnabled(False)
+        try:
+            self._theme_preview_data = dict(theme)
+            apply_custom_theme_preview(self.app, theme, ui_scale_percent)
+            self.update_side_menu_logo()
+            self.refresh_tab_icons()
+            self.refresh_page_header_icons()
+            self.refresh_side_menu_icons()
+            self.update_side_menu_style()
+            self.update()
+        finally:
+            self.setUpdatesEnabled(True)
+
+    def restore_theme_from_picker(self):
+        if not self._closing:
+            self.refresh_theme()
 
     def apply_theme_from_picker(self, mode: str):
         if self._closing:
@@ -1867,6 +1943,8 @@ class MainWindow(QMainWindow):
             device["username"],
             device["password"],
         )
+        if hasattr(self, "app_settings_tab"):
+            self.app_settings_tab.sync_cloud_profiles_silently()
 
     def edit_device(self):
         if self._closing:
@@ -1915,21 +1993,12 @@ class MainWindow(QMainWindow):
         old_ip = result["old_ip"]
         updated_device = result["updated_device"]
 
-        if old_name != updated_device["name"]:
-            profile_renamed(
-                self.get_profile_sync_roots(),
-                old_name,
-                updated_device["name"],
-            )
-            rename_db(old_name, updated_device["name"])
-
-        elif old_ip != updated_device["ip"]:
-            profile_assigned_to_ip(
-                self.get_profile_sync_roots(),
-                updated_device["ip"],
-                updated_device["name"],
-            )
-            rename_db(old_ip, updated_device["name"])
+        migrate_profile_identity(
+            old_name,
+            old_ip,
+            updated_device["name"],
+            updated_device["ip"],
+        )
 
         devices = get_devices(self.config_data)
         self.load_devices()
@@ -1939,6 +2008,8 @@ class MainWindow(QMainWindow):
             updated_device["username"],
             updated_device["password"],
         )
+        if hasattr(self, "app_settings_tab"):
+            self.app_settings_tab.sync_cloud_profiles_silently()
 
     def delete_device(self):
         if self._closing:
@@ -1969,16 +2040,12 @@ class MainWindow(QMainWindow):
         if self.connection.is_connected() and self.connection.host == device_ip:
             self.disconnect_from_mister()
 
-        profile_removed(
-            self.get_profile_sync_roots(),
-            device_name,
-            device_ip,
-        )
-
-        rename_db(device_name, device_ip)
+        remove_profile_identity(device_name, device_ip)
 
         devices = get_devices(self.config_data)
         self.connection_tab.set_profiles(devices)
         self.connection_tab.profile_selector.setCurrentIndex(-1)
         self.connection_tab.set_connection_fields("", "root", "1")
         self.connection_tab.update_connection_state()
+        if hasattr(self, "app_settings_tab"):
+            self.app_settings_tab.sync_cloud_profiles_silently()

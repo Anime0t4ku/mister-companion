@@ -9,6 +9,7 @@ from PyQt6.QtGui import QPixmap
 
 from ui.tab_header import create_tab_header
 from ui.scaling import set_text_button_min_width
+from core.cloud_account import CloudAccountClient
 from core.device_actions import (
     disable_smb_offline,
     disable_smb_remote,
@@ -188,6 +189,7 @@ class DeviceTab(QWidget):
 
         self.build_ui()
         self.apply_disconnected_state()
+        self.update_cloud_status()
 
     def build_ui(self):
         card_style = """
@@ -246,19 +248,30 @@ class DeviceTab(QWidget):
         header_layout.setContentsMargins(14, 9, 14, 9)
         header_layout.setSpacing(10)
 
-        self.connected_status_label = QLabel("● Connected")
-        self.connected_status_label.setStyleSheet("font-weight: bold; color: #00aa00;")
+        self.mister_status_title_label = QLabel("MiSTer:")
+        self.mister_status_title_label.setStyleSheet("font-weight: bold;")
+        self.connected_status_label = QLabel("Connected")
+        self.connected_status_label.setStyleSheet("font-weight: bold; color: #2ecc71;")
         self.connected_identity_label = QLabel("")
         self.connected_identity_label.setStyleSheet("font-weight: bold;")
         self.connected_identity_label.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse
         )
+        self.cloud_status_title_label = QLabel("Cloud:")
+        self.cloud_status_title_label.setStyleSheet("font-weight: bold;")
+        self.cloud_status_title_label.hide()
+        self.cloud_status_label = QLabel("Active")
+        self.cloud_status_label.setStyleSheet("font-weight: bold; color: #2ecc71;")
+        self.cloud_status_label.hide()
         self.disconnect_button = QPushButton("Disconnect")
         set_text_button_min_width(self.disconnect_button, 110)
 
+        header_layout.addWidget(self.mister_status_title_label)
         header_layout.addWidget(self.connected_status_label)
         header_layout.addWidget(self.connected_identity_label)
         header_layout.addStretch()
+        header_layout.addWidget(self.cloud_status_title_label)
+        header_layout.addWidget(self.cloud_status_label)
         header_layout.addWidget(self.disconnect_button)
         shell_layout.addWidget(status_banner)
 
@@ -529,6 +542,22 @@ class DeviceTab(QWidget):
         self.zaparoo_pair_button.clicked.connect(self.pair_with_zaparoo)
         self.zaparoo_remove_pair_button.clicked.connect(self.remove_zaparoo_pairing)
 
+    def update_cloud_status(self):
+        cloud_client = CloudAccountClient(self.main_window.config_data)
+        linked = cloud_client.has_session() and bool(cloud_client.linked_device())
+        self.cloud_status_title_label.setVisible(linked)
+        self.cloud_status_label.setVisible(linked)
+        if linked:
+            if bool(getattr(self.main_window, "cloud_sync_in_progress", False)):
+                text, color = "Syncing", "#3498db"
+            else:
+                active, _reason = cloud_client.cloud_sync_status()
+                text, color = ("Active", "#2ecc71") if active else ("Inactive", "#e74c3c")
+            self.cloud_status_label.setText(text)
+            self.cloud_status_label.setStyleSheet(f"font-weight: bold; color: {color};")
+        if hasattr(self.main_window, "update_footer_cloud_status"):
+            self.main_window.update_footer_cloud_status()
+
     def handle_disconnect_or_unload(self):
         if self.is_offline_mode():
             if hasattr(self.main_window, "unload_offline_sd_card"):
@@ -691,8 +720,9 @@ class DeviceTab(QWidget):
         self.update_connection_state(lightweight=False)
 
     def apply_connected_state(self):
-        self.connected_status_label.setText("● Connected")
-        self.connected_status_label.setStyleSheet("font-weight: bold; color: #00aa00;")
+        self.mister_status_title_label.setText("MiSTer:")
+        self.connected_status_label.setText("Connected")
+        self.connected_status_label.setStyleSheet("font-weight: bold; color: #2ecc71;")
         self.disconnect_button.setText("Disconnect")
         # Offline SD mode can leave this button disabled. A successful online
         # connection must always restore the normal Disconnect action.
@@ -729,13 +759,14 @@ class DeviceTab(QWidget):
 
     def apply_disconnected_state(self):
         self.refresh_timer.stop()
+        self.mister_status_title_label.setText("MiSTer:")
         self.stop_hifi_listener()
         if hasattr(self, "hifi_group"):
             self.hifi_group.setVisible(False)
         self.zaparoo_group.setVisible(False)
         self.device_actions_group.setVisible(False)
-        self.connected_status_label.setText("● Disconnected")
-        self.connected_status_label.setStyleSheet("font-weight: bold; color: gray;")
+        self.connected_status_label.setText("Disconnected")
+        self.connected_status_label.setStyleSheet("font-weight: bold; color: #e74c3c;")
         self.connected_identity_label.setText("")
         self.disconnect_button.setText("Disconnect")
 
@@ -796,9 +827,13 @@ class DeviceTab(QWidget):
         self.device_actions_group.setVisible(False)
 
         sd_root = self.get_offline_sd_root()
-        self.connected_status_label.setText("● Offline")
-        self.connected_status_label.setStyleSheet("font-weight: bold; color: #8b5cf6;")
-        self.connected_identity_label.setText(f"SD Card · {sd_root}" if sd_root else "SD Card")
+        self.mister_status_title_label.setText("SD Card:")
+        self.connected_status_label.setText(sd_root if sd_root else "No SD Card Selected")
+        self.connected_status_label.setStyleSheet(
+            "font-weight: bold; color: #3498db;" if sd_root
+            else "font-weight: bold; color: #e74c3c;"
+        )
+        self.connected_identity_label.setText("")
         self.disconnect_button.setText("Unload SD Card")
         self.disconnect_button.setEnabled(bool(sd_root))
 

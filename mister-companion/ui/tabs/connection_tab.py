@@ -25,6 +25,7 @@ from ui.tab_header import create_tab_header
 from ui.scaling import set_text_button_min_width
 from ui.tabs.device_tab import DeviceTab
 from core.config import save_config
+from core.cloud_account import CloudAccountClient
 from core.sd_eject import eject_sd_card_path
 
 PATREON_URL = "https://www.patreon.com/Anime0t4ku"
@@ -46,6 +47,7 @@ class ConnectionTab(QWidget):
         self.connect_signals()
         self.update_mode_state()
         self.update_connection_state()
+        self.update_cloud_status()
 
         self.apply_support_message_preference()
 
@@ -154,15 +156,26 @@ class ConnectionTab(QWidget):
         status_layout.setContentsMargins(14, 9, 14, 9)
         status_layout.setSpacing(8)
 
-        status_caption = QLabel("Connection status")
-        status_caption.setStyleSheet("font-weight: 600;")
-        self.connection_status_label = QLabel("Status: Disconnected")
-        self.connection_status_label.setStyleSheet("font-weight: 700;")
+        self.mister_status_title_label = QLabel("MiSTer:")
+        self.mister_status_title_label.setStyleSheet("font-weight: 700;")
+        self.connection_status_label = QLabel("Disconnected")
+        self.connection_status_label.setStyleSheet("font-weight: 700; color: #e74c3c;")
         self.connection_status_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
-        status_layout.addWidget(status_caption)
+        self.cloud_status_title_label = QLabel("Cloud:")
+        self.cloud_status_title_label.setStyleSheet("font-weight: 700;")
+        self.cloud_status_title_label.hide()
+        self.cloud_status_label = QLabel("Active")
+        self.cloud_status_label.setStyleSheet("font-weight: 700; color: #2ecc71;")
+        self.cloud_status_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.cloud_status_label.hide()
+
         status_layout.addStretch()
+        status_layout.addWidget(self.mister_status_title_label)
         status_layout.addWidget(self.connection_status_label)
+        status_layout.addSpacing(10)
+        status_layout.addWidget(self.cloud_status_title_label)
+        status_layout.addWidget(self.cloud_status_label)
         self.status_banner.setMaximumWidth(820)
         status_row = QHBoxLayout()
         status_row.setContentsMargins(0, 0, 0, 0)
@@ -188,22 +201,20 @@ class ConnectionTab(QWidget):
         connection_layout.setSpacing(12)
         self.connection_group.setLayout(connection_layout)
 
-        self.mode_frame = QFrame()
-        self.mode_frame.setObjectName("ModeCard")
+        self.mode_frame = QGroupBox("Mode")
+        self.mode_frame.setObjectName("ConnectionCard")
         mode_layout = QHBoxLayout(self.mode_frame)
-        mode_layout.setContentsMargins(14, 11, 14, 11)
+        mode_layout.setContentsMargins(16, 20, 16, 14)
         mode_layout.setSpacing(14)
 
-        mode_label = QLabel("Mode")
-        mode_label.setStyleSheet("font-weight: 700;")
         self.online_mode_radio = QRadioButton("Online / SSH")
         self.offline_mode_radio = QRadioButton("Offline / SD Card")
         self.online_mode_radio.setChecked(True)
 
-        mode_layout.addWidget(mode_label)
-        mode_layout.addStretch()
+        mode_layout.addStretch(1)
         mode_layout.addWidget(self.online_mode_radio)
         mode_layout.addWidget(self.offline_mode_radio)
+        mode_layout.addStretch(1)
         connection_layout.addWidget(self.mode_frame)
 
         self.online_controls_widget = QWidget()
@@ -341,10 +352,12 @@ class ConnectionTab(QWidget):
 
         ssh_options_row = QHBoxLayout()
         ssh_options_row.setSpacing(18)
+        ssh_options_row.addStretch(1)
         ssh_options_row.addWidget(self.use_ssh_agent_checkbox)
         ssh_options_row.addWidget(self.look_for_ssh_keys_checkbox)
-        ssh_options_row.addStretch()
+        ssh_options_row.addStretch(1)
 
+        self.advanced_ssh_warning_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         advanced_layout.addWidget(self.advanced_ssh_warning_label)
         advanced_layout.addLayout(ssh_options_row)
         online_layout.addWidget(self.advanced_group)
@@ -540,14 +553,53 @@ class ConnectionTab(QWidget):
         self.dismiss_support_button.clicked.connect(self.disable_support_message)
         self.patreon_button.clicked.connect(lambda: open_uri(PATREON_URL))
 
+    def update_cloud_status(self):
+        cloud_client = CloudAccountClient(self.main_window.config_data)
+        linked = cloud_client.has_session() and bool(cloud_client.linked_device())
+        self.cloud_status_title_label.setVisible(linked)
+        self.cloud_status_label.setVisible(linked)
+        if linked:
+            if bool(getattr(self.main_window, "cloud_sync_in_progress", False)):
+                text, color = "Syncing", "#3498db"
+            else:
+                active, _reason = cloud_client.cloud_sync_status()
+                text, color = ("Active", "#2ecc71") if active else ("Inactive", "#e74c3c")
+            self.cloud_status_label.setText(text)
+            self.cloud_status_label.setStyleSheet(f"font-weight: 700; color: {color};")
+        if hasattr(self.main_window, "update_footer_cloud_status"):
+            self.main_window.update_footer_cloud_status()
+
     def sync_status_from_main_window(self):
-        if hasattr(self.main_window, "connection_status_label"):
-            self.connection_status_label.setText(
-                self.main_window.connection_status_label.text()
-            )
-            self.connection_status_label.setStyleSheet(
-                self.main_window.connection_status_label.styleSheet()
-            )
+        if not hasattr(self.main_window, "connection_status_label"):
+            return
+        raw = str(self.main_window.connection_status_label.text() or "").strip()
+        if raw.lower().startswith("status:"):
+            raw = raw.split(":", 1)[1].strip()
+
+        title = ""
+        if hasattr(self.main_window, "connection_status_title_label"):
+            title = str(self.main_window.connection_status_title_label.text() or "").strip().lower()
+
+        lowered = raw.lower()
+        if title.startswith("sd card"):
+            text, color = "Offline", "#3498db"
+        elif lowered.startswith("connected"):
+            text, color = "Connected", "#2ecc71"
+        elif "offline mode" in lowered:
+            text, color = "Offline", "#3498db"
+        elif "connecting" in lowered or "waiting" in lowered or "rebooting" in lowered:
+            text, color = (
+                "Connecting" if "connecting" in lowered else
+                "Waiting" if "waiting" in lowered else
+                "Rebooting"
+            ), "#3498db"
+        elif "connection lost" in lowered:
+            text, color = "Connection Lost", "#e74c3c"
+        else:
+            text, color = "Disconnected", "#e74c3c"
+
+        self.connection_status_label.setText(text)
+        self.connection_status_label.setStyleSheet(f"font-weight: 700; color: {color};")
 
     def is_support_message_enabled(self):
         return bool(self.main_window.config_data.get(CONFIG_SHOW_SUPPORT_MESSAGE, True))

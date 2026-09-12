@@ -1956,6 +1956,17 @@ def custom_stylesheet(theme: dict, ui_scale_percent=100) -> str:
     """
 
 
+
+def apply_custom_theme_preview(app: QApplication, theme: dict, ui_scale_percent=100):
+    init_theme_system(app)
+    ensure_theme_assets()
+    ui_scale_percent = normalize_ui_scale_percent(ui_scale_percent)
+    if app.style().objectName().lower() != "fusion":
+        app.setStyle(QStyleFactory.create("Fusion"))
+    apply_font_scale(app, ui_scale_percent)
+    app.setPalette(custom_palette(theme))
+    app.setStyleSheet(custom_stylesheet(theme, ui_scale_percent))
+
 def apply_theme(app: QApplication, mode: str, ui_scale_percent=100):
     init_theme_system(app)
     ensure_theme_assets()
