@@ -17,6 +17,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from ui.tab_header import create_tab_header
 from ui.scaling import set_text_button_min_width
 from core.savemanager import (
     SYNC_ROOT,
@@ -175,31 +176,58 @@ class SaveManagerTab(QWidget):
 
     def build_ui(self):
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(12, 12, 12, 12)
-        main_layout.setSpacing(12)
+        main_layout.setContentsMargins(18, 18, 18, 18)
+        main_layout.setSpacing(14)
 
-        main_group = QGroupBox("SaveManager")
-        main_group_layout = QVBoxLayout(main_group)
-        main_group_layout.setContentsMargins(12, 12, 12, 12)
-        main_group_layout.setSpacing(12)
+        self.setStyleSheet(
+            """
+            SaveManagerTab,
+            QWidget#SaveManagerContent {
+                background: transparent;
+            }
 
-        self.info_label = QLabel(
-            "SaveManager allows you to backup, restore and merge MiSTer saves and savestates.\n\n"
-            "Backups are stored locally on your PC and are never modified.\n"
-            "The Merge folder is used to combine saves between devices."
+            QGroupBox#SaveManagerCard {
+                background-color: palette(alternate-base);
+                border: 1px solid palette(button);
+                border-radius: 12px;
+                margin-top: 18px;
+                padding: 14px;
+                font-weight: 700;
+            }
+
+            QGroupBox#SaveManagerCard::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                left: 14px;
+                padding: 0px 7px;
+                background: transparent;
+                color: palette(highlight);
+            }
+            """
         )
-        self.info_label.setWordWrap(True)
-        self.info_label.setMaximumWidth(520)
-        self.info_label.setAlignment(pyqt_alignment_center())
 
-        info_row = QHBoxLayout()
-        info_row.addStretch()
-        info_row.addWidget(self.info_label)
-        info_row.addStretch()
-        main_group_layout.addLayout(info_row)
+        main_layout.addWidget(create_tab_header(self.main_window, "SaveManager", "savemanager"))
+
+        content_row = QHBoxLayout()
+        content_row.setContentsMargins(0, 0, 0, 0)
+        content_row.setSpacing(0)
+        content_row.addStretch(1)
+
+        content_widget = QWidget()
+        content_widget.setObjectName("SaveManagerContent")
+        content_widget.setMaximumWidth(980)
+        content_layout = QVBoxLayout(content_widget)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(14)
+
+        main_group = QGroupBox("Save Management")
+        main_group.setObjectName("SaveManagerCard")
+        main_group_layout = QVBoxLayout(main_group)
+        main_group_layout.setContentsMargins(18, 20, 18, 16)
+        main_group_layout.setSpacing(14)
 
         button_row = QHBoxLayout()
-        button_row.setSpacing(12)
+        button_row.setSpacing(10)
 
         self.backup_button = QPushButton("Backup Saves")
         self.restore_button = QPushButton("Restore Backup")
@@ -215,40 +243,37 @@ class SaveManagerTab(QWidget):
         button_row.addStretch()
         main_group_layout.addLayout(button_row)
 
+        details_row = QHBoxLayout()
+        details_row.setSpacing(18)
+
         self.backup_count_label = QLabel("Current backups for this device: 0")
         self.backup_count_label.setAlignment(pyqt_alignment_center())
 
-        backup_count_row = QHBoxLayout()
-        backup_count_row.addStretch()
-        backup_count_row.addWidget(self.backup_count_label)
-        backup_count_row.addStretch()
-        main_group_layout.addLayout(backup_count_row)
-
-        retention_row = QHBoxLayout()
-        retention_row.setSpacing(8)
-
-        self.retention_label = QLabel("Backups to keep per device:")
+        self.retention_label = QLabel("Backups:")
         self.retention_spin = QSpinBox()
         self.retention_spin.setRange(1, 100)
         self.retention_spin.setMinimumWidth(80)
         self.retention_spin.setValue(int(self.main_window.config_data.get("backup_retention", 10)))
         self.retention_spin.valueChanged.connect(self.on_retention_changed)
 
-        retention_row.addStretch()
-        retention_row.addWidget(self.retention_label)
-        retention_row.addWidget(self.retention_spin)
-        retention_row.addStretch()
-        main_group_layout.addLayout(retention_row)
+        details_row.addStretch()
+        details_row.addWidget(self.backup_count_label)
+        details_row.addSpacing(8)
+        details_row.addWidget(self.retention_label)
+        details_row.addWidget(self.retention_spin)
+        details_row.addStretch()
+        main_group_layout.addLayout(details_row)
 
-        main_layout.addWidget(main_group)
+        content_layout.addWidget(main_group)
 
         folder_group = QGroupBox("Folders")
+        folder_group.setObjectName("SaveManagerCard")
         folder_group_layout = QVBoxLayout(folder_group)
-        folder_group_layout.setContentsMargins(12, 12, 12, 12)
-        folder_group_layout.setSpacing(12)
+        folder_group_layout.setContentsMargins(18, 18, 18, 14)
+        folder_group_layout.setSpacing(10)
 
         folder_row = QHBoxLayout()
-        folder_row.setSpacing(12)
+        folder_row.setSpacing(10)
 
         self.open_backup_folder_button = QPushButton("Browse Backups")
         self.open_sync_folder_button = QPushButton("Browse Merge Folder")
@@ -261,12 +286,13 @@ class SaveManagerTab(QWidget):
         folder_row.addStretch()
         folder_group_layout.addLayout(folder_row)
 
-        main_layout.addWidget(folder_group)
+        content_layout.addWidget(folder_group)
 
         self.log_group = QGroupBox("Log")
+        self.log_group.setObjectName("SaveManagerCard")
         log_group_layout = QVBoxLayout(self.log_group)
-        log_group_layout.setContentsMargins(12, 12, 12, 12)
-        log_group_layout.setSpacing(8)
+        log_group_layout.setContentsMargins(18, 18, 18, 14)
+        log_group_layout.setSpacing(10)
 
         log_header_row = QHBoxLayout()
         log_header_row.addStretch()
@@ -278,13 +304,15 @@ class SaveManagerTab(QWidget):
         self.log_output = QTextEdit()
         self.log_output.setReadOnly(True)
         self.log_output.setMinimumHeight(180)
-        self.log_output.setMinimumWidth(750)
         log_group_layout.addWidget(self.log_output)
 
-        main_layout.addWidget(self.log_group)
+        content_layout.addWidget(self.log_group)
         self.log_group.hide()
+        content_layout.addStretch()
 
-        main_layout.addStretch()
+        content_row.addWidget(content_widget, 1)
+        content_row.addStretch(1)
+        main_layout.addLayout(content_row, 1)
 
         self.backup_button.clicked.connect(self.backup_saves)
         self.restore_button.clicked.connect(self.restore_saves)

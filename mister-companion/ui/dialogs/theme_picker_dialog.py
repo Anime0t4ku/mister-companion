@@ -1,5 +1,6 @@
 from core.custom_themes import load_custom_themes, themes_dir
 from core.open_helpers import open_local_folder
+from ui.dialogs.theme_creator_widget import ThemeCreatorWidget
 from core.theme_store import (
     download_preview,
     install_store_theme,
@@ -137,11 +138,15 @@ class PreviewDialog(QDialog):
 
 class ThemePickerDialog(QDialog):
     theme_applied = pyqtSignal(str)
+    theme_preview_requested = pyqtSignal(dict)
+    theme_preview_restore = pyqtSignal()
 
-    def __init__(self, current_theme="auto", parent=None):
+    def __init__(self, current_theme="auto", config_data=None, parent=None):
         super().__init__(parent)
 
         self.current_theme = str(current_theme or "auto").strip().lower()
+        self.config_data = config_data if isinstance(config_data, dict) else {}
+        self.preview_active = False
         self.selected_theme = self.current_theme
         self.custom_themes = []
         self.invalid_themes = []
@@ -169,12 +174,15 @@ class ThemePickerDialog(QDialog):
         self.tabs = QTabWidget()
         self.installed_tab = QWidget()
         self.store_tab = QWidget()
+        self.creator_tab = QWidget()
         self.tabs.addTab(self.installed_tab, "Installed Themes")
         self.tabs.addTab(self.store_tab, "Theme Downloader")
+        self.tabs.addTab(self.creator_tab, "Theme Creator")
         main_layout.addWidget(self.tabs, 1)
 
         self.build_installed_tab()
         self.build_store_tab()
+        self.build_creator_tab()
 
         button_row = QHBoxLayout()
         button_row.setSpacing(8)
@@ -273,6 +281,26 @@ class ThemePickerDialog(QDialog):
         self.store_scroll.setWidget(self.store_container)
 
         main_layout.addWidget(self.store_scroll, 1)
+
+    def build_creator_tab(self):
+        layout = QVBoxLayout(self.creator_tab)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self.theme_creator = ThemeCreatorWidget(self.config_data, self.creator_tab)
+        self.theme_creator.preview_requested.connect(self._preview_creator_theme)
+        self.theme_creator.saved.connect(self._creator_theme_saved)
+        layout.addWidget(self.theme_creator)
+
+    def _preview_creator_theme(self, theme):
+        self.preview_active = True
+        self.theme_preview_requested.emit(theme)
+
+    def _creator_theme_saved(self, theme_key):
+        self.load_themes()
+
+    def restore_preview(self):
+        if self.preview_active:
+            self.preview_active = False
+            self.theme_preview_restore.emit()
 
     def create_theme_list(self):
         widget = QTreeWidget()
@@ -728,19 +756,27 @@ class ThemePickerDialog(QDialog):
 
     def on_tab_changed(self):
         self.update_refresh_button_text()
+        if self.tabs.currentWidget() != self.creator_tab:
+            self.restore_preview()
         if self.tabs.currentWidget() == self.store_tab and not self.store_loaded:
             self.load_store()
+        if self.tabs.currentWidget() == self.creator_tab:
+            self.theme_creator.refresh_access()
         self.on_selection_changed()
 
     def update_refresh_button_text(self):
         if self.tabs.currentWidget() == self.store_tab:
             self.refresh_button.setText("Refresh Store")
+        elif self.tabs.currentWidget() == self.creator_tab:
+            self.refresh_button.setText("Refresh Access")
         else:
             self.refresh_button.setText("Refresh Themes")
 
     def refresh_current_tab(self):
         if self.tabs.currentWidget() == self.store_tab:
             self.load_store(force=True)
+        elif self.tabs.currentWidget() == self.creator_tab:
+            self.theme_creator.refresh_access()
         else:
             self.load_themes()
 
@@ -776,6 +812,7 @@ class ThemePickerDialog(QDialog):
             QMessageBox.warning(self, "Open Themes Folder", str(e))
 
     def closeEvent(self, event):
+        self.restore_preview()
         if self.preview_worker is not None and self.preview_worker.isRunning():
             self.preview_worker.stop()
             self.preview_worker.wait(1000)

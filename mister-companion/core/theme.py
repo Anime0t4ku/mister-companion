@@ -634,6 +634,34 @@ def light_stylesheet(ui_scale_percent=100) -> str:
         color: #4c1d95;
     }}
 
+    QPushButton#PrimaryAction,
+    QPushButton#CategoryButton:checked {{
+        background-color: #7c3aed;
+        color: #ffffff;
+        border-color: #7c3aed;
+        font-weight: 700;
+    }}
+
+    QPushButton#PrimaryAction:hover,
+    QPushButton#CategoryButton:checked:hover {{
+        background-color: #6d28d9;
+        color: #ffffff;
+        border-color: #5b21b6;
+    }}
+
+    QPushButton#PrimaryAction:pressed,
+    QPushButton#CategoryButton:checked:pressed {{
+        background-color: #5b21b6;
+        color: #ffffff;
+        border-color: #4c1d95;
+    }}
+
+    QPushButton#PrimaryAction:disabled {{
+        background-color: #b8a7cf;
+        color: #eee8f7;
+        border-color: #b8a7cf;
+    }}
+
     QPushButton:pressed {{
         background-color: #c4b5fd;
         border-color: #7c3aed;
@@ -1113,6 +1141,34 @@ def dark_stylesheet(ui_scale_percent=100) -> str:
         color: #ffffff;
     }}
 
+    QPushButton#PrimaryAction,
+    QPushButton#CategoryButton:checked {{
+        background-color: #8b5cf6;
+        color: #ffffff;
+        border-color: #8b5cf6;
+        font-weight: 700;
+    }}
+
+    QPushButton#PrimaryAction:hover,
+    QPushButton#CategoryButton:checked:hover {{
+        background-color: #a78bfa;
+        color: #ffffff;
+        border-color: #c4b5fd;
+    }}
+
+    QPushButton#PrimaryAction:pressed,
+    QPushButton#CategoryButton:checked:pressed {{
+        background-color: #6d28d9;
+        color: #ffffff;
+        border-color: #a78bfa;
+    }}
+
+    QPushButton#PrimaryAction:disabled {{
+        background-color: #4a3b68;
+        color: #716681;
+        border-color: #4a3b68;
+    }}
+
     QPushButton:pressed {{
         background-color: #6d28d9;
         border-color: #a78bfa;
@@ -1588,6 +1644,34 @@ def custom_stylesheet(theme: dict, ui_scale_percent=100) -> str:
         color: {roles['text']};
     }}
 
+    QPushButton#PrimaryAction,
+    QPushButton#CategoryButton:checked {{
+        background-color: {roles['accent']};
+        color: {roles['selected_text']};
+        border-color: {roles['accent']};
+        font-weight: 700;
+    }}
+
+    QPushButton#PrimaryAction:hover,
+    QPushButton#CategoryButton:checked:hover {{
+        background-color: {roles['accent_hover']};
+        color: {roles['selected_text']};
+        border-color: {roles['accent_hover']};
+    }}
+
+    QPushButton#PrimaryAction:pressed,
+    QPushButton#CategoryButton:checked:pressed {{
+        background-color: {roles['button_pressed']};
+        color: {roles['selected_text']};
+        border-color: {roles['accent_hover']};
+    }}
+
+    QPushButton#PrimaryAction:disabled {{
+        background-color: {roles['disabled_bg']};
+        color: {roles['muted_text']};
+        border-color: {roles['border_soft']};
+    }}
+
     QPushButton:pressed {{
         background-color: {roles['button_pressed']};
         border-color: {roles['accent_hover']};
@@ -1871,6 +1955,17 @@ def custom_stylesheet(theme: dict, ui_scale_percent=100) -> str:
     {linux_button_fix}
     """
 
+
+
+def apply_custom_theme_preview(app: QApplication, theme: dict, ui_scale_percent=100):
+    init_theme_system(app)
+    ensure_theme_assets()
+    ui_scale_percent = normalize_ui_scale_percent(ui_scale_percent)
+    if app.style().objectName().lower() != "fusion":
+        app.setStyle(QStyleFactory.create("Fusion"))
+    apply_font_scale(app, ui_scale_percent)
+    app.setPalette(custom_palette(theme))
+    app.setStyleSheet(custom_stylesheet(theme, ui_scale_percent))
 
 def apply_theme(app: QApplication, mode: str, ui_scale_percent=100):
     init_theme_system(app)

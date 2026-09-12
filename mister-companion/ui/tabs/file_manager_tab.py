@@ -1,12 +1,14 @@
 from datetime import datetime
 import os
 import shutil
+import threading
 from pathlib import Path
 
 from PyQt6.QtCore import QThread, QTimer, Qt, pyqtSignal
 from PyQt6.QtGui import QAction, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QAbstractItemView,
+    QCheckBox,
     QComboBox,
     QFileDialog,
     QFrame,
@@ -124,27 +126,96 @@ def _copy_local_file(source, target, progress_callback=None, message_callback=No
         pass
 
 
-def _copy_local_item(source, target, progress_callback=None, message_callback=None):
+def _copy_local_item(source, target, progress_callback=None, message_callback=None, skip_existing=False, conflict_callback=None):
+    source = Path(source)
+    target = Path(target)
+    if target.exists() and conflict_callback is not None:
+        merge_folders = source.is_dir() and target.is_dir()
+        choice = conflict_callback(str(target), merge_folders)
+        if choice == "cancel":
+            raise InterruptedError("Transfer cancelled.")
+        if choice == "keep_both":
+            parent = target.parent
+            stem = target.stem if target.suffix else target.name
+            suffix = target.suffix if target.suffix else ""
+            for index in range(2, 10000):
+                copy_name = f"{stem} copy" if index == 2 else f"{stem} copy {index - 1}"
+                candidate = parent / f"{copy_name}{suffix}"
+                if not candidate.exists():
+                    target = candidate
+                    break
+        elif choice == "skip" and not merge_folders:
+            return
+        elif choice == "overwrite" and source.is_dir() != target.is_dir():
+            _remove_local_target(target)
+    if source.is_dir():
+        if target.exists() and not target.is_dir():
+            if skip_existing:
+                return
+            _remove_local_target(target)
+        target.mkdir(parents=True, exist_ok=True)
+        for child in source.iterdir():
+            _copy_local_item(
+                child,
+                target / child.name,
+                progress_callback,
+                message_callback,
+                skip_existing=skip_existing,
+                conflict_callback=conflict_callback,
+            )
+    else:
+        if target.exists():
+            if skip_existing:
+                return
+            if target.is_dir():
+                _remove_local_target(target)
+        _copy_local_file(source, target, progress_callback, message_callback)
+
+
+def _move_local_item_skip_existing(source, target, progress_callback=None, message_callback=None):
     source = Path(source)
     target = Path(target)
     if source.is_dir():
         if target.exists() and not target.is_dir():
-            _remove_local_target(target)
-        target.mkdir(parents=True, exist_ok=True)
-        for child in source.iterdir():
-            _copy_local_item(child, target / child.name, progress_callback, message_callback)
-    else:
-        if target.exists() and target.is_dir():
-            _remove_local_target(target)
+            return
+        if not target.exists():
+            try:
+                shutil.move(str(source), str(target))
+                return
+            except Exception:
+                target.mkdir(parents=True, exist_ok=True)
+        else:
+            target.mkdir(parents=True, exist_ok=True)
+        for child in list(source.iterdir()):
+            _move_local_item_skip_existing(
+                child,
+                target / child.name,
+                progress_callback,
+                message_callback,
+            )
+        try:
+            source.rmdir()
+        except OSError:
+            pass
+        return
+    if target.exists():
+        return
+    try:
+        shutil.move(str(source), str(target))
+    except Exception:
         _copy_local_file(source, target, progress_callback, message_callback)
+        source.unlink()
+
 
 def _offline_target(sd_root, virtual_dir, target_name):
     directory = _offline_local_path(sd_root, virtual_dir)
     return directory / str(target_name or "")
 
 
+from ui.tab_header import create_tab_header
 class FileManagerWorker(QThread):
     result = pyqtSignal(str, object)
+    conflict_requested = pyqtSignal(object)
     error = pyqtSignal(str)
     progress = pyqtSignal(str)
     transfer_progress = pyqtSignal(object, object)
@@ -156,6 +227,19 @@ class FileManagerWorker(QThread):
         self.offline_mode = bool(offline_mode)
         self.sd_root = str(sd_root or "")
         self.kwargs = kwargs
+        self._remembered_conflict_choice = kwargs.get("initial_conflict_choice")
+
+    def resolve_conflict(self, target_path, merge_folders=False):
+        if self._remembered_conflict_choice:
+            return self._remembered_conflict_choice
+        event = threading.Event()
+        payload = {"target_path": str(target_path), "merge_folders": bool(merge_folders), "event": event, "choice": "cancel", "apply_all": False}
+        self.conflict_requested.emit(payload)
+        event.wait()
+        choice = payload.get("choice", "cancel")
+        if payload.get("apply_all") and choice != "cancel":
+            self._remembered_conflict_choice = choice
+        return choice
 
     def run(self):
         try:
@@ -174,6 +258,8 @@ class FileManagerWorker(QThread):
                 upload_items = self.kwargs.get("upload_items", [])
                 uploaded = []
                 for item in upload_items:
+                    if item.get("recursive_choice"):
+                        self._remembered_conflict_choice = item.get("recursive_choice")
                     target = upload_path(
                         self.connection,
                         item.get("local_path"),
@@ -182,6 +268,9 @@ class FileManagerWorker(QThread):
                         message_callback=self.progress.emit,
                         target_name=item.get("target_name"),
                         overwrite=item.get("overwrite", False),
+                        skip_existing=item.get("skip_existing", False),
+                        merge_existing=item.get("merge_existing", False),
+                        conflict_callback=self.resolve_conflict if item.get("merge_existing", False) else None,
                     )
                     uploaded.append(target)
                 self.result.emit(self.action, uploaded)
@@ -200,6 +289,7 @@ class FileManagerWorker(QThread):
                             message_callback=self.progress.emit,
                             target_name=item.get("target_name"),
                             overwrite=item.get("overwrite", False),
+                            skip_existing=item.get("skip_existing", False),
                         ))
                     self.result.emit(self.action, targets)
                     return
@@ -244,6 +334,7 @@ class FileManagerWorker(QThread):
                             overwrite=item.get("overwrite", False),
                             progress_callback=self.on_transfer_progress,
                             message_callback=self.progress.emit,
+                            skip_existing=item.get("skip_existing", False),
                         ))
                     self.result.emit(self.action, targets)
                     return
@@ -292,11 +383,22 @@ class FileManagerWorker(QThread):
                 source = Path(item.get("local_path"))
                 target = _offline_target(self.sd_root, item.get("remote_dir", DEFAULT_ROOT), item.get("target_name") or source.name)
                 if target.exists():
-                    if not item.get("overwrite", False):
+                    if item.get("skip_existing", False):
+                        if not (source.is_dir() and target.is_dir()):
+                            uploaded.append(_offline_virtual_path(self.sd_root, target))
+                            continue
+                    elif not item.get("overwrite", False) and not (item.get("merge_existing", False) and source.is_dir() and target.is_dir()):
                         raise FileExistsError(f"Target already exists: {target}")
-                    if not (source.is_dir() and target.is_dir()):
+                    elif item.get("overwrite", False) and not (source.is_dir() and target.is_dir()):
                         _remove_local_target(target)
-                _copy_local_item(source, target, self.on_transfer_progress, self.progress.emit)
+                _copy_local_item(
+                    source,
+                    target,
+                    self.on_transfer_progress,
+                    self.progress.emit,
+                    skip_existing=item.get("skip_existing", False),
+                    conflict_callback=self.resolve_conflict if item.get("merge_existing", False) else None,
+                )
                 uploaded.append(_offline_virtual_path(self.sd_root, target))
             self.result.emit(action, uploaded)
             return
@@ -310,11 +412,21 @@ class FileManagerWorker(QThread):
                     local_dir.mkdir(parents=True, exist_ok=True)
                     target = local_dir / (item.get("target_name") or source.name)
                     if target.exists():
-                        if not item.get("overwrite", False):
+                        if item.get("skip_existing", False):
+                            if not (source.is_dir() and target.is_dir()):
+                                targets.append(str(target))
+                                continue
+                        elif not item.get("overwrite", False):
                             raise FileExistsError(f"Target already exists: {target}")
-                        if not (source.is_dir() and target.is_dir()):
+                        elif not (source.is_dir() and target.is_dir()):
                             _remove_local_target(target)
-                    _copy_local_item(source, target, self.on_transfer_progress, self.progress.emit)
+                    _copy_local_item(
+                        source,
+                        target,
+                        self.on_transfer_progress,
+                        self.progress.emit,
+                        skip_existing=item.get("skip_existing", False),
+                    )
                     targets.append(str(target))
                 self.result.emit(action, targets)
                 return
@@ -369,20 +481,38 @@ class FileManagerWorker(QThread):
                     else:
                         raise ValueError("A folder cannot be copied or moved into itself.")
                 merge_folders = False
+                skip_existing = item.get("skip_existing", False)
                 if target.exists():
-                    if not item.get("overwrite", False):
-                        raise FileExistsError(f"Target already exists: {target}")
                     merge_folders = source.is_dir() and target.is_dir()
-                    if not merge_folders:
+                    if skip_existing:
+                        if not merge_folders:
+                            targets.append(_offline_virtual_path(self.sd_root, target))
+                            continue
+                    elif not item.get("overwrite", False):
+                        raise FileExistsError(f"Target already exists: {target}")
+                    elif not merge_folders:
                         _remove_local_target(target)
-                if action == "move" and not merge_folders:
+                if action == "move" and skip_existing and merge_folders:
+                    _move_local_item_skip_existing(
+                        source,
+                        target,
+                        self.on_transfer_progress,
+                        self.progress.emit,
+                    )
+                elif action == "move" and not merge_folders:
                     try:
                         shutil.move(str(source), str(target))
                     except Exception:
                         _copy_local_item(source, target, self.on_transfer_progress, self.progress.emit)
                         _remove_local_target(source)
                 else:
-                    _copy_local_item(source, target, self.on_transfer_progress, self.progress.emit)
+                    _copy_local_item(
+                        source,
+                        target,
+                        self.on_transfer_progress,
+                        self.progress.emit,
+                        skip_existing=skip_existing,
+                    )
                     if action == "move":
                         _remove_local_target(source)
                 targets.append(_offline_virtual_path(self.sd_root, target))
@@ -450,6 +580,7 @@ class FileTreeWidget(QTreeWidget):
 
 class FileManagerTab(QWidget):
     CONFLICT_OVERWRITE = "overwrite"
+    CONFLICT_SKIP = "skip"
     CONFLICT_KEEP_BOTH = "keep_both"
     CONFLICT_CANCEL = "cancel"
     SORT_COLUMNS = {0: "name", 1: "size", 2: "modified"}
@@ -496,8 +627,10 @@ class FileManagerTab(QWidget):
 
     def build_ui(self):
         root_layout = QVBoxLayout(self)
-        root_layout.setContentsMargins(12, 12, 12, 12)
+        root_layout.setContentsMargins(18, 18, 18, 18)
         root_layout.setSpacing(8)
+
+        root_layout.addWidget(create_tab_header(self.main_window, "File Manager", "file_manager"))
 
         toolbar = QHBoxLayout()
         toolbar.setSpacing(8)
@@ -769,11 +902,32 @@ class FileManagerTab(QWidget):
             **kwargs,
         )
         self.worker.result.connect(self.on_worker_result)
+        self.worker.conflict_requested.connect(self.on_worker_conflict_requested)
         self.worker.error.connect(self.on_worker_error)
         self.worker.progress.connect(self.append_output)
         self.worker.transfer_progress.connect(self.on_transfer_progress)
         self.worker.finished.connect(self.on_worker_finished)
         self.worker.start()
+
+    def on_worker_conflict_requested(self, payload):
+        try:
+            merge_folders = bool(payload.get("merge_folders"))
+            target_path = payload.get("target_path", "")
+            choice, apply_all = self.conflict_choice(
+                "Folder Exists" if merge_folders else "File Exists",
+                (
+                    f"A folder already exists at:\n\n{target_path}\n\n"
+                    "What do you want to do?"
+                ) if merge_folders else
+                f"An item already exists at:\n\n{target_path}\n\nWhat do you want to do?",
+                overwrite_label="Merge & Overwrite" if merge_folders else "Overwrite",
+                skip_label="Merge & Skip Existing" if merge_folders else "Skip",
+                allow_apply_all=True,
+            )
+            payload["choice"] = choice
+            payload["apply_all"] = apply_all
+        finally:
+            payload["event"].set()
 
     def refresh_roots(self):
         if not self.mode_available():
@@ -1087,18 +1241,20 @@ class FileManagerTab(QWidget):
                 return entry
         return None
 
-    def conflict_choice_for_entry(self, source_entry, target_path, action_name):
+    def conflict_choice_for_entry(self, source_entry, target_path, action_name, allow_apply_all=False):
         existing = self.existing_entry(source_entry.get("name", ""))
         merge_folders = bool(source_entry.get("is_dir") and existing and existing.get("is_dir"))
         if merge_folders:
             return self.conflict_choice(
                 "Folder Exists",
                 f"A folder already exists at:\n\n{target_path}\n\n"
-                "Merging will keep files that only exist in the destination and overwrite matching files from the source.\n\n"
+                "Merging can either overwrite matching files or skip files that already exist.\n\n"
                 "What do you want to do?",
                 overwrite_label="Merge & Overwrite",
+                skip_label="Merge & Skip Existing",
+                allow_apply_all=allow_apply_all,
             )
-        return self.confirm_overwrite(target_path, action_name)
+        return self.confirm_overwrite(target_path, action_name, allow_apply_all=allow_apply_all)
 
     def unique_name(self, name, existing_names=None):
         existing = set(existing_names or self.existing_names())
@@ -1115,28 +1271,50 @@ class FileManagerTab(QWidget):
                 return candidate
         return name
 
-    def conflict_choice(self, title, message, overwrite_label="Overwrite"):
+    def conflict_choice(
+        self,
+        title,
+        message,
+        overwrite_label="Overwrite",
+        skip_label=None,
+        allow_apply_all=False,
+    ):
         box = QMessageBox(self)
         box.setIcon(QMessageBox.Icon.Warning)
         box.setWindowTitle(title)
         box.setText(message)
         overwrite_button = box.addButton(overwrite_label, QMessageBox.ButtonRole.AcceptRole)
+        skip_button = None
+        if skip_label:
+            skip_button = box.addButton(skip_label, QMessageBox.ButtonRole.ActionRole)
         keep_both_button = box.addButton("Keep Both", QMessageBox.ButtonRole.ActionRole)
         cancel_button = box.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+        apply_all_checkbox = None
+        if allow_apply_all:
+            apply_all_checkbox = QCheckBox("Apply to all subsequent conflicts")
+            box.setCheckBox(apply_all_checkbox)
         box.setDefaultButton(cancel_button)
         box.exec()
         clicked = box.clickedButton()
         if clicked == overwrite_button:
-            return self.CONFLICT_OVERWRITE
-        if clicked == keep_both_button:
-            return self.CONFLICT_KEEP_BOTH
-        return self.CONFLICT_CANCEL
+            choice = self.CONFLICT_OVERWRITE
+        elif skip_button is not None and clicked == skip_button:
+            choice = self.CONFLICT_SKIP
+        elif clicked == keep_both_button:
+            choice = self.CONFLICT_KEEP_BOTH
+        else:
+            choice = self.CONFLICT_CANCEL
+        if allow_apply_all:
+            return choice, bool(apply_all_checkbox and apply_all_checkbox.isChecked())
+        return choice
 
-    def confirm_overwrite(self, target_path, action_name):
+    def confirm_overwrite(self, target_path, action_name, allow_apply_all=False):
         return self.conflict_choice(
             "File Exists",
             f"An item already exists at:\n\n{target_path}\n\nWhat do you want to do?",
             overwrite_label="Overwrite",
+            skip_label="Skip",
+            allow_apply_all=allow_apply_all,
         )
 
     def open_selected(self):
@@ -1178,28 +1356,82 @@ class FileManagerTab(QWidget):
         upload_items = []
         existing = self.existing_names()
         planned = set(existing)
+        planned_types = {
+            entry.get("name", ""): bool(entry.get("is_dir"))
+            for entry in self.entries
+            if entry.get("name")
+        }
+        remembered = {"file": None, "folder": None}
+
         for path in valid_paths:
             local_path = Path(path)
             target_name = local_path.name
             overwrite = False
+            skip_existing = False
+            merge_existing = False
+            recursive_choice = None
             target_path = join_remote_path(self.current_path, target_name)
+
             if target_name in planned:
-                choice = self.confirm_overwrite(target_path, "upload")
+                merge_folders = bool(local_path.is_dir() and planned_types.get(target_name) is True)
+                conflict_type = "folder" if merge_folders else "file"
+                choice = remembered[conflict_type]
+                if choice is None:
+                    if merge_folders:
+                        choice, apply_all = self.conflict_choice(
+                            "Folder Exists",
+                            f"A folder already exists at:\n\n{target_path}\n\n"
+                            "Merging can either overwrite matching files or skip files that already exist.\n\n"
+                            "What do you want to do?",
+                            overwrite_label="Merge & Overwrite",
+                            skip_label="Merge & Skip Existing",
+                            allow_apply_all=True,
+                        )
+                    else:
+                        choice, apply_all = self.confirm_overwrite(
+                            target_path,
+                            "upload",
+                            allow_apply_all=True,
+                        )
+                    if apply_all and choice != self.CONFLICT_CANCEL:
+                        remembered[conflict_type] = choice
+
                 if choice == self.CONFLICT_CANCEL:
                     return
-                if choice == self.CONFLICT_OVERWRITE:
-                    overwrite = True
+                recursive_choice = None
+                merge_existing = False
+                if choice == self.CONFLICT_SKIP:
+                    if merge_folders:
+                        merge_existing = True
+                        recursive_choice = choice if apply_all else None
+                    else:
+                        continue
+                elif choice == self.CONFLICT_OVERWRITE:
+                    if merge_folders:
+                        merge_existing = True
+                        recursive_choice = choice if apply_all else None
+                    else:
+                        overwrite = True
                 elif choice == self.CONFLICT_KEEP_BOTH:
                     target_name = self.unique_name(target_name, planned)
+
             planned.add(target_name)
+            planned_types[target_name] = local_path.is_dir()
             upload_items.append(
                 {
                     "local_path": str(local_path),
                     "remote_dir": self.current_path,
                     "target_name": target_name,
                     "overwrite": overwrite,
+                    "skip_existing": skip_existing,
+                    "merge_existing": merge_existing,
+                    "recursive_choice": recursive_choice,
                 }
             )
+
+        if not upload_items:
+            self.append_output("No items to upload. Existing conflicts were skipped.")
+            return
 
         self.append_output(f"Uploading {len(upload_items)} item{'s' if len(upload_items) != 1 else ''} to {self.current_path}...")
         self.start_worker("upload", upload_items=upload_items)
@@ -1216,35 +1448,65 @@ class FileManagerTab(QWidget):
 
         download_items = []
         planned_names = {child.name for child in Path(local_dir).iterdir()} if Path(local_dir).exists() else set()
+        planned_types = {
+            child.name: child.is_dir()
+            for child in Path(local_dir).iterdir()
+        } if Path(local_dir).exists() else {}
+        remembered = {"file": None, "folder": None}
+
         for entry in entries:
             target_name = entry.get("name", "")
             overwrite = False
+            skip_existing = False
             local_target = Path(local_dir) / target_name
+
             if target_name in planned_names or local_target.exists():
-                merge_folders = bool(entry.get("is_dir") and local_target.exists() and local_target.is_dir())
-                choice = self.conflict_choice(
-                    "Folder Exists" if merge_folders else "File Exists",
-                    (f"A folder already exists at:\n\n{local_target}\n\n"
-                     "Merging will keep files that only exist in the destination and overwrite matching files from the source.\n\n"
-                     "What do you want to do?") if merge_folders else
-                    f"An item already exists at:\n\n{local_target}\n\nWhat do you want to do?",
-                    overwrite_label="Merge & Overwrite" if merge_folders else "Overwrite",
-                )
+                merge_folders = bool(entry.get("is_dir") and planned_types.get(target_name) is True)
+                conflict_type = "folder" if merge_folders else "file"
+                choice = remembered[conflict_type]
+                if choice is None:
+                    choice, apply_all = self.conflict_choice(
+                        "Folder Exists" if merge_folders else "File Exists",
+                        (
+                            f"A folder already exists at:\n\n{local_target}\n\n"
+                            "Merging can either overwrite matching files or skip files that already exist.\n\n"
+                            "What do you want to do?"
+                        ) if merge_folders else
+                        f"An item already exists at:\n\n{local_target}\n\nWhat do you want to do?",
+                        overwrite_label="Merge & Overwrite" if merge_folders else "Overwrite",
+                        skip_label="Merge & Skip Existing" if merge_folders else "Skip",
+                        allow_apply_all=True,
+                    )
+                    if apply_all and choice != self.CONFLICT_CANCEL:
+                        remembered[conflict_type] = choice
+
                 if choice == self.CONFLICT_CANCEL:
                     return
-                if choice == self.CONFLICT_OVERWRITE:
+                if choice == self.CONFLICT_SKIP:
+                    if merge_folders:
+                        skip_existing = True
+                    else:
+                        continue
+                elif choice == self.CONFLICT_OVERWRITE:
                     overwrite = True
                 elif choice == self.CONFLICT_KEEP_BOTH:
                     target_name = self.unique_local_name(local_dir, target_name)
                     while target_name in planned_names:
                         target_name = self.unique_local_name(local_dir, target_name)
+
             planned_names.add(target_name)
+            planned_types[target_name] = bool(entry.get("is_dir"))
             download_items.append({
                 "remote_path": entry.get("path"),
                 "local_dir": local_dir,
                 "target_name": target_name,
                 "overwrite": overwrite,
+                "skip_existing": skip_existing,
             })
+
+        if not download_items:
+            self.append_output("No items to download. Existing conflicts were skipped.")
+            return
 
         self.append_output(f"Downloading {len(download_items)} item{'s' if len(download_items) != 1 else ''}...")
         self.start_worker("download", download_items=download_items)
@@ -1340,6 +1602,13 @@ class FileManagerTab(QWidget):
 
         transfer_items = []
         planned = set(self.existing_names())
+        planned_types = {
+            entry.get("name", ""): bool(entry.get("is_dir"))
+            for entry in self.entries
+            if entry.get("name")
+        }
+        remembered = {"file": None, "folder": None}
+
         for source_entry in self.clipboard_entries:
             source_path = source_entry.get("path")
             source_name = source_entry.get("name", "")
@@ -1348,25 +1617,59 @@ class FileManagerTab(QWidget):
 
             target_name = source_name
             overwrite = False
+            skip_existing = False
+
             if target_name in planned:
                 target_path = join_remote_path(self.current_path, target_name)
-                choice = self.conflict_choice_for_entry(source_entry, target_path, "paste")
+                merge_folders = bool(source_entry.get("is_dir") and planned_types.get(target_name) is True)
+                conflict_type = "folder" if merge_folders else "file"
+                choice = remembered[conflict_type]
+                if choice is None:
+                    if merge_folders:
+                        choice, apply_all = self.conflict_choice(
+                            "Folder Exists",
+                            f"A folder already exists at:\n\n{target_path}\n\n"
+                            "Merging can either overwrite matching files or skip files that already exist.\n\n"
+                            "What do you want to do?",
+                            overwrite_label="Merge & Overwrite",
+                            skip_label="Merge & Skip Existing",
+                            allow_apply_all=True,
+                        )
+                    else:
+                        choice, apply_all = self.confirm_overwrite(
+                            target_path,
+                            "paste",
+                            allow_apply_all=True,
+                        )
+                    if apply_all and choice != self.CONFLICT_CANCEL:
+                        remembered[conflict_type] = choice
+
                 if choice == self.CONFLICT_CANCEL:
                     return
-                if choice == self.CONFLICT_OVERWRITE:
+                if choice == self.CONFLICT_SKIP:
+                    if merge_folders:
+                        skip_existing = True
+                    else:
+                        continue
+                elif choice == self.CONFLICT_OVERWRITE:
                     overwrite = True
                 elif choice == self.CONFLICT_KEEP_BOTH:
                     target_name = self.unique_name(target_name, planned)
+
             planned.add(target_name)
+            planned_types[target_name] = bool(source_entry.get("is_dir"))
             transfer_items.append({
                 "source_path": source_path,
                 "target_dir": self.current_path,
                 "target_name": target_name,
                 "overwrite": overwrite,
+                "skip_existing": skip_existing,
             })
 
         if not transfer_items:
+            self.append_output("No items to paste. Existing conflicts were skipped.")
             return
+
         action = self.clipboard_action
         self.append_output(
             f"{'Moving' if action == 'move' else 'Copying'} {len(transfer_items)} "

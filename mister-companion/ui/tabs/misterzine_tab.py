@@ -37,6 +37,7 @@ from core.misterzine import (
 )
 from core.open_helpers import open_uri
 from core.zapscripts import run_zaparoo_command
+from ui.tab_header import create_tab_header
 from ui.zaparoo_pairing import run_with_zaparoo_pairing
 
 
@@ -157,8 +158,10 @@ class MiSTerZineTab(QWidget):
 
     def _build_ui(self):
         root = QVBoxLayout(self)
-        root.setContentsMargins(8, 8, 8, 8)
-        root.setSpacing(8)
+        root.setContentsMargins(18, 18, 18, 18)
+        root.setSpacing(10)
+
+        root.addWidget(create_tab_header(self.main_window, "MiSTerZine", "misterzine"))
 
         controls = QHBoxLayout()
         self.search_edit = QLineEdit()

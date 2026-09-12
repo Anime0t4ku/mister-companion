@@ -1,11 +1,10 @@
 import platform
 import re
-import sys
 from pathlib import Path
 from core.open_helpers import open_uri
 
 from PyQt6.QtCore import QByteArray, QEvent, QPoint, QRect, QSize, QThread, QTimer, Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QIcon, QPainter, QPalette, QPen, QPixmap, QRegion
+from PyQt6.QtGui import QIcon, QPainter, QPalette, QPixmap
 from PyQt6.QtWidgets import (
     QApplication,
     QButtonGroup,
@@ -40,8 +39,9 @@ from core.device_profiles import (
     get_profile_sync_roots,
     update_device,
 )
-from core.profile_folder_sync import profile_assigned_to_ip, profile_removed, profile_renamed
-from core.theme import apply_theme, make_scaler, theme_accent_color, theme_logo_mode, theme_text_color
+from core.profile_folder_sync import profile_assigned_to_ip
+from core.profile_identity import migrate_profile_identity, remove_profile_identity
+from core.theme import apply_custom_theme_preview, apply_theme, custom_theme_roles, make_scaler, theme_accent_color, theme_logo_mode, theme_text_color
 from core.updater import (
     check_for_update,
     launch_mc_updater,
@@ -54,7 +54,7 @@ from ui.dialogs.network_scanner_dialog import NetworkScannerDialog
 from ui.dialogs.setup_notice_dialog import SetupNoticeDialog
 from ui.dialogs.support_dialog import SupportDialog
 from ui.dialogs.theme_picker_dialog import ThemePickerDialog
-from ui.dialogs.app_settings_dialog import AppSettingsDialog
+from ui.tabs.app_settings_tab import AppSettingsTab
 from ui.dialogs.changelog_dialog import ChangelogDialog
 from ui.dialogs.update_available_dialog import UpdateAvailableDialog
 from ui.tabs.connection_tab import ConnectionTab
@@ -116,305 +116,7 @@ class UpdateCheckWorker(QThread):
             self.error.emit(str(e))
 
 
-class TitleBarButton(QPushButton):
-    def __init__(self, label: str, role: str, parent=None):
-        super().__init__(label, parent)
-        self.role = role
-
-    def paintEvent(self, event):
-        if platform.system() != "Linux":
-            super().paintEvent(event)
-            return
-
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-
-        rect = self.rect()
-        hover = self.underMouse() and self.isEnabled()
-        is_close = self.objectName() == "WindowCloseButton"
-
-        if hover:
-            if is_close:
-                painter.setBrush(QColor("#d32f2f"))
-                painter.setPen(Qt.PenStyle.NoPen)
-                painter.drawRoundedRect(rect.adjusted(1, 1, -1, -1), 5, 5)
-                color = QColor("#ffffff")
-            else:
-                painter.setBrush(self.palette().color(QPalette.ColorRole.Midlight))
-                painter.setPen(Qt.PenStyle.NoPen)
-                painter.drawRoundedRect(rect.adjusted(1, 1, -1, -1), 5, 5)
-                color = self.palette().color(QPalette.ColorRole.WindowText)
-        else:
-            color = self.palette().color(QPalette.ColorRole.WindowText)
-
-        pen_width = max(2, round(rect.height() / 14))
-        pen = QPen(color, pen_width)
-        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-        painter.setPen(pen)
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-
-        cx = rect.center().x()
-        cy = rect.center().y()
-        size = max(10, round(min(rect.width(), rect.height()) * 0.38))
-        half = size // 2
-
-        if self.role == "minimize":
-            y = cy + max(2, round(rect.height() * 0.14))
-            painter.drawLine(cx - half, y, cx + half, y)
-        elif self.role == "maximize":
-            if self.text() == "❐":
-                offset = max(3, round(size * 0.22))
-                back = QRect(cx - half + offset, cy - half - offset, size, size)
-                front = QRect(cx - half, cy - half + offset, size, size)
-                painter.drawRect(back)
-                painter.drawRect(front)
-            else:
-                painter.drawRect(QRect(cx - half, cy - half, size, size))
-        else:
-            painter.drawLine(cx - half, cy - half, cx + half, cy + half)
-            painter.drawLine(cx + half, cy - half, cx - half, cy + half)
-
-
-class CustomTitleBar(QWidget):
-    def __init__(self, main_window):
-        super().__init__(main_window)
-        self.main_window = main_window
-        self.dragging = False
-        self.drag_position = QPoint()
-        self.logo_pixmap = QPixmap()
-        self.logo_mode = ""
-
-        self.setObjectName("CustomTitleBar")
-
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(10, 0, 6, 0)
-        layout.setSpacing(8)
-        self._layout = layout
-
-        self.logo_label = QLabel()
-        self.logo_label.setAlignment(
-            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft
-        )
-
-        layout.addWidget(self.logo_label)
-        layout.addStretch()
-
-        self.version_label = QLabel(APP_VERSION)
-        self.version_label.setAlignment(
-            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight
-        )
-        self.version_label.setMinimumWidth(90)
-        self.version_label.setStyleSheet("color: gray; font-weight: bold;")
-        layout.addWidget(self.version_label)
-
-        self.minimize_button = TitleBarButton("−", "minimize")
-        self.maximize_button = TitleBarButton("□", "maximize")
-        self.close_button = TitleBarButton("×", "close")
-
-        for button in (
-            self.minimize_button,
-            self.maximize_button,
-            self.close_button,
-        ):
-            button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-            button.setObjectName("WindowControlButton")
-
-        self.close_button.setObjectName("WindowCloseButton")
-
-        layout.addWidget(self.minimize_button)
-        layout.addWidget(self.maximize_button)
-        layout.addWidget(self.close_button)
-
-        self.minimize_button.clicked.connect(self.main_window.showMinimized)
-        self.maximize_button.clicked.connect(self.main_window.toggle_maximize_restore)
-        self.close_button.clicked.connect(self.main_window.close)
-
-        self.apply_ui_scale(self.main_window.get_ui_scale_percent())
-
-    def apply_ui_scale(self, ui_scale_percent: int):
-        s = make_scaler(ui_scale_percent)
-
-        self.setFixedHeight(s(44))
-        self._layout.setContentsMargins(s(10), 0, s(6), 0)
-        self._layout.setSpacing(s(8))
-
-        self.logo_label.setFixedSize(s(260), s(34))
-        self.version_label.setMinimumWidth(s(90))
-
-        button_width = max(36, s(36))
-        button_height = max(28, s(28))
-        button_font_size = max(15, s(15))
-        button_radius = max(5, s(5))
-
-        for button in (
-            self.minimize_button,
-            self.maximize_button,
-            self.close_button,
-        ):
-            button.setFixedSize(button_width, button_height)
-
-        self.setStyleSheet(
-            f"""
-            QWidget#CustomTitleBar {{
-                background-color: palette(window);
-                border-bottom: {max(1, s(1))}px solid palette(mid);
-            }}
-
-            QPushButton#WindowControlButton {{
-                border: none;
-                border-radius: {button_radius}px;
-                font-size: {button_font_size}px;
-                font-weight: bold;
-                padding: 0px;
-            }}
-
-            QPushButton#WindowControlButton:hover {{
-                background-color: palette(midlight);
-            }}
-
-            QPushButton#WindowCloseButton {{
-                border: none;
-                border-radius: {button_radius}px;
-                font-size: {button_font_size}px;
-                font-weight: bold;
-                padding: 0px;
-            }}
-
-            QPushButton#WindowCloseButton:hover {{
-                background-color: #d32f2f;
-                color: white;
-            }}
-            """
-        )
-        self.update_logo_pixmap()
-
-    def set_logo_mode(self, mode: str):
-        mode = (mode or "light").strip().lower()
-
-        if mode not in {"light", "dark"}:
-            mode = "light"
-
-        if mode == self.logo_mode and not self.logo_pixmap.isNull():
-            self.update_logo_pixmap()
-            return
-
-        self.logo_mode = mode
-        logo_path = LOGO_DARK_PATH if mode == "dark" else LOGO_LIGHT_PATH
-
-        if logo_path.exists():
-            self.logo_pixmap = QPixmap(str(logo_path))
-        else:
-            self.logo_pixmap = QPixmap()
-
-        self.update_logo_pixmap()
-
-    def update_logo_pixmap(self):
-        if self.logo_pixmap.isNull():
-            self.logo_label.clear()
-            return
-
-        scaled = self.logo_pixmap.scaled(
-            self.logo_label.size(),
-            Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.SmoothTransformation,
-        )
-        self.logo_label.setPixmap(scaled)
-
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        self.update_logo_pixmap()
-
-    def start_native_window_drag(self) -> bool:
-        if sys.platform.startswith("win"):
-            try:
-                import ctypes
-
-                hwnd = int(self.main_window.winId())
-
-                WM_NCLBUTTONDOWN = 0x00A1
-                HTCAPTION = 2
-
-                ctypes.windll.user32.ReleaseCapture()
-                ctypes.windll.user32.SendMessageW(hwnd, WM_NCLBUTTONDOWN, HTCAPTION, 0)
-                return True
-            except Exception:
-                return False
-
-        window_handle = self.main_window.windowHandle()
-
-        if window_handle is not None:
-            try:
-                return bool(window_handle.startSystemMove())
-            except Exception:
-                return False
-
-        return False
-
-    def mousePressEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton:
-            clicked_widget = self.childAt(event.position().toPoint())
-
-            if clicked_widget in {
-                self.minimize_button,
-                self.maximize_button,
-                self.close_button,
-            }:
-                super().mousePressEvent(event)
-                return
-
-            self.dragging = False
-            self.drag_position = QPoint()
-
-            if self.start_native_window_drag():
-                event.accept()
-                return
-
-            self.dragging = True
-            self.drag_position = (
-                event.globalPosition().toPoint()
-                - self.main_window.frameGeometry().topLeft()
-            )
-            event.accept()
-            return
-
-        super().mousePressEvent(event)
-
-    def mouseMoveEvent(self, event):
-        if self.dragging and event.buttons() & Qt.MouseButton.LeftButton:
-            self.main_window.move(event.globalPosition().toPoint() - self.drag_position)
-            event.accept()
-            return
-
-        super().mouseMoveEvent(event)
-
-    def mouseReleaseEvent(self, event):
-        self.dragging = False
-        self.drag_position = QPoint()
-        super().mouseReleaseEvent(event)
-
-    def mouseDoubleClickEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton:
-            clicked_widget = self.childAt(event.position().toPoint())
-
-            if clicked_widget in {
-                self.minimize_button,
-                self.maximize_button,
-                self.close_button,
-            }:
-                super().mouseDoubleClickEvent(event)
-                return
-
-            self.main_window.toggle_maximize_restore()
-            event.accept()
-            return
-
-        super().mouseDoubleClickEvent(event)
-
-
 class MainWindow(QMainWindow):
-    RESIZE_MARGIN = 7
-    WINDOW_CORNER_RADIUS = 10
 
     def __init__(self, app):
         super().__init__()
@@ -450,25 +152,19 @@ class MainWindow(QMainWindow):
 
         self._closing = False
         self._tab_refresh_generation = 0
-        self._resizing = False
-        self._resize_direction = ""
-        self._resize_start_pos = QPoint()
-        self._resize_start_geometry = QRect()
 
         self.setWindowFlags(
-            Qt.WindowType.FramelessWindowHint
-            | Qt.WindowType.Window
+            Qt.WindowType.Window
             | Qt.WindowType.WindowSystemMenuHint
             | Qt.WindowType.WindowMinimizeButtonHint
             | Qt.WindowType.WindowMaximizeButtonHint
+            | Qt.WindowType.WindowCloseButtonHint
         )
-        self.setMouseTracking(True)
         self.setMinimumSize(1100, 830)
 
-        self.setWindowTitle(APP_NAME)
+        self.setWindowTitle(f"{APP_NAME} {APP_VERSION}")
         self.apply_default_window_size()
         self.restore_window_geometry()
-        QTimer.singleShot(0, self.enable_windows_snap_styles)
 
         if ICON_PATH.exists():
             self.setWindowIcon(QIcon(str(ICON_PATH)))
@@ -477,9 +173,6 @@ class MainWindow(QMainWindow):
         root_layout = QVBoxLayout(central_widget)
         root_layout.setContentsMargins(0, 0, 0, 0)
         root_layout.setSpacing(0)
-
-        self.title_bar = CustomTitleBar(self)
-        root_layout.addWidget(self.title_bar)
 
         content_widget = QWidget()
         content_layout = QVBoxLayout(content_widget)
@@ -501,8 +194,6 @@ class MainWindow(QMainWindow):
         self.side_menu_button_group = QButtonGroup(self)
         self.side_menu_button_group.setExclusive(True)
         self.side_menu_button_group.idClicked.connect(self.on_side_menu_clicked)
-        self.side_menu_layout.addStretch()
-
         self.tabs = QTabWidget()
         self.tabs.setIconSize(TAB_ICON_SIZE)
 
@@ -514,8 +205,22 @@ class MainWindow(QMainWindow):
         bottom_bar.setContentsMargins(0, 0, 0, 0)
         bottom_bar.setSpacing(8)
 
-        self.connection_status_label = QLabel("Status: Disconnected")
+        self.connection_status_title_label = QLabel("MiSTer:")
+        self.connection_status_title_label.setStyleSheet("font-weight: bold;")
+        self.connection_status_label = QLabel("Disconnected")
+        self.connection_status_label.setStyleSheet("font-weight: bold; color: #e74c3c;")
+        bottom_bar.addWidget(self.connection_status_title_label)
         bottom_bar.addWidget(self.connection_status_label)
+
+        self.footer_cloud_title_label = QLabel("Cloud:")
+        self.footer_cloud_title_label.setStyleSheet("font-weight: bold;")
+        self.footer_cloud_status_label = QLabel("Inactive")
+        self.footer_cloud_status_label.setStyleSheet("font-weight: bold; color: #e74c3c;")
+        self.footer_cloud_title_label.hide()
+        self.footer_cloud_status_label.hide()
+        bottom_bar.addSpacing(8)
+        bottom_bar.addWidget(self.footer_cloud_title_label)
+        bottom_bar.addWidget(self.footer_cloud_status_label)
 
         bottom_bar.addStretch()
 
@@ -533,13 +238,6 @@ class MainWindow(QMainWindow):
         self.theme_button.clicked.connect(self.open_theme_picker)
         bottom_bar.addWidget(self.theme_button)
 
-        self.settings_button = QPushButton()
-        self.settings_button.setObjectName("FooterIconButton")
-        self.settings_button.setToolTip("App Settings")
-        self.settings_button.setFixedWidth(34)
-        self.settings_button.clicked.connect(self.open_app_settings)
-        bottom_bar.addWidget(self.settings_button)
-
         self.apply_linux_footer_button_sizing()
 
         content_layout.addLayout(bottom_bar)
@@ -548,6 +246,7 @@ class MainWindow(QMainWindow):
         self.app.installEventFilter(self)
 
         self.set_connection_status("Status: Disconnected")
+        self.update_footer_cloud_status()
 
         saved_theme = str(self.config_data.get("theme_mode", "auto") or "auto").strip().lower()
 
@@ -651,6 +350,9 @@ class MainWindow(QMainWindow):
         self.tools_tab = ToolsTab(self)
         self.tabs.addTab(self.tools_tab, self.tab_icon("tools"), "Tools")
 
+        self.app_settings_tab = AppSettingsTab(self)
+        self.tabs.addTab(self.app_settings_tab, self.tab_icon("settings"), "App Settings")
+
         self.wallpapers_tab = WallpapersTab(self)
 
         self.build_side_menu()
@@ -673,7 +375,6 @@ class MainWindow(QMainWindow):
         self.apply_app_mode_state()
         self.update_all_tab_states(lightweight=True)
 
-        QTimer.singleShot(0, self.apply_window_corner_radius)
         QTimer.singleShot(300, self.show_setup_notice)
         QTimer.singleShot(1500, self.check_for_updates_on_startup)
 
@@ -693,6 +394,7 @@ class MainWindow(QMainWindow):
             ("ZapScripts", "zapscripts"),
             ("ZapScraper", "zapscraper"),
             ("Tools", "tools"),
+            ("App Settings", "settings"),
         ]
 
     def build_side_menu(self):
@@ -708,6 +410,11 @@ class MainWindow(QMainWindow):
         self.side_menu_buttons = []
         max_text_width = 0
         font_metrics = self.fontMetrics()
+
+        self.side_menu_logo_label = QLabel()
+        self.side_menu_logo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.side_menu_layout.addWidget(self.side_menu_logo_label)
+        self.side_menu_layout.addSpacing(6)
 
         for index, (label, icon_name) in enumerate(self.tab_entries()):
             button = QPushButton(label)
@@ -729,8 +436,36 @@ class MainWindow(QMainWindow):
             button.setFixedWidth(width)
 
         self.side_menu.setFixedWidth(width + 16)
+        self.update_side_menu_logo()
         self.side_menu_layout.addStretch()
         self.update_side_menu_selection(self.tabs.currentIndex() if hasattr(self, "tabs") else 0)
+
+    def update_side_menu_logo(self, mode: str = ""):
+        if not hasattr(self, "side_menu_logo_label"):
+            return
+
+        preview = getattr(self, "_theme_preview_data", None)
+        if isinstance(preview, dict):
+            logo_mode = "dark" if custom_theme_roles(preview)["is_dark"] else "light"
+        else:
+            if not mode:
+                mode = self.config_data.get("theme_mode", "auto")
+            logo_mode = theme_logo_mode(mode)
+        logo_path = LOGO_DARK_PATH if logo_mode == "dark" else LOGO_LIGHT_PATH
+        if not logo_path.exists():
+            self.side_menu_logo_label.clear()
+            return
+
+        s = make_scaler(self.get_ui_scale_percent())
+        available_width = max(s(110), self.side_menu.width() - s(16))
+        target_size = QSize(available_width, s(48))
+        pixmap = QPixmap(str(logo_path)).scaled(
+            target_size,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        self.side_menu_logo_label.setFixedHeight(s(48))
+        self.side_menu_logo_label.setPixmap(pixmap)
 
     def refresh_side_menu_icons(self):
         if not hasattr(self, "side_menu_buttons"):
@@ -739,8 +474,12 @@ class MainWindow(QMainWindow):
         self.update_side_menu_selection(self.tabs.currentIndex() if hasattr(self, "tabs") else 0)
 
     def side_menu_icon(self, icon_name: str, selected: bool = False) -> QIcon:
-        mode = self.config_data.get("theme_mode", "auto")
-        color = "#ffffff" if selected else theme_accent_color(mode)
+        preview = getattr(self, "_theme_preview_data", None)
+        if isinstance(preview, dict):
+            accent = custom_theme_roles(preview)["accent"]
+        else:
+            accent = theme_accent_color(self.config_data.get("theme_mode", "auto"))
+        color = "#ffffff" if selected else accent
         return self.svg_icon(icon_name, color)
 
     def update_side_menu_selection(self, index: int):
@@ -766,12 +505,18 @@ class MainWindow(QMainWindow):
         if not hasattr(self, "side_menu"):
             return
 
-        mode = self.config_data.get("theme_mode", "auto")
+        preview = getattr(self, "_theme_preview_data", None)
         palette = self.palette()
         button = palette.color(QPalette.ColorRole.Button).name()
         mid = palette.color(QPalette.ColorRole.Mid).name()
-        text = theme_text_color(mode)
-        accent = theme_accent_color(mode)
+        if isinstance(preview, dict):
+            roles = custom_theme_roles(preview)
+            text = roles["text"]
+            accent = roles["accent"]
+        else:
+            mode = self.config_data.get("theme_mode", "auto")
+            text = theme_text_color(mode)
+            accent = theme_accent_color(mode)
 
         self.side_menu.setStyleSheet(
             f"""
@@ -824,13 +569,6 @@ class MainWindow(QMainWindow):
         self.update_side_menu_style()
 
 
-    def open_app_settings(self):
-        if self._closing:
-            return
-
-        dialog = AppSettingsDialog(self)
-        dialog.exec()
-
     def open_support_dialog(self):
         if self._closing:
             return
@@ -868,45 +606,6 @@ class MainWindow(QMainWindow):
         self.resize(width, height)
         self._center_on_primary_screen()
 
-    def enable_windows_snap_styles(self):
-        if not sys.platform.startswith("win"):
-            return
-
-        try:
-            import ctypes
-
-            hwnd = int(self.winId())
-
-            GWL_STYLE = -16
-            WS_THICKFRAME = 0x00040000
-            WS_SYSMENU = 0x00080000
-            WS_MINIMIZEBOX = 0x00020000
-            WS_MAXIMIZEBOX = 0x00010000
-
-            SWP_NOMOVE = 0x0002
-            SWP_NOSIZE = 0x0001
-            SWP_NOZORDER = 0x0004
-            SWP_NOACTIVATE = 0x0010
-            SWP_FRAMECHANGED = 0x0020
-
-            user32 = ctypes.windll.user32
-            style = user32.GetWindowLongW(hwnd, GWL_STYLE)
-            style |= WS_THICKFRAME | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX
-            user32.SetWindowLongW(hwnd, GWL_STYLE, style)
-            user32.SetWindowPos(
-                hwnd,
-                0,
-                0,
-                0,
-                0,
-                0,
-                SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
-            )
-
-            self.apply_windows_native_corner_radius()
-        except Exception:
-            pass
-
     def apply_linux_footer_button_sizing(self):
         if platform.system() != "Linux":
             return
@@ -924,268 +623,20 @@ class MainWindow(QMainWindow):
             button.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
             button.setMinimumHeight(s(28))
 
-        if hasattr(self, "settings_button"):
-            self.settings_button.setMinimumWidth(0)
-            self.settings_button.setFixedWidth(s(34))
-            self.settings_button.setFixedHeight(s(28))
-
-    def update_title_bar_logo(self, mode: str = ""):
-        if not hasattr(self, "title_bar"):
-            return
-
-        if not mode:
-            mode = self.config_data.get("theme_mode", "auto")
-
-        logo_mode = theme_logo_mode(mode)
-        self.title_bar.set_logo_mode(logo_mode)
-        self.update_settings_button_icon()
-
-    def update_settings_button_icon(self):
-        if not hasattr(self, "settings_button"):
-            return
-
-        mode = self.config_data.get("theme_mode", "auto")
-        self.settings_button.setIcon(self.svg_icon("settings", theme_text_color(mode)))
-
-    def apply_windows_native_corner_radius(self):
-        if not sys.platform.startswith("win"):
-            return
-
-        try:
-            import ctypes
-            from ctypes import wintypes
-
-            hwnd = int(self.winId())
-
-            DWMWA_WINDOW_CORNER_PREFERENCE = 33
-            DWMWCP_DEFAULT = 0
-            DWMWCP_DONOTROUND = 1
-            DWMWCP_ROUND = 2
-            DWMWCP_ROUNDSMALL = 3
-
-            preference = ctypes.c_int(DWMWCP_ROUND)
-
-            ctypes.windll.dwmapi.DwmSetWindowAttribute(
-                wintypes.HWND(hwnd),
-                wintypes.DWORD(DWMWA_WINDOW_CORNER_PREFERENCE),
-                ctypes.byref(preference),
-                ctypes.sizeof(preference),
-            )
-        except Exception:
-            pass
-
-    def apply_window_corner_radius(self):
-        if sys.platform.startswith("win"):
-            self.clearMask()
-            self.apply_windows_native_corner_radius()
-            return
-
-        if self.isMaximized() or self.isFullScreen():
-            self.clearMask()
-            return
-
-        rect = self.rect()
-        radius = self.WINDOW_CORNER_RADIUS
-        diameter = radius * 2
-
-        if rect.width() <= diameter or rect.height() <= diameter:
-            self.clearMask()
-            return
-
-        rounded = QRegion(QRect(radius, 0, rect.width() - diameter, rect.height()))
-        rounded = rounded.united(
-            QRegion(QRect(0, radius, rect.width(), rect.height() - diameter))
-        )
-        rounded = rounded.united(
-            QRegion(QRect(0, 0, diameter, diameter), QRegion.RegionType.Ellipse)
-        )
-        rounded = rounded.united(
-            QRegion(
-                QRect(rect.width() - diameter, 0, diameter, diameter),
-                QRegion.RegionType.Ellipse,
-            )
-        )
-        rounded = rounded.united(
-            QRegion(
-                QRect(0, rect.height() - diameter, diameter, diameter),
-                QRegion.RegionType.Ellipse,
-            )
-        )
-        rounded = rounded.united(
-            QRegion(
-                QRect(
-                    rect.width() - diameter,
-                    rect.height() - diameter,
-                    diameter,
-                    diameter,
-                ),
-                QRegion.RegionType.Ellipse,
-            )
-        )
-
-        self.setMask(rounded)
-
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        self.apply_window_corner_radius()
-
-    def showEvent(self, event):
-        super().showEvent(event)
-        self.apply_window_corner_radius()
-
-    def toggle_maximize_restore(self):
-        if self.isMaximized():
-            self.showNormal()
-        else:
-            self.showMaximized()
-
-        self.update_maximize_button()
-        QTimer.singleShot(0, self.apply_window_corner_radius)
-
-    def update_maximize_button(self):
-        if hasattr(self, "title_bar"):
-            self.title_bar.maximize_button.setText("❐" if self.isMaximized() else "□")
 
     def changeEvent(self, event):
-        if event.type() == QEvent.Type.WindowStateChange:
-            self.update_maximize_button()
-            QTimer.singleShot(0, self.apply_window_corner_radius)
-        elif event.type() == QEvent.Type.ActivationChange:
+        if event.type() == QEvent.Type.ActivationChange:
             if hasattr(self, "remote_tab"):
                 self.remote_tab.handle_window_activation_changed(self.isActiveWindow())
 
         super().changeEvent(event)
 
-    def _widget_belongs_to_window(self, obj):
-        return isinstance(obj, QWidget) and obj.window() is self
-
-    def _resize_hit_test(self, global_pos: QPoint) -> str:
-        if self.isMaximized() or self.isFullScreen():
-            return ""
-
-        geometry = self.frameGeometry()
-        margin = self.RESIZE_MARGIN
-
-        left = abs(global_pos.x() - geometry.left()) <= margin
-        right = abs(global_pos.x() - geometry.right()) <= margin
-        top = abs(global_pos.y() - geometry.top()) <= margin
-        bottom = abs(global_pos.y() - geometry.bottom()) <= margin
-
-        if top and left:
-            return "top_left"
-        if top and right:
-            return "top_right"
-        if bottom and left:
-            return "bottom_left"
-        if bottom and right:
-            return "bottom_right"
-        if left:
-            return "left"
-        if right:
-            return "right"
-        if top:
-            return "top"
-        if bottom:
-            return "bottom"
-
-        return ""
-
-    def _cursor_for_resize_direction(self, direction: str):
-        if direction in {"left", "right"}:
-            return Qt.CursorShape.SizeHorCursor
-
-        if direction in {"top", "bottom"}:
-            return Qt.CursorShape.SizeVerCursor
-
-        if direction in {"top_left", "bottom_right"}:
-            return Qt.CursorShape.SizeFDiagCursor
-
-        if direction in {"top_right", "bottom_left"}:
-            return Qt.CursorShape.SizeBDiagCursor
-
-        return Qt.CursorShape.ArrowCursor
-
-    def _apply_resize(self, global_pos: QPoint):
-        if not self._resizing or not self._resize_direction:
-            return
-
-        delta = global_pos - self._resize_start_pos
-        geometry = QRect(self._resize_start_geometry)
-
-        minimum_width = self.minimumWidth()
-        minimum_height = self.minimumHeight()
-
-        if "left" in self._resize_direction:
-            new_left = geometry.left() + delta.x()
-            max_left = geometry.right() - minimum_width
-            geometry.setLeft(min(new_left, max_left))
-
-        if "right" in self._resize_direction:
-            new_right = geometry.right() + delta.x()
-            min_right = geometry.left() + minimum_width
-            geometry.setRight(max(new_right, min_right))
-
-        if "top" in self._resize_direction:
-            new_top = geometry.top() + delta.y()
-            max_top = geometry.bottom() - minimum_height
-            geometry.setTop(min(new_top, max_top))
-
-        if "bottom" in self._resize_direction:
-            new_bottom = geometry.bottom() + delta.y()
-            min_bottom = geometry.top() + minimum_height
-            geometry.setBottom(max(new_bottom, min_bottom))
-
-        self.setGeometry(geometry)
-        self.apply_window_corner_radius()
-
     def eventFilter(self, obj, event):
         if self._closing:
             return super().eventFilter(obj, event)
 
-        if not self._widget_belongs_to_window(obj):
-            return super().eventFilter(obj, event)
-
-        if hasattr(self, "remote_tab") and self.remote_tab.handle_application_key_event(event):
-            return True
-
-        event_type = event.type()
-
-        if event_type == QEvent.Type.MouseButtonPress:
-            if event.button() == Qt.MouseButton.LeftButton:
-                global_pos = event.globalPosition().toPoint()
-                direction = self._resize_hit_test(global_pos)
-
-                if direction:
-                    self._resizing = True
-                    self._resize_direction = direction
-                    self._resize_start_pos = global_pos
-                    self._resize_start_geometry = self.frameGeometry()
-                    self.setCursor(self._cursor_for_resize_direction(direction))
-                    event.accept()
-                    return True
-
-        elif event_type == QEvent.Type.MouseMove:
-            global_pos = event.globalPosition().toPoint()
-
-            if self._resizing:
-                self._apply_resize(global_pos)
-                event.accept()
-                return True
-
-            direction = self._resize_hit_test(global_pos)
-
-            if direction:
-                self.setCursor(self._cursor_for_resize_direction(direction))
-            else:
-                self.unsetCursor()
-
-        elif event_type == QEvent.Type.MouseButtonRelease:
-            if self._resizing:
-                self._resizing = False
-                self._resize_direction = ""
-                self.unsetCursor()
-                self.apply_window_corner_radius()
-                event.accept()
+        if isinstance(obj, QWidget) and obj.window() is self:
+            if hasattr(self, "remote_tab") and self.remote_tab.handle_application_key_event(event):
                 return True
 
         return super().eventFilter(obj, event)
@@ -1225,7 +676,12 @@ class MainWindow(QMainWindow):
         return QIcon(str(path))
 
     def tab_icon(self, name: str) -> QIcon:
-        return self.svg_icon(name, theme_accent_color(self.config_data.get("theme_mode", "auto")))
+        preview = getattr(self, "_theme_preview_data", None)
+        if isinstance(preview, dict):
+            color = custom_theme_roles(preview)["accent"]
+        else:
+            color = theme_accent_color(self.config_data.get("theme_mode", "auto"))
+        return self.svg_icon(name, color)
 
     def refresh_tab_icons(self):
         if not hasattr(self, "tabs"):
@@ -1244,6 +700,7 @@ class MainWindow(QMainWindow):
             "ZapScripts": "zapscripts",
             "ZapScraper": "zapscraper",
             "SaveManager": "savemanager",
+            "App Settings": "settings",
         }
 
         for index in range(self.tabs.count()):
@@ -1251,6 +708,22 @@ class MainWindow(QMainWindow):
             icon_name = icon_map.get(text)
             if icon_name:
                 self.tabs.setTabIcon(index, self.tab_icon(icon_name))
+
+    def refresh_page_header_icons(self):
+        for label in self.findChildren(QLabel):
+            icon_name = label.property("tabHeaderIconName")
+            if not icon_name:
+                continue
+
+            try:
+                icon_size = int(label.property("tabHeaderIconSize") or 19)
+            except Exception:
+                icon_size = 19
+
+            color = label.palette().color(QPalette.ColorRole.WindowText).name()
+            label.setPixmap(
+                self.svg_icon(str(icon_name), color).pixmap(QSize(icon_size, icon_size))
+            )
 
     def is_online_mode(self) -> bool:
         return self.app_mode == APP_MODE_ONLINE
@@ -1363,16 +836,10 @@ class MainWindow(QMainWindow):
 
     def apply_app_mode_state(self):
         if self.is_offline_mode():
-            if self.is_offline_sd_loaded():
-                self.set_connection_status(
-                    f"Status: Offline Mode, SD Card Loaded: {self.offline_sd_root}"
-                )
-            elif self.offline_sd_root:
-                self.set_connection_status(
-                    f"Status: Offline Mode, SD Card Selected: {self.offline_sd_root}"
-                )
+            if self.is_offline_sd_loaded() or self.offline_sd_root:
+                self.set_connection_status(f"SD Card: {self.offline_sd_root}")
             else:
-                self.set_connection_status("Status: Offline Mode, No SD Card Selected")
+                self.set_connection_status("SD Card: No SD Card Selected")
         else:
             if not self.connection.is_connected():
                 self.set_connection_status("Status: Disconnected")
@@ -1475,8 +942,6 @@ class MainWindow(QMainWindow):
         if saved.get("maximized"):
             QTimer.singleShot(0, self.showMaximized)
 
-        QTimer.singleShot(0, self.update_maximize_button)
-        QTimer.singleShot(0, self.apply_window_corner_radius)
 
     def save_window_geometry(self):
         try:
@@ -1580,41 +1045,65 @@ class MainWindow(QMainWindow):
                 save_config(self.config_data)
 
     def set_connection_status(self, text: str):
-        self.connection_status_label.setText(text)
+        raw = str(text or "").strip()
+        if raw.lower().startswith("status:"):
+            raw = raw.split(":", 1)[1].strip()
 
-        if "Offline Mode" in text:
-            self.connection_status_label.setStyleSheet(
-                "color: #8b5cf6; font-weight: bold;"
-            )
-        elif "Connected" in text:
-            self.connection_status_label.setStyleSheet(
-                "color: #2ecc71; font-weight: bold;"
-            )
-        elif "Disconnected" in text:
-            self.connection_status_label.setStyleSheet(
-                "color: #e74c3c; font-weight: bold;"
-            )
-        elif "Connecting" in text:
-            self.connection_status_label.setStyleSheet(
-                "color: #f39c12; font-weight: bold;"
-            )
-        elif "Lost" in text:
-            self.connection_status_label.setStyleSheet(
-                "color: #f39c12; font-weight: bold;"
-            )
-        elif "Rebooting" in text:
-            self.connection_status_label.setStyleSheet(
-                "color: #f39c12; font-weight: bold;"
-            )
-        elif "Waiting" in text:
-            self.connection_status_label.setStyleSheet(
-                "color: #f39c12; font-weight: bold;"
-            )
+        if raw.lower().startswith("sd card:"):
+            value = raw.split(":", 1)[1].strip() or "No SD Card Selected"
+            self.connection_status_title_label.setText("SD Card:")
+            self.connection_status_label.setText(value)
+            color = "#3498db" if value.lower() != "no sd card selected" else "#e74c3c"
+            self.connection_status_label.setStyleSheet(f"color: {color}; font-weight: bold;")
         else:
-            self.connection_status_label.setStyleSheet("font-weight: bold;")
+            self.connection_status_title_label.setText("MiSTer:")
+            lowered = raw.lower()
+            if lowered.startswith("connected"):
+                value, color = "Connected", "#2ecc71"
+            elif "connecting" in lowered:
+                value, color = "Connecting", "#3498db"
+            elif "waiting" in lowered:
+                value, color = "Waiting", "#3498db"
+            elif "rebooting" in lowered:
+                value, color = "Rebooting", "#3498db"
+            elif "lost" in lowered:
+                value, color = "Connection Lost", "#e74c3c"
+            else:
+                value, color = "Disconnected", "#e74c3c"
+            self.connection_status_label.setText(value)
+            self.connection_status_label.setStyleSheet(f"color: {color}; font-weight: bold;")
 
         if hasattr(self, "connection_tab"):
             self.connection_tab.sync_status_from_main_window()
+
+    def update_footer_cloud_status(self):
+        if not hasattr(self, "footer_cloud_title_label"):
+            return
+
+        try:
+            from core.cloud_account import CloudAccountClient
+            cloud_client = CloudAccountClient(self.config_data)
+            linked = cloud_client.has_session() and bool(cloud_client.linked_device())
+        except Exception:
+            linked = False
+            cloud_client = None
+
+        self.footer_cloud_title_label.setVisible(linked)
+        self.footer_cloud_status_label.setVisible(linked)
+        if not linked:
+            return
+
+        if bool(getattr(self, "cloud_sync_in_progress", False)):
+            text, color = "Syncing", "#3498db"
+        else:
+            try:
+                active, _reason = cloud_client.cloud_sync_status()
+            except Exception:
+                active = False
+            text, color = ("Active", "#2ecc71") if active else ("Inactive", "#e74c3c")
+
+        self.footer_cloud_status_label.setText(text)
+        self.footer_cloud_status_label.setStyleSheet(f"font-weight: bold; color: {color};")
 
     def normalize_ui_scale_percent(self, value) -> int:
         try:
@@ -1635,16 +1124,16 @@ class MainWindow(QMainWindow):
         )
 
     def refresh_theme(self):
+        self._theme_preview_data = None
         mode = self.config_data.get("theme_mode", "auto")
         ui_scale_percent = self.get_ui_scale_percent()
         self.setUpdatesEnabled(False)
         try:
             apply_theme(self.app, mode, ui_scale_percent)
-            if hasattr(self, "title_bar"):
-                self.title_bar.apply_ui_scale(ui_scale_percent)
-            self.update_title_bar_logo(mode)
+            self.update_side_menu_logo(mode)
             self.update_theme_button_text()
             self.refresh_tab_icons()
+            self.refresh_page_header_icons()
             self.refresh_side_menu_icons()
             self.update_side_menu_style()
             current_widget = self.current_content_widget()
@@ -1698,9 +1187,32 @@ class MainWindow(QMainWindow):
         if self._closing:
             return
 
-        dialog = ThemePickerDialog(self.config_data.get("theme_mode", "auto"), self)
+        dialog = ThemePickerDialog(self.config_data.get("theme_mode", "auto"), self.config_data, self)
         dialog.theme_applied.connect(self.apply_theme_from_picker)
+        dialog.theme_preview_requested.connect(self.preview_theme_from_picker)
+        dialog.theme_preview_restore.connect(self.restore_theme_from_picker)
         dialog.exec()
+
+    def preview_theme_from_picker(self, theme: dict):
+        if self._closing or not isinstance(theme, dict):
+            return
+        ui_scale_percent = self.get_ui_scale_percent()
+        self.setUpdatesEnabled(False)
+        try:
+            self._theme_preview_data = dict(theme)
+            apply_custom_theme_preview(self.app, theme, ui_scale_percent)
+            self.update_side_menu_logo()
+            self.refresh_tab_icons()
+            self.refresh_page_header_icons()
+            self.refresh_side_menu_icons()
+            self.update_side_menu_style()
+            self.update()
+        finally:
+            self.setUpdatesEnabled(True)
+
+    def restore_theme_from_picker(self):
+        if not self._closing:
+            self.refresh_theme()
 
     def apply_theme_from_picker(self, mode: str):
         if self._closing:
@@ -1869,6 +1381,7 @@ class MainWindow(QMainWindow):
             "zapscraper_tab",
             "savemanager_tab",
             "flash_tab",
+            "app_settings_tab",
         ):
             if hasattr(self, attr_name):
                 tabs.append(getattr(self, attr_name))
@@ -1901,6 +1414,9 @@ class MainWindow(QMainWindow):
         current_widget = self.current_content_widget()
 
         self._update_tab_connection_state(current_widget, lightweight=True)
+
+        if hasattr(self, "app_settings_tab") and current_widget is self.app_settings_tab:
+            return
 
         if hasattr(self, "connection_tab") and current_widget is self.connection_tab:
             if self.connection.is_connected() or self.is_offline_sd_loaded():
@@ -2427,6 +1943,8 @@ class MainWindow(QMainWindow):
             device["username"],
             device["password"],
         )
+        if hasattr(self, "app_settings_tab"):
+            self.app_settings_tab.sync_cloud_profiles_silently()
 
     def edit_device(self):
         if self._closing:
@@ -2475,21 +1993,12 @@ class MainWindow(QMainWindow):
         old_ip = result["old_ip"]
         updated_device = result["updated_device"]
 
-        if old_name != updated_device["name"]:
-            profile_renamed(
-                self.get_profile_sync_roots(),
-                old_name,
-                updated_device["name"],
-            )
-            rename_db(old_name, updated_device["name"])
-
-        elif old_ip != updated_device["ip"]:
-            profile_assigned_to_ip(
-                self.get_profile_sync_roots(),
-                updated_device["ip"],
-                updated_device["name"],
-            )
-            rename_db(old_ip, updated_device["name"])
+        migrate_profile_identity(
+            old_name,
+            old_ip,
+            updated_device["name"],
+            updated_device["ip"],
+        )
 
         devices = get_devices(self.config_data)
         self.load_devices()
@@ -2499,6 +2008,8 @@ class MainWindow(QMainWindow):
             updated_device["username"],
             updated_device["password"],
         )
+        if hasattr(self, "app_settings_tab"):
+            self.app_settings_tab.sync_cloud_profiles_silently()
 
     def delete_device(self):
         if self._closing:
@@ -2529,16 +2040,12 @@ class MainWindow(QMainWindow):
         if self.connection.is_connected() and self.connection.host == device_ip:
             self.disconnect_from_mister()
 
-        profile_removed(
-            self.get_profile_sync_roots(),
-            device_name,
-            device_ip,
-        )
-
-        rename_db(device_name, device_ip)
+        remove_profile_identity(device_name, device_ip)
 
         devices = get_devices(self.config_data)
         self.connection_tab.set_profiles(devices)
         self.connection_tab.profile_selector.setCurrentIndex(-1)
         self.connection_tab.set_connection_fields("", "root", "1")
         self.connection_tab.update_connection_state()
+        if hasattr(self, "app_settings_tab"):
+            self.app_settings_tab.sync_cloud_profiles_silently()

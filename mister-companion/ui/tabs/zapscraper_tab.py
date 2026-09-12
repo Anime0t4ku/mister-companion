@@ -3,13 +3,14 @@ import json
 import shutil
 import xml.etree.ElementTree as ET
 
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtCore import Qt, QThread, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QFileDialog,
     QGridLayout,
     QGroupBox,
+    QInputDialog,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -18,8 +19,10 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QScrollArea,
     QSplitter,
     QTextEdit,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -48,6 +51,7 @@ from core.zapscraper_systems import (
     get_zaparoo_companion_media_folder,
     get_zaparoo_companion_media_names,
 )
+from ui.tab_header import create_tab_header
 from ui.dialogs.zapscraper_gamelist_dialog import ZapScraperGamelistDialog
 from ui.dialogs.zapscraper_gamelist_dialog_mode1 import ZapScraperGamelistDialogMode1
 from ui.scaling import set_text_button_min_width
@@ -730,28 +734,110 @@ class ZapScraperTab(QWidget):
         self.update_connection_state(lightweight=True)
 
     def _build_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 10, 12, 10)
-        layout.setSpacing(8)
+        self.setObjectName("ZapScraperPage")
+        self.setStyleSheet(
+            """
+            QWidget#ZapScraperScrollContent,
+            QWidget#ZapScraperTransparent,
+            QWidget#ZapScraperSplitContent,
+            QWidget#ZapScraperLeft,
+            QWidget#ZapScraperRight {
+                background: transparent;
+            }
 
-        splitter = QSplitter(Qt.Orientation.Horizontal)
-        layout.addWidget(splitter, 1)
+            QWidget#ZapScraperPage QGroupBox#ZapScraperCard {
+                background-color: palette(alternate-base);
+                border: 1px solid palette(button);
+                border-radius: 12px;
+                margin-top: 18px;
+                padding: 14px;
+                font-weight: 700;
+            }
+
+            QWidget#ZapScraperPage QGroupBox#ZapScraperCard::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                left: 14px;
+                padding: 0px 7px;
+                background: transparent;
+                color: palette(highlight);
+            }
+
+            QWidget#ZapScraperPage QLabel#ZapScraperHint {
+                color: palette(mid);
+            }
+
+            QWidget#ZapScraperPage QToolButton#ZapScraperLogToggle {
+                background-color: palette(alternate-base);
+                border: 1px solid palette(button);
+                border-radius: 10px;
+                padding: 8px 12px;
+                font-weight: 700;
+                text-align: left;
+                color: palette(highlight);
+            }
+
+            QWidget#ZapScraperPage QLabel#ZapScraperSubheading {
+                font-weight: 700;
+            }
+            """
+        )
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(18, 18, 18, 18)
+        layout.setSpacing(12)
+
+        header_row = QHBoxLayout()
+        header_row.setContentsMargins(2, 0, 2, 0)
+        header_row.addWidget(create_tab_header(self.main_window, "ZapScraper", "zapscraper"))
+        layout.addLayout(header_row)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(scroll.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setObjectName("ZapScraperTransparent")
+        layout.addWidget(scroll, 1)
+
+        content = QWidget()
+        content.setObjectName("ZapScraperScrollContent")
+        scroll.setWidget(content)
+
+        content_layout = QVBoxLayout(content)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(10)
+
+        split_content = QWidget()
+        split_content.setObjectName("ZapScraperSplitContent")
+        split_layout = QHBoxLayout(split_content)
+        split_layout.setContentsMargins(0, 0, 0, 0)
+        split_layout.setSpacing(14)
+        content_layout.addWidget(split_content, 1)
 
         left_widget = QWidget()
+        left_widget.setObjectName("ZapScraperLeft")
+        self.left_widget = left_widget
+        left_widget.setMinimumWidth(240)
+        left_widget.setMaximumWidth(320)
         left_layout = QVBoxLayout(left_widget)
         left_layout.setContentsMargins(0, 0, 0, 0)
-        left_layout.setSpacing(8)
+        left_layout.setSpacing(0)
 
-        title = QLabel("Systems")
-        title.setObjectName("SectionTitle")
-        left_layout.addWidget(title)
+        systems_group = QGroupBox("Systems")
+        systems_group.setObjectName("ZapScraperCard")
+        self.systems_group = systems_group
+        systems_layout = QVBoxLayout(systems_group)
+        systems_layout.setContentsMargins(14, 18, 14, 12)
+        systems_layout.setSpacing(8)
 
         self.systems_list = QListWidget()
+        self.systems_list.setMinimumHeight(360)
         self.systems_list.currentRowChanged.connect(lambda *_: self.update_connection_state(lightweight=True))
-        left_layout.addWidget(self.systems_list, 1)
+        systems_layout.addWidget(self.systems_list, 1)
 
         selection_row = QHBoxLayout()
         selection_row.setSpacing(6)
+        selection_row.addStretch(1)
         self.select_all_button = QPushButton("Select All")
         self.clear_selection_button = QPushButton("Clear")
         self.review_gamelist_button = QPushButton("Review Gamelist")
@@ -762,25 +848,27 @@ class ZapScraperTab(QWidget):
         selection_row.addWidget(self.select_all_button)
         selection_row.addWidget(self.clear_selection_button)
         selection_row.addWidget(self.review_gamelist_button)
-        left_layout.addLayout(selection_row)
-
-        splitter.addWidget(left_widget)
+        selection_row.addStretch(1)
+        systems_layout.addLayout(selection_row)
+        left_layout.addWidget(systems_group)
+        split_layout.addWidget(left_widget, 0, Qt.AlignmentFlag.AlignTop)
 
         right_widget = QWidget()
+        right_widget.setObjectName("ZapScraperRight")
+        self.right_widget = right_widget
         right_layout = QVBoxLayout(right_widget)
         right_layout.setContentsMargins(0, 0, 0, 0)
-        right_layout.setSpacing(6)
+        right_layout.setSpacing(10)
 
-        header = QLabel("ZapScraper")
-        header.setObjectName("PageTitle")
-        right_layout.addWidget(header)
-
-        account_group = QGroupBox("ScreenScraper Account")
-        account_layout = QVBoxLayout(account_group)
-        account_layout.setContentsMargins(12, 10, 12, 10)
-        account_layout.setSpacing(6)
+        account_source_group = QGroupBox("Account & Source")
+        account_source_group.setObjectName("ZapScraperCard")
+        self.account_source_group = account_source_group
+        account_source_layout = QVBoxLayout(account_source_group)
+        account_source_layout.setContentsMargins(14, 18, 14, 12)
+        account_source_layout.setSpacing(8)
 
         self.login_widget = QWidget()
+        self.login_widget.setObjectName("ZapScraperTransparent")
         login_layout = QHBoxLayout(self.login_widget)
         login_layout.setContentsMargins(0, 0, 0, 0)
         login_layout.setSpacing(8)
@@ -804,22 +892,25 @@ class ZapScraperTab(QWidget):
         password_col.addWidget(self.password_edit)
         login_layout.addLayout(password_col, 1)
 
+        login_button_col = QVBoxLayout()
+        login_button_col.setSpacing(3)
+        login_button_col.addWidget(QLabel(" "))
         self.login_button = QPushButton("Login")
         self.login_button.clicked.connect(self.test_login)
-        set_text_button_min_width(self.login_button, 110)
-        login_layout.addWidget(self.login_button)
+        set_text_button_min_width(self.login_button, 100)
+        login_button_col.addWidget(self.login_button)
+        login_layout.addLayout(login_button_col)
 
         self.logged_in_widget = QWidget()
+        self.logged_in_widget.setObjectName("ZapScraperTransparent")
         logged_in_layout = QHBoxLayout(self.logged_in_widget)
         logged_in_layout.setContentsMargins(0, 0, 0, 0)
         logged_in_layout.setSpacing(8)
-
         self.logged_in_label = QLabel("Logged in")
         self.logged_in_label.setWordWrap(True)
         self.logout_button = QPushButton("Logout")
         self.logout_button.clicked.connect(self.logout)
         set_text_button_min_width(self.logout_button, 90)
-
         logged_in_layout.addWidget(self.logged_in_label, 1)
         logged_in_layout.addWidget(self.logout_button)
 
@@ -827,37 +918,21 @@ class ZapScraperTab(QWidget):
         self.account_status_label.setWordWrap(True)
 
         self.quota_widget = QWidget()
+        self.quota_widget.setObjectName("ZapScraperTransparent")
         quota_layout = QHBoxLayout(self.quota_widget)
         quota_layout.setContentsMargins(0, 0, 0, 0)
-        quota_layout.setSpacing(18)
-
+        quota_layout.setSpacing(14)
         self.scrape_quota_label = QLabel("Scrape count: not reported")
-        self.scrape_quota_label.setWordWrap(False)
+        self.scrape_quota_label.setWordWrap(True)
         self.ko_quota_label = QLabel("KO count: not reported")
-        self.ko_quota_label.setWordWrap(False)
-
+        self.ko_quota_label.setWordWrap(True)
         quota_layout.addWidget(self.scrape_quota_label)
         quota_layout.addWidget(self.ko_quota_label)
         quota_layout.addStretch(1)
-
-        # Kept as an alias for older internal visibility/update checks.
         self.quota_label = self.quota_widget
-
-        account_layout.addWidget(self.login_widget)
-        account_layout.addWidget(self.logged_in_widget)
-        account_layout.addWidget(self.account_status_label)
-        account_layout.addWidget(self.quota_widget)
-
-        right_layout.addWidget(account_group)
-
-        source_group = QGroupBox("Source")
-        source_layout = QVBoxLayout(source_group)
-        source_layout.setContentsMargins(12, 10, 12, 10)
-        source_layout.setSpacing(6)
 
         source_row = QHBoxLayout()
         source_row.setSpacing(8)
-
         source_col = QVBoxLayout()
         source_col.setSpacing(3)
         source_col.addWidget(QLabel("Game Source"))
@@ -874,31 +949,37 @@ class ZapScraperTab(QWidget):
         self.browse_custom_folder_button.clicked.connect(self.browse_custom_games_folder)
         set_text_button_min_width(self.browse_custom_folder_button, 90)
         browse_col.addWidget(self.browse_custom_folder_button)
-        source_row.addLayout(browse_col, 0)
-
-        source_layout.addLayout(source_row)
+        source_row.addLayout(browse_col)
 
         self.source_location_label = QLabel("Location: Not selected")
         self.source_location_label.setWordWrap(True)
-        source_layout.addWidget(self.source_location_label)
-
         self.source_mode_notice = QLabel(
             "SD card access is only available in Offline Mode. "
             "Custom local and network folders can still be used in Online Mode."
         )
+        self.source_mode_notice.setObjectName("ZapScraperHint")
         self.source_mode_notice.setWordWrap(True)
-        self.source_mode_notice.setStyleSheet("color: gray;")
-        source_layout.addWidget(self.source_mode_notice)
 
-        right_layout.addWidget(source_group)
+        account_source_layout.addWidget(self.login_widget)
+        account_source_layout.addWidget(self.logged_in_widget)
+        account_source_layout.addWidget(self.account_status_label)
+        account_source_layout.addWidget(self.quota_widget)
+        account_source_layout.addLayout(source_row)
+        account_source_layout.addWidget(self.source_location_label)
+        account_source_layout.addWidget(self.source_mode_notice)
+        right_layout.addWidget(account_source_group)
 
         options_group = QGroupBox("Scraper Options")
+        options_group.setObjectName("ZapScraperCard")
+        self.options_group = options_group
         options_layout = QVBoxLayout(options_group)
-        options_layout.setContentsMargins(12, 10, 12, 10)
+        options_layout.setContentsMargins(14, 18, 14, 12)
         options_layout.setSpacing(8)
 
-        top_options_row = QHBoxLayout()
-        top_options_row.setSpacing(8)
+        top_options = QGridLayout()
+        top_options.setContentsMargins(0, 0, 0, 0)
+        top_options.setHorizontalSpacing(10)
+        top_options.setVerticalSpacing(6)
 
         output_format_col = QVBoxLayout()
         output_format_col.setSpacing(3)
@@ -907,7 +988,7 @@ class ZapScraperTab(QWidget):
         self.output_format_combo.addItems(get_output_format_names())
         self.output_format_combo.currentIndexChanged.connect(self.on_output_format_changed)
         output_format_col.addWidget(self.output_format_combo)
-        top_options_row.addLayout(output_format_col, 2)
+        top_options.addLayout(output_format_col, 0, 0)
 
         image_size_col = QVBoxLayout()
         image_size_col.setSpacing(3)
@@ -919,28 +1000,29 @@ class ZapScraperTab(QWidget):
         )
         self.image_size_combo.currentIndexChanged.connect(lambda *_: self.save_settings())
         image_size_col.addWidget(self.image_size_combo)
-        top_options_row.addLayout(image_size_col, 1)
+        top_options.addLayout(image_size_col, 0, 1)
 
         self.mode1_region_widget = QWidget()
-        mode1_region_layout = QVBoxLayout(self.mode1_region_widget)
-        mode1_region_layout.setContentsMargins(0, 0, 0, 0)
-        mode1_region_layout.setSpacing(3)
+        self.mode1_region_widget.setObjectName("ZapScraperTransparent")
+        region_priority_layout = QVBoxLayout(self.mode1_region_widget)
+        region_priority_layout.setContentsMargins(0, 0, 0, 0)
+        region_priority_layout.setSpacing(3)
         self.region_priority_label = QLabel("Region Priority")
-        mode1_region_layout.addWidget(self.region_priority_label)
+        region_priority_layout.addWidget(self.region_priority_label)
         self.region_priority_combo = QComboBox()
         self.region_priority_combo.addItems(["USA", "Japan", "Europe"])
-        mode1_region_layout.addWidget(self.region_priority_combo)
-        top_options_row.addWidget(self.mode1_region_widget, 1)
-
-        options_layout.addLayout(top_options_row)
+        region_priority_layout.addWidget(self.region_priority_combo)
+        top_options.addWidget(self.mode1_region_widget, 0, 2)
+        top_options.setColumnStretch(0, 2)
+        top_options.setColumnStretch(1, 1)
+        top_options.setColumnStretch(2, 1)
+        options_layout.addLayout(top_options)
 
         self.mode2_options_widget = QWidget()
-        mode2_layout = QVBoxLayout(self.mode2_options_widget)
+        self.mode2_options_widget.setObjectName("ZapScraperTransparent")
+        mode2_layout = QHBoxLayout(self.mode2_options_widget)
         mode2_layout.setContentsMargins(0, 0, 0, 0)
-        mode2_layout.setSpacing(6)
-
-        mode2_options_row = QHBoxLayout()
-        mode2_options_row.setSpacing(8)
+        mode2_layout.setSpacing(10)
 
         image_col = QVBoxLayout()
         image_col.setSpacing(3)
@@ -949,7 +1031,7 @@ class ZapScraperTab(QWidget):
         self.image_source_combo = QComboBox()
         self.image_source_combo.addItems(get_image_source_names())
         image_col.addWidget(self.image_source_combo)
-        mode2_options_row.addLayout(image_col, 1)
+        mode2_layout.addLayout(image_col, 1)
 
         region_col = QVBoxLayout()
         region_col.setSpacing(3)
@@ -958,29 +1040,26 @@ class ZapScraperTab(QWidget):
         self.region_combo = QComboBox()
         self.region_combo.addItems(get_region_names())
         region_col.addWidget(self.region_combo)
-        mode2_options_row.addLayout(region_col, 1)
-
-        mode2_layout.addLayout(mode2_options_row)
+        mode2_layout.addLayout(region_col, 1)
         options_layout.addWidget(self.mode2_options_widget)
 
         self.mode1_options_widget = QWidget()
+        self.mode1_options_widget.setObjectName("ZapScraperTransparent")
         mode1_layout = QVBoxLayout(self.mode1_options_widget)
         mode1_layout.setContentsMargins(0, 0, 0, 0)
-        mode1_layout.setSpacing(6)
+        mode1_layout.setSpacing(5)
 
         media_title = QLabel("Images to Scrape")
-        media_title.setObjectName("SectionTitle")
+        media_title.setObjectName("ZapScraperSubheading")
         mode1_layout.addWidget(media_title)
 
         self.zaparoo_media_checkboxes = {}
         media_names = get_zaparoo_companion_media_names()
         default_media_names = set(get_default_zaparoo_companion_media_names())
-
         media_grid = QGridLayout()
         media_grid.setContentsMargins(0, 0, 0, 0)
-        media_grid.setHorizontalSpacing(14)
+        media_grid.setHorizontalSpacing(18)
         media_grid.setVerticalSpacing(4)
-
         columns = 3
         for index, media_name in enumerate(media_names):
             checkbox = QCheckBox(media_name)
@@ -988,12 +1067,17 @@ class ZapScraperTab(QWidget):
             checkbox.stateChanged.connect(lambda *_: self.save_settings())
             self.zaparoo_media_checkboxes[media_name] = checkbox
             media_grid.addWidget(checkbox, index // columns, index % columns)
-
         mode1_layout.addLayout(media_grid)
         options_layout.addWidget(self.mode1_options_widget)
 
-        advanced_row = QHBoxLayout()
-        advanced_row.setSpacing(14)
+        existing_media_title = QLabel("Existing Media")
+        existing_media_title.setObjectName("ZapScraperSubheading")
+        options_layout.addWidget(existing_media_title)
+
+        existing_media_row = QGridLayout()
+        existing_media_row.setContentsMargins(0, 0, 0, 0)
+        existing_media_row.setHorizontalSpacing(18)
+        existing_media_row.setVerticalSpacing(4)
         self.skip_metadata_checkbox = QCheckBox("Skip existing metadata")
         self.skip_metadata_checkbox.setChecked(True)
         self.skip_images_checkbox = QCheckBox("Skip existing images")
@@ -1004,64 +1088,108 @@ class ZapScraperTab(QWidget):
             "When enabled, games that already have metadata in gamelist.xml are skipped completely, "
             "even if images or other media are missing."
         )
-        advanced_row.addWidget(self.skip_metadata_checkbox)
-        advanced_row.addWidget(self.skip_images_checkbox)
-        advanced_row.addWidget(self.skip_metadata_incomplete_media_checkbox)
         self.skip_metadata_checkbox.stateChanged.connect(lambda *_: self.save_settings())
         self.skip_images_checkbox.stateChanged.connect(lambda *_: self.save_settings())
         self.skip_metadata_incomplete_media_checkbox.stateChanged.connect(
             self.on_skip_metadata_incomplete_media_changed
         )
-        advanced_row.addStretch()
-        options_layout.addLayout(advanced_row)
-
+        existing_media_row.addWidget(self.skip_metadata_checkbox, 0, 0)
+        existing_media_row.addWidget(self.skip_images_checkbox, 0, 1)
+        existing_media_row.addWidget(self.skip_metadata_incomplete_media_checkbox, 1, 0, 1, 2)
+        options_layout.addLayout(existing_media_row)
         right_layout.addWidget(options_group)
 
         actions_group = QGroupBox("Actions")
+        actions_group.setObjectName("ZapScraperCard")
+        self.actions_group = actions_group
         actions_layout = QVBoxLayout(actions_group)
-        actions_layout.setContentsMargins(12, 10, 12, 10)
-        actions_layout.setSpacing(6)
+        actions_layout.setContentsMargins(14, 18, 14, 10)
+        actions_layout.setSpacing(5)
 
         action_row = QHBoxLayout()
         action_row.setSpacing(8)
+        action_row.addStretch(1)
         self.scan_button = QPushButton("Scan")
         self.scrape_button = QPushButton("Scrape Selected")
         self.stop_button = QPushButton("Stop")
         self.stop_button.setEnabled(False)
-
         for button in (self.scan_button, self.scrape_button, self.stop_button):
             set_text_button_min_width(button, 120)
-
         self.scan_button.clicked.connect(self.scan_source)
         self.scrape_button.clicked.connect(self.prepare_scrape)
         self.stop_button.clicked.connect(self.stop_current_worker)
-
         action_row.addWidget(self.scan_button)
         action_row.addWidget(self.scrape_button)
         action_row.addWidget(self.stop_button)
+        action_row.addStretch(1)
         actions_layout.addLayout(action_row)
 
+        status_row = QHBoxLayout()
+        status_row.setSpacing(10)
         self.current_task_label = QLabel("Ready")
         self.current_task_label.setWordWrap(True)
-        actions_layout.addWidget(self.current_task_label)
-
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
-        actions_layout.addWidget(self.progress_bar)
-
+        status_row.addWidget(self.current_task_label, 0)
+        status_row.addWidget(self.progress_bar, 1)
+        actions_layout.addLayout(status_row)
         right_layout.addWidget(actions_group)
-        right_layout.addStretch()
+        right_layout.addStretch(1)
+        split_layout.addWidget(right_widget, 1)
 
-        splitter.addWidget(right_widget)
-        splitter.setStretchFactor(0, 1)
-        splitter.setStretchFactor(1, 3)
+        self.log_toggle = QToolButton()
+        self.log_toggle.setObjectName("ZapScraperLogToggle")
+        self.log_toggle.setText("Log")
+        self.log_toggle.setCheckable(True)
+        self.log_toggle.setChecked(False)
+        self.log_toggle.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.log_toggle.setArrowType(Qt.ArrowType.RightArrow)
+        self.log_toggle.clicked.connect(self._toggle_log)
+        content_layout.addWidget(self.log_toggle)
 
+        self.log_group = QGroupBox()
+        self.log_group.setObjectName("ZapScraperCard")
+        log_layout = QVBoxLayout(self.log_group)
+        log_layout.setContentsMargins(14, 12, 14, 12)
+        log_layout.setSpacing(0)
         self.output = QTextEdit()
         self.output.setReadOnly(True)
-        self.output.setMinimumHeight(110)
+        self.output.setMinimumHeight(140)
         self.output.setMaximumHeight(170)
-        layout.addWidget(self.output)
+        log_layout.addWidget(self.output)
+        self.log_group.setVisible(False)
+        content_layout.addWidget(self.log_group)
+
+        QTimer.singleShot(0, self._sync_systems_height)
+
+    def _sync_systems_height(self):
+        if not all(
+            hasattr(self, attr)
+            for attr in ("systems_group", "left_widget", "right_widget", "actions_group")
+        ):
+            return
+        right_layout = self.right_widget.layout()
+        if right_layout is not None:
+            right_layout.activate()
+        target_height = self.actions_group.geometry().bottom() + 1
+        if target_height > 0:
+            self.left_widget.setFixedHeight(target_height)
+            self.systems_group.setFixedHeight(target_height)
+
+    def _schedule_systems_height_sync(self):
+        QTimer.singleShot(0, self._sync_systems_height)
+
+    def _toggle_log(self, checked):
+        self.set_log_expanded(bool(checked))
+
+    def set_log_expanded(self, expanded):
+        expanded = bool(expanded)
+        self.log_toggle.blockSignals(True)
+        self.log_toggle.setChecked(expanded)
+        self.log_toggle.blockSignals(False)
+        self.log_toggle.setArrowType(Qt.ArrowType.DownArrow if expanded else Qt.ArrowType.RightArrow)
+        self.log_group.setVisible(expanded)
 
     def load_settings(self):
         self._loading_settings = True
@@ -1294,6 +1422,7 @@ class ZapScraperTab(QWidget):
         self.account_status_label.setText("Enter your credentials and press Login.")
 
     def update_account_ui(self):
+        self._schedule_systems_height_sync()
         name = self.account_name or self.username_edit.text().strip() or "ScreenScraper"
 
         self.login_widget.setVisible(not self.logged_in)
@@ -1424,6 +1553,7 @@ class ZapScraperTab(QWidget):
         self.update_connection_state(lightweight=True)
 
     def update_source_ui(self):
+        self._schedule_systems_height_sync()
         source_mode = self.source_combo.currentText()
         custom_mode = source_mode == SOURCE_CUSTOM_GAMES_FOLDER
         sd_root = self._sd_root()
@@ -1513,6 +1643,7 @@ class ZapScraperTab(QWidget):
         return selected or get_default_zaparoo_companion_media_names()
 
     def update_output_format_ui(self):
+        self._schedule_systems_height_sync()
         is_mode1 = self._is_zaparoo_companion_mode()
 
         self.mode2_options_widget.setVisible(not is_mode1)
@@ -1579,13 +1710,33 @@ class ZapScraperTab(QWidget):
         self.systems = systems or []
         self.systems_list.clear()
 
+        grouped = {}
+        order = []
         for system in self.systems:
-            count = int(system.get("count", 0))
-            text = f'{system.get("label", system.get("folder", "Unknown"))}    {count} games'
+            key = str(system.get("folder") or system.get("label") or system.get("path") or "")
+            if key not in grouped:
+                grouped[key] = []
+                order.append(key)
+            grouped[key].append(system)
+
+        for key in order:
+            source_systems = grouped[key]
+            first = source_systems[0]
+            count = sum(int(system.get("count", 0)) for system in source_systems)
+            label = first.get("label", first.get("folder", "Unknown"))
+            if " (" in label and len(source_systems) > 1:
+                label = label.split(" (", 1)[0]
+            display_system = first if len(source_systems) == 1 else {
+                "folder": first.get("folder"),
+                "label": label,
+                "count": count,
+                "_source_systems": source_systems,
+            }
+            text = f"{label}    {count} games"
             item = QListWidgetItem(text)
             item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
             item.setCheckState(Qt.CheckState.Checked)
-            item.setData(Qt.ItemDataRole.UserRole, system)
+            item.setData(Qt.ItemDataRole.UserRole, display_system)
             self.systems_list.addItem(item)
 
         if self.systems_list.count() > 0:
@@ -1677,6 +1828,7 @@ class ZapScraperTab(QWidget):
 
         self._stop_requested = False
         self.save_settings()
+        self.set_log_expanded(True)
 
         self.systems_list.clear()
         self.systems = []
@@ -1808,6 +1960,7 @@ class ZapScraperTab(QWidget):
 
         self._stop_requested = False
         self.save_settings()
+        self.set_log_expanded(True)
 
         skip_existing_metadata = self.skip_metadata_checkbox.isChecked()
         skip_existing_images = self.skip_images_checkbox.isChecked()
@@ -2116,6 +2269,22 @@ class ZapScraperTab(QWidget):
         if item is not None:
             system = item.data(Qt.ItemDataRole.UserRole)
             if isinstance(system, dict):
+                source_systems = system.get("_source_systems")
+                if isinstance(source_systems, list) and source_systems:
+                    if len(source_systems) == 1:
+                        return source_systems[0]
+                    choices = [Path(source.get("path", "")).name or str(source.get("path", "")) for source in source_systems]
+                    choice, ok = QInputDialog.getItem(
+                        self,
+                        "Review Gamelist",
+                        "Source folder:",
+                        choices,
+                        0,
+                        False,
+                    )
+                    if ok and choice in choices:
+                        return source_systems[choices.index(choice)]
+                    return None
                 return system
 
         selected = self.selected_systems()
@@ -2161,8 +2330,13 @@ class ZapScraperTab(QWidget):
 
         for index in range(self.systems_list.count()):
             item = self.systems_list.item(index)
-            if item.checkState() == Qt.CheckState.Checked:
-                selected.append(item.data(Qt.ItemDataRole.UserRole))
+            if item.checkState() != Qt.CheckState.Checked:
+                continue
+            system = item.data(Qt.ItemDataRole.UserRole)
+            if isinstance(system, dict) and isinstance(system.get("_source_systems"), list):
+                selected.extend(system["_source_systems"])
+            else:
+                selected.append(system)
 
         return selected
 

@@ -30,6 +30,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from ui.tab_header import create_tab_header
 from ui.scaling import set_text_button_min_width
 from ui.update_all_runner import handle_update_all_result, prepare_update_all_task, UpdateAllOutputDialog
 from ui.install_center_actions import InstallCenterActions
@@ -1492,19 +1493,44 @@ class InstallCenterTab(QWidget):
         self.refresh_status(lightweight=True)
 
     def build_ui(self):
+        self.setObjectName("InstallCenterPage")
+        self.setStyleSheet(
+            """
+            QWidget#InstallCenterPage QGroupBox#InstallCenterCard {
+                background-color: palette(alternate-base);
+                border: 1px solid palette(button);
+                border-radius: 12px;
+                margin-top: 18px;
+                padding: 14px;
+                font-weight: 700;
+            }
+
+            QWidget#InstallCenterPage QGroupBox#InstallCenterCard::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                left: 14px;
+                padding: 0px 7px;
+                background: transparent;
+                color: palette(highlight);
+            }
+
+            QWidget#InstallCenterPage QWidget#InstallCenterFilterContainer {
+                background: transparent;
+                border: none;
+            }
+
+            """
+        )
+
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(12, 12, 12, 12)
-        main_layout.setSpacing(10)
+        main_layout.setContentsMargins(18, 18, 18, 18)
+        main_layout.setSpacing(14)
 
         header_row = QHBoxLayout()
+        header_row.setContentsMargins(2, 0, 2, 0)
         header_row.setSpacing(8)
 
-        title = QLabel("Install Center")
-        font = title.font()
-        font.setPointSize(font.pointSize() + 4)
-        font.setBold(True)
-        title.setFont(font)
-        header_row.addWidget(title)
+        header_row.addWidget(create_tab_header(self.main_window, "Install Center", "scripts"))
         header_row.addStretch()
 
         self.global_check_button = QPushButton("Check for Updates")
@@ -1519,9 +1545,15 @@ class InstallCenterTab(QWidget):
 
         main_layout.addLayout(header_row)
 
+        browse_group = QGroupBox("Browse")
+        browse_group.setObjectName("InstallCenterCard")
+        browse_layout = QVBoxLayout(browse_group)
+        browse_layout.setContentsMargins(16, 20, 16, 14)
+        browse_layout.setSpacing(10)
+
         self.status_label = QLabel("Opening Install Center...")
         self.status_label.setStyleSheet("color: #1e88e5; font-weight: bold;")
-        main_layout.addWidget(self.status_label)
+        browse_layout.addWidget(self.status_label)
 
         search_sort_row = QHBoxLayout()
         search_sort_row.setSpacing(8)
@@ -1542,18 +1574,20 @@ class InstallCenterTab(QWidget):
         self.sort_combo.currentIndexChanged.connect(self.populate_items)
         search_sort_row.addWidget(self.sort_combo)
 
-        main_layout.addLayout(search_sort_row)
+        browse_layout.addLayout(search_sort_row)
 
         category_row = QHBoxLayout()
         category_row.setSpacing(6)
         self.filter_container = QWidget()
+        self.filter_container.setObjectName("InstallCenterFilterContainer")
         self.filter_container.setAutoFillBackground(False)
-        self.filter_container.setStyleSheet("background: transparent; border: none;")
         self.filter_layout = QHBoxLayout(self.filter_container)
         self.filter_layout.setContentsMargins(0, 0, 0, 0)
         self.filter_layout.setSpacing(6)
         category_row.addWidget(self.filter_container)
-        main_layout.addLayout(category_row)
+        browse_layout.addLayout(category_row)
+
+        main_layout.addWidget(browse_group)
 
         self.item_list = QListWidget()
         self.item_list.setMouseTracking(True)
@@ -1774,42 +1808,14 @@ class InstallCenterTab(QWidget):
 
     def create_category_button(self, label, category_id):
         button = QPushButton(label)
+        button.setObjectName("CategoryButton")
         button.setCheckable(True)
         button.setChecked(category_id == self.current_category)
         button.setCursor(Qt.CursorShape.PointingHandCursor)
         button.setMinimumHeight(30)
         set_text_button_min_width(button, max(70, button.fontMetrics().horizontalAdvance(label) + 26))
-        button.setStyleSheet(self.category_button_style())
         button.clicked.connect(lambda checked=False, cid=category_id: self.set_category_filter(cid))
         return button
-
-    def category_button_style(self):
-        palette = self.palette()
-        button_bg = palette.color(QPalette.ColorRole.Button)
-        text = palette.color(QPalette.ColorRole.ButtonText)
-        border = palette.color(QPalette.ColorRole.Mid)
-        accent = palette.color(QPalette.ColorRole.Highlight)
-        accent_text = palette.color(QPalette.ColorRole.HighlightedText)
-        hover = button_bg.lighter(112) if button_bg.lightness() < 128 else button_bg.darker(105)
-        return (
-            "QPushButton { "
-            f"background-color: {button_bg.name()}; "
-            f"color: {text.name()}; "
-            f"border: 1px solid {border.name()}; "
-            "border-radius: 8px; "
-            "padding: 5px 12px; "
-            "font-weight: bold; "
-            "} "
-            "QPushButton:hover { "
-            f"background-color: {hover.name()}; "
-            f"border-color: {accent.name()}; "
-            "} "
-            "QPushButton:checked { "
-            f"background-color: {accent.name()}; "
-            f"color: {accent_text.name()}; "
-            f"border-color: {accent.name()}; "
-            "}"
-        )
 
     def set_category_filter(self, category_id):
         self.current_category = category_id or "all"
@@ -2446,12 +2452,6 @@ class InstallCenterTab(QWidget):
                 pass
 
     def refresh_theme(self):
-        style = self.category_button_style()
-        for _category_id, button in self.category_buttons:
-            try:
-                button.setStyleSheet(style)
-            except Exception:
-                pass
         self.item_list.setStyleSheet(
             "QListWidget { border: none; background: transparent; } "
             "QListWidget::item { background: transparent; border: 1px solid transparent; border-radius: 8px; } "

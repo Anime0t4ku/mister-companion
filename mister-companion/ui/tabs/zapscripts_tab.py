@@ -13,10 +13,12 @@ from PyQt6.QtWidgets import (
     QLabel,
     QProgressBar,
     QSplitter,
+    QGroupBox,
     QListWidgetItem,
     QMessageBox,
 )
 
+from ui.tab_header import create_tab_header
 from ui.scaling import set_text_button_min_width
 from core.config import load_config, save_config
 from core.zapscripts import (
@@ -207,8 +209,38 @@ class ZapScriptsTab(QWidget):
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 10, 12, 10)
-        layout.setSpacing(8)
+        layout.setContentsMargins(18, 18, 18, 18)
+        layout.setSpacing(14)
+
+        self.setObjectName("ZapScriptsPage")
+        self.setStyleSheet(
+            """
+            QWidget#ZapScriptsPage QGroupBox#ZapScriptsCard {
+                background-color: palette(alternate-base);
+                border: 1px solid palette(button);
+                border-radius: 12px;
+                margin-top: 18px;
+                padding: 14px;
+                font-weight: 700;
+            }
+
+            QWidget#ZapScriptsPage QGroupBox#ZapScriptsCard::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                left: 14px;
+                padding: 0px 7px;
+                background: transparent;
+                color: palette(highlight);
+            }
+
+            QWidget#ZapScriptsPage QWidget#ZapScriptsOnline,
+            QWidget#ZapScriptsPage QWidget#ZapScriptsContent {
+                background: transparent;
+            }
+            """
+        )
+
+        layout.addWidget(create_tab_header(self.main_window, "ZapScripts", "zapscripts"))
 
         self.offline_message = QLabel("ZapScripts is not available in Offline Mode.")
         self.offline_message.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -216,12 +248,16 @@ class ZapScriptsTab(QWidget):
         self.offline_message.hide()
 
         self.online_widget = QWidget()
+        self.online_widget.setObjectName("ZapScriptsOnline")
         online_layout = QVBoxLayout(self.online_widget)
         online_layout.setContentsMargins(0, 0, 0, 0)
-        online_layout.setSpacing(8)
+        online_layout.setSpacing(12)
 
-        top = QHBoxLayout()
-        top.setSpacing(8)
+        status_card = QGroupBox("Library")
+        status_card.setObjectName("ZapScriptsCard")
+        status_layout = QHBoxLayout(status_card)
+        status_layout.setContentsMargins(16, 18, 16, 14)
+        status_layout.setSpacing(10)
 
         self.scan_btn = QPushButton("Scan")
         self.scan_btn.clicked.connect(self._handle_scan_button)
@@ -235,25 +271,38 @@ class ZapScriptsTab(QWidget):
         self.status = QLabel("No library found")
         self.status.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
 
-        top.addWidget(self.scan_btn)
-        top.addWidget(self.progress, 1)
-        top.addWidget(self.status)
+        status_layout.addWidget(self.scan_btn)
+        status_layout.addWidget(self.progress, 1)
+        status_layout.addWidget(self.status)
+        online_layout.addWidget(status_card)
 
-        online_layout.addLayout(top)
+        content = QWidget()
+        content.setObjectName("ZapScriptsContent")
+        content_layout = QHBoxLayout(content)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(0)
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
+
+        systems_card = QGroupBox("Systems")
+        systems_card.setObjectName("ZapScriptsCard")
+        systems_layout = QVBoxLayout(systems_card)
+        systems_layout.setContentsMargins(16, 18, 16, 14)
+        systems_layout.setSpacing(8)
 
         self.systems = QListWidget()
         self.systems.addItems(["All", "Scripts"])
         self.systems.currentTextChanged.connect(self._filter)
         self.systems.setMinimumWidth(180)
         self.systems.setMaximumWidth(240)
-        splitter.addWidget(self.systems)
+        systems_layout.addWidget(self.systems)
+        splitter.addWidget(systems_card)
 
-        right = QWidget()
-        right_layout = QVBoxLayout(right)
-        right_layout.setContentsMargins(0, 0, 0, 0)
-        right_layout.setSpacing(8)
+        media_card = QGroupBox("Media & Scripts")
+        media_card.setObjectName("ZapScriptsCard")
+        right_layout = QVBoxLayout(media_card)
+        right_layout.setContentsMargins(16, 18, 16, 14)
+        right_layout.setSpacing(10)
 
         self.search = QLineEdit()
         self.search.setPlaceholderText("Search...")
@@ -265,6 +314,7 @@ class ZapScriptsTab(QWidget):
 
         buttons = QHBoxLayout()
         buttons.setSpacing(8)
+        buttons.addStretch(1)
 
         self.launch_btn = QPushButton("Launch Selected")
         self.launch_btn.clicked.connect(self._launch)
@@ -282,17 +332,19 @@ class ZapScriptsTab(QWidget):
         buttons.addWidget(self.nfc_btn)
         buttons.addWidget(self.read_nfc_btn)
         buttons.addWidget(self.controls_btn)
+        buttons.addStretch(1)
 
         right_layout.addWidget(self.search)
         right_layout.addWidget(self.list, 1)
         right_layout.addLayout(buttons)
 
-        splitter.addWidget(right)
+        splitter.addWidget(media_card)
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
         splitter.setSizes([220, 700])
 
-        online_layout.addWidget(splitter, 1)
+        content_layout.addWidget(splitter)
+        online_layout.addWidget(content, 1)
 
         layout.addWidget(self.offline_message, 1)
         layout.addWidget(self.online_widget, 1)
@@ -357,7 +409,7 @@ class ZapScriptsTab(QWidget):
         self._apply_online_state()
         self.progress.setRange(0, 0)
         self.status.setText("Refreshing ZapScripts...")
-        self.status.setStyleSheet("color: #1e88e5; font-weight: bold;")
+        self.status.setStyleSheet("color: palette(highlight); font-weight: 700;")
 
         self.scan_btn.setEnabled(False)
         self.launch_btn.setEnabled(False)

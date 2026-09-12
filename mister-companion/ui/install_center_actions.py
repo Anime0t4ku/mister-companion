@@ -154,6 +154,9 @@ class InstallCenterActions:
             QMessageBox.critical(self.tab, "update_all configuration error", f"Could not prepare update_all configuration files.\n\n{exc}")
             return
         if dialog.exec():
+            app_settings_tab = getattr(self.main_window, "app_settings_tab", None)
+            if app_settings_tab is not None and hasattr(app_settings_tab, "sync_cloud_update_all_sources_silently"):
+                app_settings_tab.sync_cloud_update_all_sources_silently()
             self.refresh()
 
     def configure_cifs(self):
