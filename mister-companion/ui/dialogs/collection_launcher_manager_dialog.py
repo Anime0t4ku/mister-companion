@@ -32,11 +32,19 @@ SYSTEM_PRESETS["MiSTerDVD"] = {
         {
             "role": "video",
             "label": "Video",
-            "exts": [".iso", ".bin", ".img", ".dat", ".vob", ".mpg", ".m2v"],
-            "delay": 1,
+            "exts": [".iso", ".bin", ".img"],
+            "delay": 5,
             "type": "s",
             "index": 0,
-        }
+        },
+        {
+            "role": "video",
+            "label": "Video",
+            "exts": [".dat", ".vob", ".mpg", ".m2v"],
+            "delay": 5,
+            "type": "f",
+            "index": 0,
+        },
     ],
 }
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp"}

@@ -446,7 +446,13 @@ class MainWindow(QMainWindow):
 
         preview = getattr(self, "_theme_preview_data", None)
         if isinstance(preview, dict):
-            logo_mode = "dark" if custom_theme_roles(preview)["is_dark"] else "light"
+            preview_logo = str(preview.get("logo", "")).strip().lower()
+            if preview_logo == "black":
+                logo_mode = "light"
+            elif preview_logo == "white":
+                logo_mode = "dark"
+            else:
+                logo_mode = "dark" if custom_theme_roles(preview)["is_dark"] else "light"
         else:
             if not mode:
                 mode = self.config_data.get("theme_mode", "auto")
@@ -496,6 +502,15 @@ class MainWindow(QMainWindow):
             return
 
         if index < 0 or index >= self.tabs.count():
+            return
+
+        target = self.tabs.widget(index)
+        if (
+            hasattr(self, "tools_tab")
+            and self.tabs.currentWidget() is self.tools_tab
+            and target is not self.tools_tab
+            and not self.tools_tab.can_leave_tab()
+        ):
             return
 
         self.tabs.setCurrentIndex(index)
@@ -984,6 +999,8 @@ class MainWindow(QMainWindow):
             self.retroachievements_tab.shutdown()
         if hasattr(self, "remote_tab"):
             self.remote_tab.shutdown()
+        if hasattr(self, "tools_tab"):
+            self.tools_tab.shutdown()
 
         if not self.should_remember_offline_sd_root():
             self.config_data["offline_sd_root"] = ""
@@ -1507,6 +1524,21 @@ class MainWindow(QMainWindow):
         current_widget = self.tabs.widget(index)
         if current_widget is None:
             return
+
+        # Side-menu navigation is guarded before the tab changes, but keep a
+        # fallback here for keyboard/programmatic tab changes as well.
+        if (
+            hasattr(self, "tools_tab")
+            and current_widget is not self.tools_tab
+            and hasattr(self.tools_tab, "ssh_terminal")
+            and self.tools_tab.ssh_terminal.is_session_active()
+        ):
+            if not self.tools_tab.can_leave_tab():
+                self.tabs.blockSignals(True)
+                self.tabs.setCurrentWidget(self.tools_tab)
+                self.tabs.blockSignals(False)
+                self.update_side_menu_selection(self.tabs.indexOf(self.tools_tab))
+                return
 
         if hasattr(self, "remote_tab"):
             self.remote_tab.set_tab_active(current_widget is self.remote_tab)

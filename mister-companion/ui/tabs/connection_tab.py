@@ -466,15 +466,11 @@ class ConnectionTab(QWidget):
         self.support_headline_label.setStyleSheet("font-size: 15px; font-weight: 700;")
 
         self.support_message_label = QLabel(
-            "I really appreciate everyone who uses Companion and the other MiSTer "
-            "projects I work on.\n\n"
-            "I build these tools because I enjoy creating useful things for the MiSTer "
-            "community, whether that is improving Companion, maintaining projects like "
-            "MiSTer Hi-Fi and CollectionLauncher, or experimenting with new ideas.\n\n"
-            "If you enjoy these projects and would like to support their continued "
-            "development, Patreon is an optional way to contribute. It helps with "
-            "development costs and gives me more room to spend time on updates, fixes, "
-            "and new projects."
+            "Thank you for using MiSTer Companion and for supporting its development. "
+            "Patreon supporters get access to Companion Cloud, including syncing profiles "
+            "and Update_All custom sources between Desktop and Mobile, the Theme Creator, "
+            "and syncing custom themes across multiple desktop devices.\n\n"
+            "Your support also helps cover the ongoing development and hosting costs."
         )
         self.support_message_label.setWordWrap(True)
         self.support_message_label.setTextFormat(Qt.TextFormat.PlainText)

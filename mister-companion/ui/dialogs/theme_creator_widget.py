@@ -23,6 +23,7 @@ from core.custom_themes import (
     save_theme_creator_theme,
 )
 from core.open_helpers import open_uri
+from core.theme import custom_theme_roles
 from ui.dialogs.theme_sync_conflicts_dialog import ThemeSyncConflictsDialog
 
 PATREON_URL = "https://www.patreon.com/Anime0t4ku"
@@ -155,6 +156,10 @@ class ThemeCreatorWidget(QWidget):
         self.author_edit = QLineEdit()
         self.author_edit.setPlaceholderText("Your name")
         self.author_edit.textChanged.connect(self.update_buttons)
+        self.logo_combo = QComboBox()
+        self.logo_combo.addItem("Black", "black")
+        self.logo_combo.addItem("White", "white")
+        self.logo_combo.currentIndexChanged.connect(self.update_buttons)
         self.colors = {
             "background": ColorField("#17121f"),
             "surface": ColorField("#241b30"),
@@ -167,6 +172,7 @@ class ThemeCreatorWidget(QWidget):
         form.addRow("Name", self.name_edit)
         form.addRow("Theme ID (automatic)", self.id_edit)
         form.addRow("Author", self.author_edit)
+        form.addRow("Logo", self.logo_combo)
         form.addRow("Background", self.colors["background"])
         form.addRow("Surface", self.colors["surface"])
         form.addRow("Accent", self.colors["accent"])
@@ -241,6 +247,7 @@ class ThemeCreatorWidget(QWidget):
         self.name_edit.setText("")
         self.id_edit.setText("")
         self.author_edit.setText("")
+        self.logo_combo.setCurrentIndex(self.logo_combo.findData("white"))
         self.colors["background"].set_value("#17121f")
         self.colors["surface"].set_value("#241b30")
         self.colors["accent"].set_value("#8f62ff")
@@ -258,6 +265,13 @@ class ThemeCreatorWidget(QWidget):
         self.name_edit.setText(str(theme.get("name") or ""))
         self.id_edit.setText(str(theme.get("id") or ""))
         self.author_edit.setText(str(theme.get("author") or ""))
+        logo = str(theme.get("logo") or "").strip().lower()
+        if logo not in {"black", "white"}:
+            # Legacy Theme Creator themes did not store a logo preference. Match
+            # the same automatic contrast choice used by the normal theme loader.
+            logo = "white" if custom_theme_roles(theme)["is_dark"] else "black"
+        logo_index = self.logo_combo.findData(logo)
+        self.logo_combo.setCurrentIndex(logo_index if logo_index >= 0 else 0)
         for field in self.colors:
             self.colors[field].set_value(str(theme.get(field) or ""))
         self.update_buttons()
@@ -267,6 +281,7 @@ class ThemeCreatorWidget(QWidget):
             "id": self.current_theme_id or self._generated_id(self.name_edit.text()),
             "name": self.name_edit.text().strip(),
             "author": self.author_edit.text().strip() or "Unknown",
+            "logo": str(self.logo_combo.currentData() or "white"),
             "background": self.colors["background"].value(),
             "surface": self.colors["surface"].value(),
             "accent": self.colors["accent"].value(),

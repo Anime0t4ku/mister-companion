@@ -6,6 +6,8 @@ import re
 import shutil
 import stat
 import tempfile
+
+import paramiko
 from pathlib import Path, PurePosixPath
 
 from PyQt6.QtCore import QThread, pyqtSignal
@@ -79,6 +81,7 @@ from core.video_converter import (
 )
 from ui.tab_header import create_tab_header
 from ui.dialogs.remote_file_picker_dialog import RemoteFilePickerDialog
+from ui.ssh_terminal import SSHTerminalWidget
 
 
 LOCAL = "This PC"
@@ -122,6 +125,11 @@ class ToolsTab(QWidget):
         self.video_probe_info = None
         self.video_local_source = None
         self.video_source_temp = None
+        self.ssh_client = None
+        self.ssh_channel = None
+        self.ssh_terminal_host = ""
+        self.ssh_connect_worker = None
+        self._ssh_connect_generation = 0
         self._build_ui()
         self.update_connection_state()
 
@@ -163,6 +171,7 @@ class ToolsTab(QWidget):
         self.video_convert_page = self._build_video_convert()
         self.disc_to_image_page = self._build_disc_to_image()
         self.image_to_disc_page = self._build_image_to_disc()
+        self.ssh_terminal_page = self._build_ssh_terminal()
         self.stack.addWidget(self.home_page)
         self.stack.addWidget(self.patcher_page)
         self.stack.addWidget(self.chd_page)
@@ -170,6 +179,7 @@ class ToolsTab(QWidget):
         self.stack.addWidget(self.video_convert_page)
         self.stack.addWidget(self.disc_to_image_page)
         self.stack.addWidget(self.image_to_disc_page)
+        self.stack.addWidget(self.ssh_terminal_page)
 
     def _build_home(self):
         page = QWidget()
@@ -189,6 +199,7 @@ class ToolsTab(QWidget):
             ("MiSTer Video Converter", "Create PAL or NTSC DVD-compatible MPEG-2 video for the MiSTer DVD core.", lambda: self.stack.setCurrentWidget(self.video_convert_page)),
             ("Disc to Image", "Rip a physical game CD to BIN/CUE, optionally convert it to CHD, then save it to PC or MiSTer.", lambda: self._open_disc_page(self.disc_to_image_page)),
             ("Image to Disc", "Burn BIN/CUE game discs or MSU-1 / MD+ folders from PC or MiSTer using the PC optical drive.", lambda: self._open_disc_page(self.image_to_disc_page)),
+            ("SSH Terminal", "Open a fully interactive SSH terminal for the currently connected MiSTer.", self._open_ssh_terminal),
         )
         for index, (name, detail_text, slot) in enumerate(entries):
             card = QFrame()
@@ -235,10 +246,281 @@ class ToolsTab(QWidget):
         outer.addWidget(workspace, 1)
         return page, content
 
-    def _back_button(self):
+    def _back_button(self, callback=None):
         button = QPushButton("← Back to Tools")
-        button.clicked.connect(lambda: self.stack.setCurrentWidget(self.home_page))
+        button.clicked.connect(callback or (lambda: self.stack.setCurrentWidget(self.home_page)))
         return button
+
+
+    def _build_ssh_terminal(self):
+        page = QWidget()
+        page.setObjectName("ToolsSubPage")
+        outer = QVBoxLayout(page)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(14)
+
+        header = QHBoxLayout()
+        title = QLabel("SSH Terminal")
+        title.setStyleSheet("font-weight: 700; font-size: 19px;")
+        header.addWidget(title)
+        header.addStretch(1)
+        header.addWidget(self._back_button(self._leave_ssh_to_home))
+        outer.addLayout(header)
+
+        workspace = QFrame()
+        workspace.setObjectName("ToolWorkspace")
+        layout = QVBoxLayout(workspace)
+        layout.setContentsMargins(18, 18, 18, 18)
+        layout.setSpacing(10)
+
+        self.ssh_terminal_status = QLabel("")
+        self.ssh_terminal_status.setWordWrap(True)
+        layout.addWidget(self.ssh_terminal_status)
+
+        toolbar = QHBoxLayout()
+        self.ssh_terminal_target = QLabel("")
+        self.ssh_terminal_target.setStyleSheet("font-weight: 600;")
+        toolbar.addWidget(self.ssh_terminal_target)
+        toolbar.addStretch(1)
+        self.ssh_copy_button = QPushButton("Copy")
+        self.ssh_copy_button.clicked.connect(lambda: self.ssh_terminal.copy())
+        toolbar.addWidget(self.ssh_copy_button)
+        self.ssh_paste_button = QPushButton("Paste")
+        self.ssh_paste_button.clicked.connect(self._ssh_paste)
+        toolbar.addWidget(self.ssh_paste_button)
+        self.ssh_clear_button = QPushButton("Clear")
+        self.ssh_clear_button.clicked.connect(lambda: self.ssh_terminal.clear_terminal())
+        toolbar.addWidget(self.ssh_clear_button)
+        self.ssh_connect_button = QPushButton("Disconnect")
+        self.ssh_connect_button.clicked.connect(self._toggle_ssh_connection)
+        toolbar.addWidget(self.ssh_connect_button)
+        layout.addLayout(toolbar)
+
+        self.ssh_terminal = SSHTerminalWidget()
+        self.ssh_terminal.session_closed.connect(self._ssh_session_closed)
+        layout.addWidget(self.ssh_terminal, 1)
+        outer.addWidget(workspace, 1)
+        return page
+
+    def _open_ssh_terminal(self):
+        self.stack.setCurrentWidget(self.ssh_terminal_page)
+        self._refresh_ssh_terminal_state(auto_connect=True)
+
+    def _refresh_ssh_terminal_state(self, auto_connect=False):
+        offline = self.main_window.is_offline_mode()
+        connected = self.connection.is_connected() if not offline else False
+        active = self.ssh_terminal.is_session_active() if hasattr(self, "ssh_terminal") else False
+        if active and self.ssh_terminal_host and self.ssh_terminal_host != self.connection.host:
+            self._disconnect_ssh_terminal()
+            active = False
+
+        if offline:
+            if active:
+                self._disconnect_ssh_terminal()
+            self.ssh_terminal_status.setText("SSH Terminal is only available in Online mode.")
+            self.ssh_terminal_target.setText("")
+        elif not connected:
+            if active:
+                self._disconnect_ssh_terminal()
+            self.ssh_terminal_status.setText("Connect to a MiSTer in Online mode to use the SSH Terminal.")
+            self.ssh_terminal_target.setText("")
+        else:
+            self.ssh_terminal_target.setText(f"MiSTer: {self.connection.host}")
+            self.ssh_terminal_status.setText("Connected." if active else "Ready to connect.")
+            if auto_connect and not active:
+                self._connect_ssh_terminal()
+                active = self.ssh_terminal.is_session_active()
+
+        usable = not offline and connected
+        self.ssh_connect_button.setEnabled(usable)
+        self.ssh_connect_button.setText("Disconnect" if active else "Reconnect")
+        self.ssh_terminal.setVisible(usable)
+        self.ssh_copy_button.setVisible(usable)
+        self.ssh_paste_button.setVisible(usable)
+        self.ssh_clear_button.setVisible(usable)
+        self.ssh_connect_button.setVisible(usable)
+        self.ssh_terminal_target.setVisible(usable)
+
+    def _connect_ssh_terminal(self):
+        if self.main_window.is_offline_mode() or not self.connection.is_connected():
+            self._refresh_ssh_terminal_state()
+            return
+        if self.ssh_terminal.is_session_active() or self.ssh_connect_worker is not None:
+            return
+
+        host = self.connection.host
+        username = self.connection.username
+        password = self.connection.password
+        use_ssh_agent = self.main_window.config_data.get("use_ssh_agent", False)
+        look_for_ssh_keys = self.main_window.config_data.get("look_for_ssh_keys", False)
+        columns = self.ssh_terminal.screen.columns
+        rows = self.ssh_terminal.screen.rows
+        self._ssh_connect_generation += 1
+        generation = self._ssh_connect_generation
+
+        def open_terminal(worker):
+            client = paramiko.SSHClient()
+            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            try:
+                client.connect(
+                    hostname=host,
+                    username=username,
+                    password=password,
+                    timeout=5,
+                    banner_timeout=5,
+                    auth_timeout=5,
+                    allow_agent=use_ssh_agent,
+                    look_for_keys=look_for_ssh_keys,
+                )
+                transport = client.get_transport()
+                if transport is None or not transport.is_active():
+                    raise RuntimeError("SSH connection did not become active")
+                channel = transport.open_session(timeout=5)
+                try:
+                    channel.get_pty(term="xterm-256color", width=columns, height=rows)
+                    channel.invoke_shell()
+                except Exception:
+                    try:
+                        channel.close()
+                    except Exception:
+                        pass
+                    raise
+                return client, channel
+            except Exception:
+                try:
+                    client.close()
+                except Exception:
+                    pass
+                raise
+
+        worker = ToolWorker(open_terminal, self)
+        self.ssh_connect_worker = worker
+        self.ssh_terminal_status.setText("Connecting…")
+        self.ssh_connect_button.setText("Connecting…")
+        self.ssh_connect_button.setEnabled(False)
+        worker.succeeded.connect(lambda result, g=generation, h=host: self._ssh_connect_succeeded(g, h, result))
+        worker.failed.connect(lambda message, g=generation: self._ssh_connect_failed(g, message))
+        worker.finished.connect(lambda w=worker: self._ssh_connect_finished(w))
+        worker.start()
+
+    def _ssh_connect_succeeded(self, generation, host, result):
+        client, channel = result
+        valid = (
+            generation == self._ssh_connect_generation
+            and not self.main_window.is_offline_mode()
+            and self.connection.is_connected()
+            and self.connection.host == host
+            and self.stack.currentWidget() is self.ssh_terminal_page
+        )
+        if not valid:
+            try:
+                channel.close()
+            except Exception:
+                pass
+            try:
+                client.close()
+            except Exception:
+                pass
+            return
+
+        self.ssh_client = client
+        self.ssh_channel = channel
+        self.ssh_terminal_host = host
+        self.ssh_terminal.clear_terminal()
+        self.ssh_terminal.attach_channel(channel)
+        self.ssh_terminal_status.setText("Connected.")
+        self.ssh_connect_button.setText("Disconnect")
+
+    def _ssh_connect_failed(self, generation, message):
+        if generation != self._ssh_connect_generation:
+            return
+        self.ssh_channel = None
+        self.ssh_terminal_status.setText(f"Unable to open SSH Terminal: {message}")
+        self.ssh_connect_button.setText("Reconnect")
+
+    def _ssh_connect_finished(self, worker):
+        if self.ssh_connect_worker is worker:
+            self.ssh_connect_worker = None
+        if hasattr(self, "ssh_connect_button"):
+            usable = not self.main_window.is_offline_mode() and self.connection.is_connected()
+            self.ssh_connect_button.setEnabled(usable)
+            if not self.ssh_terminal.is_session_active() and self.ssh_connect_button.text() == "Connecting…":
+                self.ssh_connect_button.setText("Reconnect")
+
+    def _disconnect_ssh_terminal(self):
+        self._ssh_connect_generation += 1
+        if hasattr(self, "ssh_terminal"):
+            self.ssh_terminal.disconnect_session(emit_signal=False)
+        client = self.ssh_client
+        self.ssh_client = None
+        self.ssh_channel = None
+        if client is not None:
+            try:
+                client.close()
+            except Exception:
+                pass
+        self.ssh_terminal_host = ""
+        if hasattr(self, "ssh_connect_button"):
+            self.ssh_connect_button.setText("Reconnect")
+        if hasattr(self, "ssh_terminal_status") and not self.main_window.is_offline_mode():
+            self.ssh_terminal_status.setText("Disconnected.")
+
+    def _toggle_ssh_connection(self):
+        if self.ssh_connect_worker is not None:
+            return
+        if self.ssh_terminal.is_session_active():
+            self._disconnect_ssh_terminal()
+        else:
+            self._connect_ssh_terminal()
+
+    def _ssh_paste(self):
+        if self.ssh_terminal.is_session_active():
+            self.ssh_terminal.paste_clipboard()
+
+    def _ssh_session_closed(self, reason):
+        client = self.ssh_client
+        self.ssh_client = None
+        self.ssh_channel = None
+        if client is not None:
+            try:
+                client.close()
+            except Exception:
+                pass
+        self.ssh_terminal_host = ""
+        if self.main_window.is_offline_mode():
+            self._refresh_ssh_terminal_state()
+            return
+        self.ssh_connect_button.setText("Reconnect")
+        self.ssh_terminal_status.setText(f"SSH session closed: {reason}" if reason else "SSH session closed.")
+
+    def _confirm_close_ssh_session(self):
+        if not hasattr(self, "ssh_terminal") or not self.ssh_terminal.is_session_active():
+            return True
+        answer = QMessageBox.question(
+            self,
+            "Close SSH connection?",
+            "Leaving the SSH Terminal will close the active SSH session. "
+            "Any running command or process in this terminal may be interrupted.\n\n"
+            "Do you want to continue?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return False
+        self._disconnect_ssh_terminal()
+        return True
+
+    def _leave_ssh_to_home(self):
+        if self._confirm_close_ssh_session():
+            self.stack.setCurrentWidget(self.home_page)
+
+    def can_leave_tab(self):
+        if self.stack.currentWidget() is not self.ssh_terminal_page:
+            return True
+        return self._confirm_close_ssh_session()
+
+    def shutdown(self):
+        self._disconnect_ssh_terminal()
 
     @staticmethod
     def _location_combo():
@@ -325,6 +607,8 @@ class ToolsTab(QWidget):
             self._refresh_cdrdao_status()
         if hasattr(self, "video_ffmpeg_status"):
             self._refresh_ffmpeg_status()
+        if hasattr(self, "ssh_terminal_status"):
+            self._refresh_ssh_terminal_state(auto_connect=False)
 
     def _browse_rom(self):
         if self.rom_location.currentText() == REMOTE:
