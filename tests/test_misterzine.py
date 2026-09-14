@@ -152,10 +152,11 @@ class MisterZineTests(unittest.TestCase):
         self.assertIn("restore", self.log.call_args.args[0])
 
     def test_online_busy_app_aborts_before_downloader_removal(self):
-        with patch.object(mz, "_require_native_uninstall"), patch.object(mz, "_remote_checked", side_effect=RuntimeError("Quit MisterZine")), patch.object(mz.downloader, "uninstall_named_database_online") as remove:
+        with patch.object(mz, "_require_native_uninstall") as version, patch.object(mz, "_remote_checked", side_effect=RuntimeError("Quit MisterZine")), patch.object(mz.downloader, "uninstall_named_database_online") as remove:
             with self.assertRaisesRegex(RuntimeError, "Quit MisterZine"):
                 mz.uninstall_misterzine("connection", self.log)
         remove.assert_not_called()
+        version.assert_not_called()
 
     def test_comment_is_not_enabled_hook(self):
         self.assertFalse(mz._enabled("# " + mz.STARTUP_LINE))

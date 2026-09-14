@@ -121,6 +121,14 @@ def _require_native_uninstall(target, offline):
 
 
 def uninstall_misterzine(connection, log, force=False):
+    # Reject a running frontend before the Downloader launcher performs any
+    # potentially slow startup/network work. Check again immediately before cleanup.
+    preflight = (
+        "import sys; "
+        f"sys.path.insert(0, {APP_DIR!r}); import maintenance as m; "
+        "card, app = m.checked_app_directory('/media/fat'); m.idle_watchers(app)"
+    )
+    _remote_checked(connection, "python3 -c " + shlex.quote(preflight), log)
     _require_native_uninstall(connection, False)
     # Use the shipped helper's process checks before stopping the menu watcher.
     # This refuses removal while the frontend or an updater is still running.

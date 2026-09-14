@@ -45,6 +45,8 @@ python tests/verify_misterzine_downloader.py
 This checks all published file hashes, global-filter compatibility, update
 detection, saved-data preservation, cleanup, and same-version reinstallation.
 
-Before publishing the integration, also test connected installation and removal
-on a MiSTer, including an existing installation and refusal to remove a running
-frontend. Run the Hub's catalog validation separately.
+Connected validation on a DE10-Nano passed with MisterZine v1.0.32: updating an
+existing installation, refusal to remove a running frontend, removal, same-version
+reinstallation, all 11 published file hashes, and launching from the menu. Saved
+settings, favorites, MiSTer.ini, and unrelated Downloader sources were preserved.
+Run the Hub's catalog validation separately.
