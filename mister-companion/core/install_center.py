@@ -209,6 +209,14 @@ from core.extras_mister_dvd import (
     uninstall_mister_dvd,
     uninstall_mister_dvd_local,
 )
+from core.extras_misterzine import (
+    get_misterzine_status,
+    get_misterzine_status_local,
+    install_or_update_misterzine,
+    install_or_update_misterzine_local,
+    uninstall_misterzine,
+    uninstall_misterzine_local,
+)
 from core.extras_dvd_player import (
     get_dvd_player_status,
     get_dvd_player_status_local,
@@ -458,6 +466,7 @@ CATEGORY_FALLBACK = [
 ]
 
 FALLBACK_ITEMS = [
+    ("misterzine", "extras", "extra", "misterzine", "MisterZine Frontend", "Matija Erceg", "Browse new and updated MiSTer releases, see what's on your card, and launch games from the MiSTer menu, with screenshots, favorites, filters, and keyboard search. After an SD-card installation, run MisterZine-Setup from Scripts once."),
     ("update_all", "scripts", "script", "update_all", "update_all", "theypsilon", "update_all keeps your MiSTer FPGA setup up to date by downloading cores, scripts, databases, tools, and optional community content from configured update sources."),
     ("misterfin", "scripts", "script", "misterfin", "MiSTerFin", "MiSTerFin project", "MiSTerFin is a Jellyfin media client for MiSTer. It runs as ARM software from the Scripts menu on the standard menu core, uses the regular MiSTer framebuffer, and plays server-transcoded media through its bundled mplayer-arm."),
     ("mister_monitor", "scripts", "script", "mister_monitor", "MiSTer Monitor", "chipster6502", "Displays real-time game artwork and system information from MiSTer on supported ESP32-based screens."),
@@ -528,6 +537,7 @@ SCRIPT_INSTALLERS = {
 }
 
 EXTRA_HANDLERS = {
+    "misterzine": (get_misterzine_status, get_misterzine_status_local, install_or_update_misterzine, install_or_update_misterzine_local, uninstall_misterzine, uninstall_misterzine_local),
     "3s_arm": (get_3sx_status, get_3sx_status_local, install_or_update_3sx, install_or_update_3sx_local, uninstall_3sx, uninstall_3sx_local),
     "3sx_mister": (get_3sx_status, get_3sx_status_local, install_or_update_3sx, install_or_update_3sx_local, uninstall_3sx, uninstall_3sx_local),
     "sonic_mania_mister": (get_sonic_mania_status, get_sonic_mania_status_local, install_or_update_sonic_mania, install_or_update_sonic_mania_local, uninstall_sonic_mania, uninstall_sonic_mania_local),
@@ -1650,7 +1660,7 @@ def run_uninstall(item: dict, context: InstallCenterContext, log: Callable[[str]
         if not functions:
             raise RuntimeError("This entry does not have an Install Center uninstaller yet.")
         uninstall_online, uninstall_local = functions[4], functions[5]
-        if handler in {"retroachievement_cores", "3s_arm", "3sx_mister", "dreamster", "mister_duke3d", "mister_quake", "mms2_gb_core", "paprium_megadrive", "sonic_mania_mister", "megavgmdrive", "physical_disc_cores", "solarus", "mister_dvd", "dvd_player"}:
+        if handler in {"retroachievement_cores", "3s_arm", "3sx_mister", "dreamster", "mister_duke3d", "mister_quake", "mms2_gb_core", "paprium_megadrive", "sonic_mania_mister", "megavgmdrive", "physical_disc_cores", "solarus", "mister_dvd", "dvd_player", "misterzine"}:
             if context.offline:
                 uninstall_local(context.sd_root, log, force=force_downloader)
             else:
