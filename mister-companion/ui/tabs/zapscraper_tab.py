@@ -903,8 +903,8 @@ class ZapScraperTab(QWidget):
         self.ko_quota_label = QLabel("KO count: not reported")
         self.ko_quota_label.setWordWrap(False)
         quota_layout.addWidget(self.scrape_quota_label)
-        quota_layout.addStretch(1)
         quota_layout.addWidget(self.ko_quota_label)
+        quota_layout.addStretch(1)
         self.quota_label = self.quota_widget
 
         source_row = QHBoxLayout()
