@@ -919,16 +919,15 @@ class ZapScraperTab(QWidget):
 
         self.quota_widget = QWidget()
         self.quota_widget.setObjectName("ZapScraperTransparent")
-        quota_layout = QHBoxLayout(self.quota_widget)
+        quota_layout = QVBoxLayout(self.quota_widget)
         quota_layout.setContentsMargins(0, 0, 0, 0)
-        quota_layout.setSpacing(14)
+        quota_layout.setSpacing(3)
         self.scrape_quota_label = QLabel("Scrape count: not reported")
-        self.scrape_quota_label.setWordWrap(True)
+        self.scrape_quota_label.setWordWrap(False)
         self.ko_quota_label = QLabel("KO count: not reported")
-        self.ko_quota_label.setWordWrap(True)
+        self.ko_quota_label.setWordWrap(False)
         quota_layout.addWidget(self.scrape_quota_label)
         quota_layout.addWidget(self.ko_quota_label)
-        quota_layout.addStretch(1)
         self.quota_label = self.quota_widget
 
         source_row = QHBoxLayout()

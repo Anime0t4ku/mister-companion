@@ -37,6 +37,7 @@ from core.scripts_actions import (
     uninstall_migrate_sd_local,
     install_cifs_mount,
     install_cifs_mount_local,
+    get_cifs_update_status,
     uninstall_cifs_mount,
     uninstall_cifs_mount_local,
     install_auto_time,
@@ -777,11 +778,6 @@ def _script_status_text(handler: str, scripts_status, syncthing_status=None, ra_
         missing_required_files = []
         if not getattr(scripts_status, "cifs_umount_installed", False):
             missing_required_files.append("cifs_umount.sh")
-        if (
-            getattr(scripts_status, "cifs_common_required", False)
-            and not getattr(scripts_status, "cifs_common_installed", False)
-        ):
-            missing_required_files.append("cifs_common.sh")
 
         if missing_required_files:
             return {
@@ -995,6 +991,15 @@ def check_item_status(item: dict, context: InstallCenterContext, check_latest: b
             except Exception as e:
                 ra_viewer_status = {"status_text": f"Status unknown ({e})"}
         base_status = _script_status_text(handler, scripts_status, syncthing_status, ra_viewer_status)
+        if handler == "cifs_mount":
+            return get_cifs_update_status(
+                base_status,
+                check_latest=check_latest,
+                connection=context.connection,
+                sd_root=context.sd_root,
+                offline=context.offline,
+                log=log,
+            )
         return apply_script_update_status(
             handler,
             base_status,
@@ -1130,15 +1135,25 @@ def check_all_status(catalog: dict, context: InstallCenterContext, check_latest:
                         results[item_id] = get_zaparoo_update_status_local(context.sd_root, check_latest=item_check_latest, log=log) if context.offline else get_zaparoo_update_status(context.connection, check_latest=item_check_latest, log=log)
                     else:
                         base_status = _script_status_text(handler, scripts_status, syncthing_status, ra_viewer_status)
-                        results[item_id] = apply_script_update_status(
-                            handler,
-                            base_status,
-                            check_latest=item_check_latest,
-                            connection=context.connection,
-                            sd_root=context.sd_root,
-                            offline=context.offline,
-                            log=log,
-                        )
+                        if handler == "cifs_mount":
+                            results[item_id] = get_cifs_update_status(
+                                base_status,
+                                check_latest=item_check_latest,
+                                connection=context.connection,
+                                sd_root=context.sd_root,
+                                offline=context.offline,
+                                log=log,
+                            )
+                        else:
+                            results[item_id] = apply_script_update_status(
+                                handler,
+                                base_status,
+                                check_latest=item_check_latest,
+                                connection=context.connection,
+                                sd_root=context.sd_root,
+                                offline=context.offline,
+                                log=log,
+                            )
                 elif item_type in {"extra", "core"} or category in {"extras", "cores"}:
                     results[item_id] = _extra_status(handler, context, item_check_latest, log=log)
                 elif item_type == "rom" or category == "roms":

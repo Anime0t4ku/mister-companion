@@ -25,9 +25,9 @@ CUSTOM_RESOLUTION_VALUE = "Custom Resolution"
 NOT_SET_VALUE = "Not Set"
 
 SCALING_MAP = {
-    "0": "Disabled",
-    "1": "Exact Refresh",
-    "2": "Low Latency",
+    "0": "Compatible Mode (Triple Buffering)",
+    "1": "Low Latency (1 Frame)",
+    "2": "Exact Refresh (Original Core Rate)",
 }
 
 SCALING_REVERSE_MAP = {value: key for key, value in SCALING_MAP.items()}

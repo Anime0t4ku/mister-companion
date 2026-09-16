@@ -12,6 +12,8 @@ from core.scripts_actions import (
     enable_zaparoo_service_local,
     ensure_update_all_config_bootstrap,
     ensure_update_all_config_bootstrap_local,
+    migrate_embedded_cifs_config,
+    migrate_embedded_cifs_config_local,
     remove_cifs_config,
     remove_cifs_config_local,
     remove_dav_browser_config,
@@ -248,6 +250,59 @@ class InstallCenterActions:
     def run_cifs_umount(self):
         if self.is_offline_mode() or not self._require_online(): return
         QMessageBox.information(self.tab, "Unmount", run_cifs_umount(self.connection) or "Unmount command sent.")
+
+    def migrate_cifs_configuration(self, *, before_update=False):
+        offline = self.is_offline_mode()
+        root = self._require_sd() if offline else None
+        if offline and not root:
+            return False
+        if not offline and not self._require_online():
+            return False
+
+        message = (
+            "CIFS settings were found inside cifs_mount.sh, but cifs_mount.ini does not exist.\n\n"
+            "Migrate these settings to cifs_mount.ini now?"
+        )
+        if before_update:
+            message += "\n\nThe scripts will only be updated after the migration succeeds."
+        answer = QMessageBox.question(
+            self.tab,
+            "Migrate CIFS Configuration",
+            message,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return False
+
+        try:
+            migrated = (
+                migrate_embedded_cifs_config_local(root)
+                if offline
+                else migrate_embedded_cifs_config(self.connection)
+            )
+            if not migrated:
+                QMessageBox.warning(
+                    self.tab,
+                    "Migrate CIFS Configuration",
+                    "No migratable CIFS configuration was found, or cifs_mount.ini already exists.",
+                )
+                return False
+            if not before_update:
+                QMessageBox.information(
+                    self.tab,
+                    "CIFS Configuration Migrated",
+                    "The CIFS settings were saved to cifs_mount.ini.",
+                )
+                self.refresh()
+            return True
+        except Exception as exc:
+            QMessageBox.critical(
+                self.tab,
+                "CIFS Migration Failed",
+                f"The existing scripts were not replaced.\n\n{exc}",
+            )
+            return False
 
     def _remove_config(self, title, offline_fn, online_fn):
         if self.is_offline_mode():

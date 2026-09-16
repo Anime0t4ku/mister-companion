@@ -27,7 +27,6 @@ FTP_SAVE_SYNC_STATE_PATH = "/media/fat/Scripts/.config/ftp_save_sync/ftp_save_sy
 
 CIFS_MOUNT_SCRIPT_PATH = "/media/fat/Scripts/cifs_mount.sh"
 CIFS_UMOUNT_SCRIPT_PATH = "/media/fat/Scripts/cifs_umount.sh"
-CIFS_COMMON_SCRIPT_PATH = "/media/fat/Scripts/cifs_common.sh"
 
 STATIC_WALLPAPER_SCRIPT_PATH = "/media/fat/Scripts/static_wallpaper.sh"
 STATIC_WALLPAPER_CONFIG_DIR = "/media/fat/Scripts/.config/static_wallpaper"
@@ -73,8 +72,6 @@ class ScriptsStatus:
     static_wallpaper_installed: bool
     static_wallpaper_active: bool
     static_wallpaper_saved: bool
-    cifs_common_installed: bool = False
-    cifs_common_required: bool = False
     cifs_umount_installed: bool = False
 
 
@@ -115,10 +112,6 @@ def _local_file_exists(sd_root, remote_path):
         return _local_path(sd_root, remote_path).is_file()
     except Exception:
         return False
-
-
-def _cifs_mount_text_requires_common(text):
-    return "cifs_common.sh" in (text or "")
 
 
 def _local_dir_exists(sd_root, remote_path):
@@ -448,7 +441,6 @@ def get_scripts_status(connection) -> ScriptsStatus:
         ("cifs_installed", CIFS_MOUNT_SCRIPT_PATH),
         ("cifs_umount_installed", CIFS_UMOUNT_SCRIPT_PATH),
         ("cifs_configured", "/media/fat/Scripts/cifs_mount.ini"),
-        ("cifs_common_installed", CIFS_COMMON_SCRIPT_PATH),
         ("auto_time_installed", "/media/fat/Scripts/auto_time.sh"),
         ("cd_game_organizer_installed", "/media/fat/Scripts/cd_game_organizer.sh"),
         ("dav_browser_installed", "/media/fat/Scripts/dav_browser.sh"),
@@ -470,8 +462,6 @@ def get_scripts_status(connection) -> ScriptsStatus:
         "&& printf 'zaparoo_service_enabled=1\n' || printf 'zaparoo_service_enabled=0\n'",
         f"grep -Fq '{FTP_SAVE_SYNC_DAEMON_LINE}' {FTP_SAVE_SYNC_STARTUP_PATH} 2>/dev/null "
         "&& printf 'ftp_save_sync_service_enabled=1\n' || printf 'ftp_save_sync_service_enabled=0\n'",
-        f"grep -q 'cifs_common.sh' {CIFS_MOUNT_SCRIPT_PATH} 2>/dev/null "
-        "&& printf 'cifs_common_required=1\n' || printf 'cifs_common_required=0\n'",
     ])
 
     output = connection.run_command("; ".join(command_parts)) or ""
@@ -493,8 +483,6 @@ def get_scripts_status(connection) -> ScriptsStatus:
         migrate_sd_installed=values.get("migrate_sd_installed", False),
         cifs_installed=values.get("cifs_installed", False),
         cifs_configured=values.get("cifs_configured", False),
-        cifs_common_installed=values.get("cifs_common_installed", False),
-        cifs_common_required=values.get("cifs_common_required", False),
         cifs_umount_installed=values.get("cifs_umount_installed", False),
         auto_time_installed=values.get("auto_time_installed", False),
         cd_game_organizer_installed=values.get("cd_game_organizer_installed", False),
@@ -520,8 +508,6 @@ def get_scripts_status_local(sd_root) -> ScriptsStatus:
         cifs_installed = _local_file_exists(sd_root, CIFS_MOUNT_SCRIPT_PATH)
         cifs_umount_installed = _local_file_exists(sd_root, CIFS_UMOUNT_SCRIPT_PATH)
         cifs_configured = _local_file_exists(sd_root, "/media/fat/Scripts/cifs_mount.ini")
-        cifs_common_installed = _local_file_exists(sd_root, CIFS_COMMON_SCRIPT_PATH)
-        cifs_common_required = _cifs_mount_text_requires_common(_read_local_text(sd_root, CIFS_MOUNT_SCRIPT_PATH)) if cifs_installed else False
         auto_time_installed = _local_file_exists(sd_root, "/media/fat/Scripts/auto_time.sh")
         cd_game_organizer_installed = _local_file_exists(sd_root, "/media/fat/Scripts/cd_game_organizer.sh")
         dav_browser_installed = _local_file_exists(sd_root, "/media/fat/Scripts/dav_browser.sh")
@@ -552,8 +538,6 @@ def get_scripts_status_local(sd_root) -> ScriptsStatus:
             migrate_sd_installed=migrate_sd_installed,
             cifs_installed=cifs_installed,
             cifs_configured=cifs_configured,
-            cifs_common_installed=cifs_common_installed,
-            cifs_common_required=cifs_common_required,
             cifs_umount_installed=cifs_umount_installed,
             auto_time_installed=auto_time_installed,
             cd_game_organizer_installed=cd_game_organizer_installed,

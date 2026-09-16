@@ -51,8 +51,11 @@ from core.scripts_migrate_sd import (
 )
 
 from core.scripts_cifs_mount import (
+    get_cifs_update_status,
     install_cifs_mount,
     install_cifs_mount_local,
+    migrate_embedded_cifs_config,
+    migrate_embedded_cifs_config_local,
     load_cifs_config,
     load_cifs_config_local,
     remove_cifs_config,
@@ -300,4 +303,7 @@ __all__ = [
     "load_ra_viewer_config_local",
     "save_ra_viewer_config",
     "save_ra_viewer_config_local",
+    "get_cifs_update_status",
+    "migrate_embedded_cifs_config",
+    "migrate_embedded_cifs_config_local",
 ]

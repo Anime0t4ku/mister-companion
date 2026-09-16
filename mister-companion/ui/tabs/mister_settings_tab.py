@@ -512,9 +512,9 @@ class MiSTerSettingsTab(QWidget):
         self.easy_scaling_combo = QComboBox()
         self.easy_scaling_combo.addItems([
             NOT_SET_VALUE,
-            "Disabled",
-            "Low Latency",
-            "Exact Refresh"
+            "Compatible Mode (Triple Buffering)",
+            "Low Latency (1 Frame)",
+            "Exact Refresh (Original Core Rate)"
         ])
 
         self.easy_hdmi_audio_combo = QComboBox()

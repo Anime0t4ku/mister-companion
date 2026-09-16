@@ -972,7 +972,7 @@ class InstallCenterDetailsDialog(QDialog):
             enabled=(not installed or bool(self.status.get("update_available"))),
         )
 
-        if supports_script_update_check(handler) or handler in DOWNLOADER_UPDATE_HANDLERS:
+        if supports_script_update_check(handler) or handler == "cifs_mount" or handler in DOWNLOADER_UPDATE_HANDLERS:
             add_button("Check for Updates", self.check_for_updates, enabled=installed, min_width=170)
 
         if handler == "update_all":
@@ -986,6 +986,12 @@ class InstallCenterDetailsDialog(QDialog):
         elif handler == "migrate_sd":
             add_button("Uninstall", self.uninstall, enabled=installed, min_width=180)
         elif handler == "cifs_mount":
+            if self.status.get("cifs_migration_available"):
+                add_button(
+                    "Migrate Configuration",
+                    lambda: self.call_install_center_action("migrate_cifs_configuration"),
+                    min_width=190,
+                )
             add_button("Reconfigure" if configured else "Configure", self.configure, enabled=installed, min_width=120)
             add_button("Mount", lambda: self.call_install_center_action("run_cifs_mount"), enabled=installed and configured and online_mode, min_width=120)
             add_button("Unmount", lambda: self.call_install_center_action("run_cifs_umount"), enabled=installed and configured and online_mode, min_width=120)
@@ -1213,6 +1219,14 @@ class InstallCenterDetailsDialog(QDialog):
     def install_or_update(self):
         self.mark_active()
         self.tab.current_item_id = self.item.get("id", "")
+        handler = self.item.get("handler") or self.item.get("id")
+        if (
+            handler == "cifs_mount"
+            and self.status.get("update_available")
+            and self.status.get("cifs_migration_available")
+            and not self.tab.actions.migrate_cifs_configuration(before_update=True)
+        ):
+            return
         if self.item.get("category") == "roms" or self.item.get("type") == "rom":
             self.item["_selected_install_path"] = self.rom_install_path
         self.tab.install_or_update_selected(output_widget=self.output)
@@ -1357,6 +1371,15 @@ class InstallCenterUpdatesDialog(QDialog):
         items = [item for item in items if item]
         if not items or self.worker is not None:
             return
+        for item in items:
+            handler = item.get("handler") or item.get("id")
+            status = self.tab.statuses.get(item.get("id"), {}) or {}
+            if (
+                handler == "cifs_mount"
+                and status.get("cifs_migration_available")
+                and not self.tab.actions.migrate_cifs_configuration(before_update=True)
+            ):
+                return
         context = build_context(self.tab.main_window)
         ready, reason = context_ready(context)
         if not ready:
