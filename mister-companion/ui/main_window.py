@@ -57,6 +57,7 @@ from ui.dialogs.theme_picker_dialog import ThemePickerDialog
 from ui.tabs.app_settings_tab import AppSettingsTab
 from ui.dialogs.changelog_dialog import ChangelogDialog
 from ui.dialogs.update_available_dialog import UpdateAvailableDialog
+from ui.scaling import refresh_control_minimum_heights
 from ui.tabs.connection_tab import ConnectionTab
 from ui.tabs.flash_tab import FlashTab
 from ui.tabs.file_manager_tab import FileManagerTab
@@ -1188,6 +1189,7 @@ class MainWindow(QMainWindow):
             current_widget = self.current_content_widget()
             if current_widget is not None and hasattr(current_widget, "refresh_theme"):
                 current_widget.refresh_theme()
+            refresh_control_minimum_heights()
         finally:
             self.setUpdatesEnabled(True)
             self.update()

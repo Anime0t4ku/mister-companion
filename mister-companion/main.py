@@ -21,6 +21,7 @@ from core.config import load_config
 from core.theme import apply_theme
 from ui.custom_message_dialog import install_custom_message_boxes
 from ui.main_window import MainWindow
+from ui.scaling import install_control_height_guard
 
 
 def main():
@@ -28,6 +29,7 @@ def main():
 
     config = load_config()
     apply_theme(app, config.get("theme_mode", "auto"))
+    install_control_height_guard(app)
 
     install_custom_message_boxes()
 

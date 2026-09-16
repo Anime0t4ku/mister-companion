@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QRadioButton,
+    QScrollArea,
     QSizePolicy,
     QStackedWidget,
     QVBoxLayout,
@@ -62,20 +63,51 @@ class ConnectionTab(QWidget):
 
         self.connection_page = QWidget()
         self.connection_page.setObjectName("ConnectionPage")
-        main_layout = QVBoxLayout(self.connection_page)
+        page_layout = QVBoxLayout(self.connection_page)
+        page_layout.setContentsMargins(0, 0, 0, 0)
+        page_layout.setSpacing(0)
+
+        self.connection_scroll = QScrollArea()
+        self.connection_scroll.setObjectName("ConnectionPageScroll")
+        self.connection_scroll.setWidgetResizable(True)
+        self.connection_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.connection_scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        page_layout.addWidget(self.connection_scroll)
+
+        self.connection_content = QWidget()
+        self.connection_content.setObjectName("ConnectionPageContent")
+        self.connection_scroll.setWidget(self.connection_content)
+
+        main_layout = QVBoxLayout(self.connection_content)
         main_layout.setContentsMargins(18, 18, 18, 18)
         main_layout.setSpacing(14)
         self.state_stack.addWidget(self.connection_page)
 
         self.device_dashboard = DeviceTab(self.main_window)
-        self.state_stack.addWidget(self.device_dashboard)
+        self.device_scroll = QScrollArea()
+        self.device_scroll.setObjectName("DevicePageScroll")
+        self.device_scroll.setWidgetResizable(True)
+        self.device_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.device_scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        self.device_scroll.setWidget(self.device_dashboard)
+        self.state_stack.addWidget(self.device_scroll)
         self.state_stack.setCurrentWidget(self.connection_page)
 
         self.connection_page.setStyleSheet(
             """
             QStackedWidget#ConnectionStateStack,
-            QWidget#ConnectionPage {
+            QWidget#ConnectionPage,
+            QWidget#ConnectionPageContent,
+            QScrollArea#ConnectionPageScroll,
+            QScrollArea#ConnectionPageScroll > QWidget > QWidget,
+            QScrollArea#DevicePageScroll,
+            QScrollArea#DevicePageScroll > QWidget > QWidget {
                 background: transparent;
+                border: none;
             }
 
             QWidget#ConnectionPage QFrame#StatusBanner,
@@ -759,7 +791,7 @@ class ConnectionTab(QWidget):
         self.sync_status_from_main_window()
 
         if hasattr(self.main_window, "is_offline_sd_loaded") and self.main_window.is_offline_sd_loaded():
-            self.state_stack.setCurrentWidget(self.device_dashboard)
+            self.state_stack.setCurrentWidget(self.device_scroll)
             self.device_dashboard.apply_offline_state(lightweight=True)
             QTimer.singleShot(0, self.device_dashboard.refresh_info)
             return
@@ -1019,7 +1051,7 @@ class ConnectionTab(QWidget):
 
     def apply_connected_state(self):
         self.sync_status_from_main_window()
-        self.state_stack.setCurrentWidget(self.device_dashboard)
+        self.state_stack.setCurrentWidget(self.device_scroll)
         self.device_dashboard.apply_connected_state()
         QTimer.singleShot(0, self.device_dashboard.refresh_info)
 
