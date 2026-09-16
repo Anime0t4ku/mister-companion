@@ -82,6 +82,8 @@ from core.video_converter import (
 from ui.tab_header import create_tab_header
 from ui.dialogs.remote_file_picker_dialog import RemoteFilePickerDialog
 from ui.ssh_terminal import SSHTerminalWidget
+from ui.tools.nfc_art.card_widget import NFCCardWidget
+from ui.tools.nfc_art.cassette_widget import NFCCassetteWidget
 
 
 LOCAL = "This PC"
@@ -160,6 +162,7 @@ class ToolsTab(QWidget):
             """
         )
         root = QVBoxLayout(self)
+        self.root_layout = root
         root.setContentsMargins(18, 18, 18, 18)
         root.setSpacing(0)
         self.stack = QStackedWidget()
@@ -172,6 +175,13 @@ class ToolsTab(QWidget):
         self.disc_to_image_page = self._build_disc_to_image()
         self.image_to_disc_page = self._build_image_to_disc()
         self.ssh_terminal_page = self._build_ssh_terminal()
+        self.nfc_card_widget = NFCCardWidget()
+        self.nfc_cassette_widget = NFCCassetteWidget(self._open_nfc_shared_settings)
+        self.nfc_art_page = self._build_nfc_art_generator()
+        self.nfc_card_page = self._build_nfc_focus_page("NFC Card Generator", self.nfc_card_widget)
+        self.nfc_cassette_page = self._build_nfc_focus_page(
+            "NFC Cassette Cover Generator", self.nfc_cassette_widget
+        )
         self.stack.addWidget(self.home_page)
         self.stack.addWidget(self.patcher_page)
         self.stack.addWidget(self.chd_page)
@@ -180,6 +190,9 @@ class ToolsTab(QWidget):
         self.stack.addWidget(self.disc_to_image_page)
         self.stack.addWidget(self.image_to_disc_page)
         self.stack.addWidget(self.ssh_terminal_page)
+        self.stack.addWidget(self.nfc_art_page)
+        self.stack.addWidget(self.nfc_card_page)
+        self.stack.addWidget(self.nfc_cassette_page)
 
     def _build_home(self):
         page = QWidget()
@@ -200,6 +213,7 @@ class ToolsTab(QWidget):
             ("Disc to Image", "Rip a physical game CD to BIN/CUE, optionally convert it to CHD, then save it to PC or MiSTer.", lambda: self._open_disc_page(self.disc_to_image_page)),
             ("Image to Disc", "Burn BIN/CUE game discs or MSU-1 / MD+ folders from PC or MiSTer using the PC optical drive.", lambda: self._open_disc_page(self.image_to_disc_page)),
             ("SSH Terminal", "Open a fully interactive SSH terminal for the currently connected MiSTer.", self._open_ssh_terminal),
+            ("NFC Art Generator", "Create printable NFC cards and cassette-style covers using local or online artwork.", lambda: self.stack.setCurrentWidget(self.nfc_art_page)),
         )
         for index, (name, detail_text, slot) in enumerate(entries):
             card = QFrame()
@@ -250,6 +264,104 @@ class ToolsTab(QWidget):
         button = QPushButton("← Back to Tools")
         button.clicked.connect(callback or (lambda: self.stack.setCurrentWidget(self.home_page)))
         return button
+
+    def _build_nfc_art_generator(self):
+        page, layout = self._tool_workspace_page("NFC Art Generator")
+        intro = QLabel(
+            "Choose a generator. Each one opens as a full-window Companion workspace, "
+            "with shared artwork sources and settings."
+        )
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
+
+        cards = QGridLayout()
+        cards.setHorizontalSpacing(14)
+        cards.setVerticalSpacing(14)
+        cards.addWidget(
+            self._nfc_launcher_card(
+                "NFC Card Generator",
+                "Create printable NFC cards using templates, local artwork, SteamGridDB and TMDB.",
+                lambda: self._open_nfc_focus(self.nfc_card_page),
+            ),
+            0,
+            0,
+        )
+        cards.addWidget(
+            self._nfc_launcher_card(
+                "NFC Cassette Cover Generator",
+                "Create cassette-style NFC covers with per-side logos, colors, summaries and overlays.",
+                lambda: self._open_nfc_focus(self.nfc_cassette_page),
+            ),
+            0,
+            1,
+        )
+        layout.addLayout(cards)
+        settings_row = QHBoxLayout()
+        settings_row.addStretch(1)
+        settings = QPushButton("Shared Settings")
+        settings.clicked.connect(self._open_nfc_shared_settings)
+        settings_row.addWidget(settings)
+        layout.addLayout(settings_row)
+        layout.addStretch(1)
+        return page
+
+    def _nfc_launcher_card(self, title_text, detail_text, callback):
+        card = QFrame()
+        card.setObjectName("ToolsHomeCard")
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(18, 16, 18, 16)
+        title = QLabel(title_text)
+        title.setObjectName("ToolsEntryTitle")
+        card_layout.addWidget(title)
+        detail = QLabel(detail_text)
+        detail.setObjectName("ToolsEntryDetail")
+        detail.setWordWrap(True)
+        card_layout.addWidget(detail, 1)
+        row = QHBoxLayout()
+        row.addStretch(1)
+        button = QPushButton("Open")
+        button.clicked.connect(callback)
+        row.addWidget(button)
+        card_layout.addLayout(row)
+        return card
+
+    def _build_nfc_focus_page(self, title_text, generator):
+        page = QWidget()
+        page.setObjectName("ToolsSubPage")
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(8)
+        header = QHBoxLayout()
+        back = QPushButton("← Back to NFC Art Generator")
+        back.clicked.connect(self._leave_nfc_focus)
+        header.addWidget(back)
+        title = QLabel(title_text)
+        title.setStyleSheet("font-weight: 700; font-size: 19px;")
+        header.addWidget(title)
+        header.addStretch(1)
+        settings = QPushButton("Shared Settings")
+        settings.clicked.connect(self._open_nfc_shared_settings)
+        header.addWidget(settings)
+        layout.addLayout(header)
+        layout.addWidget(generator, 1)
+        return page
+
+    def _open_nfc_shared_settings(self):
+        self.nfc_card_widget.open_settings()
+        self.nfc_cassette_widget.update_ui_state()
+        self.nfc_cassette_widget.changed()
+
+    def _open_nfc_focus(self, page):
+        self.root_layout.setContentsMargins(0, 0, 0, 0)
+        self.stack.setCurrentWidget(page)
+        if hasattr(self.main_window, "enter_focus_mode"):
+            self.main_window.enter_focus_mode()
+
+    def _leave_nfc_focus(self):
+        self.stack.setCurrentWidget(self.nfc_art_page)
+        self.root_layout.setContentsMargins(18, 18, 18, 18)
+        if hasattr(self.main_window, "exit_focus_mode"):
+            self.main_window.exit_focus_mode()
 
 
     def _build_ssh_terminal(self):
@@ -515,11 +627,16 @@ class ToolsTab(QWidget):
             self.stack.setCurrentWidget(self.home_page)
 
     def can_leave_tab(self):
+        if self.stack.currentWidget() in (self.nfc_card_page, self.nfc_cassette_page):
+            self._leave_nfc_focus()
+            return True
         if self.stack.currentWidget() is not self.ssh_terminal_page:
             return True
         return self._confirm_close_ssh_session()
 
     def shutdown(self):
+        if self.stack.currentWidget() in (self.nfc_card_page, self.nfc_cassette_page):
+            self._leave_nfc_focus()
         self._disconnect_ssh_terminal()
 
     @staticmethod

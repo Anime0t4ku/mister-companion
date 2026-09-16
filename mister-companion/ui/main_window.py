@@ -152,6 +152,7 @@ class MainWindow(QMainWindow):
 
         self._closing = False
         self._tab_refresh_generation = 0
+        self._focus_mode = False
 
         self.setWindowFlags(
             Qt.WindowType.Window
@@ -175,7 +176,9 @@ class MainWindow(QMainWindow):
         root_layout.setSpacing(0)
 
         content_widget = QWidget()
+        self.content_widget = content_widget
         content_layout = QVBoxLayout(content_widget)
+        self.content_layout = content_layout
         content_layout.setContentsMargins(8, 8, 8, 8)
         content_layout.setSpacing(6)
         root_layout.addWidget(content_widget, 1)
@@ -201,7 +204,8 @@ class MainWindow(QMainWindow):
         self.content_area_layout.addWidget(self.tabs, 1)
         content_layout.addWidget(self.content_area, 1)
 
-        bottom_bar = QHBoxLayout()
+        self.footer_widget = QWidget()
+        bottom_bar = QHBoxLayout(self.footer_widget)
         bottom_bar.setContentsMargins(0, 0, 0, 0)
         bottom_bar.setSpacing(8)
 
@@ -240,7 +244,7 @@ class MainWindow(QMainWindow):
 
         self.apply_linux_footer_button_sizing()
 
-        content_layout.addLayout(bottom_bar)
+        content_layout.addWidget(self.footer_widget)
 
         self.setCentralWidget(central_widget)
         self.app.installEventFilter(self)
@@ -567,7 +571,9 @@ class MainWindow(QMainWindow):
         if not hasattr(self, "tabs") or not hasattr(self, "side_menu"):
             return
 
-        self.side_menu.setVisible(True)
+        self.side_menu.setVisible(not self._focus_mode)
+        if hasattr(self, "footer_widget"):
+            self.footer_widget.setVisible(not self._focus_mode)
         self.tabs.tabBar().setVisible(False)
         self.tabs.setStyleSheet(
             """
@@ -582,6 +588,32 @@ class MainWindow(QMainWindow):
 
         self.update_side_menu_selection(self.tabs.currentIndex())
         self.update_side_menu_style()
+
+    def enter_focus_mode(self):
+        """Give an integrated workspace the complete Companion content area."""
+        if self._focus_mode:
+            return
+        self._focus_mode = True
+        self.side_menu.hide()
+        if hasattr(self, "footer_widget"):
+            self.footer_widget.hide()
+        if hasattr(self, "content_layout"):
+            self.content_layout.setContentsMargins(0, 0, 0, 0)
+            self.content_layout.setSpacing(0)
+        self.content_area_layout.setSpacing(0)
+
+    def exit_focus_mode(self):
+        if not self._focus_mode:
+            return
+        self._focus_mode = False
+        if hasattr(self, "content_layout"):
+            self.content_layout.setContentsMargins(8, 8, 8, 8)
+            self.content_layout.setSpacing(6)
+        self.content_area_layout.setSpacing(8)
+        self.side_menu.show()
+        if hasattr(self, "footer_widget"):
+            self.footer_widget.show()
+        self.apply_menu_style()
 
 
     def open_support_dialog(self):
