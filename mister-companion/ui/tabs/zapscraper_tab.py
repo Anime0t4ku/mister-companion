@@ -19,10 +19,7 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
-    QScrollArea,
-    QSplitter,
     QTextEdit,
-    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -737,9 +734,8 @@ class ZapScraperTab(QWidget):
         self.setObjectName("ZapScraperPage")
         self.setStyleSheet(
             """
-            QWidget#ZapScraperScrollContent,
             QWidget#ZapScraperTransparent,
-            QWidget#ZapScraperSplitContent,
+            QWidget#ZapScraperDashboard,
             QWidget#ZapScraperLeft,
             QWidget#ZapScraperRight {
                 background: transparent;
@@ -749,8 +745,8 @@ class ZapScraperTab(QWidget):
                 background-color: palette(alternate-base);
                 border: 1px solid palette(button);
                 border-radius: 12px;
-                margin-top: 18px;
-                padding: 14px;
+                margin-top: 16px;
+                padding: 10px;
                 font-weight: 700;
             }
 
@@ -767,16 +763,6 @@ class ZapScraperTab(QWidget):
                 color: palette(mid);
             }
 
-            QWidget#ZapScraperPage QToolButton#ZapScraperLogToggle {
-                background-color: palette(alternate-base);
-                border: 1px solid palette(button);
-                border-radius: 10px;
-                padding: 8px 12px;
-                font-weight: 700;
-                text-align: left;
-                color: palette(highlight);
-            }
-
             QWidget#ZapScraperPage QLabel#ZapScraperSubheading {
                 font-weight: 700;
             }
@@ -784,41 +770,26 @@ class ZapScraperTab(QWidget):
         )
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(18, 18, 18, 18)
-        layout.setSpacing(12)
+        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setSpacing(8)
 
         header_row = QHBoxLayout()
         header_row.setContentsMargins(2, 0, 2, 0)
         header_row.addWidget(create_tab_header(self.main_window, "ZapScraper", "zapscraper"))
         layout.addLayout(header_row)
 
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(scroll.Shape.NoFrame)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        scroll.setObjectName("ZapScraperTransparent")
-        layout.addWidget(scroll, 1)
-
-        content = QWidget()
-        content.setObjectName("ZapScraperScrollContent")
-        scroll.setWidget(content)
-
-        content_layout = QVBoxLayout(content)
-        content_layout.setContentsMargins(0, 0, 0, 0)
-        content_layout.setSpacing(10)
-
-        split_content = QWidget()
-        split_content.setObjectName("ZapScraperSplitContent")
-        split_layout = QHBoxLayout(split_content)
-        split_layout.setContentsMargins(0, 0, 0, 0)
-        split_layout.setSpacing(14)
-        content_layout.addWidget(split_content, 1)
+        dashboard = QWidget()
+        dashboard.setObjectName("ZapScraperDashboard")
+        dashboard_layout = QHBoxLayout(dashboard)
+        dashboard_layout.setContentsMargins(0, 0, 0, 0)
+        dashboard_layout.setSpacing(10)
+        layout.addWidget(dashboard, 1)
 
         left_widget = QWidget()
         left_widget.setObjectName("ZapScraperLeft")
         self.left_widget = left_widget
-        left_widget.setMinimumWidth(240)
-        left_widget.setMaximumWidth(320)
+        left_widget.setMinimumWidth(220)
+        left_widget.setMaximumWidth(300)
         left_layout = QVBoxLayout(left_widget)
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.setSpacing(0)
@@ -827,11 +798,11 @@ class ZapScraperTab(QWidget):
         systems_group.setObjectName("ZapScraperCard")
         self.systems_group = systems_group
         systems_layout = QVBoxLayout(systems_group)
-        systems_layout.setContentsMargins(14, 18, 14, 12)
-        systems_layout.setSpacing(8)
+        systems_layout.setContentsMargins(10, 16, 10, 8)
+        systems_layout.setSpacing(6)
 
         self.systems_list = QListWidget()
-        self.systems_list.setMinimumHeight(360)
+        self.systems_list.setMinimumHeight(100)
         self.systems_list.currentRowChanged.connect(lambda *_: self.update_connection_state(lightweight=True))
         systems_layout.addWidget(self.systems_list, 1)
 
@@ -847,25 +818,30 @@ class ZapScraperTab(QWidget):
         self.review_gamelist_button.clicked.connect(self.review_selected_gamelist)
         selection_row.addWidget(self.select_all_button)
         selection_row.addWidget(self.clear_selection_button)
-        selection_row.addWidget(self.review_gamelist_button)
         selection_row.addStretch(1)
         systems_layout.addLayout(selection_row)
-        left_layout.addWidget(systems_group)
-        split_layout.addWidget(left_widget, 0, Qt.AlignmentFlag.AlignTop)
+
+        review_row = QHBoxLayout()
+        review_row.addStretch(1)
+        review_row.addWidget(self.review_gamelist_button)
+        review_row.addStretch(1)
+        systems_layout.addLayout(review_row)
+        left_layout.addWidget(systems_group, 1)
+        dashboard_layout.addWidget(left_widget)
 
         right_widget = QWidget()
         right_widget.setObjectName("ZapScraperRight")
         self.right_widget = right_widget
         right_layout = QVBoxLayout(right_widget)
         right_layout.setContentsMargins(0, 0, 0, 0)
-        right_layout.setSpacing(10)
+        right_layout.setSpacing(6)
 
         account_source_group = QGroupBox("Account & Source")
         account_source_group.setObjectName("ZapScraperCard")
         self.account_source_group = account_source_group
         account_source_layout = QVBoxLayout(account_source_group)
-        account_source_layout.setContentsMargins(14, 18, 14, 12)
-        account_source_layout.setSpacing(8)
+        account_source_layout.setContentsMargins(10, 16, 10, 8)
+        account_source_layout.setSpacing(5)
 
         self.login_widget = QWidget()
         self.login_widget.setObjectName("ZapScraperTransparent")
@@ -919,14 +895,15 @@ class ZapScraperTab(QWidget):
 
         self.quota_widget = QWidget()
         self.quota_widget.setObjectName("ZapScraperTransparent")
-        quota_layout = QVBoxLayout(self.quota_widget)
+        quota_layout = QHBoxLayout(self.quota_widget)
         quota_layout.setContentsMargins(0, 0, 0, 0)
-        quota_layout.setSpacing(3)
+        quota_layout.setSpacing(12)
         self.scrape_quota_label = QLabel("Scrape count: not reported")
         self.scrape_quota_label.setWordWrap(False)
         self.ko_quota_label = QLabel("KO count: not reported")
         self.ko_quota_label.setWordWrap(False)
         quota_layout.addWidget(self.scrape_quota_label)
+        quota_layout.addStretch(1)
         quota_layout.addWidget(self.ko_quota_label)
         self.quota_label = self.quota_widget
 
@@ -972,8 +949,8 @@ class ZapScraperTab(QWidget):
         options_group.setObjectName("ZapScraperCard")
         self.options_group = options_group
         options_layout = QVBoxLayout(options_group)
-        options_layout.setContentsMargins(14, 18, 14, 12)
-        options_layout.setSpacing(8)
+        options_layout.setContentsMargins(10, 16, 10, 8)
+        options_layout.setSpacing(5)
 
         top_options = QGridLayout()
         top_options.setContentsMargins(0, 0, 0, 0)
@@ -1102,8 +1079,8 @@ class ZapScraperTab(QWidget):
         actions_group.setObjectName("ZapScraperCard")
         self.actions_group = actions_group
         actions_layout = QVBoxLayout(actions_group)
-        actions_layout.setContentsMargins(14, 18, 14, 10)
-        actions_layout.setSpacing(5)
+        actions_layout.setContentsMargins(10, 16, 10, 8)
+        actions_layout.setSpacing(4)
 
         action_row = QHBoxLayout()
         action_row.setSpacing(8)
@@ -1136,61 +1113,18 @@ class ZapScraperTab(QWidget):
         status_row.addWidget(self.progress_bar, 1)
         actions_layout.addLayout(status_row)
         right_layout.addWidget(actions_group)
-        right_layout.addStretch(1)
-        split_layout.addWidget(right_widget, 1)
 
-        self.log_toggle = QToolButton()
-        self.log_toggle.setObjectName("ZapScraperLogToggle")
-        self.log_toggle.setText("Log")
-        self.log_toggle.setCheckable(True)
-        self.log_toggle.setChecked(False)
-        self.log_toggle.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-        self.log_toggle.setArrowType(Qt.ArrowType.RightArrow)
-        self.log_toggle.clicked.connect(self._toggle_log)
-        content_layout.addWidget(self.log_toggle)
-
-        self.log_group = QGroupBox()
+        self.log_group = QGroupBox("Log")
         self.log_group.setObjectName("ZapScraperCard")
         log_layout = QVBoxLayout(self.log_group)
-        log_layout.setContentsMargins(14, 12, 14, 12)
+        log_layout.setContentsMargins(10, 16, 10, 8)
         log_layout.setSpacing(0)
         self.output = QTextEdit()
         self.output.setReadOnly(True)
-        self.output.setMinimumHeight(140)
-        self.output.setMaximumHeight(170)
+        self.output.setMinimumHeight(70)
         log_layout.addWidget(self.output)
-        self.log_group.setVisible(False)
-        content_layout.addWidget(self.log_group)
-
-        QTimer.singleShot(0, self._sync_systems_height)
-
-    def _sync_systems_height(self):
-        if not all(
-            hasattr(self, attr)
-            for attr in ("systems_group", "left_widget", "right_widget", "actions_group")
-        ):
-            return
-        right_layout = self.right_widget.layout()
-        if right_layout is not None:
-            right_layout.activate()
-        target_height = self.actions_group.geometry().bottom() + 1
-        if target_height > 0:
-            self.left_widget.setFixedHeight(target_height)
-            self.systems_group.setFixedHeight(target_height)
-
-    def _schedule_systems_height_sync(self):
-        QTimer.singleShot(0, self._sync_systems_height)
-
-    def _toggle_log(self, checked):
-        self.set_log_expanded(bool(checked))
-
-    def set_log_expanded(self, expanded):
-        expanded = bool(expanded)
-        self.log_toggle.blockSignals(True)
-        self.log_toggle.setChecked(expanded)
-        self.log_toggle.blockSignals(False)
-        self.log_toggle.setArrowType(Qt.ArrowType.DownArrow if expanded else Qt.ArrowType.RightArrow)
-        self.log_group.setVisible(expanded)
+        right_layout.addWidget(self.log_group, 1)
+        dashboard_layout.addWidget(right_widget, 1)
 
     def load_settings(self):
         self._loading_settings = True
@@ -1423,7 +1357,6 @@ class ZapScraperTab(QWidget):
         self.account_status_label.setText("Enter your credentials and press Login.")
 
     def update_account_ui(self):
-        self._schedule_systems_height_sync()
         name = self.account_name or self.username_edit.text().strip() or "ScreenScraper"
 
         self.login_widget.setVisible(not self.logged_in)
@@ -1554,7 +1487,6 @@ class ZapScraperTab(QWidget):
         self.update_connection_state(lightweight=True)
 
     def update_source_ui(self):
-        self._schedule_systems_height_sync()
         source_mode = self.source_combo.currentText()
         custom_mode = source_mode == SOURCE_CUSTOM_GAMES_FOLDER
         sd_root = self._sd_root()
@@ -1644,7 +1576,6 @@ class ZapScraperTab(QWidget):
         return selected or get_default_zaparoo_companion_media_names()
 
     def update_output_format_ui(self):
-        self._schedule_systems_height_sync()
         is_mode1 = self._is_zaparoo_companion_mode()
 
         self.mode2_options_widget.setVisible(not is_mode1)
@@ -1829,7 +1760,6 @@ class ZapScraperTab(QWidget):
 
         self._stop_requested = False
         self.save_settings()
-        self.set_log_expanded(True)
 
         self.systems_list.clear()
         self.systems = []
@@ -1961,7 +1891,6 @@ class ZapScraperTab(QWidget):
 
         self._stop_requested = False
         self.save_settings()
-        self.set_log_expanded(True)
 
         skip_existing_metadata = self.skip_metadata_checkbox.isChecked()
         skip_existing_images = self.skip_images_checkbox.isChecked()
