@@ -13,7 +13,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from core.config import load_config
+from core.config import load_config, save_config
 from core.scripts_mister_monitor import (
     load_mister_monitor_ra_config,
     save_mister_monitor_ra_config,
@@ -28,6 +28,7 @@ CONFIG_RA_API_KEY = "retroachievements_api_key"
 
 class MiSTerMonitorConfigWidget(QWidget):
     saved = pyqtSignal()
+    screenscraper_saved = pyqtSignal(str, str)
     cancelled = pyqtSignal()
 
     def __init__(self, connection, main_window=None, parent=None):
@@ -44,16 +45,22 @@ class MiSTerMonitorConfigWidget(QWidget):
         centered = QHBoxLayout()
         centered.addStretch(1)
 
+        cards = QWidget()
+        cards.setMaximumWidth(720)
+        cards_layout = QVBoxLayout(cards)
+        cards_layout.setContentsMargins(0, 0, 0, 0)
+        cards_layout.setSpacing(12)
+
         card = QGroupBox("RetroAchievements Settings")
-        card.setMaximumWidth(720)
         card.setMaximumHeight(320)
-        card.setStyleSheet(
+        card_style = (
             "QGroupBox { background-color: palette(alternate-base); "
             "border: 1px solid palette(button); border-radius: 12px; "
             "margin-top: 18px; padding: 14px; font-weight: 700; } "
             "QGroupBox::title { subcontrol-origin: margin; left: 14px; "
             "padding: 0px 7px; color: palette(highlight); }"
         )
+        card.setStyleSheet(card_style)
         layout = QVBoxLayout(card)
         layout.setContentsMargins(18, 24, 18, 18)
         layout.setSpacing(14)
@@ -100,7 +107,43 @@ class MiSTerMonitorConfigWidget(QWidget):
         self.save_button.clicked.connect(self.save_config)
         self.cancel_button.clicked.connect(self.cancelled.emit)
 
-        centered.addWidget(card, 1)
+        screenscraper_card = QGroupBox("ScreenScraper Settings")
+        screenscraper_card.setStyleSheet(card_style)
+        ss_layout = QVBoxLayout(screenscraper_card)
+        ss_layout.setContentsMargins(18, 24, 18, 18)
+        ss_layout.setSpacing(12)
+        ss_info = QLabel(
+            "Remote Display uses these credentials for its own artwork and metadata cache. "
+            "ZapScraper output and scraped items are not reused."
+        )
+        ss_info.setWordWrap(True)
+        ss_info.setStyleSheet("font-weight: normal;")
+        ss_layout.addWidget(ss_info)
+        ss_form = QFormLayout()
+        ss_form.setSpacing(10)
+        self.ss_username_edit = QLineEdit()
+        self.ss_username_edit.setPlaceholderText("ScreenScraper username")
+        self.ss_password_edit = QLineEdit()
+        self.ss_password_edit.setPlaceholderText("ScreenScraper password")
+        self.ss_password_edit.setEchoMode(QLineEdit.EchoMode.Password)
+        ss_form.addRow("Username:", self.ss_username_edit)
+        ss_form.addRow("Password:", self.ss_password_edit)
+        ss_layout.addLayout(ss_form)
+        ss_buttons = QHBoxLayout()
+        self.use_zapscraper_login_button = QPushButton("Use ZapScraper Login")
+        self.save_screenscraper_button = QPushButton("Save")
+        set_text_button_min_width(self.use_zapscraper_login_button, 170)
+        set_text_button_min_width(self.save_screenscraper_button, 100)
+        ss_buttons.addWidget(self.use_zapscraper_login_button)
+        ss_buttons.addStretch()
+        ss_buttons.addWidget(self.save_screenscraper_button)
+        ss_layout.addLayout(ss_buttons)
+        self.use_zapscraper_login_button.clicked.connect(self.use_zapscraper_login)
+        self.save_screenscraper_button.clicked.connect(self.save_screenscraper_config)
+
+        cards_layout.addWidget(card)
+        cards_layout.addWidget(screenscraper_card)
+        centered.addWidget(cards, 1)
         centered.addStretch(1)
         outer.addLayout(centered)
         outer.addStretch(1)
@@ -142,6 +185,10 @@ class MiSTerMonitorConfigWidget(QWidget):
 
     def load_remote_config(self):
         self.update_use_saved_login_button_state()
+        ss_username, ss_password = self.get_zapscraper_credentials()
+        self.ss_username_edit.setText(ss_username)
+        self.ss_password_edit.setText(ss_password)
+        self.update_use_zapscraper_login_button_state()
         try:
             config = load_mister_monitor_ra_config(self.connection)
         except Exception as exc:
@@ -154,6 +201,69 @@ class MiSTerMonitorConfigWidget(QWidget):
         self.username_edit.setText(config.get("username", ""))
         self.api_key_edit.setText(config.get("api_key", ""))
         return True
+
+    def get_zapscraper_credentials(self):
+        config = getattr(self.main_window, "config_data", {}) or {}
+        if not config:
+            try:
+                config = load_config()
+            except Exception:
+                config = {}
+        scraper = config.get("zapscraper", {})
+        if not isinstance(scraper, dict):
+            scraper = {}
+        return (
+            str(scraper.get("username", "") or "").strip(),
+            str(scraper.get("password", "") or ""),
+        )
+
+    def update_use_zapscraper_login_button_state(self):
+        username, password = self.get_zapscraper_credentials()
+        available = bool(username and password)
+        self.use_zapscraper_login_button.setEnabled(available)
+        self.use_zapscraper_login_button.setToolTip(
+            "Fill in the ScreenScraper login saved by ZapScraper."
+            if available
+            else "No ScreenScraper login was found in ZapScraper."
+        )
+
+    def use_zapscraper_login(self):
+        username, password = self.get_zapscraper_credentials()
+        if not username or not password:
+            self.update_use_zapscraper_login_button_state()
+            QMessageBox.information(
+                self,
+                "No ZapScraper Login",
+                "No ScreenScraper login was found in ZapScraper.",
+            )
+            return
+        self.ss_username_edit.setText(username)
+        self.ss_password_edit.setText(password)
+
+    def save_screenscraper_config(self):
+        username = self.ss_username_edit.text().strip()
+        password = self.ss_password_edit.text()
+        if not username:
+            QMessageBox.warning(self, "Missing Username", "Please enter your ScreenScraper username.")
+            return
+        if not password:
+            QMessageBox.warning(self, "Missing Password", "Please enter your ScreenScraper password.")
+            return
+        config = getattr(self.main_window, "config_data", None)
+        if not isinstance(config, dict):
+            config = load_config()
+        scraper = config.get("zapscraper", {})
+        if not isinstance(scraper, dict):
+            scraper = {}
+        scraper["username"] = username
+        scraper["password"] = password
+        scraper["logged_in"] = False
+        config["zapscraper"] = scraper
+        save_config(config)
+        if self.main_window is not None and hasattr(self.main_window, "config_data"):
+            self.main_window.config_data["zapscraper"] = dict(scraper)
+        QMessageBox.information(self, "Saved", "ScreenScraper settings were saved successfully.")
+        self.screenscraper_saved.emit(username, password)
 
     def save_config(self):
         username = self.username_edit.text().strip()

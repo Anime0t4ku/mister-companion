@@ -3015,6 +3015,42 @@ def fetch_game_info(
     )
 
 
+def fetch_game_info_by_hashes(
+    *,
+    username: str,
+    password: str,
+    system_id: int,
+    rom_filename: str,
+    rom_size: int = 0,
+    crc: str = "",
+    md5: str = "",
+    sha1: str = "",
+    quota_callback=None,
+) -> dict[str, Any]:
+    """Fetch game data when another service already calculated ROM hashes."""
+    params = _common_screenscraper_params(username, password)
+    params.update(
+        {
+            "systemeid": str(system_id),
+            "romtype": "rom",
+            "romnom": str(rom_filename or "").strip(),
+        }
+    )
+    if rom_size:
+        params["romtaille"] = str(int(rom_size))
+    if crc:
+        params["crc"] = str(crc).strip()
+    if md5:
+        params["md5"] = str(md5).strip()
+    if sha1:
+        params["sha1"] = str(sha1).strip()
+    return _screenscraper_get_json(
+        "jeuInfos.php",
+        params,
+        quota_callback=quota_callback,
+    )
+
+
 def extract_game_from_response(data: dict[str, Any]) -> dict[str, Any]:
     response = data.get("response")
 
