@@ -33,6 +33,8 @@ from ui.zaparoo_pairing import prompt_for_zaparoo_pairing
 from ui.dialogs.mister_hifi_browser_dialog import MiSTerHiFiBrowserDialog
 from core.mister_hifi_remote import HiFiWebSocketListener, artwork as hifi_artwork, control as hifi_control, seek as hifi_seek
 from core.theme import theme_text_color
+from core.mister_monitor_client import probe_mister_monitor
+from ui.dialogs.mister_monitor_display_dialog import MiSTerMonitorDisplayDialog
 
 
 def resolve_now_playing(connection, timeout=3):
@@ -118,6 +120,8 @@ class DeviceStatusWorker(QThread):
                 update_all_installed = False
                 static_wallpaper_active = False
 
+            mister_monitor_snapshot = probe_mister_monitor(self.connection.host)
+
             self.result.emit(
                 {
                     "offline": False,
@@ -127,6 +131,7 @@ class DeviceStatusWorker(QThread):
                     "now_playing": now_playing,
                     "update_all_installed": update_all_installed,
                     "static_wallpaper_active": static_wallpaper_active,
+                    "mister_monitor_snapshot": mister_monitor_snapshot,
                 }
             )
 
@@ -178,6 +183,8 @@ class DeviceTab(QWidget):
         self.hifi_art_key = ""
         self.hifi_slider_dragging = False
         self._shutting_down = False
+        self.mister_monitor_snapshot = None
+        self.mister_monitor_dialog = None
 
         self.hifi_state_signal.connect(self.apply_hifi_state)
         self.hifi_connected_signal.connect(self.on_hifi_connected)
@@ -511,6 +518,21 @@ class DeviceTab(QWidget):
         self.return_to_menu_button = QPushButton("Return to Menu")
         self.reboot_button = QPushButton("Reboot MiSTer")
         power_layout.addStretch()
+
+        self.mister_monitor_group = QGroupBox("MiSTer Monitor")
+        self.mister_monitor_group.setObjectName("DeviceCard")
+        self.mister_monitor_group.setStyleSheet(card_style)
+        monitor_layout = QHBoxLayout(self.mister_monitor_group)
+        monitor_layout.setContentsMargins(16, 20, 16, 14)
+        monitor_layout.setSpacing(10)
+        self.mister_monitor_status_label = QLabel("MiSTer Monitor server is running")
+        self.mister_monitor_status_label.setWordWrap(True)
+        self.mister_monitor_status_label.setStyleSheet("color: #00aa00;")
+        self.open_mister_monitor_button = QPushButton("Open Display")
+        set_text_button_min_width(self.open_mister_monitor_button, 120)
+        monitor_layout.addWidget(self.mister_monitor_status_label, 1)
+        monitor_layout.addWidget(self.open_mister_monitor_button)
+        self.mister_monitor_group.setVisible(False)
         power_layout.addWidget(self.return_to_menu_button)
         power_layout.addWidget(self.reboot_button)
         power_layout.addStretch()
@@ -521,6 +543,7 @@ class DeviceTab(QWidget):
         cards_grid.addWidget(self.update_all_group, 1, 1)
         cards_grid.addWidget(self.zaparoo_group, 2, 0)
         cards_grid.addWidget(self.device_actions_group, 2, 1)
+        cards_grid.addWidget(self.mister_monitor_group, 3, 0, 1, 2)
         shell_layout.addLayout(cards_grid)
 
         centered_row.addWidget(self.device_shell)
@@ -541,6 +564,7 @@ class DeviceTab(QWidget):
         self.remove_static_wallpaper_button.clicked.connect(self.remove_static_wallpaper_action)
         self.zaparoo_pair_button.clicked.connect(self.pair_with_zaparoo)
         self.zaparoo_remove_pair_button.clicked.connect(self.remove_zaparoo_pairing)
+        self.open_mister_monitor_button.clicked.connect(self.open_mister_monitor_display)
 
     def update_cloud_status(self):
         cloud_client = CloudAccountClient(self.main_window.config_data)
@@ -765,6 +789,7 @@ class DeviceTab(QWidget):
             self.hifi_group.setVisible(False)
         self.zaparoo_group.setVisible(False)
         self.device_actions_group.setVisible(False)
+        self.hide_mister_monitor()
         self.connected_status_label.setText("Disconnected")
         self.connected_status_label.setStyleSheet("font-weight: bold; color: #e74c3c;")
         self.connected_identity_label.setText("")
@@ -825,6 +850,7 @@ class DeviceTab(QWidget):
         self.zaparoo_group.setVisible(False)
         self.now_playing_group.setVisible(False)
         self.device_actions_group.setVisible(False)
+        self.hide_mister_monitor()
 
         sd_root = self.get_offline_sd_root()
         self.mister_status_title_label.setText("SD Card:")
@@ -1077,6 +1103,8 @@ class DeviceTab(QWidget):
 
         smb_enabled = bool(result.get("smb_enabled"))
 
+        self.apply_mister_monitor_status(result.get("mister_monitor_snapshot"))
+
         if smb_enabled:
             self.smb_status_label.setText(
                 "SMB: Enabled ✓"
@@ -1175,6 +1203,63 @@ class DeviceTab(QWidget):
         else:
             self.update_all_status_label.setText("update_all: Installed ✓")
         self.update_all_status_label.setStyleSheet("color: #00aa00;")
+
+    def hide_mister_monitor(self):
+        self.mister_monitor_snapshot = None
+        if hasattr(self, "mister_monitor_group"):
+            self.mister_monitor_group.setVisible(False)
+
+    def apply_mister_monitor_status(self, snapshot):
+        if not isinstance(snapshot, dict):
+            self.hide_mister_monitor()
+            return
+
+        self.mister_monitor_snapshot = snapshot
+        version = str(snapshot.get("server_version") or "").strip()
+        status = "MiSTer Monitor server is running"
+        if version:
+            status += f" • v{version}"
+        self.mister_monitor_status_label.setText(status)
+        self.mister_monitor_group.setVisible(True)
+        self.open_mister_monitor_button.setEnabled(True)
+
+    def open_mister_monitor_display(self):
+        if not self.connection.is_connected() or not self.connection.host:
+            QMessageBox.warning(self, "Remote Display", "Connect to a MiSTer first.")
+            return
+        if not isinstance(self.mister_monitor_snapshot, dict):
+            QMessageBox.information(
+                self,
+                "Remote Display",
+                "The MiSTer Monitor server is no longer reachable.",
+            )
+            self.hide_mister_monitor()
+            return
+
+        dialog = self.mister_monitor_dialog
+        if dialog is not None:
+            try:
+                dialog.show()
+                dialog.raise_()
+                dialog.activateWindow()
+                return
+            except RuntimeError:
+                self.mister_monitor_dialog = None
+
+        dialog = MiSTerMonitorDisplayDialog(
+            self.connection.host,
+            initial_snapshot=self.mister_monitor_snapshot,
+            connection=self.connection,
+            main_window=self.main_window,
+            parent=self.main_window,
+        )
+        dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
+        dialog.destroyed.connect(self._on_mister_monitor_dialog_destroyed)
+        self.mister_monitor_dialog = dialog
+        dialog.show()
+
+    def _on_mister_monitor_dialog_destroyed(self):
+        self.mister_monitor_dialog = None
 
     def run_update_all(self):
         task = prepare_update_all_task(self.main_window, parent=self, installed=True)
@@ -1619,6 +1704,12 @@ class DeviceTab(QWidget):
         self._shutting_down = True
         self.refresh_timer.stop()
         self.stop_hifi_listener(join_timeout=3.0)
+        if self.mister_monitor_dialog is not None:
+            try:
+                self.mister_monitor_dialog.close()
+            except RuntimeError:
+                pass
+            self.mister_monitor_dialog = None
 
         # All of these workers use bounded network operations. Waiting here is
         # limited to app shutdown/disposal and prevents QThread wrappers from
