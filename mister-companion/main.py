@@ -15,9 +15,9 @@ def configure_qt_high_dpi():
 configure_qt_high_dpi()
 
 from PyQt6.QtCore import QTimer
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QMessageBox
 
-from core.config import load_config
+from core.config import CONFIG_PATH, load_config
 from core.theme import apply_theme
 from ui.custom_message_dialog import install_custom_message_boxes
 from ui.main_window import MainWindow
@@ -27,7 +27,17 @@ from ui.scaling import install_control_height_guard
 def main():
     app = QApplication(sys.argv)
 
-    config = load_config()
+    try:
+        config = load_config()
+    except OSError as error:
+        QMessageBox.critical(
+            None,
+            "MiSTer Companion",
+            "Could not use the settings folder:\n\n"
+            f"{CONFIG_PATH.parent}\n\n{error}",
+        )
+        sys.exit(1)
+
     apply_theme(app, config.get("theme_mode", "auto"))
     install_control_height_guard(app)
 

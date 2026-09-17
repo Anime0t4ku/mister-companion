@@ -6,7 +6,6 @@ import posixpath
 from io import BytesIO
 import re
 import shutil
-import sys
 import time
 import xml.etree.ElementTree as ET
 import zipfile
@@ -577,17 +576,8 @@ def _quota_info_indicates_daily_limit(quota: dict[str, Any]) -> bool:
 
 
 
-def get_application_base_dir() -> Path:
-    if getattr(sys, "frozen", False):
-        executable = getattr(sys, "executable", "")
-        if executable:
-            return Path(executable).resolve().parent
-
-    return Path(__file__).resolve().parent.parent
-
-
 def get_scan_cache_dir() -> Path:
-    cache_dir = generated_path("scrapecache", default_root=get_application_base_dir())
+    cache_dir = generated_path("scrapecache")
     cache_dir.mkdir(parents=True, exist_ok=True)
     return cache_dir
 

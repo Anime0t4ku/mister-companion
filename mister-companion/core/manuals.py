@@ -3,7 +3,7 @@ import re
 import shutil
 from pathlib import Path
 
-from core.app_paths import app_base_dir, generated_path
+from core.app_paths import generated_path
 from core.file_browser import available_roots
 from core.open_helpers import open_local_folder
 from shlex import quote
@@ -14,7 +14,7 @@ REMOTE_CIFS_DOCS_ROOT = "/media/fat/cifs/docs"
 
 
 def get_manuals_cache_root() -> Path:
-    return generated_path("Manuals", default_root=app_base_dir())
+    return generated_path("Manuals")
 
 
 def ensure_manuals_cache_root() -> Path:
