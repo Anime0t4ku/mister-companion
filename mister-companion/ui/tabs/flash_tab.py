@@ -30,6 +30,8 @@ from core.flasher import (
     has_mc_fusion_image,
     has_mr_fusion_image,
     is_flash_supported,
+    linux_elevation_method,
+    linux_needs_password_prompt,
     list_available_drives,
     remove_balena_cli,
     remove_mc_fusion_image,
@@ -233,7 +235,15 @@ class FlashTab(QWidget):
         if system == "Windows":
             privilege_text = "Important: Run MiSTer Companion as Administrator to flash SD cards."
         elif system == "Linux":
-            privilege_text = "Important: Run MiSTer Companion with sudo or root privileges to flash SD cards."
+            if linux_elevation_method() is None:
+                privilege_text = (
+                    "Important: install polkit or sudo to flash SD cards, "
+                    "or run MiSTer Companion as root."
+                )
+            else:
+                privilege_text = (
+                    "MiSTer Companion will ask for administrator access when you start a flash."
+                )
         elif system == "Darwin":
             privilege_text = "balena CLI may prompt for your password to write to the SD card."
         else:
@@ -997,7 +1007,7 @@ class FlashTab(QWidget):
         if confirm != QMessageBox.StandardButton.Yes:
             return
 
-        if platform.system() == "Darwin":
+        if platform.system() == "Darwin" or linux_needs_password_prompt():
             from PyQt6.QtWidgets import QInputDialog, QLineEdit
 
             password, ok = QInputDialog.getText(

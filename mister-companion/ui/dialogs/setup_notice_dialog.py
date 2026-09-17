@@ -56,7 +56,7 @@ class SetupNoticeDialog(QDialog):
         elif sys.platform == "darwin":
             privilege_text = "You may be prompted for your password before flashing."
         else:
-            privilege_text = "Run MiSTer Companion with sudo or root privileges before flashing."
+            privilege_text = "You may be prompted for administrator access before flashing."
 
         message = QLabel(
             "MiSTer Companion can prepare and flash your SD card directly from the\n"

@@ -146,6 +146,28 @@ def is_root_linux() -> bool:
         return False
 
 
+def linux_elevation_method() -> str | None:
+    if is_root_linux():
+        return "root"
+    if shutil.which("pkexec"):
+        return "pkexec"
+    if shutil.which("sudo"):
+        return "sudo"
+    return None
+
+
+def linux_elevation_prefix(elevation: str | None) -> list[str]:
+    if elevation == "pkexec":
+        return ["pkexec"]
+    if elevation == "sudo":
+        return ["sudo", "-S"]
+    return []
+
+
+def linux_needs_password_prompt() -> bool:
+    return platform.system() == "Linux" and linux_elevation_method() == "sudo"
+
+
 def _get_windows_autoplay_value() -> int | None:
     if platform.system() != "Windows" or winreg is None:
         return None
@@ -233,15 +255,11 @@ def _ensure_flash_privileges() -> None:
             )
 
     elif system == "Linux":
-        if not is_root_linux():
-            if shutil.which("pkexec"):
-                raise RuntimeError(
-                    "Root privileges are required to flash an SD card.\n\n"
-                    "Please run MiSTer Companion with pkexec or sudo and try again."
-                )
+        if linux_elevation_method() is None:
             raise RuntimeError(
                 "Root privileges are required to flash an SD card.\n\n"
-                "Please run MiSTer Companion with sudo and try again."
+                "Neither pkexec nor sudo was found on this system. Install polkit or sudo, "
+                "or start MiSTer Companion as root, and try again."
             )
 
 
@@ -1229,8 +1247,16 @@ def flash_image(
         "--yes",
     ]
 
+    linux_elevation = (
+        linux_elevation_method() if platform.system() == "Linux" else None
+    )
+
     if platform.system() == "Darwin":
         cmd = ["sudo", "-S"] + cmd
+    else:
+        cmd = linux_elevation_prefix(linux_elevation) + cmd
+
+    needs_password = platform.system() == "Darwin" or linux_elevation == "sudo"
 
     _log(log_callback, f"Starting flash: {image_path.name}")
     _log(log_callback, f"Target drive: {drive}")
@@ -1257,7 +1283,7 @@ def flash_image(
 
     process = subprocess.Popen(
         cmd,
-        stdin=subprocess.PIPE if platform.system() == "Darwin" else None,
+        stdin=subprocess.PIPE if needs_password else None,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
@@ -1267,7 +1293,7 @@ def flash_image(
         env=clean_env,
     )
 
-    if platform.system() == "Darwin" and password is not None:
+    if needs_password and password is not None:
         assert process.stdin is not None
         process.stdin.write(password + "\n")
         process.stdin.flush()
@@ -1293,6 +1319,14 @@ def flash_image(
 
         return_code = process.wait()
         combined_output = "\n".join(output_lines).lower()
+
+        if linux_elevation == "pkexec" and return_code in {126, 127}:
+            raise RuntimeError(
+                "Root privileges were not granted.\n\n"
+                "The authorization prompt was cancelled, or no polkit authentication agent is "
+                "running in this session. Approve the prompt and try again, or start MiSTer "
+                "Companion with sudo."
+            )
 
         symbol_error_markers = ["symbol lookup error", "undefined symbol"]
         bad_drive_markers = ["couldn't clean the drive", "could not clean the drive"]
@@ -1334,6 +1368,15 @@ def flash_image(
                 "again and make sure it's your macOS login password."
             )
 
+        if linux_elevation == "sudo" and any(
+            marker in combined_output for marker in password_error_markers
+        ):
+            raise RuntimeError(
+                "Incorrect password.\n\n"
+                "MiSTer Companion could not authenticate with the password you entered. "
+                "Please try again."
+            )
+
         if any(marker in combined_output for marker in permission_error_markers):
             if platform.system() == "Windows":
                 raise RuntimeError(
@@ -1343,7 +1386,8 @@ def flash_image(
             if platform.system() == "Linux":
                 raise RuntimeError(
                     "Root privileges are required.\n\n"
-                    "Please run MiSTer Companion with sudo or pkexec and try again."
+                    "The elevated flash command could not access the drive. Approve the "
+                    "authorization prompt when it appears, then try again."
                 )
             if platform.system() == "Darwin":
                 raise RuntimeError(
