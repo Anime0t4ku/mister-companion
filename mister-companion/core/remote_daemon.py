@@ -5,10 +5,13 @@ import re
 import sys
 import threading
 import urllib.request
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict
 
 from websocket import create_connection
+
+from core.app_paths import app_base_dir as executable_base_dir
 
 
 REMOTE_DAEMON_PORT = 9191
@@ -29,7 +32,7 @@ def app_base_dir() -> Path:
 BASE_DIR = app_base_dir()
 LOCAL_REMOTE_SCRIPT_PATH = BASE_DIR / "assets" / "companion_remote.sh"
 REMOTE_SCRIPT_SOURCE_URL = "https://raw.githubusercontent.com/Anime0t4ku/mister-companion/main/mister-companion/assets/companion_remote.sh"
-BUNDLED_REMOTE_SCRIPT_VERSION = "2.0.0"
+BUNDLED_REMOTE_SCRIPT_VERSION = "3.0.0"
 
 _logger = logging.getLogger(__name__)
 _remote_script_cache_lock = threading.Lock()
@@ -138,6 +141,58 @@ class RemoteDaemonStatus:
     def version_label(self) -> str:
         return str(self.version or "Unknown").strip() or "Unknown"
 
+
+
+
+def remote_daemon_supports_screenshots(version: str) -> bool:
+    return _version_tuple(version) >= (3, 0, 0)
+
+
+def local_screenshot_dir(create: bool = True) -> Path:
+    folder = executable_base_dir() / "screenshots"
+    if create:
+        folder.mkdir(parents=True, exist_ok=True)
+    return folder
+
+
+def _unique_screenshot_path(folder: Path) -> Path:
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    candidate = folder / f"MiSTer_Screenshot_{stamp}.png"
+    index = 2
+    while candidate.exists():
+        candidate = folder / f"MiSTer_Screenshot_{stamp}_{index}.png"
+        index += 1
+    return candidate
+
+
+def capture_remote_screenshot(host: str, timeout: int = 15) -> Path:
+    host = str(host or "").strip()
+    if not host:
+        raise RuntimeError("Missing MiSTer host.")
+
+    url = f"http://{host}:{REMOTE_DAEMON_PORT}/api/screenshot?fresh=1"
+    request = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": "MiSTer-Companion/Screenshot",
+            "Accept": "image/png",
+            "Cache-Control": "no-cache",
+        },
+    )
+
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            data = response.read()
+    except Exception as exc:
+        raise RuntimeError(f"Screenshot request failed: {exc}") from exc
+
+    if not data.startswith(b"\x89PNG\r\n\x1a\n"):
+        raise RuntimeError("The daemon did not return a valid PNG screenshot.")
+
+    folder = local_screenshot_dir(create=True)
+    output_path = _unique_screenshot_path(folder)
+    output_path.write_bytes(data)
+    return output_path
 
 def remote_websocket_url(host: str) -> str:
     host = str(host or "").strip()
@@ -290,6 +345,12 @@ sh "$SCRIPT_PATH" {command_name} --unattended
 
 
 def install_remote_daemon(connection) -> str:
+    """Install or update Companion Remote using a deterministic stop/replace/start flow.
+
+    Updating a running daemon must stop the *old* process before replacing the
+    script/daemon files.  Otherwise the newly written daemon can be current on
+    disk while the old process continues serving the previous version.
+    """
     if connection is None or not connection.is_connected():
         raise RuntimeError("Not connected to MiSTer.")
 
@@ -298,17 +359,67 @@ def install_remote_daemon(connection) -> str:
             f"Local Companion Remote script not found: {LOCAL_REMOTE_SCRIPT_PATH}"
         )
 
-    script_text, _latest_version, _latest_source = get_latest_remote_daemon_script()
+    script_text, expected_version, _latest_source = get_latest_remote_daemon_script()
+    expected_version = str(expected_version or BUNDLED_REMOTE_SCRIPT_VERSION).strip()
 
-    command = f"""
+    # 1) Stop the currently running daemon while the installed script still
+    # matches that daemon.  Fall back to killing the daemon process when an
+    # older/missing script cannot stop it cleanly.
+    stop_command = f"""
+SCRIPT_PATH='{REMOTE_SCRIPT_PATH}'
+DAEMON_PATH='{REMOTE_DAEMON_PATH}'
+
+if [ -f "$SCRIPT_PATH" ]; then
+    sh "$SCRIPT_PATH" stop --unattended >/dev/null 2>&1 || true
+fi
+
+if command -v pkill >/dev/null 2>&1; then
+    pkill -f "$DAEMON_PATH" >/dev/null 2>&1 || true
+else
+    PIDS=$(ps 2>/dev/null | grep "$DAEMON_PATH" | grep -v grep | awk '{{print $1}}')
+    for PID in $PIDS; do
+        kill "$PID" >/dev/null 2>&1 || true
+    done
+fi
+
+rm -f '{REMOTE_CONFIG_DIR}/companion_remote.pid' >/dev/null 2>&1 || true
 mkdir -p /media/fat/Scripts
+"""
+    connection.run_command(stop_command)
 
-cat > '{REMOTE_SCRIPT_PATH}' <<'EOF_COMPANION_REMOTE'
-{script_text}
-EOF_COMPANION_REMOTE
+    # 2) Replace companion_remote.sh over SFTP.  Do not embed the full script
+    # in one SSH command; besides being fragile for a large script, that makes
+    # it much harder to distinguish an upload failure from an install failure.
+    sftp = connection.client.open_sftp()
+    temp_path = REMOTE_SCRIPT_PATH + ".update"
+    try:
+        try:
+            sftp.remove(temp_path)
+        except Exception:
+            pass
 
-chmod +x '{REMOTE_SCRIPT_PATH}'
+        with sftp.open(temp_path, "wb") as remote_file:
+            remote_file.write(script_text.encode("utf-8"))
 
+        sftp.chmod(temp_path, 0o755)
+
+        try:
+            sftp.remove(REMOTE_SCRIPT_PATH)
+        except Exception:
+            pass
+
+        sftp.rename(temp_path, REMOTE_SCRIPT_PATH)
+        sftp.chmod(REMOTE_SCRIPT_PATH, 0o755)
+    finally:
+        try:
+            sftp.remove(temp_path)
+        except Exception:
+            pass
+        sftp.close()
+
+    # 3) Regenerate/install the daemon from the newly uploaded script, then
+    # start a fresh process.
+    install_start_command = f"""
 echo "Installing or updating Companion Remote..."
 sh '{REMOTE_SCRIPT_PATH}' install --unattended
 INSTALL_RESULT=$?
@@ -328,11 +439,38 @@ if [ $START_RESULT -ne 0 ]; then
     exit $START_RESULT
 fi
 
+# 4) Verify that the daemon generated on the MiSTer is the version we just
+# uploaded and that the service reports itself running.
+ACTUAL_VERSION=""
+if [ -x '{REMOTE_DAEMON_PATH}' ]; then
+    ACTUAL_VERSION=$("{REMOTE_DAEMON_PATH}" --version 2>/dev/null | head -n 1)
+fi
+
+if [ -z "$ACTUAL_VERSION" ]; then
+    echo "ERROR: Companion Remote daemon version could not be verified."
+    exit 1
+fi
+
+if [ "$ACTUAL_VERSION" != '{expected_version}' ]; then
+    echo "ERROR: Companion Remote daemon version mismatch."
+    echo "Expected: {expected_version}"
+    echo "Actual:   $ACTUAL_VERSION"
+    exit 1
+fi
+
+STATUS_OUTPUT=$(sh '{REMOTE_SCRIPT_PATH}' status --unattended 2>/dev/null)
+printf '%s\n' "$STATUS_OUTPUT"
+
+if ! printf '%s\n' "$STATUS_OUTPUT" | grep -Eq '^DAEMON_RUNNING=1$'; then
+    echo "ERROR: Companion Remote daemon is not running after update."
+    exit 1
+fi
+
 echo ""
-echo "OK: Companion Remote installed or updated and started."
+echo "OK: Companion Remote updated to $ACTUAL_VERSION and restarted."
 """
 
-    return connection.run_command(command)
+    return connection.run_command(install_start_command)
 
 
 def uninstall_remote_daemon(connection) -> str:

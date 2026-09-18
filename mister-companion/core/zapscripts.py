@@ -1,6 +1,9 @@
 import json
 import re
+import shlex
 import sqlite3
+import time
+import unicodedata
 from pathlib import Path
 
 from websocket import create_connection
@@ -13,6 +16,8 @@ from core.zaparoo_crypto import (
 
 
 REMOTE_MEDIA_DB_PATH = "/media/fat/zaparoo/media.db"
+REMOTE_MEDIA_DB_SNAPSHOT_PREFIX = "/media/fat/zaparoo/.companion_media_snapshot"
+ZAPAROO_TITLE_COLLATION = "ZAPAROO_TITLE_V1"
 
 
 class ZaparooApiError(RuntimeError):
@@ -254,23 +259,90 @@ def _open_sftp(connection):
     )
 
 
+def _create_remote_media_db_snapshot(connection) -> str | None:
+    """Create a consistent SQLite snapshot on the MiSTer when possible.
+
+    Newer Zaparoo builds keep media.db in WAL mode. Copying only media.db while
+    Zaparoo is running can therefore miss committed WAL pages or capture an
+    inconsistent point in time. Python's SQLite backup API reads the live DB
+    together with its WAL and produces a standalone snapshot for SFTP.
+
+    Older MiSTer installations that do not have python3 simply fall back to the
+    legacy direct-file download path.
+    """
+    run_command = getattr(connection, "run_command", None)
+    if not callable(run_command):
+        return None
+
+    snapshot_path = f"{REMOTE_MEDIA_DB_SNAPSHOT_PREFIX}_{int(time.time() * 1000)}.db"
+    marker = "__COMPANION_MEDIA_SNAPSHOT_OK__"
+    script = "\n".join(
+        [
+            "import os, sqlite3",
+            f"src = {REMOTE_MEDIA_DB_PATH!r}",
+            f"dst = {snapshot_path!r}",
+            "try:",
+            "    os.remove(dst)",
+            "except FileNotFoundError:",
+            "    pass",
+            'source = sqlite3.connect("file:" + src + "?mode=ro", uri=True, timeout=15)',
+            "target = sqlite3.connect(dst, timeout=15)",
+            "try:",
+            "    source.backup(target)",
+            "finally:",
+            "    target.close()",
+            "    source.close()",
+            f"print({marker!r})",
+        ]
+    )
+
+    try:
+        output = run_command(f"python3 -c {shlex.quote(script)} 2>&1") or ""
+        if marker in str(output):
+            return snapshot_path
+    except Exception:
+        pass
+
+    try:
+        run_command(f"rm -f {shlex.quote(snapshot_path)}")
+    except Exception:
+        pass
+    return None
+
+
+def _remove_remote_media_db_snapshot(connection, snapshot_path: str | None):
+    if not snapshot_path:
+        return
+
+    run_command = getattr(connection, "run_command", None)
+    if not callable(run_command):
+        return
+
+    try:
+        quoted = shlex.quote(snapshot_path)
+        run_command(f"rm -f {quoted} {quoted}-wal {quoted}-shm")
+    except Exception:
+        pass
+
+
 def download_media_db(connection, local_path: Path) -> Path:
     """
     Download Zaparoo's media.db from the MiSTer.
 
-    Remote:
-        /media/fat/zaparoo/media.db
-
-    Local:
-        zaplauncher/<profile_or_ip>_media.db
+    New Zaparoo databases use WAL mode, so Companion first tries to create a
+    consistent SQLite backup on the MiSTer and downloads that standalone file.
+    If snapshot creation is unavailable (for example on an older installation),
+    the original direct media.db download remains as a compatibility fallback.
     """
     if not local_path:
         raise ZaparooApiError("No local media.db path was provided.")
 
     local_path = Path(local_path)
     local_path.parent.mkdir(parents=True, exist_ok=True)
-
     tmp_path = local_path.with_suffix(local_path.suffix + ".tmp")
+
+    snapshot_path = _create_remote_media_db_snapshot(connection)
+    remote_path = snapshot_path or REMOTE_MEDIA_DB_PATH
 
     sftp = None
     should_close = False
@@ -279,8 +351,12 @@ def download_media_db(connection, local_path: Path) -> Path:
         sftp, should_close = _open_sftp(connection)
 
         try:
-            sftp.get(REMOTE_MEDIA_DB_PATH, str(tmp_path))
+            sftp.get(remote_path, str(tmp_path))
         except FileNotFoundError:
+            if snapshot_path:
+                raise ZaparooApiError(
+                    "Zaparoo media database snapshot disappeared before it could be downloaded."
+                )
             raise ZaparooApiError(
                 f"Zaparoo media database was not found:\n{REMOTE_MEDIA_DB_PATH}"
             )
@@ -299,12 +375,72 @@ def download_media_db(connection, local_path: Path) -> Path:
         except Exception:
             pass
 
+        _remove_remote_media_db_snapshot(connection, snapshot_path)
+
         try:
             if tmp_path.exists():
                 tmp_path.unlink()
         except Exception:
             pass
 
+
+def _zaparoo_title_sort_key(value):
+    """Stable fallback key for Zaparoo's custom SQLite title collation."""
+    text = unicodedata.normalize("NFKD", _safe_text(value)).casefold()
+    parts = re.split(r"(\d+)", text)
+    return tuple(
+        (0, int(part)) if part.isdigit() else (1, part)
+        for part in parts
+        if part != ""
+    )
+
+
+def _zaparoo_title_compare(left, right) -> int:
+    left_key = _zaparoo_title_sort_key(left)
+    right_key = _zaparoo_title_sort_key(right)
+    return (left_key > right_key) - (left_key < right_key)
+
+
+def _configure_media_db_connection(db: sqlite3.Connection):
+    # New Zaparoo databases reference this application-specific collation in
+    # idx_media_browse_sort. Companion does not rely on Zaparoo's exact browse
+    # ordering, but registering the name prevents Python sqlite3 from failing
+    # while inspecting or querying the newer schema.
+    db.create_collation(ZAPAROO_TITLE_COLLATION, _zaparoo_title_compare)
+    try:
+        db.execute("PRAGMA query_only = ON")
+    except sqlite3.DatabaseError:
+        pass
+
+
+def _detect_media_db_compatibility(cursor) -> str:
+    """Detect newer Zaparoo DBs by schema/config instead of app version."""
+    try:
+        has_config = cursor.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='DBConfig'"
+        ).fetchone()
+        if has_config:
+            config = dict(
+                cursor.execute(
+                    "SELECT Name, Value FROM DBConfig "
+                    "WHERE Name IN ('BrowseSortCollation', 'BrowseIndexVersion')"
+                ).fetchall()
+            )
+            if str(config.get("BrowseSortCollation", "")).lower() == "zaparoo_title_v1":
+                return "wal-title-v1"
+    except sqlite3.DatabaseError:
+        pass
+
+    try:
+        if cursor.execute(
+            "SELECT 1 FROM sqlite_master "
+            "WHERE sql IS NOT NULL AND UPPER(sql) LIKE '%ZAPAROO_TITLE_V1%' LIMIT 1"
+        ).fetchone():
+            return "wal-title-v1"
+    except sqlite3.DatabaseError:
+        pass
+
+    return "legacy"
 
 def _get_table_columns(cursor, table_name: str) -> set[str]:
     cursor.execute(f'PRAGMA table_info("{table_name}")')
@@ -437,6 +573,7 @@ def read_media_db_entries(
 
     try:
         db = sqlite3.connect(str(local_path))
+        _configure_media_db_connection(db)
 
         db.text_factory = lambda value: value.decode("utf-8", errors="replace")
 
@@ -446,6 +583,7 @@ def read_media_db_entries(
 
     try:
         cursor = db.cursor()
+        _compatibility_mode = _detect_media_db_compatibility(cursor)
 
         media_columns = _get_table_columns(cursor, "Media")
         title_columns = _get_table_columns(cursor, "MediaTitles")
@@ -649,6 +787,7 @@ def read_media_db_entries_macos_fast(
 
     try:
         db = sqlite3.connect(str(local_path))
+        _configure_media_db_connection(db)
         db.text_factory = lambda value: value.decode("utf-8", errors="replace")
         db.row_factory = sqlite3.Row
     except Exception as e:
@@ -656,6 +795,7 @@ def read_media_db_entries_macos_fast(
 
     try:
         cursor = db.cursor()
+        _compatibility_mode = _detect_media_db_compatibility(cursor)
         media_columns = _get_table_columns(cursor, "Media")
         title_columns = _get_table_columns(cursor, "MediaTitles")
         system_columns = _get_table_columns(cursor, "Systems")

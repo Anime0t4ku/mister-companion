@@ -1,4 +1,5 @@
 from PyQt6.QtCore import QEvent, Qt, QThread, pyqtSignal
+from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import (
     QGridLayout,
     QGroupBox,
@@ -13,13 +14,18 @@ from PyQt6.QtWidgets import (
 
 from core.remote_daemon import (
     RemoteWebSocketClient,
+    capture_remote_screenshot,
     get_remote_daemon_status,
     install_remote_daemon,
+    local_screenshot_dir,
+    remote_daemon_supports_screenshots,
     remote_websocket_url,
     start_stop_remote_daemon,
     toggle_remote_daemon_boot,
     uninstall_remote_daemon,
 )
+
+from core.open_helpers import open_local_folder
 
 
 from ui.tab_header import create_tab_header
@@ -66,6 +72,22 @@ class RemoteDaemonCommandWorker(QThread):
             self.error.emit(str(e))
 
 
+class RemoteScreenshotWorker(QThread):
+    result = pyqtSignal(str)
+    error = pyqtSignal(str)
+
+    def __init__(self, host: str):
+        super().__init__()
+        self.host = str(host or "").strip()
+
+    def run(self):
+        try:
+            path = capture_remote_screenshot(self.host)
+            self.result.emit(str(path))
+        except Exception as e:
+            self.error.emit(str(e))
+
+
 class RemoteTab(QWidget):
     RESIZE_MARGIN = 7
     CONTROL_BUTTON_WIDTH = 60
@@ -80,6 +102,9 @@ class RemoteTab(QWidget):
         self.connection = getattr(parent, "connection", None)
         self.status_worker = None
         self.command_worker = None
+        self.screenshot_worker = None
+        self.last_screenshot_path = None
+        self._screenshot_pixmap = None
         self.last_status = None
         self.remote_client = None
         self.keyboard_passthrough_enabled = False
@@ -225,6 +250,40 @@ class RemoteTab(QWidget):
         daemon_layout.addWidget(self.daemon_message_label)
         root_layout.addWidget(daemon_panel)
 
+        screenshot_panel = QGroupBox("Screenshot")
+        screenshot_panel.setObjectName("RemoteCard")
+        screenshot_layout = QHBoxLayout(screenshot_panel)
+        screenshot_layout.setContentsMargins(16, 20, 16, 12)
+        screenshot_layout.setSpacing(16)
+
+        self.screenshot_preview = QLabel("No screenshot taken yet")
+        self.screenshot_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.screenshot_preview.setMinimumSize(280, 158)
+        self.screenshot_preview.setMaximumSize(420, 236)
+        self.screenshot_preview.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
+        self.screenshot_preview.setStyleSheet(
+            "QLabel { background-color: palette(base); border: 1px solid palette(button); "
+            "border-radius: 8px; color: palette(mid); }"
+        )
+        screenshot_layout.addWidget(self.screenshot_preview, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        screenshot_actions = QVBoxLayout()
+        screenshot_actions.setSpacing(8)
+        screenshot_actions.addStretch(1)
+
+        self.take_screenshot_button = QPushButton("Take Screenshot")
+        self.open_screenshot_folder_button = QPushButton("Open Screenshot Folder")
+        self.screenshot_update_button = QPushButton("Update Daemon")
+        self.screenshot_update_button.setObjectName("PrimaryAction")
+        self.screenshot_update_button.setVisible(False)
+
+        screenshot_actions.addWidget(self.take_screenshot_button)
+        screenshot_actions.addWidget(self.open_screenshot_folder_button)
+        screenshot_actions.addWidget(self.screenshot_update_button)
+        screenshot_actions.addStretch(1)
+        screenshot_layout.addLayout(screenshot_actions)
+        root_layout.addWidget(screenshot_panel)
+
         controls_panel = QGroupBox("Controls")
         controls_panel.setObjectName("RemoteCard")
         controls_layout = QVBoxLayout(controls_panel)
@@ -279,6 +338,9 @@ class RemoteTab(QWidget):
         self.boot_button.clicked.connect(lambda: self.run_daemon_command("toggle-boot"))
         self.uninstall_button.clicked.connect(self.confirm_uninstall)
         self.keyboard_button.toggled.connect(self.on_keyboard_passthrough_toggled)
+        self.take_screenshot_button.clicked.connect(self.take_screenshot)
+        self.open_screenshot_folder_button.clicked.connect(self.open_screenshot_folder)
+        self.screenshot_update_button.clicked.connect(lambda: self.run_daemon_command("install"))
 
         self.bind_controller_button(self.up_button, "dpad", "up")
         self.bind_controller_button(self.down_button, "dpad", "down")
@@ -308,6 +370,7 @@ class RemoteTab(QWidget):
 
         self.set_remote_controls_enabled(False)
         self.set_daemon_buttons_enabled(False)
+        self.update_screenshot_card_state()
 
     def prepare_control_button(self, button: QPushButton):
         button.setMinimumHeight(self.CONTROL_BUTTON_HEIGHT)
@@ -500,6 +563,7 @@ class RemoteTab(QWidget):
             )
             self.set_daemon_buttons_enabled(False)
             self.set_remote_controls_enabled(False)
+            self.update_screenshot_card_state()
             self.append_log("Connect to a MiSTer in Online Mode before using Remote.")
 
     def set_status_labels(self, installed: str, running: str, startup: str):
@@ -550,6 +614,7 @@ class RemoteTab(QWidget):
             self.append_log("Companion Remote daemon is not installed yet.")
 
         self.update_daemon_button_state()
+        self.update_screenshot_card_state()
         self.set_remote_controls_enabled(status.ready and not update_available and self.remote_client is not None)
 
     def on_status_error(self, message: str):
@@ -560,6 +625,7 @@ class RemoteTab(QWidget):
             startup="Unknown",
         )
         self.set_daemon_buttons_enabled(bool(self.connection and self.connection.is_connected()))
+        self.update_screenshot_card_state()
         self.set_remote_controls_enabled(False)
 
     def on_status_finished(self):
@@ -694,6 +760,133 @@ class RemoteTab(QWidget):
             self.boot_button.setText("Disable Start on Boot")
         else:
             self.boot_button.setText("Enable Start on Boot")
+
+
+    def update_screenshot_card_state(self):
+        connected = bool(self.connection and self.connection.is_connected())
+        status = self.last_status
+        busy = bool(self.screenshot_worker and self.screenshot_worker.isRunning())
+
+        # The local folder is always useful and can be opened even while the
+        # MiSTer is disconnected. Creating it here keeps the action predictable.
+        try:
+            local_screenshot_dir(create=True)
+            self.open_screenshot_folder_button.setEnabled(True)
+        except Exception:
+            self.open_screenshot_folder_button.setEnabled(False)
+
+        self.screenshot_update_button.setVisible(False)
+        self.screenshot_update_button.setEnabled(False)
+
+        if self._offline:
+            self.take_screenshot_button.setEnabled(False)
+            return
+
+        if not connected:
+            self.take_screenshot_button.setEnabled(False)
+            return
+
+        if status is None:
+            self.take_screenshot_button.setEnabled(False)
+            return
+
+        if not status.installed:
+            self.take_screenshot_button.setEnabled(False)
+            self.screenshot_update_button.setText("Install Daemon")
+            self.screenshot_update_button.setVisible(True)
+            self.screenshot_update_button.setEnabled(True)
+            return
+
+        if not remote_daemon_supports_screenshots(status.version):
+            self.take_screenshot_button.setEnabled(False)
+            self.screenshot_update_button.setText("Update Daemon")
+            self.screenshot_update_button.setVisible(True)
+            self.screenshot_update_button.setEnabled(True)
+            return
+
+        if not status.running or not status.port_listening:
+            self.take_screenshot_button.setEnabled(False)
+            return
+
+        if getattr(status, "update_available", False):
+            # Screenshot support itself is present, but daemon controls are
+            # intentionally locked while an update is pending. Keep the same
+            # behavior here so only one daemon operation can happen at a time.
+            self.take_screenshot_button.setEnabled(False)
+            self.screenshot_update_button.setText("Update Daemon")
+            self.screenshot_update_button.setVisible(True)
+            self.screenshot_update_button.setEnabled(True)
+            return
+
+        self.take_screenshot_button.setEnabled(not busy)
+        self.take_screenshot_button.setText("Taking Screenshot..." if busy else "Take Screenshot")
+
+    def take_screenshot(self):
+        if self.screenshot_worker is not None and self.screenshot_worker.isRunning():
+            return
+
+        host = self.connected_host()
+        if not host:
+            QMessageBox.warning(self, "Screenshot", "Connect to a MiSTer first.")
+            return
+
+        status = self.last_status
+        if status is None or not remote_daemon_supports_screenshots(getattr(status, "version", "")):
+            self.update_screenshot_card_state()
+            return
+
+        self.take_screenshot_button.setEnabled(False)
+        self.take_screenshot_button.setText("Taking Screenshot...")
+
+        self.screenshot_worker = RemoteScreenshotWorker(host)
+        self.screenshot_worker.result.connect(self.on_screenshot_result)
+        self.screenshot_worker.error.connect(self.on_screenshot_error)
+        self.screenshot_worker.finished.connect(self.on_screenshot_finished)
+        self.screenshot_worker.start()
+
+    def on_screenshot_result(self, path: str):
+        self.last_screenshot_path = path
+        pixmap = QPixmap(path)
+        if pixmap.isNull():
+            self._screenshot_pixmap = None
+            self.screenshot_preview.setText("Screenshot saved, but the preview could not be loaded.")
+        else:
+            self._screenshot_pixmap = pixmap
+            self.update_screenshot_preview()
+        self.append_log("Screenshot captured and saved locally.")
+
+    def on_screenshot_error(self, message: str):
+        self.append_log(f"Screenshot failed: {message}")
+        QMessageBox.warning(self, "Screenshot", message)
+
+    def on_screenshot_finished(self):
+        self.screenshot_worker = None
+        self.take_screenshot_button.setText("Take Screenshot")
+        self.update_screenshot_card_state()
+
+    def update_screenshot_preview(self):
+        if self._screenshot_pixmap is None or self._screenshot_pixmap.isNull():
+            return
+        target = self.screenshot_preview.contentsRect().size()
+        if target.width() <= 0 or target.height() <= 0:
+            return
+        scaled = self._screenshot_pixmap.scaled(
+            target,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        self.screenshot_preview.setPixmap(scaled)
+
+    def open_screenshot_folder(self):
+        try:
+            folder = local_screenshot_dir(create=True)
+            open_local_folder(folder)
+        except Exception as e:
+            QMessageBox.warning(self, "Screenshot", f"Could not open the screenshot folder:\n\n{e}")
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.update_screenshot_preview()
 
     def set_remote_controls_enabled(self, enabled: bool):
         for button in (
@@ -846,9 +1039,11 @@ class RemoteTab(QWidget):
             self.last_status = None
             self.set_remote_controls_enabled(False)
             self.set_daemon_buttons_enabled(False)
+            self.update_screenshot_card_state()
             return
 
         self.update_daemon_button_state()
+        self.update_screenshot_card_state()
         if not (self.connection and self.connection.is_connected()):
             self.disable_keyboard_passthrough(log_message=False)
             self.disconnect_remote_client()
@@ -870,6 +1065,8 @@ class RemoteTab(QWidget):
             self.status_worker.wait(1000)
         if self.command_worker is not None and self.command_worker.isRunning():
             self.command_worker.wait(1000)
+        if self.screenshot_worker is not None and self.screenshot_worker.isRunning():
+            self.screenshot_worker.wait(1000)
 
     def qt_key_to_remote_key(self, key):
         mapping = {
