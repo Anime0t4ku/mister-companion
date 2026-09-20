@@ -99,6 +99,20 @@ def load_config():
 
 
 def save_config(data):
+    # NFC Art settings can be updated independently from MainWindow's long-lived
+    # config_data dictionary. Preserve the on-disk section when a stale config
+    # snapshot that predates those changes is saved later (for example during
+    # shutdown, a theme change, or another tab's settings update).
+    if isinstance(data, dict) and "nfc_art" not in data and CONFIG_PATH.exists():
+        try:
+            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+                current = json.load(f)
+            if isinstance(current, dict) and isinstance(current.get("nfc_art"), dict):
+                data = dict(data)
+                data["nfc_art"] = current["nfc_art"]
+        except Exception:
+            pass
+
     merged = normalize_config(data)
 
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:

@@ -1,15 +1,16 @@
 import json
 import re
+import shutil
 import sys
 from pathlib import Path
 
-from core.app_paths import generated_path
+from core.app_paths import app_base_dir, generated_path
+from core.config import load_config as load_app_config, save_config as save_app_config
 
 
 PACKAGE_DIR = Path(__file__).resolve().parent
 APP_DIR = PACKAGE_DIR.parents[2]
-DATA_DIR = generated_path("nfc_art", default_root=APP_DIR)
-CONFIG_FILE = DATA_DIR / "config.json"
+DATA_DIR = generated_path("tools", "nfc_art")
 WEB_IMAGE_DIR = DATA_DIR / "web-images"
 WEB_POSTER_DIR = WEB_IMAGE_DIR / "posters"
 WEB_LOGO_DIR = WEB_IMAGE_DIR / "logos"
@@ -18,6 +19,10 @@ SYSTEM_LOGO_DIR = DATA_DIR / "systems_logos"
 OUTPUT_DIR = DATA_DIR / "Output"
 CARD_OUTPUT_DIR = OUTPUT_DIR / "NFC-Cards"
 CASSETTE_OUTPUT_DIR = OUTPUT_DIR / "Cassette-Covers"
+
+NFC_CONFIG_KEY = "nfc_art"
+MIGRATION_VERSION = 1
+MIGRATION_KEY = "_migration_version"
 
 
 def resource_path(relative_path):
@@ -34,19 +39,120 @@ def sanitize_filename(name):
     return re.sub(r'\s+', ' ', name).strip() or 'nfc_art'
 
 
-def load_config():
+def _legacy_data_dirs():
+    candidates = []
+
+    # The integrated generator previously kept its own nfc_art folder at the
+    # application root. Include both the normal persistent application root
+    # and the historical module-derived root so source/older working layouts
+    # can migrate cleanly.
+    for path in (
+        generated_path("nfc_art"),
+        app_base_dir() / "nfc_art",
+        generated_path("nfc_art", default_root=APP_DIR),
+    ):
+        path = Path(path)
+        if path == DATA_DIR or path in candidates:
+            continue
+        candidates.append(path)
+
+    return candidates
+
+
+def _copy_missing_tree(source, destination):
+    if not source.is_dir():
+        return
+
+    for source_path in source.rglob("*"):
+        relative = source_path.relative_to(source)
+        destination_path = destination / relative
+
+        if source_path.is_dir():
+            destination_path.mkdir(parents=True, exist_ok=True)
+            continue
+
+        if destination_path.exists():
+            continue
+
+        destination_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            shutil.copy2(source_path, destination_path)
+        except OSError:
+            pass
+
+
+def _remap_legacy_default_path(value, legacy_root):
+    if not value:
+        return value
+
     try:
-        with CONFIG_FILE.open("r", encoding="utf-8") as handle:
-            data = json.load(handle)
-            return data if isinstance(data, dict) else {}
+        original = Path(value).expanduser()
+        relative = original.resolve(strict=False).relative_to(legacy_root.resolve(strict=False))
     except (OSError, ValueError):
-        return {}
+        return value
+
+    return str(DATA_DIR / relative)
+
+
+def _read_legacy_config(legacy_root):
+    config_file = legacy_root / "config.json"
+    try:
+        with config_file.open("r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, ValueError):
+        return None
+
+    return data if isinstance(data, dict) else None
+
+
+def _migrate_legacy_state():
+    app_config = load_app_config()
+    current = app_config.get(NFC_CONFIG_KEY)
+    if isinstance(current, dict) and int(current.get(MIGRATION_KEY, 0) or 0) >= MIGRATION_VERSION:
+        return
+
+    nfc_config = dict(current) if isinstance(current, dict) else {}
+    legacy_dirs = _legacy_data_dirs()
+
+    # Import legacy settings only when the new section does not already have
+    # those keys. Custom paths remain untouched; paths that pointed into the
+    # old default nfc_art folder are redirected to tools/nfc_art.
+    for legacy_root in legacy_dirs:
+        legacy_config = _read_legacy_config(legacy_root)
+        if isinstance(legacy_config, dict):
+            for key, value in legacy_config.items():
+                if key in nfc_config:
+                    continue
+                if key in {
+                    "card_output_directory",
+                    "cassette_output_directory",
+                    "icon_pack_directory",
+                }:
+                    value = _remap_legacy_default_path(value, legacy_root)
+                nfc_config[key] = value
+
+        # Preserve outputs, cached artwork, custom logos and cassette
+        # templates without overwriting anything already in the new layout.
+        _copy_missing_tree(legacy_root, DATA_DIR)
+
+    nfc_config[MIGRATION_KEY] = MIGRATION_VERSION
+    app_config[NFC_CONFIG_KEY] = nfc_config
+    save_app_config(app_config)
+
+
+def load_config():
+    _migrate_legacy_state()
+    data = load_app_config().get(NFC_CONFIG_KEY, {})
+    return dict(data) if isinstance(data, dict) else {}
 
 
 def save_config(data):
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    with CONFIG_FILE.open("w", encoding="utf-8") as handle:
-        json.dump(data, handle, indent=2)
+    _migrate_legacy_state()
+    app_config = load_app_config()
+    section = dict(data) if isinstance(data, dict) else {}
+    section[MIGRATION_KEY] = MIGRATION_VERSION
+    app_config[NFC_CONFIG_KEY] = section
+    save_app_config(app_config)
 
 
 def get_value(key, default=None):

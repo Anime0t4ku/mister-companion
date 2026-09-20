@@ -51,6 +51,138 @@ BACK_BRAND_ZONE_H = 220
 
 BACK_GAP = 30
 
+
+def _load_bold_font(size):
+    try:
+        if sys.platform.startswith("win"):
+            return ImageFont.truetype("arialbd.ttf", size)
+        if sys.platform.startswith("linux"):
+            return ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", size)
+        if sys.platform == "darwin":
+            return ImageFont.truetype("/System/Library/Fonts/Supplemental/Arial Bold.ttf", size)
+    except Exception:
+        pass
+    return ImageFont.load_default()
+
+
+def _wrap_text_to_width(text, font, max_width):
+    lines = []
+    for raw_line in text.splitlines() or [text]:
+        if raw_line.strip() == "":
+            lines.append("")
+            continue
+
+        words = raw_line.split()
+        if not words:
+            lines.append("")
+            continue
+
+        current = words[0]
+        for word in words[1:]:
+            candidate = f"{current} {word}"
+            if font.getlength(candidate) <= max_width:
+                current = candidate
+                continue
+
+            lines.append(current)
+
+            if font.getlength(word) <= max_width:
+                current = word
+                continue
+
+            fragment = ""
+            for char in word:
+                test = fragment + char
+                if fragment and font.getlength(test) > max_width:
+                    lines.append(fragment)
+                    fragment = char
+                else:
+                    fragment = test
+            current = fragment or word
+
+        lines.append(current)
+
+    return lines
+
+
+def _line_height(font):
+    try:
+        ascent, descent = font.getmetrics()
+        return ascent + descent
+    except Exception:
+        bbox = font.getbbox("Ag")
+        return bbox[3] - bbox[1]
+
+
+def _measure_wrapped_text(lines, font, paragraph_gap=0):
+    line_height = _line_height(font)
+    height = 0
+    for idx, line in enumerate(lines):
+        height += line_height
+        if line == "" and idx != len(lines) - 1:
+            height += paragraph_gap
+    return height, line_height
+
+
+def _fit_summary_block(text, max_width, max_height, start_size=32, min_size=14):
+    text = text.strip()
+    if not text or max_width <= 0 or max_height <= 0:
+        return [], _load_bold_font(start_size), 0
+
+    best = None
+
+    for font_size in range(start_size, min_size - 1, -1):
+        font = _load_bold_font(font_size)
+        paragraph_gap = max(2, font_size // 5)
+        lines = _wrap_text_to_width(text, font, max_width)
+        height, line_height = _measure_wrapped_text(lines, font, paragraph_gap)
+
+        best = (lines, font, line_height, paragraph_gap)
+        if height <= max_height:
+            return best
+
+    return best
+
+
+def _truncate_lines_to_height(lines, font, line_height, paragraph_gap, max_width, max_height):
+    if not lines:
+        return []
+
+    fitted = []
+    used_height = 0
+    ellipsis = "..."
+
+    for idx, line in enumerate(lines):
+        extra_gap = paragraph_gap if line == "" and idx != len(lines) - 1 else 0
+        needed = line_height + extra_gap
+
+        if used_height + needed <= max_height:
+            fitted.append(line)
+            used_height += needed
+            continue
+
+        if line == "":
+            break
+
+        base = line.rstrip()
+        while base and font.getlength(base + ellipsis) > max_width:
+            base = base[:-1].rstrip()
+
+        if base:
+            fitted.append(base + ellipsis)
+        elif fitted:
+            prev = fitted.pop()
+            prev = prev.rstrip()
+            while prev and font.getlength(prev + ellipsis) > max_width:
+                prev = prev[:-1].rstrip()
+            fitted.append((prev + ellipsis) if prev else ellipsis)
+        else:
+            fitted.append(ellipsis)
+        break
+
+    return fitted
+
+
 def fit_image(img, max_w, max_h):
     img = img.copy()
     iw, ih = img.size
@@ -227,112 +359,66 @@ class CassetteRendererMixin:
             y += shot.height + BACK_GAP
 
         if self.assets["summary"]:
-            # Calculate bottom limit dynamically
-            bottom_reserved = NFC_MARGIN + BACK_GAP
+            # Calculate bottom limit dynamically, including items that live below
+            # the summary area on the back cover.
+            bottom_reserved = NFC_MARGIN
 
             if nfc_back:
                 bottom_reserved += nfc_back.height
 
             if sys_back:
-                bottom_reserved += sys_back.height + BACK_GAP
+                bottom_reserved += BACK_GAP + sys_back.height
 
-            max_text_height = CARD_H - bottom_reserved - y
+            original_cover = self.assets["original_cover_back"]
+            original_img = None
+            if original_cover:
+                original_img = fit_image(original_cover, *ORIGINAL_COVER_BACK_MAX)
+                bottom_reserved += BACK_GAP + original_img.height
+
+            max_text_height = max(0, CARD_H - bottom_reserved - y)
 
             # Match text width to screenshot if present
             if self.assets["screenshot"]:
                 text_width = shot.width
-            else:
-                text_width = BACK_W - 2 * PADDING
-
-            text_box = Image.new(
-                "RGBA",
-                (text_width, max_text_height),
-                (0, 0, 0, 0)
-            )
-            td = ImageDraw.Draw(text_box)
-
-            text = self.assets["summary"]
-
-            # Safe font loading
-            try:
-                # Windows
-                if sys.platform.startswith("win"):
-                    font = ImageFont.truetype("arialbd.ttf", 32)
-
-                # Linux
-                elif sys.platform.startswith("linux"):
-                    font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 32)
-
-                # macOS
-                elif sys.platform == "darwin":
-                    font = ImageFont.truetype("/System/Library/Fonts/Supplemental/Arial Bold.ttf", 32)
-
-                else:
-                    font = ImageFont.load_default()
-
-            except Exception:
-                font = ImageFont.load_default()
-
-            max_width = text_box.width
-            max_height = text_box.height
-
-            # Proper line height from font metrics
-            ascent, descent = font.getmetrics()
-            line_height = ascent + descent + 4
-
-            # Improved wrapping engine (preserves empty lines)
-            lines = []
-
-            for raw_line in text.split("\n"):
-
-                # Preserve empty paragraphs
-                if raw_line.strip() == "":
-                    lines.append("")  # blank line
-                    continue
-
-                words = raw_line.split(" ")
-                current = ""
-
-                for word in words:
-                    test = word if current == "" else current + " " + word
-                    width = font.getlength(test)
-
-                    if width <= max_width:
-                        current = test
-                    else:
-                        if current:
-                            lines.append(current)
-                        current = word
-
-                if current:
-                    lines.append(current)
-
-            # Exact line height from font
-            ascent, descent = font.getmetrics()
-            line_height = ascent + descent
-
-            y_offset = 0
-
-            for line in lines:
-
-                # Stop if next line would overflow
-                if y_offset >= max_height:
-                    break
-
-                if line == "":
-                    y_offset += line_height
-                    continue
-
-                td.text((0, y_offset), line, fill=self.colors["text"], font=font)
-                y_offset += line_height
-
-            if self.assets["screenshot"]:
                 x_pos = (BACK_W - shot.width) // 2
             else:
-                x_pos = (BACK_W - text_box.width) // 2
-            img.paste(text_box, (x_pos, y), text_box)
+                text_width = BACK_W - 2 * PADDING
+                x_pos = (BACK_W - text_width) // 2
 
-            y += text_box.height + BACK_GAP
+            lines, font, line_height, paragraph_gap = _fit_summary_block(
+                self.assets["summary"],
+                text_width,
+                max_text_height,
+                start_size=32,
+                min_size=14,
+            )
+
+            if lines and max_text_height > 0:
+                fitted_lines = _truncate_lines_to_height(
+                    lines, font, line_height, paragraph_gap, text_width, max_text_height
+                )
+                text_height, _ = _measure_wrapped_text(fitted_lines, font, paragraph_gap)
+
+                text_box = Image.new(
+                    "RGBA",
+                    (text_width, max_text_height),
+                    (0, 0, 0, 0)
+                )
+                td = ImageDraw.Draw(text_box)
+
+                y_offset = 0
+                for idx, line in enumerate(fitted_lines):
+                    if line == "":
+                        y_offset += line_height
+                        if idx != len(fitted_lines) - 1:
+                            y_offset += paragraph_gap
+                        continue
+
+                    td.text((0, y_offset), line, fill=self.colors["text"], font=font)
+                    y_offset += line_height
+
+                img.paste(text_box, (x_pos, y), text_box)
+                y += text_height + BACK_GAP
 
         # --- ORIGINAL COVER  ---
 
