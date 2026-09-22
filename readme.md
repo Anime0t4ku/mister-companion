@@ -36,8 +36,7 @@ For a complete overview of MiSTer Companion Desktop features, supported platform
 ## Linux Notes
 
 Two Linux builds are published. The AppImage is a single file that needs no
-extraction and carries a desktop entry. The tar.gz is the portable build, and
-is the one MC-Updater can update in place.
+extraction and carries a desktop entry. The tar.gz is the portable build.
 
 To run the AppImage:
 
@@ -66,8 +65,6 @@ into:
                 SaveManager MiSTerSettings themes tools; do
         [ -e "$item" ] && cp -r "$item" "$DEST"/
     done
-
-MC-Updater does not manage AppImage builds. Download a new AppImage to update.
 
 For the tar.gz build, make the application executable after extracting:
 
