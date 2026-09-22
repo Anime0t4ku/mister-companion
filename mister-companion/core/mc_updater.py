@@ -1,4 +1,5 @@
 import html
+import json
 import os
 import platform
 import re
@@ -13,12 +14,14 @@ from urllib.parse import urljoin
 
 import requests
 
-from core.app_paths import is_appimage
 from core.config import CONFIG_PATH, save_config
 
 MC_UPDATER_RELEASES_URL = "https://github.com/Anime0t4ku/MC-Updater/releases"
 MC_UPDATER_LATEST_URL = "https://github.com/Anime0t4ku/MC-Updater/releases/latest"
 MC_UPDATER_EXPANDED_ASSETS_URL = "https://github.com/Anime0t4ku/MC-Updater/releases/expanded_assets"
+
+# The first MC-Updater release that replaces an .AppImage in place.
+MIN_APPIMAGE_UPDATER_VERSION = "1.5.0"
 
 
 @dataclass
@@ -75,11 +78,6 @@ def current_architecture() -> str:
 
 
 def updater_supported() -> bool:
-    # An AppImage replaces itself as a single file, not the loose binary the
-    # updater installs, so the updater cannot manage this build.
-    if is_appimage():
-        return False
-
     return (is_windows() or is_linux() or is_macos()) and current_architecture() in {
         "x86_64",
         "arm64",
@@ -131,6 +129,23 @@ def normalize_version_tuple(version: str) -> tuple[int, int, int]:
     if not match:
         return (0, 0, 0)
     return tuple(int(part) for part in match.groups())
+
+
+def appimage_updates_supported() -> bool:
+    # An older MC-Updater extracts the tar.gz build into the data folder and
+    # leaves the .AppImage stale, so keep offering the release page until the
+    # user has updated MC-Updater from the App Settings tab. There is no
+    # version handshake between the two programs, but the companion records
+    # the version it installed.
+    try:
+        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+            installed = json.load(f).get("mc_updater_version", "")
+    except Exception:
+        return False
+
+    return normalize_version_tuple(installed) >= normalize_version_tuple(
+        MIN_APPIMAGE_UPDATER_VERSION
+    )
 
 
 def make_executable(path: Path):
