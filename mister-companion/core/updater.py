@@ -11,6 +11,7 @@ from core.open_helpers import open_uri
 from core.app_info import APP_VERSION, GITHUB_OWNER, GITHUB_REPO
 from core.config import CONFIG_PATH
 from core.app_paths import app_base_dir, is_appimage, macos_application_support_dir
+from core.mc_updater import appimage_updates_supported
 
 
 @dataclass
@@ -96,9 +97,9 @@ def current_architecture() -> str:
 
 
 def updater_supported() -> bool:
-    # An AppImage replaces itself as a single file, not the loose binary the
-    # updater installs, so the updater cannot manage this build.
-    if is_appimage():
+    # An AppImage is replaced as a single file rather than unpacked over the
+    # install, which only a recent enough MC-Updater knows how to do.
+    if is_appimage() and not appimage_updates_supported():
         return False
 
     return (is_windows() or is_linux() or is_macos()) and current_architecture() in {
@@ -178,7 +179,14 @@ def launch_mc_updater() -> bool:
         make_executable(updater_path)
 
     update_now_path = get_update_now_path()
-    update_now_path.write_text("", encoding="utf-8")
+    # Name the file MC-Updater has to replace. $APPIMAGE is inherited by every
+    # child process, so a build started from an AppImage terminal would
+    # otherwise hand over that terminal's path. Every other build writes the
+    # empty file it always wrote.
+    update_now_path.write_text(
+        os.environ.get("APPIMAGE", "") if is_appimage() else "",
+        encoding="utf-8",
+    )
 
     if is_macos():
         subprocess.Popen(
