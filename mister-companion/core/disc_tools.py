@@ -16,10 +16,10 @@ from pathlib import Path
 
 import requests
 
-from core.app_paths import app_base_dir, generated_path
+from core.app_paths import generated_path
 
 CDRDAO_VERSION = "1.2.6"
-CDRDAO_DIR = generated_path("tools", "cdrdao", default_root=app_base_dir())
+CDRDAO_DIR = generated_path("tools", "cdrdao")
 CDRDAO_COMPANION_RELEASE_BASE = (
     "https://github.com/Anime0t4ku/cdrdao-Companion/releases/download/"
     f"cdrdao-{CDRDAO_VERSION}"

@@ -13,11 +13,11 @@ from pathlib import Path
 
 import requests
 
-from core.app_paths import app_base_dir, generated_path
+from core.app_paths import generated_path
 
 
 FFMPEG_VERSION = "9.0"
-FFMPEG_DIR = generated_path("tools", "ffmpeg", default_root=app_base_dir())
+FFMPEG_DIR = generated_path("tools", "ffmpeg")
 
 _BTBN_RELEASE_BASE = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest"
 _MARTIN_RIEDL_BASE = "https://ffmpeg.martin-riedl.de/redirect/latest/macos"

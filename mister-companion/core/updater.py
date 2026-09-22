@@ -2,7 +2,6 @@ import os
 import platform
 import re
 import subprocess
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -11,7 +10,7 @@ from core.open_helpers import open_uri
 
 from core.app_info import APP_VERSION, GITHUB_OWNER, GITHUB_REPO
 from core.config import CONFIG_PATH
-from core.app_paths import macos_application_support_dir
+from core.app_paths import app_base_dir, is_appimage, macos_application_support_dir
 
 
 @dataclass
@@ -97,17 +96,15 @@ def current_architecture() -> str:
 
 
 def updater_supported() -> bool:
+    # An AppImage replaces itself as a single file, not the loose binary the
+    # updater installs, so the updater cannot manage this build.
+    if is_appimage():
+        return False
+
     return (is_windows() or is_linux() or is_macos()) and current_architecture() in {
         "x86_64",
         "arm64",
     }
-
-
-def get_app_folder() -> Path:
-    if getattr(sys, "frozen", False):
-        return Path(sys.executable).resolve().parent
-
-    return Path(__file__).resolve().parent.parent
 
 
 def get_mc_updater_filename() -> str:
@@ -133,7 +130,7 @@ def get_update_now_path() -> Path:
         update_root.mkdir(parents=True, exist_ok=True)
         return update_root / "updatenow.txt"
 
-    return get_app_folder() / "updatenow.txt"
+    return app_base_dir() / "updatenow.txt"
 
 
 def make_executable(path: Path):

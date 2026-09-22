@@ -4,11 +4,11 @@ from pathlib import Path
 import requests
 from PyQt6.QtCore import QThread, pyqtSignal
 
-from core.app_paths import app_base_dir, generated_path
+from core.app_paths import generated_path
 
 
 def get_cache_dir():
-    cache_dir = generated_path("ra_cache", default_root=app_base_dir())
+    cache_dir = generated_path("ra_cache")
     cache_dir.mkdir(parents=True, exist_ok=True)
     return cache_dir
 

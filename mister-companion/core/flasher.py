@@ -7,7 +7,6 @@ import re
 import shutil
 import stat
 import subprocess
-import sys
 import tarfile
 import time
 import zipfile
@@ -35,14 +34,7 @@ def clean_output(text: str) -> str:
     return ANSI_ESCAPE_RE.sub("", text)
 
 
-def get_app_base_dir() -> Path:
-    if getattr(sys, "frozen", False):
-        return Path(sys.executable).resolve().parent
-    return Path(__file__).resolve().parent.parent
-
-
-BASE_DIR = get_app_base_dir()
-TOOLS_DIR = generated_path("tools", default_root=BASE_DIR)
+TOOLS_DIR = generated_path("tools")
 BALENA_DIR = TOOLS_DIR / "balena-cli"
 MR_FUSION_DIR = TOOLS_DIR / "mr-fusion"
 MC_FUSION_DIR = TOOLS_DIR / "mc-fusion"

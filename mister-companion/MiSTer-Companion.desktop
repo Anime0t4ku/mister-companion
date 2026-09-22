@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=MiSTer Companion
+GenericName=MiSTer FPGA Utility
+Comment=Manage and maintain your MiSTer FPGA system over SSH or from an SD card
+Exec=MiSTer-Companion
+Icon=mister-companion
+Categories=Utility;
+Keywords=MiSTer;FPGA;retro;SSH;SD;
+Terminal=false

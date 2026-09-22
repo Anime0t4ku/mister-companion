@@ -13,6 +13,7 @@ from urllib.parse import urljoin
 
 import requests
 
+from core.app_paths import is_appimage
 from core.config import CONFIG_PATH, save_config
 
 MC_UPDATER_RELEASES_URL = "https://github.com/Anime0t4ku/MC-Updater/releases"
@@ -74,6 +75,11 @@ def current_architecture() -> str:
 
 
 def updater_supported() -> bool:
+    # An AppImage replaces itself as a single file, not the loose binary the
+    # updater installs, so the updater cannot manage this build.
+    if is_appimage():
+        return False
+
     return (is_windows() or is_linux() or is_macos()) and current_architecture() in {
         "x86_64",
         "arm64",

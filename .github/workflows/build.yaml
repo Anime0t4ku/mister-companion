@@ -309,11 +309,55 @@ jobs:
         run: |
           tar -C mister-companion/dist -czvf "MiSTer-Companion-Linux-${{ matrix.arch }}.tar.gz" MiSTer-Companion
 
+      - name: Build AppImage
+        working-directory: mister-companion
+        env:
+          APPIMAGETOOL_VERSION: "1.9.1"
+          RUNTIME_VERSION: "20251108"
+        run: |
+          set -euo pipefail
+
+          case "${{ matrix.arch }}" in
+            x86_64) AI_ARCH=x86_64 ;;
+            ARM64)  AI_ARCH=aarch64 ;;
+            *) echo "Unsupported arch: ${{ matrix.arch }}"; exit 1 ;;
+          esac
+
+          curl -fsSL -o appimagetool \
+            "https://github.com/AppImage/appimagetool/releases/download/${APPIMAGETOOL_VERSION}/appimagetool-${AI_ARCH}.AppImage"
+          curl -fsSL -o runtime \
+            "https://github.com/AppImage/type2-runtime/releases/download/${RUNTIME_VERSION}/runtime-${AI_ARCH}"
+          chmod +x appimagetool
+
+          mkdir -p AppDir/usr/bin \
+                   AppDir/usr/share/applications \
+                   AppDir/usr/share/icons/hicolor/256x256/apps
+
+          cp dist/MiSTer-Companion AppDir/usr/bin/
+          cp MiSTer-Companion.desktop AppDir/
+          cp MiSTer-Companion.desktop AppDir/usr/share/applications/
+          cp assets/icon.png AppDir/mister-companion.png
+          cp assets/icon.png AppDir/usr/share/icons/hicolor/256x256/apps/mister-companion.png
+
+          # A plain symlink, not a wrapper script. An AppRun that exports
+          # LD_LIBRARY_PATH would leak the bundled libraries into balena CLI,
+          # cdrdao and the other external tools the app runs.
+          ln -s usr/bin/MiSTer-Companion AppDir/AppRun
+
+          # The runners have no libfuse2, so appimagetool runs extracted and the
+          # statically linked runtime is embedded into the output.
+          APPIMAGE_EXTRACT_AND_RUN=1 ./appimagetool \
+            --no-appstream \
+            --runtime-file runtime \
+            AppDir "../MiSTer-Companion-Linux-${{ matrix.arch }}.AppImage"
+
       - name: Upload Linux Artifact
         uses: actions/upload-artifact@v4
         with:
           name: MiSTer-Companion-Linux-${{ matrix.arch }}
-          path: MiSTer-Companion-Linux-${{ matrix.arch }}.tar.gz
+          path: |
+            MiSTer-Companion-Linux-${{ matrix.arch }}.tar.gz
+            MiSTer-Companion-Linux-${{ matrix.arch }}.AppImage
 
 
   # ============================================================
@@ -638,6 +682,8 @@ jobs:
           test -f release-assets/MiSTer-Companion-Windows-ARM64.zip
           test -f release-assets/MiSTer-Companion-Linux-x86_64.tar.gz
           test -f release-assets/MiSTer-Companion-Linux-ARM64.tar.gz
+          test -f release-assets/MiSTer-Companion-Linux-x86_64.AppImage
+          test -f release-assets/MiSTer-Companion-Linux-ARM64.AppImage
           test -f release-assets/MiSTer-Companion-macOS-Apple-Silicon.dmg
           test -f release-assets/MiSTer-Companion-macOS-Intel.dmg
 
@@ -658,5 +704,7 @@ jobs:
             release-assets/MiSTer-Companion-Windows-ARM64.zip
             release-assets/MiSTer-Companion-Linux-x86_64.tar.gz
             release-assets/MiSTer-Companion-Linux-ARM64.tar.gz
+            release-assets/MiSTer-Companion-Linux-x86_64.AppImage
+            release-assets/MiSTer-Companion-Linux-ARM64.AppImage
             release-assets/MiSTer-Companion-macOS-Apple-Silicon.dmg
             release-assets/MiSTer-Companion-macOS-Intel.dmg
