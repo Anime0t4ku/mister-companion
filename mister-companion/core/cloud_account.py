@@ -1356,7 +1356,15 @@ class CloudAccountClient:
 
         self.config_data["devices"] = devices
         state = profile_sync_state(self.config_data)
-        state["last_revision"] = max(0, int(plan.get("current_revision") or 0))
+
+        # Do not mark the preview revision as fully synced yet. The preview is
+        # only used to build/resolve the initial reconciliation plan. Keeping
+        # the revision at zero forces the following normal sync to request a
+        # complete cloud snapshot again after the conflict choices have been
+        # applied. This prevents a partially reconciled first sync from being
+        # committed as the new baseline when a conflict was involved.
+        state["last_revision"] = 0
+        state["last_synced_items"] = {}
         save_config(self.config_data)
 
     def _prepare_incremental_profile_sync(self) -> dict | None:
