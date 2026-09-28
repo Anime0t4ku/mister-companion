@@ -18,32 +18,50 @@ from core.downloader_backend import (
 from core.extras_common import (
     _path_exists,
     _path_exists_local,
+    _quote,
     _read_local_text,
     _read_remote_text,
-    _write_local_text,
+    _remove_local_path,
+    _remove_startup_line,
+    _write_local_bytes,
 )
 
 MISTERZINE_DB_ID = "misterzine"
 MISTERZINE_DB_URL = "https://github.com/matijaerceg/misterzine-on-device/releases/latest/download/misterzine.json.zip"
+# An empty per-database filter, as in MisterZine's own downloader_misterzine.ini:
+# the app's files carry no tags, so a global filter would otherwise skip them all.
+MISTERZINE_DB_FILTER = ""
 
 # Downloader installs the files. The main-menu entry and the startup helper
 # that opens it are a separate one-time setup, the same as running
 # Scripts/MisterZine-Setup.sh on the MiSTer.
 MISTERZINE_BINARY = "/media/fat/misterzine/misterzine"
 MISTERZINE_MGL_PATH = "/media/fat/MisterZine.mgl"
+MISTERZINE_MGL_PATHS = (MISTERZINE_MGL_PATH, "/media/fat/misterzine.mgl")
 MISTERZINE_MGL_TEXT = "<mistergamedescription>\n\t<rbf>menu</rbf>\n\t<setname>misterzine</setname>\n</mistergamedescription>\n"
 MISTERZINE_STARTUP_PATH = "/media/fat/linux/user-startup.sh"
 MISTERZINE_STARTUP_MARK = "# misterzine"
 MISTERZINE_STARTUP_LINE = "[[ -e /media/fat/misterzine/misterzine ]] && /media/fat/misterzine/misterzine launcher start"
-MISTERZINE_SETUP_NOTE = "MisterZine is installed. Press Set Up Menu Entry, or run MisterZine-Setup from Scripts on the MiSTer once.\n"
+# Stops a startup helper whose binary is already gone; Linux keeps it running.
+MISTERZINE_STOP_HELPER = (
+    "for p in /proc/[0-9]*; do tr '\\0' ' ' < $p/cmdline 2>/dev/null"
+    " | grep -q '^/media/fat/misterzine/misterzine launcher watch' && kill ${p#/proc/}; done"
+)
+MISTERZINE_SETUP_NOTE ="MisterZine is installed. Press Set Up Menu Entry, or run MisterZine-Setup from Scripts on the MiSTer once.\n"
+
+
+def _is_startup_hook(line: str) -> bool:
+    return line.split("#", 1)[0].strip() == MISTERZINE_STARTUP_LINE
 
 
 def _menu_entry_set_up(startup_text: str) -> bool:
-    for line in startup_text.replace("\r\n", "\n").split("\n"):
-        code = line.split("#", 1)[0].strip()
-        if code == MISTERZINE_STARTUP_LINE:
-            return True
-    return False
+    return any(_is_startup_hook(line) for line in startup_text.replace("\r\n", "\n").split("\n"))
+
+
+def _write_card_text(sd_root, remote_path, text):
+    # The MiSTer reads these files with Linux tools, so keep LF line endings
+    # when Companion runs on Windows: a CRLF user-startup.sh fails at #!/bin/sh.
+    _write_local_bytes(sd_root, remote_path, text.encode("utf-8"))
 
 
 def _status(state, check_latest=False):
@@ -119,7 +137,7 @@ def set_up_misterzine_menu_entry_local(sd_root, log):
     if not _path_exists_local(sd_root, MISTERZINE_BINARY):
         raise RuntimeError("MisterZine files are not installed. Install MisterZine first.")
     if not _path_exists_local(sd_root, MISTERZINE_MGL_PATH):
-        _write_local_text(sd_root, MISTERZINE_MGL_PATH, MISTERZINE_MGL_TEXT)
+        _write_card_text(sd_root, MISTERZINE_MGL_PATH, MISTERZINE_MGL_TEXT)
     startup = _read_local_text(sd_root, MISTERZINE_STARTUP_PATH).replace("\r\n", "\n")
     if not _menu_entry_set_up(startup):
         if not startup:
@@ -127,8 +145,49 @@ def set_up_misterzine_menu_entry_local(sd_root, log):
         if not startup.endswith("\n"):
             startup += "\n"
         startup += "\n" + MISTERZINE_STARTUP_MARK + "\n" + MISTERZINE_STARTUP_LINE + "\n"
-        _write_local_text(sd_root, MISTERZINE_STARTUP_PATH, startup)
+        _write_card_text(sd_root, MISTERZINE_STARTUP_PATH, startup)
     log("MisterZine menu entry set up. Boot the MiSTer and choose MisterZine in the main menu.\n")
+
+
+def _remove_misterzine_menu_entry(connection, log) -> bool:
+    """Remove the menu entry and stop the startup helper before the files go.
+
+    Returns True when MisterZine's launcher did it, so it can be re-enabled
+    if the uninstall fails.
+    """
+    if _path_exists(connection, MISTERZINE_BINARY):
+        output, code = _run_remote_streaming_result(connection, f"{MISTERZINE_BINARY} launcher disable 2>&1", log=log)
+        if code:
+            raise RuntimeError(f"Could not remove the MisterZine menu entry (exit {code}).\n{output}")
+        return True
+    connection.run_command(MISTERZINE_STOP_HELPER)
+    _remove_startup_line(connection, MISTERZINE_STARTUP_PATH, MISTERZINE_STARTUP_MARK)
+    _remove_startup_line(connection, MISTERZINE_STARTUP_PATH, MISTERZINE_STARTUP_LINE)
+    connection.run_command("rm -f " + " ".join(_quote(path) for path in MISTERZINE_MGL_PATHS))
+    return False
+
+
+def _restore_misterzine_menu_entry(connection, log):
+    try:
+        if _path_exists(connection, MISTERZINE_BINARY):
+            output, code = _run_remote_streaming_result(connection, f"{MISTERZINE_BINARY} launcher enable 2>&1", log=log)
+            if not code:
+                return
+    except Exception:
+        pass
+    log("Could not put the MisterZine menu entry back. Press Set Up Menu Entry, or run MisterZine-Setup from Scripts.\n")
+
+
+def _remove_misterzine_menu_entry_local(sd_root):
+    startup = _read_local_text(sd_root, MISTERZINE_STARTUP_PATH).replace("\r\n", "\n")
+    kept = [
+        line for line in startup.split("\n")
+        if line.strip() != MISTERZINE_STARTUP_MARK and not _is_startup_hook(line)
+    ]
+    if startup and "\n".join(kept) != startup:
+        _write_card_text(sd_root, MISTERZINE_STARTUP_PATH, "\n".join(kept))
+    for path in MISTERZINE_MGL_PATHS:
+        _remove_local_path(sd_root, path)
 
 
 def install_or_update_misterzine_frontend(connection, log):
@@ -137,7 +196,9 @@ def install_or_update_misterzine_frontend(connection, log):
     if get_misterzine_frontend_status(connection).get("repair_action"):
         set_up_misterzine_menu_entry(connection, log)
         return
-    original = ensure_database_source_online(connection, MISTERZINE_DB_ID, MISTERZINE_DB_URL)
+    original = ensure_database_source_online(
+        connection, MISTERZINE_DB_ID, MISTERZINE_DB_URL, filter_value=MISTERZINE_DB_FILTER
+    )
     try:
         run_named_database_online(connection, MISTERZINE_DB_ID, log=log)
     except Exception:
@@ -151,7 +212,9 @@ def install_or_update_misterzine_frontend_local(sd_root, log):
     if get_misterzine_frontend_status_local(sd_root).get("repair_action"):
         set_up_misterzine_menu_entry_local(sd_root, log)
         return
-    original = ensure_database_source_local(sd_root, MISTERZINE_DB_ID, MISTERZINE_DB_URL)
+    original = ensure_database_source_local(
+        sd_root, MISTERZINE_DB_ID, MISTERZINE_DB_URL, filter_value=MISTERZINE_DB_FILTER
+    )
     try:
         run_named_database_local(sd_root, MISTERZINE_DB_ID, log=log)
     except Exception:
@@ -165,7 +228,10 @@ def uninstall_misterzine_frontend(connection, log, force=False):
     if not connection.is_connected():
         raise RuntimeError("Not connected to MiSTer.")
     original = ensure_database_source_online(connection, MISTERZINE_DB_ID, MISTERZINE_DB_URL)
+    launcher_disabled = False
     try:
+        # Setup wrote the menu entry and startup line, so Downloader does not track them.
+        launcher_disabled = _remove_misterzine_menu_entry(connection, log)
         native = uninstall_named_database_online(connection, MISTERZINE_DB_ID, log=log, force=force)
         if not native:
             ensure_database_source_online(
@@ -175,6 +241,8 @@ def uninstall_misterzine_frontend(connection, log, force=False):
             remove_database_source_online(connection, MISTERZINE_DB_ID)
     except Exception:
         restore_online(connection, original)
+        if launcher_disabled:
+            _restore_misterzine_menu_entry(connection, log)
         raise
     return {"uninstalled": True}
 
@@ -192,4 +260,5 @@ def uninstall_misterzine_frontend_local(sd_root, log, force=False):
     except Exception:
         restore_local(sd_root, original)
         raise
+    _remove_misterzine_menu_entry_local(sd_root)
     return {"uninstalled": True}
