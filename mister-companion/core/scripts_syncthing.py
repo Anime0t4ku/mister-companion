@@ -866,6 +866,7 @@ def enable_syncthing_start_on_boot_local(sd_root):
 {SYNCTHING_STARTUP_LINE}
 """,
             encoding="utf-8",
+            newline="\n",
         )
         _chmod_local_executable(sd_root, USER_STARTUP_PATH)
         return
@@ -875,7 +876,7 @@ def enable_syncthing_start_on_boot_local(sd_root):
 
     text = startup_path.read_text(encoding="utf-8", errors="ignore").rstrip()
     text = f"{text}\n\n{SYNCTHING_STARTUP_BEGIN}\n{SYNCTHING_STARTUP_LINE}\n"
-    startup_path.write_text(text, encoding="utf-8")
+    startup_path.write_text(text, encoding="utf-8", newline="\n")
     _chmod_local_executable(sd_root, USER_STARTUP_PATH)
 
 
@@ -909,7 +910,7 @@ def disable_syncthing_start_on_boot_local(sd_root):
 
         new_lines.append(line)
 
-    startup_path.write_text("\n".join(new_lines).rstrip() + "\n", encoding="utf-8")
+    startup_path.write_text("\n".join(new_lines).rstrip() + "\n", encoding="utf-8", newline="\n")
 
 
 def toggle_syncthing_start_on_boot(connection):

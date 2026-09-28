@@ -867,6 +867,7 @@ def enable_ftp_save_sync_service_local(sd_root):
         startup_path.write_text(
             f"#!/bin/sh\n\n{_ftp_save_sync_startup_block()}",
             encoding="utf-8",
+            newline="\n",
         )
         _chmod_local_executable(sd_root, FTP_SAVE_SYNC_STARTUP_PATH)
         return
@@ -876,7 +877,7 @@ def enable_ftp_save_sync_service_local(sd_root):
 
     text = startup_path.read_text(encoding="utf-8", errors="ignore").rstrip()
     text = f"{text}\n\n{_ftp_save_sync_startup_block()}"
-    startup_path.write_text(text, encoding="utf-8")
+    startup_path.write_text(text, encoding="utf-8", newline="\n")
     _chmod_local_executable(sd_root, FTP_SAVE_SYNC_STARTUP_PATH)
 
 
@@ -912,4 +913,4 @@ def disable_ftp_save_sync_service_local(sd_root):
         if not skipping:
             new_lines.append(line)
 
-    startup_path.write_text("\n".join(new_lines).rstrip() + "\n", encoding="utf-8")
+    startup_path.write_text("\n".join(new_lines).rstrip() + "\n", encoding="utf-8", newline="\n")

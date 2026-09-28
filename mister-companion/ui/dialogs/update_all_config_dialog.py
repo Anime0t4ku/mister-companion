@@ -36,6 +36,7 @@ from ui.dialogs.extra_sources_dialog import (
     ExtraSourceEditorDialog,
     ManageExtraSourcesDialog,
 )
+from ui.dialogs.update_all_remove_files_dialog import UpdateAllRemoveFilesDialog
 
 
 class UpdateAllConfigDialog(QDialog):
@@ -473,23 +474,106 @@ class UpdateAllConfigDialog(QDialog):
         outer.addWidget(line)
 
         button_row = QHBoxLayout()
-        button_row.addStretch()
 
+        self.manage_installed_files_button = QPushButton("Manage Installed Files...")
         self.save_button = QPushButton("Save")
         self.close_button = QPushButton("Close")
 
+        button_row.addWidget(self.manage_installed_files_button)
+        button_row.addStretch()
         button_row.addWidget(self.save_button)
         button_row.addWidget(self.close_button)
-        button_row.addStretch()
 
         outer.addLayout(button_row)
 
+        self.manage_installed_files_button.clicked.connect(self.on_manage_installed_files)
         self.save_button.clicked.connect(self.on_save)
         self.close_button.clicked.connect(self.reject)
 
         self.retro_login_button.clicked.connect(self.on_retro_login)
         self.retro_copy_url_button.clicked.connect(self.on_retro_copy_url)
         self.retro_cancel_button.clicked.connect(self.on_retro_cancel)
+
+    def on_manage_installed_files(self):
+        dialog = UpdateAllRemoveFilesDialog(
+            connection=self.connection,
+            sd_root=self.sd_root,
+            custom_sources=self.custom_sources,
+            parent=self,
+        )
+        dialog.exec()
+        for database_id in dialog.removed_database_ids:
+            self._apply_removed_database_to_ui(database_id)
+
+    def _apply_removed_database_to_ui(self, database_id):
+        checkbox_map = {
+            "distribution_mister": self.main_cores_check,
+            "jtcores": self.jtcores_check,
+            "Coin-OpCollection/Distribution-MiSTerFPGA": self.coinop_check,
+            "arcade_offset_folder": self.arcade_offset_check,
+            "llapi_folder": self.llapi_check,
+            "theypsilon_unofficial_distribution": self.unofficial_check,
+            "MikeS11/YC_Builds-MiSTer": self.yc_check,
+            "agg23_db": self.agg23_check,
+            "ajgowans/alt-cores": self.altcores_check,
+            "TheJesusFish/Dual-Ram-Console-Cores": self.dualram_check,
+            "theypsilon/RetroAchievementsDB_MiSTer": self.retroachievements_cores_check,
+            "MultiDatabases/physical-disc": self.physical_disc_check,
+            "MultiDatabases/paprium": self.paprium_megadrive_check,
+            "MultiDatabases/mms2-gb": self.mms2_gb_core_check,
+            "MultiDatabases/megavgmdrive": self.megavgmdrive_check,
+            "MultiDatabases/dreamster": self.dreamster_check,
+            "MultiDatabases/sonic-mania": self.sonic_mania_mister_check,
+            "MultiDatabases/duke3d": self.mister_duke3d_check,
+            "MultiDatabases/mister-quake": self.mister_quake_check,
+            "MultiDatabases/solarus": self.solarus_mister_check,
+            "MultiDatabases/3s-arm": self.three_s_arm_check,
+            "MiSTerOrganize/MiSTer_Frontier": self.mister_frontier_check,
+            "MultiDatabases/maldita-castilla": self.maldita_castilla_check,
+            "MultiDatabases/nblood": self.nblood_check,
+            "mrext/all": self.mrext_check,
+            "MiSTer_SAM_files": self.sam_check,
+            "tty2oled_files": self.tty2oled_check,
+            "i2c2oled_files": self.i2c2oled_check,
+            "retrospy/retrospy-MiSTer": self.retrospy_check,
+            "ZaparooProject/Zaparoo_MiSTer": self.zaparoo_check,
+            "anime0t4ku_mister_scripts": self.anime0t4ku_mister_scripts_check,
+            "ajgowans/240p": self.test_suite_240p_check,
+            "MultiDatabases/mister-hifi": self.mister_hifi_check,
+            "MultiDatabases/misterfin": self.misterfin_check,
+            "degauss": self.degauss_check,
+            "chipster6502/MiSTer_monitor_DB": self.mister_monitor_check,
+            "MultiDatabases/disc-tools": self.disc_tools_check,
+            "MultiDatabases/mister-dvd": self.mister_dvd_check,
+            "bios_db": self.bios_check,
+            "arcade_roms_db": self.arcade_roms_check,
+            "uberyoji_mister_boot_roms_mgl": self.bootroms_check,
+            "Dinierto/MiSTer-GBA-Borders": self.gba_borders_check,
+            "anime0t4ku_wallpapers": self.anime0t4ku_wallpapers_check,
+            "pcn_challenge_wallpapers": self.pcn_challenge_wallpapers_check,
+            "Ranny-Snice/Ranny-Snice-Wallpapers": self.ranny_wallpapers_check,
+        }
+        checkbox = checkbox_map.get(database_id)
+        if checkbox is not None:
+            checkbox.setChecked(False)
+            return
+
+        if database_id.startswith("ajgowans/manualsdb-"):
+            source_id = database_id[len("ajgowans/manualsdb-"):]
+            self.manualsdb_selected = [value for value in self.manualsdb_selected if value != source_id]
+            self.manualsdb_check.setChecked(bool(self.manualsdb_selected))
+            return
+
+        if database_id.startswith("chipster6502/artworkdb-"):
+            self.artworkdb_selected = [value for value in self.artworkdb_selected if value != database_id]
+            self.artworkdb_check.setChecked(bool(self.artworkdb_selected))
+            return
+
+        for source, checkbox in zip(self.custom_sources, self.custom_source_checks):
+            source_id = str(source.get("database_id") or "").strip().strip("[]")
+            if source_id == database_id:
+                checkbox.setChecked(False)
+                return
 
     def _group(self, title, target_layout=None):
         box = QGroupBox(title)

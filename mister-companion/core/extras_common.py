@@ -297,7 +297,7 @@ def _read_local_text(sd_root: str, remote_path: str) -> str:
 def _write_local_text(sd_root: str, remote_path: str, text: str):
     path = _local_path(sd_root, remote_path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
+    path.write_text(text, encoding="utf-8", newline="\n")
 
 
 def _write_local_bytes(sd_root: str, remote_path: str, data: bytes):

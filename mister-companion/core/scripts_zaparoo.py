@@ -262,7 +262,7 @@ def enable_zaparoo_service_local(sd_root):
     startup_path.parent.mkdir(parents=True, exist_ok=True)
 
     if not startup_path.exists():
-        startup_path.write_text(_zaparoo_startup_block(), encoding="utf-8")
+        startup_path.write_text(_zaparoo_startup_block(), encoding="utf-8", newline="\n")
         _chmod_local_executable(sd_root, ZAPAROO_STARTUP_PATH)
         return
 
@@ -271,7 +271,7 @@ def enable_zaparoo_service_local(sd_root):
         return
 
     text = text.rstrip() + "\n\n" + _zaparoo_startup_entry() + "\n"
-    startup_path.write_text(text, encoding="utf-8")
+    startup_path.write_text(text, encoding="utf-8", newline="\n")
     _chmod_local_executable(sd_root, ZAPAROO_STARTUP_PATH)
 
 
@@ -295,7 +295,7 @@ def disable_zaparoo_service_local(sd_root):
 
         new_lines.append(line)
 
-    startup_path.write_text("\n".join(new_lines).rstrip() + "\n", encoding="utf-8")
+    startup_path.write_text("\n".join(new_lines).rstrip() + "\n", encoding="utf-8", newline="\n")
 
 
 def uninstall_zaparoo(connection):

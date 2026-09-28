@@ -608,6 +608,121 @@ def read_downloader_files_local(sd_root):
     }
 
 
+
+
+def _known_update_all_database_sources(custom_sources=None):
+    sources = [
+        ("distribution_mister", "Main Cores"),
+        ("jtcores", "JTCores"),
+        ("Coin-OpCollection/Distribution-MiSTerFPGA", "Coin-Op Collection"),
+        ("arcade_offset_folder", "Arcade Offset Folder"),
+        ("llapi_folder", "LLAPI Forks Folder"),
+        ("theypsilon_unofficial_distribution", "Unofficial Distribution"),
+        ("MikeS11/YC_Builds-MiSTer", "Y/C Builds"),
+        ("agg23_db", "agg23’s MiSTer Cores"),
+        ("ajgowans/alt-cores", "Alt Cores"),
+        ("TheJesusFish/Dual-Ram-Console-Cores", "Dual RAM Console Cores"),
+        (RETROACHIEVEMENTS_CORES_SECTION, "RetroAchievement Cores"),
+        (PHYSICAL_DISC_SECTION, "Physical CD Support"),
+        (PAPRIUM_SECTION, "Paprium MegaDrive"),
+        (MMS2_GB_SECTION, "MMS2 GB Core"),
+        (MEGAVGMD_SECTION, "MegaVGMDrive"),
+        (DREAMSTER_SECTION, "DreamSTer"),
+        (SONIC_MANIA_SECTION, "Sonic Mania MiSTer"),
+        (DUKE3D_SECTION, "MiSTer Duke3D"),
+        (QUAKE_SECTION, "MiSTer Quake"),
+        (SOLARUS_SECTION, "Solarus MiSTer"),
+        (THREE_S_ARM_SECTION, "3S-ARM"),
+        (MISTER_FRONTIER_SECTION, "MiSTer Frontier"),
+        (MALDITA_CASTILLA_SECTION, "Maldita Castilla MiSTer"),
+        (NBLOOD_SECTION, "NBlood"),
+        ("mrext/all", "MiSTer Extensions (Wizzo Scripts)"),
+        ("MiSTer_SAM_files", "MiSTer Super Attract Mode"),
+        ("tty2oled_files", "tty2oled Add-on Script"),
+        ("i2c2oled_files", "i2c2oled Add-on Script"),
+        ("retrospy/retrospy-MiSTer", "RetroSpy Utility"),
+        (ZAPAROO_SECTION, "Zaparoo"),
+        ("anime0t4ku_mister_scripts", "Anime0t4ku MiSTer Scripts"),
+        (TEST_SUITE_240P_SECTION, "240P Test Suites"),
+        (MISTER_HIFI_SECTION, "MiSTer Hi-Fi"),
+        (MISTERFIN_SECTION, "MiSTerFin"),
+        (DEGAUSS_SECTION, "Degauss"),
+        (MISTER_MONITOR_SECTION, "MiSTer Monitor"),
+        (DISC_TOOLS_SECTION, "Disc Tools"),
+        (MISTER_DVD_SECTION, "MiSTer DVD"),
+        ("bios_db", "BIOS Database"),
+        ("arcade_roms_db", "Arcade ROMs Database"),
+        ("uberyoji_mister_boot_roms_mgl", "Uberyoji Boot ROMs"),
+        ("Dinierto/MiSTer-GBA-Borders", "Dinierto GBA Borders"),
+        ("anime0t4ku_wallpapers", "Anime0t4ku Wallpapers"),
+        ("pcn_challenge_wallpapers", "PCN Challenge Wallpapers"),
+        ("Ranny-Snice/Ranny-Snice-Wallpapers", "Ranny Snice Wallpapers"),
+    ]
+    sources.extend(
+        (f"ajgowans/manualsdb-{source_id}", f"Game Manuals - {label}")
+        for source_id, label in MANUALSDB_SOURCES
+    )
+    sources.extend(
+        (source_id, f"Game Artwork - {label}")
+        for source_id, label, _url in ARTWORKDB_SOURCES
+    )
+    for source in custom_sources or []:
+        try:
+            database_id = normalize_database_id(source.get("database_id", ""))[1:-1]
+        except (AttributeError, ValueError):
+            continue
+        label = str(source.get("display_name") or database_id).strip() or database_id
+        sources.append((database_id, label))
+    unique = []
+    seen = set()
+    for database_id, display_name in sources:
+        if database_id in seen:
+            continue
+        seen.add(database_id)
+        unique.append((database_id, display_name))
+    return unique
+
+
+def _section_ids_from_text(text):
+    result = []
+    for line in str(text or "").splitlines():
+        stripped = line.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            section = stripped[1:-1].strip()
+            if section and section not in result:
+                result.append(section)
+    return result
+
+
+def _filter_installed_known_sources(texts, custom_sources=None):
+    installed = set()
+    for text in texts:
+        installed.update(_section_ids_from_text(text))
+    return [
+        {"database_id": database_id, "display_name": display_name}
+        for database_id, display_name in _known_update_all_database_sources(custom_sources)
+        if database_id in installed
+    ]
+
+
+def list_removable_update_all_databases(connection, custom_sources=None):
+    sftp = connection.client.open_sftp()
+    try:
+        files = read_downloader_files(sftp)
+        texts = list(files.values())
+        texts.append(read_remote_text(sftp, CUSTOM_SOURCES_INI_PATH, ""))
+        return _filter_installed_known_sources(texts, custom_sources)
+    finally:
+        sftp.close()
+
+
+def list_removable_update_all_databases_local(sd_root, custom_sources=None):
+    files = read_downloader_files_local(sd_root)
+    texts = list(files.values())
+    texts.append(read_local_text(sd_root, CUSTOM_SOURCES_INI_PATH, ""))
+    return _filter_installed_known_sources(texts, custom_sources)
+
+
 def remove_section_from_lines(lines, section):
     new_lines = []
     skip = False

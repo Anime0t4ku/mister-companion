@@ -1,4 +1,4 @@
-from PyQt6.QtCore import QEvent, Qt, QThread, pyqtSignal
+from PyQt6.QtCore import QEvent, Qt, QThread, QTimer, pyqtSignal
 from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import (
     QGridLayout,
@@ -107,6 +107,7 @@ class RemoteTab(QWidget):
         self._screenshot_pixmap = None
         self.last_status = None
         self.remote_client = None
+        self._remote_connect_generation = 0
         self.keyboard_passthrough_enabled = False
         self.held_keyboard_keys = set()
         self._tab_active = False
@@ -687,17 +688,49 @@ class RemoteTab(QWidget):
             return
 
         self.disconnect_remote_client()
+        generation = self._remote_connect_generation
+        self._attempt_remote_client_connection(host, generation, 1)
 
+    def _attempt_remote_client_connection(self, host: str, generation: int, attempt: int):
+        if generation != self._remote_connect_generation:
+            return
+
+        status = self.last_status
+        if not (status and status.ready) or getattr(status, "update_available", False):
+            return
+
+        client = None
         try:
-            self.remote_client = RemoteWebSocketClient(host)
-            self.remote_client.connect()
-            self.remote_client.ping()
+            client = RemoteWebSocketClient(host)
+            client.connect()
+            client.ping()
+
+            if generation != self._remote_connect_generation:
+                client.close()
+                return
+
+            self.remote_client = client
             self.append_log(f"WebSocket connected: {remote_websocket_url(host)}")
+            self.set_remote_controls_enabled(True)
         except Exception as e:
+            if client is not None:
+                try:
+                    client.close()
+                except Exception:
+                    pass
+
             self.remote_client = None
-            self.append_log(f"WebSocket failed: {e}")
+            self.set_remote_controls_enabled(False)
+
+            if attempt < 3 and generation == self._remote_connect_generation:
+                self.append_log(f"WebSocket not ready yet, retrying ({attempt}/3)...")
+                QTimer.singleShot(500, lambda: self._attempt_remote_client_connection(host, generation, attempt + 1))
+            else:
+                self.append_log(f"WebSocket failed: {e}")
 
     def disconnect_remote_client(self):
+        self._remote_connect_generation += 1
+
         if self.remote_client is not None:
             try:
                 self.remote_client.close()
