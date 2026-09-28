@@ -36,9 +36,13 @@ MISTERZINE_DB_FILTER = ""
 # that opens it are a separate one-time setup, the same as running
 # Scripts/MisterZine-Setup.sh on the MiSTer.
 MISTERZINE_BINARY = "/media/fat/misterzine/misterzine"
-MISTERZINE_MGL_PATH = "/media/fat/MisterZine.mgl"
-MISTERZINE_MGL_PATHS = (MISTERZINE_MGL_PATH, "/media/fat/misterzine.mgl")
-MISTERZINE_MGL_TEXT = "<mistergamedescription>\n\t<rbf>menu</rbf>\n\t<setname>misterzine</setname>\n</mistergamedescription>\n"
+# MisterZine writes its main-menu entry itself, under the name its release
+# uses: "MisterZine Arcade.mgl" from the rename on, MisterZine.mgl before it.
+MISTERZINE_MGL_PATHS = (
+    "/media/fat/MisterZine Arcade.mgl",
+    "/media/fat/MisterZine.mgl",
+    "/media/fat/misterzine.mgl",
+)
 MISTERZINE_STARTUP_PATH = "/media/fat/linux/user-startup.sh"
 MISTERZINE_STARTUP_MARK = "# misterzine"
 MISTERZINE_STARTUP_LINE = "[[ -e /media/fat/misterzine/misterzine ]] && /media/fat/misterzine/misterzine launcher start"
@@ -133,11 +137,13 @@ def set_up_misterzine_menu_entry(connection, log):
 
 
 def set_up_misterzine_menu_entry_local(sd_root, log):
-    """Write the menu entry and startup line on an SD card; the helper starts at boot."""
+    """Write the startup line on an SD card.
+
+    The helper it starts at boot writes the menu entry itself, under the
+    name the installed MisterZine release uses.
+    """
     if not _path_exists_local(sd_root, MISTERZINE_BINARY):
         raise RuntimeError("MisterZine files are not installed. Install MisterZine first.")
-    if not _path_exists_local(sd_root, MISTERZINE_MGL_PATH):
-        _write_card_text(sd_root, MISTERZINE_MGL_PATH, MISTERZINE_MGL_TEXT)
     startup = _read_local_text(sd_root, MISTERZINE_STARTUP_PATH).replace("\r\n", "\n")
     if not _menu_entry_set_up(startup):
         if not startup:
@@ -155,16 +161,18 @@ def _remove_misterzine_menu_entry(connection, log) -> bool:
     Returns True when MisterZine's launcher did it, so it can be re-enabled
     if the uninstall fails.
     """
-    if _path_exists(connection, MISTERZINE_BINARY):
+    launcher = _path_exists(connection, MISTERZINE_BINARY)
+    if launcher:
         output, code = _run_remote_streaming_result(connection, f"{MISTERZINE_BINARY} launcher disable 2>&1", log=log)
         if code:
             raise RuntimeError(f"Could not remove the MisterZine menu entry (exit {code}).\n{output}")
-        return True
-    connection.run_command(MISTERZINE_STOP_HELPER)
-    _remove_startup_line(connection, MISTERZINE_STARTUP_PATH, MISTERZINE_STARTUP_MARK)
-    _remove_startup_line(connection, MISTERZINE_STARTUP_PATH, MISTERZINE_STARTUP_LINE)
+    else:
+        connection.run_command(MISTERZINE_STOP_HELPER)
+        _remove_startup_line(connection, MISTERZINE_STARTUP_PATH, MISTERZINE_STARTUP_MARK)
+        _remove_startup_line(connection, MISTERZINE_STARTUP_PATH, MISTERZINE_STARTUP_LINE)
+    # A launcher from before the rename removes only the name it writes.
     connection.run_command("rm -f " + " ".join(_quote(path) for path in MISTERZINE_MGL_PATHS))
-    return False
+    return launcher
 
 
 def _restore_misterzine_menu_entry(connection, log):
