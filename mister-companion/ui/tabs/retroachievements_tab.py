@@ -893,6 +893,8 @@ class RetroAchievementsTab(QWidget):
         splitter.addWidget(left_widget)
 
         right_widget = QWidget()
+        right_widget.setObjectName("RetroAchievementsCardContainer")
+        right_widget.setStyleSheet("QWidget#RetroAchievementsCardContainer { background: transparent; }")
         right_layout = QVBoxLayout(right_widget)
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(8)

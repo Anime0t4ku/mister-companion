@@ -68,6 +68,7 @@ from ui.tabs.misterzine_tab import MiSTerZineTab
 from ui.tabs.manuals_tab import ManualsTab
 from ui.tabs.retroachievements_tab import RetroAchievementsTab
 from ui.tabs.remote_tab import RemoteTab
+from ui.tabs.bluebridge_tab import BlueBridgeTab
 from ui.tabs.savemanager_tab import SaveManagerTab
 from ui.tabs.wallpapers_tab import WallpapersTab
 from ui.tabs.zapscraper_tab import ZapScraperTab
@@ -293,6 +294,9 @@ class MainWindow(QMainWindow):
         self.remote_tab = RemoteTab(self)
         self.tabs.addTab(self.remote_tab, self.tab_icon("remote"), "Remote")
 
+        self.bluebridge_tab = BlueBridgeTab(self)
+        self.tabs.addTab(self.bluebridge_tab, self.tab_icon("bluebridge"), "MC BlueBridge")
+
         self.file_manager_tab = FileManagerTab(self)
         self.tabs.addTab(
             self.file_manager_tab,
@@ -389,6 +393,7 @@ class MainWindow(QMainWindow):
             ("Flash SD", "flash_sd"),
             ("MiSTer", "connection"),
             ("Remote", "remote"),
+            ("MC BlueBridge", "bluebridge"),
             ("File Manager", "file_manager"),
             ("Install Center", "scripts"),
             ("MiSTer Settings", "mister_settings"),
@@ -1030,6 +1035,8 @@ class MainWindow(QMainWindow):
             self.manuals_tab.shutdown()
         if hasattr(self, "retroachievements_tab"):
             self.retroachievements_tab.shutdown()
+        if hasattr(self, "bluebridge_tab"):
+            self.bluebridge_tab.shutdown()
         if hasattr(self, "remote_tab"):
             self.remote_tab.shutdown()
         if hasattr(self, "tools_tab"):
@@ -1421,6 +1428,7 @@ class MainWindow(QMainWindow):
         for attr_name in (
             "device_tab",
             "remote_tab",
+            "bluebridge_tab",
             "file_manager_tab",
             "mister_settings_tab",
             "install_center_tab",
@@ -1494,6 +1502,10 @@ class MainWindow(QMainWindow):
             # Do not reload on tab switches: preserve the exact RA view/state
             # until the application closes.
             self.retroachievements_tab.refresh(force=False)
+            return
+
+        if hasattr(self, "bluebridge_tab") and current_widget is self.bluebridge_tab:
+            self.bluebridge_tab.refresh(force=force)
             return
 
         if hasattr(self, "remote_tab") and current_widget is self.remote_tab:
@@ -1576,6 +1588,8 @@ class MainWindow(QMainWindow):
 
         if hasattr(self, "remote_tab"):
             self.remote_tab.set_tab_active(current_widget is self.remote_tab)
+        if hasattr(self, "bluebridge_tab"):
+            self.bluebridge_tab.set_tab_active(current_widget is self.bluebridge_tab)
 
         self._tab_refresh_generation += 1
         generation = self._tab_refresh_generation

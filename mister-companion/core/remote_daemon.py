@@ -32,7 +32,7 @@ def app_base_dir() -> Path:
 BASE_DIR = app_base_dir()
 LOCAL_REMOTE_SCRIPT_PATH = BASE_DIR / "assets" / "companion_remote.sh"
 REMOTE_SCRIPT_SOURCE_URL = "https://raw.githubusercontent.com/Anime0t4ku/mister-companion/main/mister-companion/assets/companion_remote.sh"
-BUNDLED_REMOTE_SCRIPT_VERSION = "3.0.0"
+BUNDLED_REMOTE_SCRIPT_VERSION = "4.0.0"
 
 _logger = logging.getLogger(__name__)
 _remote_script_cache_lock = threading.Lock()
@@ -64,6 +64,10 @@ def get_latest_remote_daemon_script() -> tuple[str, str, str]:
     try:
         script_text = _fetch_remote_script_text()
         version = _parse_remote_script_version(script_text) or BUNDLED_REMOTE_SCRIPT_VERSION
+        bundled_text = LOCAL_REMOTE_SCRIPT_PATH.read_text(encoding="utf-8")
+        bundled_version = _parse_remote_script_version(bundled_text) or BUNDLED_REMOTE_SCRIPT_VERSION
+        if _version_tuple(version) < _version_tuple(bundled_version):
+            return bundled_text, bundled_version, "bundled"
 
         with _remote_script_cache_lock:
             _cached_remote_script_text = script_text
@@ -87,16 +91,11 @@ def get_latest_remote_daemon_script() -> tuple[str, str, str]:
 
 
 def _version_tuple(value: str):
-    parts = []
-    for part in str(value or "").strip().split("."):
-        try:
-            parts.append(int(part))
-        except Exception:
-            parts.append(0)
-    while len(parts) < 3:
-        parts.append(0)
-    return tuple(parts[:3])
-
+    from core.bluebridge_releases import version_key
+    try:
+        return version_key(value)
+    except ValueError:
+        return version_key("0.0.0")
 
 
 @dataclass
@@ -145,7 +144,7 @@ class RemoteDaemonStatus:
 
 
 def remote_daemon_supports_screenshots(version: str) -> bool:
-    return _version_tuple(version) >= (3, 0, 0)
+    return _version_tuple(version) >= _version_tuple("3.0.0")
 
 
 def local_screenshot_dir(create: bool = True) -> Path:
