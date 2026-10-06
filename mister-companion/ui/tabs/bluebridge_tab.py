@@ -205,6 +205,8 @@ class BlueBridgeTab(QWidget):
         self.installer.setEnabled(not busy)
         for button in self.daemon_buttons:
             button.setEnabled(not busy and bool(self.main_window.connection.is_connected()))
+        if self.mode.currentIndex() == 1:
+            self.sync_daemon_controls()
 
     def defer(self, callback):
         if self.worker:
@@ -419,18 +421,28 @@ class BlueBridgeTab(QWidget):
         remote = self.main_window.remote_tab
         if command == 'uninstall': remote.confirm_uninstall()
         else: remote.run_daemon_command(command)
+        self.sync_daemon_controls()
+
+    def sync_daemon_controls(self):
+        remote = self.main_window.remote_tab
+        busy = bool(remote.command_worker or remote.status_worker)
+        if not busy:
+            remote.update_daemon_button_state()
+        sources = [remote.install_button, remote.start_stop_button, remote.boot_button, remote.uninstall_button]
+        for button, source in zip(self.daemon_buttons, sources):
+            button.setText(source.text())
+            button.setEnabled(source.isEnabled() and not busy and self.worker is None and self.main_window.connection.is_connected())
 
     def sync_daemon(self):
         remote = self.main_window.remote_tab
         status = remote.last_status
         busy = bool(remote.command_worker or remote.status_worker)
-        for button in self.daemon_buttons: button.setEnabled(not busy and self.worker is None and self.main_window.connection.is_connected())
+        self.sync_daemon_controls()
         if not status:
             self.daemon_status.setText('Checking Companion Remote…')
             return
-        self.daemon_status.setText(f'Companion Remote {status.version_label} · {"Running" if status.running else "Stopped"} · Start on boot: {"Enabled" if status.startup_enabled else "Disabled"}')
-        self.daemon_buttons[2].setText('Disable Start on Boot' if status.startup_enabled else 'Enable Start on Boot')
-        self.daemon_buttons[1].setText('Stop' if status.running else 'Start')
+        installed = f'Update Available ({status.version_label} → {status.latest_version})' if status.update_available else (f'Installed ({status.version_label})' if status.installed else 'Not Installed')
+        self.daemon_status.setText(f'Companion Remote · {installed} · {"Running" if status.running else "Stopped"} · Start on boot: {"Enabled" if status.startup_enabled else "Disabled"}')
         if busy: return
         if not status.ready or status.update_available:
             self.pages.hide()
@@ -459,18 +471,22 @@ class BlueBridgeTab(QWidget):
                 self.last_inventory = time.monotonic()
                 self.run(self.service.adapters, self.poll_inventory, quiet=True)
             else:
-                self.run(lambda: self.service.api('status')['status'], self.poll_status, quiet=True)
+                service = self.service
+                self.run(lambda: (service.api('status')['status'], service.api('controllers')['controllers']), self.poll_status, quiet=True)
 
     def poll_inventory(self, adapters):
         signature = [(a['id'], a['name']) for a in adapters]
         if signature != self.inventory_signature:
             self.render_adapters(adapters)
 
-    def poll_status(self, status):
+    def poll_status(self, result):
+        status, controllers = result
         previous = self.status_data
+        controllers_changed = controllers != self.controllers_data
+        self.controllers_data = controllers
         changed = any(previous.get(key) != status.get(key) for key in ('connected', 'controller', 'controller_name', 'profile', 'firmware', 'detected'))
-        if status != previous: self.render_status(status)
-        if changed and status.get('detected'): self.defer(self.load_all)
+        if status != previous or controllers_changed: self.render_status(status)
+        if (changed or controllers_changed) and status.get('detected'): self.defer(self.load_all)
         elif not status.get('detected'): self.defer(self.refresh)
 
     def refresh(self, force=False, quiet=False):
@@ -541,12 +557,14 @@ class BlueBridgeTab(QWidget):
         self.status_data = status
         if not status.get('detected'):
             self.pages.hide(); self.message.setText(status.get('message', 'Adapter disconnected')); return
-        live = next((c.get('name') for c in self.controllers_data.get('controllers', []) if c.get('index') == self.controllers_data.get('connected_index')), 'None')
+        connected_controller = next((c for c in self.controllers_data.get('controllers', []) if c.get('index') == self.controllers_data.get('connected_index')), None)
+        connected = connected_controller is not None
+        live = connected_controller.get('name', 'Controller') if connected else 'None'
         self.summary.setText(f"{status.get('adapter_name', 'MC BlueBridge adapter')} · Firmware v{status.get('firmware', '?')}\nController: {status.get('controller', status.get('controller_name', live))} · Profile: {status.get('profile', '-')}\nBattery: {str(status.get('battery_percent')) + '%' if status.get('battery_supported') else 'Unavailable'} · Bluetooth: {'Ready' if status.get('bt_ready') else 'Not ready'} · USB: {'Ready' if status.get('usb_ready') else 'Not ready'}")
-        self.pair_button.setVisible(not status.get('connected'))
+        self.pair_button.setVisible(not connected)
         self.pair_button.setText('Stop Pairing' if status.get('pairing') else 'Start Pairing')
-        self.disconnect_button.setVisible(bool(status.get('connected')))
-        self.tester_button.setVisible(bool(status.get('connected')))
+        self.disconnect_button.setVisible(connected)
+        self.tester_button.setVisible(connected)
         self.output.setCurrentIndex(max(0, min(3, int(status.get('output_mode', 1)) - 1)))
         self.mapping_identity.setVisible(int(status.get('output_mode', 1)) == 1)
         self.adapter_name_label.setText(status.get('adapter_name', 'MC BlueBridge adapter'))
