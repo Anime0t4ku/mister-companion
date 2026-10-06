@@ -34,6 +34,8 @@ class BlueBridgeTab(QWidget):
         self.worker_quiet = False
         self.active = False
         self.profile_data = {}
+        self.profile_editor_key = None
+        self.profile_editor_baseline = None
         self.profiles_data = {}
         self.controllers_data = {}
         self.status_data = {}
@@ -575,6 +577,8 @@ class BlueBridgeTab(QWidget):
 
     def render_all(self, result):
         status, controllers, profiles, profile, release = result
+        editor_key = (self.service.host, self.service.adapter_id, profiles.get('controller_index'), profile.get('id', profile.get('index')))
+        preserve_editor = bool(profile) and self.profile_editor_baseline is not None and editor_key == self.profile_editor_key and self.profile_editor_state() != self.profile_editor_baseline
         self.controllers_data = controllers; self.profiles_data = profiles; self.render_status(status)
         self.controllers.clear()
         for controller in controllers.get('controllers', []): self.controllers.addItem(controller.get('name', 'Controller') + (' · Connected' if controller.get('connected') else ' · Offline'), controller['index'])
@@ -582,7 +586,7 @@ class BlueBridgeTab(QWidget):
         self.profiles.clear()
         for item in profiles.get('profiles', []): self.profiles.addItem(item['name'], item['index'])
         self.profiles.setCurrentIndex(self.profiles.findData(profile.get('index')))
-        self.render_profile(profile)
+        if not preserve_editor: self.render_profile(profile)
         self.profile_panel.setVisible(bool(profile))
         selected = next((c for c in controllers.get('controllers', []) if c.get('index') == profiles.get('controller_index')), {})
         self.profile_panel.setTitle(selected.get('name', 'Controller') + ' Profiles')
@@ -686,6 +690,8 @@ class BlueBridgeTab(QWidget):
         self.mapping_identity.setCurrentIndex(max(0, self.mapping_identity.findData(profile.get('shared_with', -1) if profile.get('mapping_mode') == 'shared' else -1)))
         self.render_identity()
         self.refresh_mapping_options()
+        self.profile_editor_key = (self.service.host, self.service.adapter_id, self.profiles_data.get('controller_index'), profile.get('id', profile.get('index')))
+        self.profile_editor_baseline = self.profile_editor_state()
 
     def is_selected_live(self):
         return any(c.get('connected') and c.get('index') == self.profiles_data.get('controller_index') for c in self.controllers_data.get('controllers', []))
@@ -860,6 +866,22 @@ class BlueBridgeTab(QWidget):
         for i, combo in self.mapping.items(): combo.setCurrentIndex(max(0, combo.findData(i if i < 16 else 22)))
         self.sync_macro_from_mapping()
 
+    def profile_editor_state(self):
+        if not self.profile_data: return None
+        mapping = list(self.profile_data.get('map', []))
+        for i, combo in self.mapping.items(): mapping[i] = combo.currentData()
+        macros = []
+        for m, (name, enabled, assign, checks, previous) in enumerate(self.macros):
+            if assign.currentData() != previous:
+                for i, value in enumerate(mapping):
+                    if value == 16 + m: mapping[i] = i if i < 16 else 22
+                if assign.currentData() != 255: mapping[assign.currentData()] = 16 + m
+            macros.append({'macro': m, 'name': name.text(), 'enabled': enabled.isChecked(), 'output_mask': sum(1 << i for i, c in enumerate(checks) if c.isChecked())})
+        tuning = {'turbo_mask': sum(1 << i for i, c in enumerate(self.turbo_checks) if c.isChecked())}
+        for key, control in self.controls.items():
+            tuning[key] = control.isChecked() if isinstance(control, QCheckBox) else control.value() if isinstance(control, QSpinBox) else control.currentIndex() if key == 'turbo_control_mode' else control.currentData()
+        return {'name': self.profile_name.text().strip(), 'map': mapping, 'macros': macros, 'tuning': tuning, 'identity': self.mapping_identity.currentData()}
+
     def save_profile(self):
         if not self.profile_data: return
         index = self.profile_data['index']
@@ -870,27 +892,25 @@ class BlueBridgeTab(QWidget):
             return
         identity_target = self.mapping_identity.currentData()
         mister_mode = self.status_data.get('output_mode', 1) == 1
-        mapping = list(self.profile_data.get('map', []))
-        for i, combo in self.mapping.items(): mapping[i] = combo.currentData()
-        macros = []
-        for m, (name, enabled, assign, checks, previous) in enumerate(self.macros):
-            if assign.currentData() != previous:
-                for i, value in enumerate(mapping):
-                    if value == 16 + m: mapping[i] = i if i < 16 else 22
-                if assign.currentData() != 255: mapping[assign.currentData()] = 16 + m
-            macros.append({'profile': index, 'macro': m, 'name': name.text(), 'enabled': enabled.isChecked(), 'output_mask': sum(1 << i for i, c in enumerate(checks) if c.isChecked())})
-        tuning = {'profile': index, 'turbo_mask': sum(1 << i for i, c in enumerate(self.turbo_checks) if c.isChecked())}
-        for key, control in self.controls.items():
-            tuning[key] = control.isChecked() if isinstance(control, QCheckBox) else control.value() if isinstance(control, QSpinBox) else control.currentIndex() if key == 'turbo_control_mode' else control.currentData()
+        draft = self.profile_editor_state()
+        mapping = draft['map']
+        tuning = dict(draft['tuning'], profile=index)
+        macros = [dict(macro, profile=index) for macro in draft['macros']]
+        service = self.service
+        old_name = self.profile_data.get('name')
+        old_mapping = list(self.profile_data['map'])
         def work():
-            if new_name != self.profile_data.get('name'): self.service.api('profiles/rename', {'index': index, 'name': new_name})
+            if new_name != old_name: service.api('profiles/rename', {'index': index, 'name': new_name})
             for i, value in enumerate(mapping):
-                if value != self.profile_data['map'][i]: self.service.api('profile/map', {'profile': index, 'input': i, 'output': value})
-            self.service.api('profile/tuning', tuning)
-            for macro in macros: self.service.api('profile/macro', macro)
+                if value != old_mapping[i]: service.api('profile/map', {'profile': index, 'input': i, 'output': value})
+            service.api('profile/tuning', tuning)
+            for macro in macros: service.api('profile/macro', macro)
             if mister_mode:
-                self.service.api('profile/mister-mapping', {'profile': index, 'mode': 'share' if identity_target >= 0 else 'separate', 'target': identity_target})
-        self.run(work, lambda _: self.defer(self.load_all))
+                service.api('profile/mister-mapping', {'profile': index, 'mode': 'share' if identity_target >= 0 else 'separate', 'target': identity_target})
+        def saved(_):
+            self.profile_editor_baseline = None
+            self.defer(self.load_all)
+        self.run(work, saved)
 
     def save_identity(self):
         target = self.mapping_identity.currentData()
