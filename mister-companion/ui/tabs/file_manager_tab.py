@@ -542,9 +542,46 @@ class FileTreeWidget(QTreeWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._jump_character = ""
         self.setAcceptDrops(True)
         self.setDragDropMode(QAbstractItemView.DragDropMode.DropOnly)
         self.setDropIndicatorShown(True)
+
+    def clear(self):
+        self._jump_character = ""
+        super().clear()
+
+    def keyPressEvent(self, event):
+        text = event.text()
+        modifiers = event.modifiers()
+        if (
+            len(text) == 1
+            and text.isalnum()
+            and not modifiers & (
+                Qt.KeyboardModifier.ControlModifier
+                | Qt.KeyboardModifier.AltModifier
+                | Qt.KeyboardModifier.MetaModifier
+            )
+        ):
+            character = text.casefold()
+            start = 0
+            if character == self._jump_character:
+                start = self.indexOfTopLevelItem(self.currentItem()) + 1
+            self._jump_character = character
+            count = self.topLevelItemCount()
+            for offset in range(count):
+                item = self.topLevelItem((start + offset) % count)
+                entry = item.data(0, Qt.ItemDataRole.UserRole) or {}
+                if not entry.get("up") and str(entry.get("name", "")).casefold().startswith(character):
+                    self.clearSelection()
+                    self.setCurrentItem(item)
+                    item.setSelected(True)
+                    self.scrollToItem(item)
+                    break
+            event.accept()
+            return
+        self._jump_character = ""
+        super().keyPressEvent(event)
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
@@ -1317,8 +1354,12 @@ class FileManagerTab(QWidget):
             allow_apply_all=allow_apply_all,
         )
 
-    def open_selected(self):
-        entry = self.selected_entry()
+    def open_selected(self, item=None):
+        if item is None:
+            item = self.file_tree.currentItem()
+            if item is None or not item.isSelected():
+                return
+        entry = item.data(0, Qt.ItemDataRole.UserRole)
         if not entry:
             return
         if entry.get("up"):
@@ -1328,7 +1369,7 @@ class FileManagerTab(QWidget):
             self.load_path(entry.get("path"))
 
     def on_item_double_clicked(self, item, column):
-        self.open_selected()
+        self.open_selected(item)
 
     def go_up(self):
         if self.current_path == self.current_root:
