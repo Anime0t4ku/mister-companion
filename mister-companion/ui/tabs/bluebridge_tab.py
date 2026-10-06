@@ -3,7 +3,7 @@ import time
 from pathlib import Path
 from serial.tools import list_ports
 from PyQt6.QtCore import Qt, QThread, QTimer, pyqtSignal
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QComboBox, QTabWidget, QFormLayout, QLineEdit, QSpinBox, QCheckBox, QScrollArea, QFileDialog, QMessageBox, QInputDialog, QDialog, QGridLayout, QGroupBox, QSizePolicy
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QComboBox, QTabWidget, QFormLayout, QLineEdit, QSpinBox, QCheckBox, QScrollArea, QFileDialog, QMessageBox, QInputDialog, QDialog, QGridLayout, QGroupBox, QSizePolicy, QProgressBar
 from core.bluebridge import BlueBridgeService, boot_volumes, flash_volume
 from core.bluebridge_protocol import _uf2_info
 from core.bluebridge_releases import bluebridge_release, download_bluebridge_release, version_key
@@ -13,6 +13,7 @@ from ui.tab_header import create_tab_header
 class BlueBridgeWorker(QThread):
     result = pyqtSignal(object)
     error = pyqtSignal(str)
+    progress = pyqtSignal(int, str)
 
     def __init__(self, work, parent):
         super().__init__(parent)
@@ -43,6 +44,13 @@ class BlueBridgeTab(QWidget):
         self.controls = {}
         self.macros = []
         self.installer_release = {}
+        self.firmware_dialog = None
+        self.firmware_directory = str(Path.home())
+        self.staged_firmware = None
+        self.firmware_operation = False
+        self.progress_clear_timer = QTimer(self)
+        self.progress_clear_timer.setSingleShot(True)
+        self.progress_clear_timer.timeout.connect(self.clear_firmware_progress)
         self.tester = None
         self.capture_callback = None
         self.capture_deadline = 0
@@ -194,8 +202,16 @@ class BlueBridgeTab(QWidget):
             self.set_busy(True)
         worker = BlueBridgeWorker(work, self)
         self.worker = worker
-        worker.result.connect(done or (lambda _: None))
-        worker.error.connect(self.on_error)
+        started_mode = self.mode.currentIndex()
+        def deliver(result):
+            if not self.closing and self.mode.currentIndex() == started_mode:
+                if done: done(result)
+        def failed(message):
+            if not self.closing and self.mode.currentIndex() == started_mode:
+                self.on_error(message)
+        worker.result.connect(deliver)
+        worker.error.connect(failed)
+        worker.progress.connect(self.show_firmware_progress)
         worker.finished.connect(self.finished)
         worker.start()
 
@@ -233,6 +249,10 @@ class BlueBridgeTab(QWidget):
             self.adapters.setEnabled(False)
 
     def on_error(self, message):
+        if self.firmware_operation:
+            self.firmware_operation = False
+            self.show_firmware_progress(0, 'Failed: ' + message)
+            self.clear_firmware_progress()
         self.message.setText(message)
         self.capture_cancel_button.hide()
         if self.capture_callback:
@@ -370,9 +390,12 @@ class BlueBridgeTab(QWidget):
         self.adapter_name_label = QLabel(); firmware.addWidget(self.adapter_name_label)
         row = QHBoxLayout(); self.adapter_rename_button = self.button(row, 'Rename Adapter', self.rename_adapter); self.adapter_reset_button = self.button(row, 'Reset Adapter Name', lambda: self.command('adapter/rename', {'name': ''})); firmware.addLayout(row)
         self.firmware_label = QLabel(); firmware.addWidget(self.firmware_label)
-        self.github_widget = QWidget(); self.github_widget.setObjectName('BlueBridgeSurface'); gl = QHBoxLayout(self.github_widget); self.latest_label = QLabel(); gl.addWidget(self.latest_label, 1); self.download_button = self.button(gl, 'Download & Update', lambda: self.update_firmware(True)); firmware.addWidget(self.github_widget); self.github_widget.hide()
+        self.github_widget = QWidget(); self.github_widget.setObjectName('BlueBridgeSurface'); gl = QHBoxLayout(self.github_widget); self.latest_label = QLabel(); gl.addWidget(self.latest_label, 1); self.download_button = self.button(gl, 'Download Firmware', lambda: self.update_firmware(True)); firmware.addWidget(self.github_widget); self.github_widget.hide()
         self.configuration = QComboBox(); self.configuration.addItem('Preserve Configuration (recommended)', 'preserve'); self.configuration.addItem('Reset Configuration', 'reset'); firmware.addWidget(self.configuration)
-        row = QHBoxLayout(); self.button(row, 'Select UF2 / Manual Update', lambda: self.update_firmware(False)); firmware.addLayout(row)
+        row = QHBoxLayout(); self.button(row, 'Select UF2 File', lambda: self.update_firmware(False)); self.firmware_flash_button = self.button(row, 'Flash Firmware', self.install_staged_firmware); self.firmware_flash_button.setEnabled(False); firmware.addLayout(row)
+        self.firmware_preview = QLabel('Select a local UF2 file, then click Flash Firmware.'); self.firmware_preview.setWordWrap(True); firmware.addWidget(self.firmware_preview)
+        self.firmware_progress_label = QLabel(); self.firmware_progress_label.setWordWrap(True); firmware.addWidget(self.firmware_progress_label)
+        self.firmware_progress = QProgressBar(); self.firmware_progress.hide(); firmware.addWidget(self.firmware_progress)
         row = QHBoxLayout(); self.button(row, 'Export Configuration', self.export_config); self.button(row, 'Import Configuration', self.import_config); self.button(row, 'Reset Configuration', self.reset_config); firmware.addLayout(row)
         row = QHBoxLayout(); self.button(row, 'Install on Another Pico', lambda: self.mode.setCurrentIndex(3)); firmware.addLayout(row); firmware.addStretch()
 
@@ -382,14 +405,28 @@ class BlueBridgeTab(QWidget):
         label.setWordWrap(True); layout.addWidget(label)
         self.volumes = QComboBox(); layout.addWidget(self.volumes)
         self.manual_path = QLabel(); self.manual_path.setWordWrap(True); layout.addWidget(self.manual_path); self.manual_path.hide()
-        row = QHBoxLayout(); self.button(row, 'Select MC BlueBridge UF2', self.select_uf2); self.button(row, 'Flash Selected UF2', lambda: self.flash(False)); layout.addLayout(row)
-        self.install_online = QWidget(); row = QHBoxLayout(self.install_online); self.install_latest = QLabel(); row.addWidget(self.install_latest, 1); self.button(row, 'Download & Flash', lambda: self.flash(True)); layout.addWidget(self.install_online); self.install_online.hide()
+        row = QHBoxLayout(); self.button(row, 'Select MC BlueBridge UF2', self.select_uf2); self.install_flash_button = self.button(row, 'Flash Selected UF2', lambda: self.flash(False)); self.install_flash_button.setEnabled(False); layout.addLayout(row)
+        self.install_online = QWidget(); row = QHBoxLayout(self.install_online); self.install_latest = QLabel('Online firmware: check for a release, or select a local UF2.'); row.addWidget(self.install_latest, 1); self.button(row, 'Check Online Release', self.check_install_release); self.install_download_button = self.button(row, 'Download & Flash', lambda: self.flash(True)); layout.addWidget(self.install_online); self.install_online.hide(); self.install_download_button.setEnabled(False)
+        self.install_progress_label = QLabel('Connect a Pico 2 W in BOOTSEL mode and select a UF2 file.'); self.install_progress_label.setWordWrap(True); layout.addWidget(self.install_progress_label)
+        self.install_progress = QProgressBar(); self.install_progress.hide(); layout.addWidget(self.install_progress)
+        self.volumes.currentIndexChanged.connect(self.update_flash_controls)
         layout.addStretch(); outer.addWidget(self.installer, 1)
 
     def change_mode(self):
+        if self.mode.currentIndex() == 3:
+            self.pages.hide()
+            self.chooser.hide()
+            self.daemon_panel.hide()
+            self.adapters.hide()
+            self.connection_bar.show()
+            self.installer.show()
+            self.message.setText('Select a local UF2 file. Checking for a Pico 2 W in BOOTSEL mode…')
         if self.worker:
             if self.worker_quiet: self.defer(self.change_mode)
             return
+        self.staged_firmware = None
+        self.firmware_flash_button.setEnabled(False)
+        self.firmware_preview.setText('Select a local UF2 file, then click Flash Firmware.')
         if self.service: self.service.close()
         self.service = None
         self.pages.hide(); self.installer.hide(); self.daemon_panel.setVisible(self.mode.currentIndex() == 1)
@@ -417,7 +454,7 @@ class BlueBridgeTab(QWidget):
             self.refresh()
         elif mode == 3:
             self.installer.show(); self.message.setText('Select firmware and a Pico 2 W in BOOTSEL mode.')
-            self.run(lambda: (boot_volumes(), bluebridge_release()), self.installer_state)
+            self.run(boot_volumes, self.render_volumes, quiet=True)
 
     def daemon_action(self, command):
         remote = self.main_window.remote_tab
@@ -457,7 +494,7 @@ class BlueBridgeTab(QWidget):
             self.refresh()
 
     def tick(self):
-        if not self.active or self.worker or self.closing: return
+        if not self.active or self.worker or self.closing or self.firmware_dialog: return
         mode = self.mode.currentIndex()
         if mode == 1:
             if self.main_window.is_offline_mode() or not self.main_window.connection.is_connected():
@@ -465,6 +502,7 @@ class BlueBridgeTab(QWidget):
             self.sync_daemon()
         elif mode == 3:
             self.poll_installer()
+            return
         if self.tester or self.capture_callback: return
         if self.service:
             if not self.service.adapter_id:
@@ -498,7 +536,7 @@ class BlueBridgeTab(QWidget):
         if self.mode.currentIndex() == 1 and self.service is None:
             self.main_window.remote_tab.refresh_state(); return
         if self.mode.currentIndex() == 3:
-            self.run(lambda: (boot_volumes(), bluebridge_release()), self.installer_state); return
+            self.run(boot_volumes, self.render_volumes, quiet=True); return
         if not self.service: return
         self.run(self.service.adapters, self.poll_inventory if quiet else self.render_adapters, quiet=quiet)
 
@@ -525,6 +563,9 @@ class BlueBridgeTab(QWidget):
         if self.worker:
             if self.worker_quiet: self.defer(self.select_adapter)
             return
+        self.staged_firmware = None
+        self.firmware_flash_button.setEnabled(False)
+        self.firmware_preview.setText('Select a local UF2 file, then click Flash Firmware.')
         self.service.adapter_id = self.adapters.currentData() or ''
         self.managed_controller = None
         self.profiles.clear()
@@ -552,7 +593,7 @@ class BlueBridgeTab(QWidget):
                     index = selected_index
                     if index not in [p['index'] for p in profiles.get('profiles', [])]: index = profiles.get('active', 0)
                 profile = service.api('profile?index=' + str(index))['profile']
-            return status, controllers, profiles, profile, service.api('firmware/releases').get('release', {})
+            return status, controllers, profiles, profile, {}
         self.run(work, self.render_all)
 
     def render_status(self, status):
@@ -595,9 +636,9 @@ class BlueBridgeTab(QWidget):
         self.profile_buttons['Activate'].setVisible(bool(selected.get('connected')))
         self.profile_buttons['Delete'].setEnabled(profile.get('index', 0) != 0)
         self.render_paired()
-        self.github_widget.setVisible(bool(release.get('available')))
+        self.github_widget.hide()
         self.latest_label.setText('Latest firmware: v' + release.get('version', ''))
-        self.download_button.setEnabled(bool(release.get('update_available')))
+        self.download_button.setEnabled(bool(release.get('available')))
         self.pages.setVisible(bool(status.get('detected')))
         self.message.setText('MC BlueBridge connected via ' + ('Remote' if self.service.host else 'USB'))
 
@@ -999,27 +1040,79 @@ class BlueBridgeTab(QWidget):
         if self.service and not self.closing:
             self.defer(lambda: self.run(lambda: self.service.api('capture/stop', {}), lambda _: self.defer(self.load_all)))
 
+    def choose_firmware_file(self, selected):
+        if self.firmware_dialog or self.closing: return
+        dialog = QFileDialog(self, 'Select MC BlueBridge Firmware', self.firmware_directory, 'UF2 Firmware (*.uf2)')
+        dialog.setFileMode(QFileDialog.FileMode.ExistingFile)
+        dialog.setAcceptMode(QFileDialog.AcceptMode.AcceptOpen)
+        dialog.setWindowModality(Qt.WindowModality.WindowModal)
+        self.firmware_dialog = dialog
+        timer_running = self.timer.isActive()
+        self.timer.stop()
+        def finished(result):
+            paths = dialog.selectedFiles() if result == QDialog.DialogCode.Accepted else []
+            self.firmware_dialog = None
+            dialog.deleteLater()
+            if timer_running and not self.closing: self.timer.start()
+            if paths and not self.closing:
+                self.firmware_directory = str(Path(paths[0]).parent)
+                selected(paths[0])
+        dialog.finished.connect(finished)
+        dialog.open()
+
     def update_firmware(self, online):
-        self.message.setText('Downloading and validating firmware…' if online else 'Select firmware to validate before updating.')
-        if online:
-            self.run(lambda: self.service.api('firmware/download', {}), self.confirm_firmware)
-        else:
-            path, _ = QFileDialog.getOpenFileName(self, 'Select MC BlueBridge Firmware', '', 'UF2 Firmware (*.uf2)')
-            if path: self.run(lambda: self.service.api('firmware/inspect', data=Path(path).read_bytes()), self.confirm_firmware)
+        if online: return
+        def selected(path):
+            self.staged_firmware = None
+            self.firmware_flash_button.setEnabled(False)
+            self.firmware_preview.setText('Validating selected firmware…')
+            self.message.setText('Validating selected firmware…')
+            self.run(lambda: self.service.api('firmware/inspect', data=Path(path).read_bytes()), self.confirm_firmware)
+        self.choose_firmware_file(selected)
 
     def confirm_firmware(self, result):
-        info = result['firmware']; relation = info.get('relation')
-        warning = '\nThis is the same installed version.' if relation == 'same' else '\nThis is older firmware. Newer settings may be incompatible.' if relation == 'older' else ''
+        self.staged_firmware = result['firmware']
+        info = self.staged_firmware
+        warning = ' Same installed version.' if info.get('relation') == 'same' else ' Older than the installed version.' if info.get('relation') == 'older' else ''
+        self.firmware_preview.setText(f"Ready to flash v{info['version']} over v{info['current_version']}.{warning}")
+        self.firmware_flash_button.setEnabled(True)
+        self.message.setText('Firmware validated. Click Flash Firmware to install it.')
+
+    def clear_firmware_progress(self):
+        self.firmware_progress.hide()
+        self.install_progress.hide()
+
+    def show_firmware_progress(self, percent, message):
+        self.progress_clear_timer.stop()
+        recovery = self.mode.currentIndex() == 3
+        bar = self.install_progress if recovery else self.firmware_progress
+        label = self.install_progress_label if recovery else self.firmware_progress_label
+        label.setText(message)
+        bar.show()
+        bar.setRange(0, 0 if percent < 0 else 100)
+        if percent >= 0: bar.setValue(percent)
+        self.message.setText(message)
+
+    def firmware_report(self, percent, message):
+        if self.worker: self.worker.progress.emit(percent, message)
+
+    def install_staged_firmware(self):
+        if not self.staged_firmware: return
+        info = self.staged_firmware
         configuration = self.configuration.currentData()
-        accepted = self.confirm(f"Install v{info['version']} over v{info['current_version']}?\n{self.configuration.currentText()}\nThe adapter will restart.{warning}")
-        if accepted:
-            self.message.setText('Installing firmware… The adapter will disconnect and restart.')
-            self.defer(lambda: self.run(lambda: self.service.api('firmware/install', {'configuration': configuration}), self.firmware_complete))
-        else:
-            self.defer(lambda: self.run(lambda: self.service.api('firmware/cancel', {})))
+        warning = '\nThis older firmware may be incompatible with newer settings.' if info.get('relation') == 'older' else ''
+        if not self.confirm(f"Flash v{info['version']} over v{info['current_version']}?\n{self.configuration.currentText()}\nKeep the adapter connected while it restarts.{warning}"): return
+        self.firmware_operation = True
+        self.show_firmware_progress(-1, 'Installing firmware… Keep the adapter connected.')
+        self.run(lambda: self.service.api('firmware/install', {'configuration': configuration}, progress=self.firmware_report), self.firmware_complete)
 
     def firmware_complete(self, result):
-        self.message.setText(result.get('firmware', {}).get('message', 'Firmware installed.'))
+        self.firmware_operation = False
+        self.staged_firmware = None
+        self.firmware_flash_button.setEnabled(False)
+        self.firmware_preview.setText('Select a local UF2 file, then click Flash Firmware.')
+        self.show_firmware_progress(100, result.get('firmware', {}).get('message', 'Firmware installed.'))
+        self.progress_clear_timer.start(1200)
         self.defer(self.load_all)
 
     def export_config(self):
@@ -1036,9 +1129,14 @@ class BlueBridgeTab(QWidget):
     def reset_config(self):
         if self.confirm('Reset configuration and forget all controllers? Export a backup first if you want to restore them later.'): self.command('config/reset', {})
 
+    def check_install_release(self):
+        return
+        self.message.setText('Checking for online firmware… Local UF2 files work without an online release.')
+        self.run(lambda: (boot_volumes(), bluebridge_release()), self.installer_state)
+
     def installer_state(self, result):
         volumes, release = result; self.installer_release = release
-        self.render_volumes(volumes); self.install_online.setVisible(bool(release.get('available'))); self.install_latest.setText('Latest firmware: v' + release.get('version', ''))
+        self.render_volumes(volumes); self.install_latest.setText('Latest firmware: v' + release['version'] if release.get('available') else 'No online release available. Select a local UF2 file.'); self.update_flash_controls()
 
     def render_volumes(self, volumes):
         existing = [self.volumes.itemData(i) for i in range(self.volumes.count()) if self.volumes.itemData(i) is not None]
@@ -1051,6 +1149,12 @@ class BlueBridgeTab(QWidget):
         else:
             for i, volume in enumerate(volumes): self.volumes.setItemData(i, volume)
         self.volumes.blockSignals(False)
+        self.update_flash_controls()
+
+    def update_flash_controls(self):
+        ready = bool(self.volumes.currentData())
+        self.install_flash_button.setEnabled(ready and bool(self.manual_path.text()))
+        self.install_download_button.setEnabled(ready and bool(self.installer_release.get('available')))
 
     def poll_installer(self):
         auto = self.auto_installer and self.main_window.is_offline_mode()
@@ -1071,38 +1175,51 @@ class BlueBridgeTab(QWidget):
         self.run(work, done, quiet=True)
 
     def select_uf2(self):
-        path, _ = QFileDialog.getOpenFileName(self, 'Select MC BlueBridge Firmware', '', 'UF2 Firmware (*.uf2)')
-        if path:
+        def selected(path):
             self.manual_path.setText(path)
             self.manual_path.show()
+            self.update_flash_controls()
+        self.choose_firmware_file(selected)
 
     def flash(self, online):
+        if online: return
         volume = self.volumes.currentData()
         if not volume: self.message.setText('Connect a Pico 2 W in BOOTSEL mode first.'); return
         path = self.manual_path.text()
         if not online and not path: self.message.setText('Select an MC BlueBridge UF2 first.'); return
         if not self.confirm('Confirm this is a Raspberry Pi Pico 2 W. Flash MC BlueBridge onto the selected device?'): return
         release = dict(self.installer_release)
-        self.message.setText('Validating and flashing firmware… Waiting for the adapter to restart.')
+        self.firmware_operation = True
+        self.show_firmware_progress(-1, 'Downloading firmware…' if online else 'Validating firmware…')
         def work():
-            previous_ids = {p.serial_number or p.device for p in list_ports.comports()}
+            service = BlueBridgeService()
+            try: previous_ids = {a['id'] for a in service.adapters()}
+            finally: service.close()
             data = download_bluebridge_release(release) if online else Path(path).read_bytes()
             if len(data) > 8 * 1024 * 1024: raise ValueError('Firmware file too large')
             info = _uf2_info(data)
             if online and version_key(info['version']) != version_key(release['version']): raise ValueError('Firmware does not match release tag')
-            flash_volume(data, volume)
+            flash_volume(data, volume, self.firmware_report)
+            self.firmware_report(-1, 'Firmware copied. Waiting for the adapter and checking its version…')
             service = BlueBridgeService(); end = time.monotonic() + 60
             while time.monotonic() < end:
                 found = service.adapters()
                 new_adapter = next((a["id"] for a in found if a["id"] not in previous_ids), None)
                 if new_adapter:
-                    service.close(); return new_adapter
+                    service.adapter_id = new_adapter
+                    status = service.api('status')['status']
+                    service.close()
+                    if not status.get('detected') or version_key(status.get('firmware', '0.0.0')) != version_key(info['version']):
+                        raise RuntimeError('Firmware copied, but the installed version could not be verified. Reconnect the adapter and check its firmware version.')
+                    return new_adapter
                 time.sleep(0.5)
             service.close(); return False
         self.run(work, self.flash_complete)
 
     def flash_complete(self, detected):
-        self.message.setText('Firmware installed.' if detected else 'Firmware transferred. Reconnect the adapter to verify it starts normally.')
+        self.firmware_operation = False
+        self.show_firmware_progress(100 if detected else 0, 'Firmware installed and version verified.' if detected else 'Firmware copied; restart could not be verified. Reconnect the adapter and select USB to check its version.')
+        self.progress_clear_timer.start(1200)
         if detected:
             self.preferred_adapter = detected
             self.defer(lambda: self.mode.setCurrentIndex(2))

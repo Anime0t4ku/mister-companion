@@ -1,7 +1,7 @@
 #!/bin/sh
 
 TITLE="MiSTer Companion Remote by Anime0t4ku"
-SCRIPT_VERSION="4.0.1"
+SCRIPT_VERSION="4.0.2"
 SCRIPT_PATH="/media/fat/Scripts/companion_remote.sh"
 
 BASE="/media/fat/Scripts/.config/companion_remote"
@@ -1767,6 +1767,16 @@ def _uf2_info(data):
         seen_blocks.add(key)
         if not num_blocks or block_no >= num_blocks:
             raise ValueError("Invalid UF2 block sequence")
+        compatibility_block = (
+            offset == 0 and family_id == 0xE48BFF57 and
+            flags in (0x00002000, 0x0000A000) and payload_size == 256 and
+            block_no == 0 and num_blocks == 2 and
+            0x10000000 <= target < 0x12000000 and target % 256 == 0 and
+            block[32:288] == b'\xef' * 256 and
+            (not flags & 0x00008000 or struct.unpack_from("<I", block, 288)[0] == 0x9957E304)
+        )
+        if compatibility_block:
+            continue
         block_groups.setdefault((family_id, num_blocks), set()).add(block_no)
         if family_id:
             families.add(family_id)
@@ -1774,10 +1784,13 @@ def _uf2_info(data):
                 raise ValueError("This UF2 contains blocks for an unsupported device family")
         if family_id in BLUEBRIDGE_UF2_FAMILIES:
             chunks.append((target, block[32:32 + payload_size]))
+    if not block_groups:
+        raise ValueError("UF2 contains no firmware blocks")
+    firmware_blocks = sum(len(numbers) for numbers in block_groups.values())
     complete_per_family = all(len(numbers) == count for (_, count), numbers in block_groups.items())
     counts = {count for _, count in block_groups}
     global_numbers = {number for numbers in block_groups.values() for number in numbers}
-    complete_global = len(counts) == 1 and next(iter(counts)) == len(data) // 512 and len(global_numbers) == len(data) // 512
+    complete_global = len(counts) == 1 and next(iter(counts)) == firmware_blocks and len(global_numbers) == firmware_blocks
     if not complete_per_family and not complete_global:
         raise ValueError("Incomplete UF2 block sequence")
     if not families.intersection(BLUEBRIDGE_UF2_CODE_FAMILIES):

@@ -14,6 +14,10 @@ from core.remote_daemon import REMOTE_DAEMON_PORT
 def boot_volumes():
     found = []
     for part in psutil.disk_partitions(all=True):
+        filesystem = (part.fstype or '').lower()
+        options = set((part.opts or '').lower().split(','))
+        if filesystem in ('nfs', 'nfs4', 'cifs', 'smbfs', 'smb', 'sshfs', 'fuse.sshfs', 'autofs') or 'remote' in options or part.mountpoint.startswith(('\\\\', '//')):
+            continue
         path = Path(part.mountpoint)
         try:
             info = (path / 'INFO_UF2.TXT').read_text(errors='replace')
@@ -24,13 +28,31 @@ def boot_volumes():
     return sorted(set(found))
 
 
-def flash_volume(data, volume):
+def flash_volume(data, volume, progress=None):
     info = _uf2_info(data)
     if volume not in boot_volumes():
         raise RuntimeError('The selected RP2350 BOOTSEL volume is no longer available')
-    with open(Path(volume) / 'mc_bluebridge.uf2', 'wb', buffering=0) as target:
-        target.write(data)
-        os.fsync(target.fileno())
+    report = progress or (lambda percent, message: None)
+    written = 0
+    target = open(Path(volume) / 'mc_bluebridge.uf2', 'wb', buffering=0)
+    try:
+        while written < len(data):
+            count = target.write(memoryview(data)[written:written + 65536])
+            if not count:
+                raise OSError('Firmware copy stopped before all bytes were written')
+            written += count
+            report(int(written * 100 / len(data)), 'Writing firmware to BOOTSEL device…')
+        try:
+            os.fsync(target.fileno())
+        except OSError:
+            if volume in boot_volumes():
+                raise
+    finally:
+        try:
+            target.close()
+        except OSError:
+            if written != len(data) or volume in boot_volumes():
+                raise
     return info
 
 
@@ -99,7 +121,8 @@ class USBAdapter(BlueBridgeManager):
             time.sleep(0.3)
         raise RuntimeError('Configuration reset was requested, but adapter did not return')
 
-    def install(self, configuration):
+    def install(self, configuration, progress=None):
+        report = progress or (lambda percent, message: None)
         if configuration not in ('preserve', 'reset') or not self.staged:
             raise ValueError('Select and validate firmware first')
         data = self.staged
@@ -110,8 +133,14 @@ class USBAdapter(BlueBridgeManager):
             folder.mkdir(parents=True, exist_ok=True)
             (folder / (str(self.adapter_id).replace('/', '_').replace('\\', '_').replace(':', '_') + '-pre-update.bbconfig')).write_text(json.dumps(backup, indent=2))
         previous = set(boot_volumes())
-        self.request('REBOOT_BOOTSEL')
-        self.close()
+        report(-1, 'Restarting adapter into BOOTSEL…')
+        reboot_error = None
+        try:
+            self.request('REBOOT_BOOTSEL')
+        except (OSError, TimeoutError) as exc:
+            reboot_error = exc
+        finally:
+            self.close()
         end = time.monotonic() + 20
         volumes = []
         while time.monotonic() < end:
@@ -120,8 +149,9 @@ class USBAdapter(BlueBridgeManager):
                 break
             time.sleep(0.25)
         if len(volumes) != 1:
-            raise RuntimeError('Unable to identify one new RP2350 BOOTSEL volume. Firmware was not written.')
-        flash_volume(data, volumes[0])
+            raise RuntimeError('Unable to identify one new RP2350 BOOTSEL volume. Firmware was not written. Use Install / Recover and hold BOOTSEL while connecting the Pico 2 W.') from reboot_error
+        flash_volume(data, volumes[0], report)
+        report(-1, 'Firmware copied. Waiting for the adapter to restart…')
         end = time.monotonic() + 60
         status = {}
         while time.monotonic() < end:
@@ -136,6 +166,7 @@ class USBAdapter(BlueBridgeManager):
         if configuration == 'reset':
             self.reset_configuration()
         self.staged = None
+        report(100, 'Firmware version verified. Update complete.')
         return {'firmware': {**info, 'state': 'success', 'message': 'Firmware updated successfully'}}
 
 
@@ -172,7 +203,7 @@ class BlueBridgeService:
             self.managers.pop(key).close()
         return result
 
-    def api(self, path, payload=None, data=None):
+    def api(self, path, payload=None, data=None, progress=None):
         route, _, query = path.partition('?')
         if self.host:
             response = requests.request('POST' if payload is not None or data is not None else 'GET', f'http://{self.host}:{REMOTE_DAEMON_PORT}/api/bluebridge/{path}', headers={'X-BlueBridge-Adapter': self.adapter_id, 'Content-Type': 'application/octet-stream' if data is not None else 'application/json'}, json=payload if data is None else None, data=data, timeout=150 if route.startswith('firmware/') else 20)
@@ -204,7 +235,7 @@ class BlueBridgeService:
                 if route.endswith('download') and version_key(info['version']) != version_key(release['version']): raise ValueError('Firmware does not match release tag')
                 manager.staged = data
                 return {'firmware': info}
-            if route == 'firmware/install': return manager.install(p.get('configuration', 'preserve'))
+            if route == 'firmware/install': return manager.install(p.get('configuration', 'preserve'), progress)
             if route == 'firmware/cancel': manager.staged = None; return {'ok': True}
             if route == 'profile/tuning':
                 manager.request('PROFILE_TUNE', p['profile'], *[int(bool(p.get(k))) for k in ('invert_x','invert_y','invert_rx','invert_ry')], *[int(p[k]) for k in ('deadzone_left','deadzone_right','trigger_deadzone','turbo_rate_hz','turbo_mask')])
