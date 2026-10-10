@@ -265,6 +265,8 @@ class BlueBridgeTab(QWidget):
     def button(self, row, title, callback):
         button = QPushButton(title)
         button.clicked.connect(lambda _: callback())
+        if title == 'Back':
+            button.setStyleSheet('QPushButton { background-color: #493268; color: #ffffff; border: 1px solid #c4a7ff; } QPushButton:hover { background-color: #5a3e80; }')
         row.addWidget(button)
         return button
 
@@ -292,6 +294,21 @@ class BlueBridgeTab(QWidget):
 
     def build_management(self):
         overview = self.page('Overview')
+        self.controller_mode_panel = QGroupBox('Controller mode')
+        mode_layout = QVBoxLayout(self.controller_mode_panel)
+        self.controller_mode = QComboBox()
+        self.controller_mode.addItem('Single controller', False)
+        self.controller_mode.addItem('Multi-controller (MiSTer only)', True)
+        self.controller_mode.activated.connect(self.change_controller_mode)
+        mode_layout.addWidget(self.controller_mode)
+        note = QLabel('Multi mode supports up to four controllers with profiles, mappings and rumble. Turbo and macros are disabled. May increase input latency. Changing mode restarts the adapter.')
+        note.setWordWrap(True)
+        mode_layout.addWidget(note)
+        self.live_controller = QComboBox()
+        self.live_controller.activated.connect(self.select_live_controller)
+        mode_layout.addWidget(self.live_controller)
+        overview.addWidget(self.controller_mode_panel)
+        self.controller_mode_panel.hide()
         self.summary = QLabel()
         self.summary.setWordWrap(True)
         overview_header = QHBoxLayout()
@@ -387,9 +404,12 @@ class BlueBridgeTab(QWidget):
         self.paired_rows = QVBoxLayout(); paired.addLayout(self.paired_rows); paired.addStretch()
         firmware = self.page('Firmware & Configuration')
         row = QHBoxLayout(); row.addWidget(QLabel('Firmware & Configuration'), 1); self.button(row, 'Back', lambda: self.pages.setCurrentIndex(0)); firmware.addLayout(row)
-        self.adapter_name_label = QLabel(); firmware.addWidget(self.adapter_name_label)
-        row = QHBoxLayout(); self.adapter_rename_button = self.button(row, 'Rename Adapter', self.rename_adapter); self.adapter_reset_button = self.button(row, 'Reset Adapter Name', lambda: self.command('adapter/rename', {'name': ''})); firmware.addLayout(row)
-        self.firmware_label = QLabel(); firmware.addWidget(self.firmware_label)
+        adapter_card = QGroupBox('Adapter')
+        adapter_layout = QVBoxLayout(adapter_card)
+        self.firmware_label = QLabel(); adapter_layout.addWidget(self.firmware_label)
+        self.adapter_name_label = QLabel(); adapter_layout.addWidget(self.adapter_name_label)
+        row = QHBoxLayout(); self.adapter_rename_button = self.button(row, 'Rename Adapter', self.rename_adapter); self.adapter_reset_button = self.button(row, 'Reset Adapter Name', lambda: self.command('adapter/rename', {'name': ''})); adapter_layout.addLayout(row)
+        firmware.addWidget(adapter_card)
         self.github_widget = QWidget(); self.github_widget.setObjectName('BlueBridgeSurface'); gl = QHBoxLayout(self.github_widget); self.latest_label = QLabel(); gl.addWidget(self.latest_label, 1); self.download_button = self.button(gl, 'Download Firmware', lambda: self.update_firmware(True)); firmware.addWidget(self.github_widget); self.github_widget.hide()
         self.configuration = QComboBox(); self.configuration.addItem('Preserve Configuration (recommended)', 'preserve'); self.configuration.addItem('Reset Configuration', 'reset'); firmware.addWidget(self.configuration)
         row = QHBoxLayout(); self.button(row, 'Select UF2 File', lambda: self.update_firmware(False)); self.firmware_flash_button = self.button(row, 'Flash Firmware', self.install_staged_firmware); self.firmware_flash_button.setEnabled(False); firmware.addLayout(row)
@@ -587,6 +607,8 @@ class BlueBridgeTab(QWidget):
                 profiles = service.api('profiles')['profiles']
                 if profiles.get('controller_index') != target:
                     service.api('controllers/select', {'index': target})
+                    status = service.api('status')['status']
+                    controllers = service.api('controllers')['controllers']
                     profiles = service.api('profiles')['profiles']
                     index = profiles.get('active', 0)
                 else:
@@ -604,12 +626,26 @@ class BlueBridgeTab(QWidget):
         connected = connected_controller is not None
         live = connected_controller.get('name', 'Controller') if connected else 'None'
         self.summary.setText(f"{status.get('adapter_name', 'MC BlueBridge adapter')} · Firmware v{status.get('firmware', '?')}\nController: {status.get('controller', status.get('controller_name', live))} · Profile: {status.get('profile', '-')}\nBattery: {str(status.get('battery_percent')) + '%' if status.get('battery_supported') else 'Unavailable'} · Bluetooth: {'Ready' if status.get('bt_ready') else 'Not ready'} · USB: {'Ready' if status.get('usb_ready') else 'Not ready'}")
-        self.pair_button.setVisible(not connected)
+        multi = bool(status.get('multi_controller'))
+        self.controller_mode_panel.setVisible(isinstance(status.get('multi_controller'), bool))
+        self.controller_mode.setCurrentIndex(1 if multi else 0)
+        self.live_controller.setVisible(multi)
+        self.live_controller.clear()
+        for controller in self.controllers_data.get('controllers', []):
+            if controller.get('connected'):
+                self.live_controller.addItem('Player ' + str(int(controller.get('slot', 0)) + 1) + ' - ' + controller.get('name', 'Controller'), controller['index'])
+        self.live_controller.setCurrentIndex(self.live_controller.findData(self.controllers_data.get('connected_index')))
+        self.live_controller.setEnabled(self.live_controller.count() > 0)
+        self.output.setEnabled(not multi)
+        for index in (2, 3): self.editor_tabs.setTabVisible(index, not multi)
+        if multi and self.editor_tabs.currentIndex() in (2, 3): self.editor_tabs.setCurrentIndex(0)
+        count = sum(bool(c.get('connected')) for c in self.controllers_data.get('controllers', []))
+        self.pair_button.setVisible((count < 4 or status.get('pairing')) if multi else not connected)
         self.pair_button.setText('Stop Pairing' if status.get('pairing') else 'Start Pairing')
         self.disconnect_button.setVisible(connected)
         self.tester_button.setVisible(connected)
         self.output.setCurrentIndex(max(0, min(3, int(status.get('output_mode', 1)) - 1)))
-        self.mapping_identity.setVisible(int(status.get('output_mode', 1)) == 1)
+        self.mapping_identity.setVisible(not multi and int(status.get('output_mode', 1)) == 1)
         self.adapter_name_label.setText(status.get('adapter_name', 'MC BlueBridge adapter'))
         naming = status.get('capabilities', {}).get('adapter_rename', False)
         self.adapter_rename_button.setEnabled(bool(naming))
@@ -681,10 +717,13 @@ class BlueBridgeTab(QWidget):
         for i, name in self.physical_buttons():
             row = QHBoxLayout(); combo = QComboBox()
             for j, label in enumerate(self.labels()[:16]): combo.addItem(label, j)
-            for j in range(4):
-                macro = (profile.get('macros', []) + [{}] * 4)[j]
-                combo.addItem((macro.get('name') or 'Unnamed macro') + ('' if macro.get('enabled') else ' (disabled)'), 16 + j)
-            combo.addItem('Turbo control', 21 if profile.get('turbo_control_mode') == 2 else 20)
+            if not self.status_data.get('multi_controller'):
+                for j in range(4):
+                    macro = (profile.get('macros', []) + [{}] * 4)[j]
+                    combo.addItem((macro.get('name') or 'Unnamed macro') + ('' if macro.get('enabled') else ' (disabled)'), 16 + j)
+                combo.addItem('Turbo control', 21 if profile.get('turbo_control_mode') == 2 else 20)
+            elif i < len(profile.get('map', [])) and 16 <= profile['map'][i] <= 21:
+                combo.addItem('Saved special mapping (inactive in multi mode)', profile['map'][i])
             combo.addItem('Disabled', 22)
             values = profile.get('map', [])
             combo.setCurrentIndex(max(0, combo.findData(values[i] if i < len(values) else 22)))
@@ -723,7 +762,7 @@ class BlueBridgeTab(QWidget):
             enabled.toggled.connect(self.refresh_mapping_options)
         controller = next((c for c in self.controllers_data.get('controllers', []) if c['index'] == self.profiles_data.get('controller_index')), {})
         identity = f"Controller: {controller.get('name', '-')}\nNative VID: 0x{int(controller.get('native_vid', 0)):04X} · Native PID: 0x{int(controller.get('native_pid', 0)):04X}"
-        if int(self.status_data.get('output_mode', 1)) == 1: identity += f"\nMiSTer virtual PID: 0x{int(profile.get('mister_identity', 0)):04X}"
+        if not self.status_data.get('multi_controller') and int(self.status_data.get('output_mode', 1)) == 1: identity += f"\nMiSTer virtual PID: 0x{int(profile.get('mister_identity', 0)):04X}"
         self.identity.setText(identity)
         self.mapping_identity.clear(); self.mapping_identity.addItem('Separate MiSTer mapping', -1)
         for item in self.profiles_data.get('profiles', []):
@@ -764,7 +803,7 @@ class BlueBridgeTab(QWidget):
     def manage_controller(self, index):
         controller = next((c for c in self.controllers_data.get('controllers', []) if c.get('index') == index), None)
         if not controller: return
-        self.managed_controller = None if controller.get('connected') else index
+        self.managed_controller = index if self.status_data.get('multi_controller') or not controller.get('connected') else None
         self.profiles.clear()
         self.profile_data = {}
         self.pages.setCurrentIndex(0)
@@ -790,6 +829,24 @@ class BlueBridgeTab(QWidget):
         self.profile_panel.hide()
         self.command('controllers/disconnect', {})
 
+    def select_live_controller(self):
+        index = self.live_controller.currentData()
+        if index is not None: self.manage_controller(index)
+
+    def change_controller_mode(self):
+        enabled = bool(self.controller_mode.currentData())
+        if not self.confirm('Change controller mode? The adapter will restart and connected controllers will disconnect. Saved profiles are preserved.'):
+            self.controller_mode.setCurrentIndex(1 if self.status_data.get('multi_controller') else 0)
+            return
+        self.capture_callback = None
+        self.capture_timer.stop()
+        self.capture_cancel_button.hide()
+        self.managed_controller = None
+        self.profile_editor_baseline = None
+        self.profiles.clear()
+        service = self.service
+        self.run(lambda: service.api('mode', {'multi_controller': enabled}), lambda _: self.defer(self.load_all))
+
     def change_output(self):
         mode = self.output.currentData()
         def done(_):
@@ -809,6 +866,7 @@ class BlueBridgeTab(QWidget):
 
     def refresh_mapping_options(self, *args):
         turbo = 21 if self.controls['turbo_control_mode'].currentIndex() == 2 else 20
+        if self.status_data.get('multi_controller'): return
         for combo in self.mapping.values():
             for m, (name, enabled, _, _, _) in enumerate(self.macros):
                 i = combo.findData(16 + m)
@@ -846,7 +904,7 @@ class BlueBridgeTab(QWidget):
         controller = next((c for c in self.controllers_data.get('controllers', []) if c.get('index') == self.profiles_data.get('controller_index')), {})
         identity = 'Controller: ' + controller.get('name', '-')
         identity += f"\nNative VID: 0x{int(controller.get('native_vid', 0)):04X} · Native PID: 0x{int(controller.get('native_pid', 0)):04X}"
-        if int(self.status_data.get('output_mode', 1)) == 1: identity += f"\nMiSTer virtual PID: 0x{int(self.profile_data.get('mister_identity', 0)):04X}"
+        if not self.status_data.get('multi_controller') and int(self.status_data.get('output_mode', 1)) == 1: identity += f"\nMiSTer virtual PID: 0x{int(self.profile_data.get('mister_identity', 0)):04X}"
         self.identity.setText(identity)
 
     def cancel_capture(self):
@@ -913,7 +971,7 @@ class BlueBridgeTab(QWidget):
         for i, combo in self.mapping.items(): mapping[i] = combo.currentData()
         macros = []
         for m, (name, enabled, assign, checks, previous) in enumerate(self.macros):
-            if assign.currentData() != previous:
+            if not self.status_data.get('multi_controller') and assign.currentData() != previous:
                 for i, value in enumerate(mapping):
                     if value == 16 + m: mapping[i] = i if i < 16 else 22
                 if assign.currentData() != 255: mapping[assign.currentData()] = 16 + m
@@ -932,7 +990,8 @@ class BlueBridgeTab(QWidget):
             self.message.setText('Use 1–23 letters, numbers, spaces, underscores, dots or hyphens for the profile name.')
             return
         identity_target = self.mapping_identity.currentData()
-        mister_mode = self.status_data.get('output_mode', 1) == 1
+        multi = bool(self.status_data.get('multi_controller'))
+        mister_mode = not multi and self.status_data.get('output_mode', 1) == 1
         draft = self.profile_editor_state()
         mapping = draft['map']
         tuning = dict(draft['tuning'], profile=index)
@@ -945,7 +1004,8 @@ class BlueBridgeTab(QWidget):
             for i, value in enumerate(mapping):
                 if value != old_mapping[i]: service.api('profile/map', {'profile': index, 'input': i, 'output': value})
             service.api('profile/tuning', tuning)
-            for macro in macros: service.api('profile/macro', macro)
+            if not multi:
+                for macro in macros: service.api('profile/macro', macro)
             if mister_mode:
                 service.api('profile/mister-mapping', {'profile': index, 'mode': 'share' if identity_target >= 0 else 'separate', 'target': identity_target})
         def saved(_):

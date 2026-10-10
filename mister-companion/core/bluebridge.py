@@ -186,7 +186,7 @@ class BlueBridgeService:
         result = []
         present = set()
         for port in list_ports.comports():
-            if not ((port.vid == 0x2e8a and (port.pid in (0x10b1, 0x10b2) or 0xb000 <= (port.pid or 0) <= 0xbfff)) or (port.vid == 0x0f0d and port.pid == 0x0092)):
+            if not ((port.vid == 0x2e8a and (port.pid in (0x10b1, 0x10b2, 0x10b3) or 0xb000 <= (port.pid or 0) <= 0xbfff)) or (port.vid == 0x0f0d and port.pid == 0x0092)):
                 continue
             key = port.serial_number or port.device
             present.add(key)
@@ -218,6 +218,27 @@ class BlueBridgeService:
         p = payload or {}
         with manager.lock:
             if route == 'status': return {'status': manager.status()}
+            if route == 'mode':
+                if payload is None: return {'mode': manager.request_json('MODE_GET')}
+                enabled = p.get('multi_controller')
+                if not isinstance(enabled, bool): raise ValueError('Invalid controller mode')
+                if not manager.status().get('capabilities', {}).get('multi_controller_mode'):
+                    raise RuntimeError('Controller mode requires newer BlueBridge firmware')
+                manager.request('MODE_SET', int(enabled))
+                manager.close()
+                self.managers.pop(self.adapter_id, None)
+                deadline = time.monotonic() + 15
+                while time.monotonic() < deadline:
+                    time.sleep(0.5)
+                    self.adapters()
+                    replacement = self.managers.get(self.adapter_id)
+                    if replacement:
+                        try:
+                            mode = replacement.request_json('MODE_GET')
+                            if mode.get('multi_controller') == enabled: return {'ok': True, 'mode': mode}
+                        except Exception:
+                            pass
+                raise RuntimeError('Adapter restarted. Refresh adapters to reconnect.')
             if route == 'controllers': return {'controllers': manager.controllers()}
             if route == 'profiles': return {'profiles': manager.profiles()}
             if route == 'profile': return {'profile': manager.profile(int(query.split('=')[-1]))}
@@ -239,8 +260,9 @@ class BlueBridgeService:
             if route == 'firmware/cancel': manager.staged = None; return {'ok': True}
             if route == 'profile/tuning':
                 manager.request('PROFILE_TUNE', p['profile'], *[int(bool(p.get(k))) for k in ('invert_x','invert_y','invert_rx','invert_ry')], *[int(p[k]) for k in ('deadzone_left','deadzone_right','trigger_deadzone','turbo_rate_hz','turbo_mask')])
-                manager.request('PROFILE_TURBO_MODIFIER', p['profile'], p['turbo_modifier'])
-                manager.request('PROFILE_TURBO_CONTROL', p['profile'], int(p['turbo_enabled']), p['turbo_control_mode'], p['turbo_control_button'])
+                if not manager.status().get('multi_controller'):
+                    manager.request('PROFILE_TURBO_MODIFIER', p['profile'], p['turbo_modifier'])
+                    manager.request('PROFILE_TURBO_CONTROL', p['profile'], int(p['turbo_enabled']), p['turbo_control_mode'], p['turbo_control_button'])
                 return {'ok': True}
             commands = {
                 'adapter/rename': ('ADAPTER_RENAME', [p.get('name', '')]),
