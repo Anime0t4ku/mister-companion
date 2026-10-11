@@ -633,7 +633,7 @@ class BlueBridgeTab(QWidget):
         self.live_controller.clear()
         for controller in self.controllers_data.get('controllers', []):
             if controller.get('connected'):
-                self.live_controller.addItem('Player ' + str(int(controller.get('slot', 0)) + 1) + ' - ' + controller.get('name', 'Controller'), controller['index'])
+                self.live_controller.addItem(controller.get('name', 'Controller'), controller['index'])
         self.live_controller.setCurrentIndex(self.live_controller.findData(self.controllers_data.get('connected_index')))
         self.live_controller.setEnabled(self.live_controller.count() > 0)
         self.output.setEnabled(not multi)
