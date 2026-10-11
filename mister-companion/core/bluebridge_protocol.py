@@ -1,4 +1,6 @@
 import base64
+from core.app_info import APP_VERSION
+from core.bluebridge_diagnostics import BlueBridgeDiagnostics
 import json
 import os
 import re
@@ -102,6 +104,7 @@ class BlueBridgeManager:
         self.rx = b""
         self.counter = 0
         self.info = {}
+        self.diagnostics = BlueBridgeDiagnostics(adapter_id, "MiSTer Companion " + APP_VERSION)
 
 
     def _next_id(self):
@@ -116,6 +119,8 @@ class BlueBridgeManager:
         request_id = self._next_id()
         fields = ["BB1", request_id, command]
         fields.extend(str(x).replace("\r", " ").replace("\n", " ") for x in args)
+        if command in ("HELLO", "STATUS", "MODE_GET", "BT_DIAGNOSTICS", "HID_DIAGNOSTICS", "CONTROLLERS"):
+            self.diagnostics.record("tx", "|".join(fields))
         self._write("|".join(fields) + "\n")
         return request_id
 
@@ -133,7 +138,10 @@ class BlueBridgeManager:
                 request_id = self._send(command, *args)
                 end = time.monotonic() + timeout
                 while time.monotonic() < end:
-                    parsed = self._parse_line(self._readline(max(0.05, end - time.monotonic())))
+                    line = self._readline(max(0.05, end - time.monotonic()))
+                    if command in ("HELLO", "STATUS", "MODE_GET", "BT_DIAGNOSTICS", "HID_DIAGNOSTICS", "CONTROLLERS"):
+                        self.diagnostics.record("rx", line)
+                    parsed = self._parse_line(line)
                     if not parsed or parsed[0] != request_id:
                         continue
                     _, status, payload = parsed
@@ -157,6 +165,47 @@ class BlueBridgeManager:
         except Exception:
             return {"value": payload}
 
+
+    def sample_diagnostics(self):
+            hello = self.request_json("HELLO")
+            mode = self.request_json("MODE_GET") if hello.get("capabilities", {}).get("multi_controller_mode") else {"multi_controller": False, "max_connected": 1}
+            selected = self.request_json("BT_DIAGNOSTICS")
+            self.diagnostics.snapshot(selected, selected=True)
+            connections = [selected]
+            all_available = bool(hello.get("capabilities", {}).get("multi_controller_diagnostics")) or not mode.get("multi_controller")
+            if mode.get("multi_controller") and all_available:
+                connections = []
+                for slot in range(max(1, min(int(mode.get("max_connected", 4)), 4))):
+                    value = self.request_json("BT_DIAGNOSTICS", slot)
+                    self.diagnostics.snapshot(value)
+                    connections.append(value)
+            return {"mode": mode, "connections": connections, "all_connections_available": all_available}
+    def diagnostic_report(self):
+            extra = {}
+            for key, work in (("adapter_status", self.status), ("connection_capture", self.sample_diagnostics), ("controllers", self.controllers)):
+                try:
+                    extra[key] = work()
+                except Exception as error:
+                    extra[key + "_error"] = str(error)
+            if extra.get("adapter_status", {}).get("controller_connected"):
+                try:
+                    hid = self.request_json("HID_DIAGNOSTICS", 0)
+                    total = int(hid.get("descriptor_length", 0))
+                    if not 0 <= total <= 8192:
+                        raise ValueError("Invalid HID descriptor length")
+                    chunks = [hid.get("descriptor_hex", "")]
+                    for offset in range(128, total, 128):
+                        chunk = self.request_json("HID_DIAGNOSTICS", offset)
+                        if int(chunk.get("offset", -1)) != offset or int(chunk.get("descriptor_length", -1)) != total:
+                            raise RuntimeError("HID descriptor changed while reading")
+                        chunks.append(chunk.get("descriptor_hex", ""))
+                    hid["full_descriptor_hex"] = "".join(chunks)
+                    if len(bytes.fromhex(hid["full_descriptor_hex"])) != total:
+                        raise RuntimeError("Incomplete HID descriptor")
+                    extra["hid"] = hid
+                except Exception as error:
+                    extra["hid_error"] = str(error)
+            return dict(self.diagnostics.report(), **extra)
 
     def status(self):
         try:

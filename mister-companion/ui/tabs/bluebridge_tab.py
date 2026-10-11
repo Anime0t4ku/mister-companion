@@ -3,7 +3,7 @@ import time
 from pathlib import Path
 from serial.tools import list_ports
 from PyQt6.QtCore import Qt, QThread, QTimer, pyqtSignal
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QComboBox, QTabWidget, QFormLayout, QLineEdit, QSpinBox, QCheckBox, QScrollArea, QFileDialog, QMessageBox, QInputDialog, QDialog, QGridLayout, QGroupBox, QSizePolicy, QProgressBar
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QComboBox, QTabWidget, QFormLayout, QLineEdit, QSpinBox, QCheckBox, QScrollArea, QFileDialog, QMessageBox, QInputDialog, QDialog, QGridLayout, QGroupBox, QSizePolicy, QProgressBar, QPlainTextEdit
 from core.bluebridge import BlueBridgeService, boot_volumes, flash_volume
 from core.bluebridge_protocol import _uf2_info
 from core.bluebridge_releases import bluebridge_release, download_bluebridge_release, version_key
@@ -189,6 +189,9 @@ class BlueBridgeTab(QWidget):
         self.capture_timer = QTimer(self)
         self.capture_timer.setInterval(100)
         self.capture_timer.timeout.connect(self.poll_capture)
+        self.diagnostics_timer = QTimer(self)
+        self.diagnostics_timer.setInterval(2000)
+        self.diagnostics_timer.timeout.connect(self.poll_diagnostics)
 
     def run(self, work, done=None, quiet=False):
         if self.closing:
@@ -301,7 +304,7 @@ class BlueBridgeTab(QWidget):
         self.controller_mode.addItem('Multi-controller (MiSTer only)', True)
         self.controller_mode.activated.connect(self.change_controller_mode)
         mode_layout.addWidget(self.controller_mode)
-        note = QLabel('Multi mode supports up to four controllers with profiles, mappings and rumble. Turbo and macros are disabled. May increase input latency. Changing mode restarts the adapter.')
+        note = QLabel('Multi mode supports up to two controllers with profiles, mappings and rumble. Turbo and macros are disabled. May increase input latency. Changing mode restarts the adapter.')
         note.setWordWrap(True)
         mode_layout.addWidget(note)
         self.live_controller = QComboBox()
@@ -417,7 +420,59 @@ class BlueBridgeTab(QWidget):
         self.firmware_progress_label = QLabel(); self.firmware_progress_label.setWordWrap(True); firmware.addWidget(self.firmware_progress_label)
         self.firmware_progress = QProgressBar(); self.firmware_progress.hide(); firmware.addWidget(self.firmware_progress)
         row = QHBoxLayout(); self.button(row, 'Export Configuration', self.export_config); self.button(row, 'Import Configuration', self.import_config); self.button(row, 'Reset Configuration', self.reset_config); firmware.addLayout(row)
+        self.diagnostics_toggle = QPushButton('Diagnostics ▸'); self.diagnostics_toggle.setCheckable(True); firmware.addWidget(self.diagnostics_toggle)
+        self.diagnostics_content = QWidget(); diagnostic_layout = QVBoxLayout(self.diagnostics_content); firmware.addWidget(self.diagnostics_content); self.diagnostics_content.hide()
+        note = QLabel('Capture connection history for troubleshooting. Extra polling runs only during capture.'); note.setWordWrap(True); diagnostic_layout.addWidget(note)
+        row = QHBoxLayout(); self.diagnostics_start = self.button(row, 'Start capture', lambda: self.diagnostic_action(True)); self.diagnostics_stop = self.button(row, 'Stop capture', lambda: self.diagnostic_action(False)); self.diagnostics_save = self.button(row, 'Download diagnostics', self.export_diagnostics); diagnostic_layout.addLayout(row)
+        self.diagnostics_stop.setEnabled(False)
+        self.diagnostics_status = QLabel('Capture stopped'); self.diagnostics_status.setWordWrap(True); diagnostic_layout.addWidget(self.diagnostics_status)
+        details = QPushButton('Connection details'); details.setCheckable(True); diagnostic_layout.addWidget(details)
+        self.diagnostics_details = QPlainTextEdit(); self.diagnostics_details.setReadOnly(True); self.diagnostics_details.setMaximumHeight(180); diagnostic_layout.addWidget(self.diagnostics_details); self.diagnostics_details.hide(); details.toggled.connect(self.diagnostics_details.setVisible)
+        self.diagnostics_toggle.toggled.connect(self.toggle_diagnostics)
         row = QHBoxLayout(); self.button(row, 'Install on Another Pico', lambda: self.mode.setCurrentIndex(3)); firmware.addLayout(row); firmware.addStretch()
+
+    def toggle_diagnostics(self, visible):
+        self.diagnostics_content.setVisible(visible)
+        self.diagnostics_toggle.setText('Diagnostics ▾' if visible else 'Diagnostics ▸')
+        if visible:
+            self.diagnostics_timer.start()
+            self.poll_diagnostics()
+        else: self.diagnostics_timer.stop()
+
+    def render_diagnostics(self, result):
+        data = result.get('diagnostics', {})
+        active = bool(data.get('capturing'))
+        self.diagnostics_start.setEnabled(not active)
+        self.diagnostics_stop.setEnabled(active)
+        self.diagnostics_status.setText(('Capturing' if active else 'Capture stopped') + ' · ' + str(data.get('event_count', 0)) + ' events' + (' · ' + data['error'] if data.get('error') else ''))
+        self.diagnostics_details.setPlainText(json.dumps({'connections': data.get('connections', []), 'last_failure': data.get('last_failure')}, indent=2))
+
+    def poll_diagnostics(self):
+        if not self.service or not self.diagnostics_toggle.isChecked() or self.worker or self.closing: return
+        service = self.service
+        adapter = service.adapter_id
+        def done(result):
+            if self.service is service and service.adapter_id == adapter: self.render_diagnostics(result)
+        def work():
+            try: return service.api('diagnostics')
+            except Exception as error: return {'diagnostics': {'error': str(error)}}
+        self.run(work, done, quiet=True)
+
+    def diagnostic_action(self, start):
+        if not self.service: return
+        service = self.service
+        self.run(lambda: service.api('diagnostics/start' if start else 'diagnostics/stop', {}), self.render_diagnostics)
+
+    def export_diagnostics(self):
+        if not self.service: return
+        filename, _ = QFileDialog.getSaveFileName(self, 'Save BlueBridge diagnostics', 'BlueBridge-Diagnostics-' + time.strftime('%Y-%m-%d-%H-%M-%S') + '.json', 'JSON files (*.json)')
+        if not filename: return
+        service = self.service
+        def work():
+            report = service.api('diagnostics/report')['report']
+            Path(filename).write_text(json.dumps(report, indent=2), encoding='utf-8')
+            return True
+        self.run(work, lambda _: self.diagnostics_status.setText('Diagnostics saved'))
 
     def build_installer(self, outer):
         self.installer = QWidget(); layout = QVBoxLayout(self.installer)
@@ -642,6 +697,8 @@ class BlueBridgeTab(QWidget):
         count = sum(bool(c.get('connected')) for c in self.controllers_data.get('controllers', []))
         self.pair_button.setVisible((count < 4 or status.get('pairing')) if multi else not connected)
         self.pair_button.setText('Stop Pairing' if status.get('pairing') else 'Start Pairing')
+        occupied = sum(bool(c.get('connected')) for c in self.controllers_data.get('controllers', []))
+        self.pair_button.setEnabled(bool(status.get('pairing')) or occupied < int(status.get('max_connected', 1)))
         self.disconnect_button.setVisible(connected)
         self.tester_button.setVisible(connected)
         self.output.setCurrentIndex(max(0, min(3, int(status.get('output_mode', 1)) - 1)))

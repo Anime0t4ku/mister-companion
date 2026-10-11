@@ -175,9 +175,11 @@ class BlueBridgeService:
         self.host = host
         self.adapter_id = ''
         self.managers = {}
+        self.diagnostic_managers = {}
 
     def close(self):
-        for manager in self.managers.values():
+        for manager in set(self.managers.values()) | set(self.diagnostic_managers.values()):
+            manager.diagnostics.finish()
             manager.close()
 
     def adapters(self):
@@ -193,6 +195,9 @@ class BlueBridgeService:
             manager = self.managers.get(key)
             if manager is None:
                 manager = USBAdapter(port.device, {'serial': port.serial_number or '', 'product': port.product or ''})
+                if key in self.diagnostic_managers:
+                    manager.diagnostics = self.diagnostic_managers[key].diagnostics
+                    self.diagnostic_managers[key] = manager
                 self.managers[key] = manager
             try:
                 manager.connect()
@@ -200,7 +205,9 @@ class BlueBridgeService:
             except Exception:
                 manager.close()
         for key in set(self.managers) - present:
-            self.managers.pop(key).close()
+            manager = self.managers.pop(key)
+            manager.diagnostics.finish()
+            manager.close()
         return result
 
     def api(self, path, payload=None, data=None, progress=None):
@@ -213,10 +220,20 @@ class BlueBridgeService:
                 raise RuntimeError(result.get('message', 'BlueBridge request failed'))
             return result
         manager = self.managers.get(self.adapter_id)
+        if route.startswith('diagnostics'):
+            manager = manager or self.diagnostic_managers.get(self.adapter_id)
         if not manager:
             raise RuntimeError('Select a connected MC BlueBridge adapter')
         p = payload or {}
         with manager.lock:
+            if route.startswith('diagnostics'):
+                if route == 'diagnostics/start':
+                    manager.diagnostics.start(manager)
+                    self.diagnostic_managers[self.adapter_id] = manager
+                elif route == 'diagnostics/stop': manager.diagnostics.finish()
+                elif route == 'diagnostics/report': return {'report': manager.diagnostic_report()}
+                elif route != 'diagnostics': raise ValueError('Unknown diagnostic action')
+                return {'diagnostics': manager.diagnostics.summary()}
             if route == 'status': return {'status': manager.status()}
             if route == 'mode':
                 if payload is None: return {'mode': manager.request_json('MODE_GET')}
