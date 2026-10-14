@@ -320,7 +320,7 @@ class BlueBridgeTab(QWidget):
         output_row = QHBoxLayout()
         output_row.addWidget(QLabel('USB output'))
         self.output = QComboBox()
-        for i, name in enumerate(['MiSTer', 'X-Input', 'Generic HID', 'Nintendo Switch'], 1): self.output.addItem(name, i)
+        for i, name in enumerate(['MiSTer', 'X-Input', 'Generic HID', 'Nintendo Switch', 'Xbox 360 (Console)'], 1): self.output.addItem(name, i)
         self.output.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
         self.output.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         output_row.addWidget(self.output)
@@ -709,7 +709,7 @@ class BlueBridgeTab(QWidget):
         self.pair_button.setEnabled(bool(status.get('pairing')) or occupied < int(status.get('max_connected', 1)))
         self.disconnect_button.setVisible(connected)
         self.tester_button.setVisible(connected)
-        self.output.setCurrentIndex(max(0, min(3, int(status.get('output_mode', 1)) - 1)))
+        self.output.setCurrentIndex(max(0, min(4, int(status.get('output_mode', 1)) - 1)))
         self.mapping_identity.setVisible(not multi and int(status.get('output_mode', 1)) == 1)
         self.adapter_name_label.setText(status.get('adapter_name', 'MC BlueBridge adapter'))
         naming = status.get('capabilities', {}).get('adapter_rename', False)
@@ -964,11 +964,19 @@ class BlueBridgeTab(QWidget):
 
     def change_output(self):
         mode = self.output.currentData()
+        previous = int(self.status_data.get('output_mode', 1) or 1)
+        if mode == 5 and not self.confirm('Xbox 360 (Console) mode uses the native Xbox 360 USB layout, so BlueBridge management is unavailable while this mode is active. To return without a management connection, hold BOOTSEL for 5 seconds to switch back to MiSTer mode. Continue?'):
+            index = self.output.findData(previous)
+            if index >= 0: self.output.setCurrentIndex(index)
+            return
         def done(_):
             self.status_data['output_mode'] = mode
             self.mapping_identity.setVisible(mode == 1)
             self.render_identity()
-            self.message.setText('Output changed. Profile settings are preserved.')
+            if mode == 5:
+                self.message.setText('Xbox 360 (Console) mode enabled. Management disconnect is expected. Hold BOOTSEL for 5 seconds to return to MiSTer mode.')
+            else:
+                self.message.setText('Output changed. Profile settings are preserved.')
         self.run(lambda: self.service.api('output', {'mode': mode}), done)
 
     def render_turbo_help(self, *args):

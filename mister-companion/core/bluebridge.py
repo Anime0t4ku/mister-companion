@@ -305,7 +305,13 @@ class BlueBridgeService:
                 'profile/mister-mapping': ('PROFILE_MAPPING_SHARE' if p.get('mode') == 'share' else 'PROFILE_MAPPING_SEPARATE', [p.get('profile', -1)] + ([p.get('target', -1)] if p.get('mode') == 'share' else [])),
             }
             if route == 'output':
-                if payload is not None: manager.request('OUTPUT_SET', p['mode']); manager.close()
+                if payload is not None:
+                    mode = int(p['mode'])
+                    if mode not in (1, 2, 3, 4, 5): raise ValueError('Invalid output mode')
+                    manager.request('OUTPUT_SET', mode)
+                    manager.close()
+                    names = {1: 'MiSTer', 2: 'X-Input', 3: 'Generic HID', 4: 'Nintendo Switch', 5: 'Xbox 360 (Console)'}
+                    return {'output': {'mode': mode, 'name': names[mode]}}
                 return {'output': manager.request_json('OUTPUT_GET')}
             if route == 'config/reset':
                 manager.reset_configuration(); return {'ok': True}
