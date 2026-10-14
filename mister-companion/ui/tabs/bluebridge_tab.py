@@ -39,6 +39,7 @@ class BlueBridgeTab(QWidget):
         self.profile_editor_baseline = None
         self.profiles_data = {}
         self.controllers_data = {}
+        self.blocked_devices_data = {}
         self.status_data = {}
         self.mapping = {}
         self.controls = {}
@@ -330,9 +331,10 @@ class BlueBridgeTab(QWidget):
         row = QHBoxLayout()
         self.pair_button = self.button(row, 'Start Pairing', lambda: self.command('pair', {'start': not self.status_data.get('pairing')}))
         self.button(row, 'Paired Controllers', self.show_paired)
+        self.button(row, 'Blocked Devices', self.show_blocked)
         self.disconnect_button = self.button(row, 'Disconnect', self.disconnect_controller)
         self.tester_button = self.button(row, 'Controller Tester', self.open_tester)
-        self.button(row, 'Firmware', lambda: self.pages.setCurrentIndex(2))
+        self.button(row, 'Firmware', lambda: self.pages.setCurrentIndex(3))
         overview.addLayout(row)
         self.controllers = QComboBox(self)
         self.controllers.hide()
@@ -405,6 +407,10 @@ class BlueBridgeTab(QWidget):
         self.controller_search = QLineEdit(); self.controller_search.setPlaceholderText('Search paired controllers'); self.controller_search.textChanged.connect(self.render_paired); paired.addWidget(self.controller_search)
         self.paired_count = QLabel(); paired.addWidget(self.paired_count)
         self.paired_rows = QVBoxLayout(); paired.addLayout(self.paired_rows); paired.addStretch()
+        blocked = self.page('Blocked Devices')
+        row = QHBoxLayout(); row.addWidget(QLabel('Devices in this list are rejected before they can pair or use a controller slot.'), 1); self.button(row, 'Back', lambda: self.pages.setCurrentIndex(0)); blocked.addLayout(row)
+        self.blocked_count = QLabel(); blocked.addWidget(self.blocked_count)
+        self.blocked_rows = QVBoxLayout(); blocked.addLayout(self.blocked_rows); blocked.addStretch()
         firmware = self.page('Firmware & Configuration')
         row = QHBoxLayout(); row.addWidget(QLabel('Firmware & Configuration'), 1); self.button(row, 'Back', lambda: self.pages.setCurrentIndex(0)); firmware.addLayout(row)
         adapter_card = QGroupBox('Adapter')
@@ -654,6 +660,8 @@ class BlueBridgeTab(QWidget):
         def work():
             status = service.api('status')['status']
             controllers = service.api('controllers')['controllers']
+            try: blocked = service.api('blocked-devices')['blocked_devices']
+            except Exception: blocked = {'blocked_devices': []}
             profiles, profile = {}, {}
             stored = controllers.get('controllers', [])
             connected = controllers.get('connected_index', -1)
@@ -670,7 +678,7 @@ class BlueBridgeTab(QWidget):
                     index = selected_index
                     if index not in [p['index'] for p in profiles.get('profiles', [])]: index = profiles.get('active', 0)
                 profile = service.api('profile?index=' + str(index))['profile']
-            return status, controllers, profiles, profile, {}
+            return status, controllers, blocked, profiles, profile, {}
         self.run(work, self.render_all)
 
     def render_status(self, status):
@@ -710,10 +718,10 @@ class BlueBridgeTab(QWidget):
         self.firmware_label.setText(f"Installed firmware: v{status.get('firmware', '?')} · Configuration schema: {status.get('config_schema', '?')}")
 
     def render_all(self, result):
-        status, controllers, profiles, profile, release = result
+        status, controllers, blocked, profiles, profile, release = result
         editor_key = (self.service.host, self.service.adapter_id, profiles.get('controller_index'), profile.get('id', profile.get('index')))
         preserve_editor = bool(profile) and self.profile_editor_baseline is not None and editor_key == self.profile_editor_key and self.profile_editor_state() != self.profile_editor_baseline
-        self.controllers_data = controllers; self.profiles_data = profiles; self.render_status(status)
+        self.controllers_data = controllers; self.blocked_devices_data = blocked; self.profiles_data = profiles; self.render_status(status)
         self.controllers.clear()
         for controller in controllers.get('controllers', []): self.controllers.addItem(controller.get('name', 'Controller') + (' · Connected' if controller.get('connected') else ' · Offline'), controller['index'])
         self.controllers.setCurrentIndex(self.controllers.findData(profiles.get('controller_index')))
@@ -818,7 +826,7 @@ class BlueBridgeTab(QWidget):
             name.textChanged.connect(self.refresh_mapping_options)
             enabled.toggled.connect(self.refresh_mapping_options)
         controller = next((c for c in self.controllers_data.get('controllers', []) if c['index'] == self.profiles_data.get('controller_index')), {})
-        identity = f"Controller: {controller.get('name', '-')}\nNative VID: 0x{int(controller.get('native_vid', 0)):04X} · Native PID: 0x{int(controller.get('native_pid', 0)):04X}"
+        identity = f"Controller: {controller.get('name', '-')}\nBluetooth ID: {controller.get('bluetooth_id', '-')}\nNative VID: 0x{int(controller.get('native_vid', 0)):04X} · Native PID: 0x{int(controller.get('native_pid', 0)):04X}"
         if not self.status_data.get('multi_controller') and int(self.status_data.get('output_mode', 1)) == 1: identity += f"\nMiSTer virtual PID: 0x{int(profile.get('mister_identity', 0)):04X}"
         self.identity.setText(identity)
         self.mapping_identity.clear(); self.mapping_identity.addItem('Separate MiSTer mapping', -1)
@@ -833,6 +841,55 @@ class BlueBridgeTab(QWidget):
     def is_selected_live(self):
         return any(c.get('connected') and c.get('index') == self.profiles_data.get('controller_index') for c in self.controllers_data.get('controllers', []))
 
+    def show_blocked(self):
+        if not self.status_data.get('capabilities', {}).get('device_blacklist'):
+            self.message.setText('Blocked device management requires newer BlueBridge firmware.')
+            return
+        if not self.service: return
+        service = self.service
+        def done(result):
+            self.blocked_devices_data = result.get('blocked_devices', {})
+            self.render_blocked()
+            self.pages.setCurrentIndex(2)
+        self.run(lambda: service.api('blocked-devices'), done)
+
+    def render_blocked(self):
+        while self.blocked_rows.count():
+            item = self.blocked_rows.takeAt(0)
+            if item.widget(): item.widget().deleteLater()
+            elif item.layout():
+                while item.layout().count():
+                    child = item.layout().takeAt(0)
+                    if child.widget(): child.widget().deleteLater()
+        devices = self.blocked_devices_data.get('blocked_devices', []) if isinstance(self.blocked_devices_data, dict) else []
+        self.blocked_count.setText(str(len(devices)) + ' blocked device' + ('' if len(devices) == 1 else 's'))
+        if not devices:
+            self.blocked_rows.addWidget(QLabel('No Bluetooth devices are blocked.'))
+            return
+        for device in devices:
+            card = QGroupBox(device.get('name') or 'Bluetooth Device')
+            row = QHBoxLayout(card)
+            row.addWidget(QLabel('Bluetooth ID: ' + device.get('id', '-')), 1)
+            self.button(row, 'Unblock', lambda d=device: self.unblock_device(d))
+            self.blocked_rows.addWidget(card)
+
+    def block_controller(self, controller):
+        device_id = controller.get('bluetooth_id', '')
+        if not device_id: return
+        if not self.confirm('Block ' + controller.get('name', 'this device') + '? It will be forgotten as a controller and prevented from pairing or connecting until you unblock it.'): return
+        service = self.service
+        def done(_):
+            self.managed_controller = None
+            self.message.setText('Device blocked. Its blacklist entry will remain even if controller records are removed.')
+            self.defer(self.load_all)
+        self.run(lambda: service.api('blocked-devices/block', {'id': device_id, 'name': controller.get('name', 'Bluetooth Device')}), done)
+
+    def unblock_device(self, device):
+        if not self.confirm('Unblock ' + (device.get('name') or device.get('id', 'this device')) + '? It will be allowed to pair again.'): return
+        service = self.service
+        def done(_): self.defer(self.show_blocked)
+        self.run(lambda: service.api('blocked-devices/unblock', {'id': device.get('id', '')}), done)
+
     def show_paired(self):
         self.managed_controller = None
         self.pages.setCurrentIndex(1)
@@ -842,7 +899,7 @@ class BlueBridgeTab(QWidget):
     def render_paired(self):
         self.clear_layout(self.paired_rows)
         query = self.controller_search.text().lower()
-        controllers = [c for c in self.controllers_data.get('controllers', []) if query in c.get('name', '').lower()]
+        controllers = [c for c in self.controllers_data.get('controllers', []) if query in c.get('name', '').lower() or query in c.get('bluetooth_id', '').lower()]
         self.paired_count.setText(str(len(controllers)) + ' paired controller' + ('' if len(controllers) == 1 else 's'))
         naming = self.status_data.get('capabilities', {}).get('controller_rename', False)
         for controller in controllers:
@@ -850,10 +907,11 @@ class BlueBridgeTab(QWidget):
             card = QGroupBox(controller.get('name', 'Controller'))
             row = QHBoxLayout(card)
             count = controller.get('profiles', 0)
-            row.addWidget(QLabel(('Connected' if controller.get('connected') else 'Offline') + ' · ' + str(count) + ' profile' + ('' if count == 1 else 's')), 1)
+            row.addWidget(QLabel(('Connected' if controller.get('connected') else 'Offline') + ' · ' + str(count) + ' profile' + ('' if count == 1 else 's') + '\nBluetooth ID: ' + controller.get('bluetooth_id', '-')), 1)
             self.button(row, 'Manage', lambda i=index: self.manage_controller(i))
             rename = self.button(row, 'Rename', lambda i=index: self.rename_controller(i)); rename.setEnabled(bool(naming))
             reset = self.button(row, 'Reset Name', lambda i=index: self.command('controllers/rename', {'index': i, 'name': ''})); reset.setEnabled(bool(naming and controller.get('custom_name')))
+            block = self.button(row, 'Block', lambda c=controller: self.block_controller(c)); block.setEnabled(bool(controller.get('bluetooth_id')) and bool(self.status_data.get('capabilities', {}).get('device_blacklist')))
             self.button(row, 'Forget', lambda i=index: self.forget_controller(i))
             self.paired_rows.addWidget(card)
 
@@ -960,6 +1018,7 @@ class BlueBridgeTab(QWidget):
     def render_identity(self):
         controller = next((c for c in self.controllers_data.get('controllers', []) if c.get('index') == self.profiles_data.get('controller_index')), {})
         identity = 'Controller: ' + controller.get('name', '-')
+        identity += '\nBluetooth ID: ' + controller.get('bluetooth_id', '-')
         identity += f"\nNative VID: 0x{int(controller.get('native_vid', 0)):04X} · Native PID: 0x{int(controller.get('native_pid', 0)):04X}"
         if not self.status_data.get('multi_controller') and int(self.status_data.get('output_mode', 1)) == 1: identity += f"\nMiSTer virtual PID: 0x{int(self.profile_data.get('mister_identity', 0)):04X}"
         self.identity.setText(identity)

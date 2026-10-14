@@ -119,7 +119,7 @@ class BlueBridgeManager:
         request_id = self._next_id()
         fields = ["BB1", request_id, command]
         fields.extend(str(x).replace("\r", " ").replace("\n", " ") for x in args)
-        if command in ("HELLO", "STATUS", "MODE_GET", "BT_DIAGNOSTICS", "HID_DIAGNOSTICS", "CONTROLLERS"):
+        if command in ("HELLO", "STATUS", "MODE_GET", "BT_DIAGNOSTICS", "HID_DIAGNOSTICS", "CONTROLLERS", "BLOCKED_DEVICES"):
             self.diagnostics.record("tx", "|".join(fields))
         self._write("|".join(fields) + "\n")
         return request_id
@@ -139,7 +139,7 @@ class BlueBridgeManager:
                 end = time.monotonic() + timeout
                 while time.monotonic() < end:
                     line = self._readline(max(0.05, end - time.monotonic()))
-                    if command in ("HELLO", "STATUS", "MODE_GET", "BT_DIAGNOSTICS", "HID_DIAGNOSTICS", "CONTROLLERS"):
+                    if command in ("HELLO", "STATUS", "MODE_GET", "BT_DIAGNOSTICS", "HID_DIAGNOSTICS", "CONTROLLERS", "BLOCKED_DEVICES"):
                         self.diagnostics.record("rx", line)
                     parsed = self._parse_line(line)
                     if not parsed or parsed[0] != request_id:
@@ -182,7 +182,7 @@ class BlueBridgeManager:
             return {"mode": mode, "connections": connections, "all_connections_available": all_available}
     def diagnostic_report(self):
             extra = {}
-            for key, work in (("adapter_status", self.status), ("connection_capture", self.sample_diagnostics), ("controllers", self.controllers)):
+            for key, work in (("adapter_status", self.status), ("connection_capture", self.sample_diagnostics), ("controllers", self.controllers), ("blocked_devices", self.blocked_devices)):
                 try:
                     extra[key] = work()
                 except Exception as error:
@@ -229,6 +229,9 @@ class BlueBridgeManager:
 
     def controllers(self):
         return self.request_json("CONTROLLERS")
+
+    def blocked_devices(self):
+        return self.request_json("BLOCKED_DEVICES")
 
 
     def profiles(self):

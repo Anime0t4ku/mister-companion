@@ -257,6 +257,7 @@ class BlueBridgeService:
                             pass
                 raise RuntimeError('Adapter restarted. Refresh adapters to reconnect.')
             if route == 'controllers': return {'controllers': manager.controllers()}
+            if route == 'blocked-devices': return {'blocked_devices': manager.blocked_devices()}
             if route == 'profiles': return {'profiles': manager.profiles()}
             if route == 'profile': return {'profile': manager.profile(int(query.split('=')[-1]))}
             if route == 'capture/status': return {'capture': manager.request_json('CAPTURE_STATUS')}
@@ -287,6 +288,8 @@ class BlueBridgeService:
                 'controllers/select': ('CONTROLLER_SELECT', [p.get('index', -1)]),
                 'controllers/forget': ('CONTROLLER_FORGET', [p.get('index', -1)]),
                 'controllers/disconnect': ('CONTROLLER_DISCONNECT', []),
+                'blocked-devices/block': ('DEVICE_BLOCK', [p.get('id', ''), p.get('name', 'Bluetooth Device')]),
+                'blocked-devices/unblock': ('DEVICE_UNBLOCK', [p.get('id', '')]),
                 'pair': ('PAIR_START' if p.get('start', True) else 'PAIR_STOP', []),
                 'forget': ('FORGET_ALL', []),
                 'capture/start': ('CAPTURE_START', [p.get('mode', 'ONCE')]),
