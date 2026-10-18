@@ -188,7 +188,7 @@ class BlueBridgeService:
         result = []
         present = set()
         for port in list_ports.comports():
-            if not ((port.vid == 0x2e8a and (port.pid in (0x10b1, 0x10b2, 0x10b3) or 0xb000 <= (port.pid or 0) <= 0xbfff)) or (port.vid == 0x0f0d and port.pid == 0x0092)):
+            if not ((port.vid == 0x2e8a and (port.pid in (0x10b1, 0x10b2, 0x10b3, 0x10c6) or 0xb000 <= (port.pid or 0) <= 0xbfff)) or (port.vid == 0x0f0d and port.pid == 0x0092)):
                 continue
             key = port.serial_number or port.device
             present.add(key)
