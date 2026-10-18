@@ -263,7 +263,7 @@ class BlueBridgeService:
             if route == 'capture/status': return {'capture': manager.request_json('CAPTURE_STATUS')}
             if route == 'config/export': return manager.export_config()
             if route == 'config/import': manager.import_config(p); return {'ok': True}
-            if route == 'firmware/releases': return {'release': bluebridge_release(manager.status().get('firmware', ''))}
+            if route == 'firmware/releases': return {'release': bluebridge_release(manager.status().get('firmware', ''), force='force=1' in query)}
             if route in ('firmware/inspect', 'firmware/download'):
                 manager.staged = None
                 if route.endswith('download'):

@@ -13,7 +13,7 @@ def version_key(value):
         raise ValueError("Invalid firmware version: " + str(value))
     pre = match.group(4)
     if pre:
-        pre = re.sub(r"^beta-(\d+)$", r"beta.\1", pre)
+        pre = re.sub(r"^(alpha|beta|rc)[.-]?(\d+)$", r"\1.\2", pre.lower(), flags=re.IGNORECASE)
     identifiers = tuple((0, int(p)) if p.isdigit() else (1, p) for p in (pre or "").split("."))
     return tuple(int(match.group(i)) for i in (1, 2, 3)) + (1 if pre is None else 0, identifiers)
 
@@ -27,7 +27,7 @@ def _lookup_bluebridge_release(installed="", opener=None):
             with opener(request, timeout=15) as response:
                 releases = json.load(response)
             if not isinstance(releases, list):
-                return {"available": False}
+                return {"available": False, "state": "unavailable", "message": "Online firmware is not available yet. You can install a local UF2 file below."}
             for release in releases:
                 if release.get("draft"):
                     continue
@@ -44,10 +44,14 @@ def _lookup_bluebridge_release(installed="", opener=None):
                         break
             if len(releases) < 100:
                 break
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return {"available": False, "state": "unavailable", "message": "Online firmware is not available yet. You can install a local UF2 file below."}
+        return {"available": False, "state": "error", "message": "Unable to check for updates. Please try again later."}
     except (OSError, ValueError, urllib.error.URLError):
-        return {"available": False}
+        return {"available": False, "state": "error", "message": "Unable to check for updates. Please try again later."}
     if not candidates:
-        return {"available": False}
+        return {"available": False, "state": "unavailable", "message": "Online firmware is not available yet. You can install a local UF2 file below."}
     stable = [c for c in candidates if c[0][3] and not c[1].get("prerelease")]
     key, release, asset = max((stable or candidates) if not installed else candidates, key=lambda c: c[0])
     return {"available": True, "version": release["tag_name"].lstrip("v"), "url": asset["browser_download_url"], "size": asset["size"], "update_available": not installed or key > version_key(installed)}
@@ -65,12 +69,12 @@ def download_bluebridge_release(info):
 _release_cache = {}
 _release_cache_lock = threading.RLock()
 
-def bluebridge_release(installed="", opener=None):
+def bluebridge_release(installed="", opener=None, force=False):
     if opener is not None:
         return _lookup_bluebridge_release(installed, opener)
     with _release_cache_lock:
         entry = _release_cache.get(installed)
-        if entry and time.monotonic() < entry[0]:
+        if not force and entry and time.monotonic() < entry[0]:
             return dict(entry[1])
         info = _lookup_bluebridge_release(installed)
         _release_cache[installed] = (time.monotonic() + (300 if info.get("available") else 60), info)

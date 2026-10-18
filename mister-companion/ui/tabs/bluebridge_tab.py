@@ -45,6 +45,8 @@ class BlueBridgeTab(QWidget):
         self.controls = {}
         self.macros = []
         self.installer_release = {}
+        self.online_release = {}
+        self.online_operation = False
         self.firmware_dialog = None
         self.firmware_directory = str(Path.home())
         self.staged_firmware = None
@@ -253,6 +255,9 @@ class BlueBridgeTab(QWidget):
             self.adapters.setEnabled(False)
 
     def on_error(self, message):
+        if self.online_operation:
+            self.online_operation = False
+            self.latest_label.setText('Unable to complete the online update request. Please try again later.')
         if self.firmware_operation:
             self.firmware_operation = False
             self.show_firmware_progress(0, 'Failed: ' + message)
@@ -419,10 +424,21 @@ class BlueBridgeTab(QWidget):
         self.adapter_name_label = QLabel(); adapter_layout.addWidget(self.adapter_name_label)
         row = QHBoxLayout(); self.adapter_rename_button = self.button(row, 'Rename Adapter', self.rename_adapter); self.adapter_reset_button = self.button(row, 'Reset Adapter Name', lambda: self.command('adapter/rename', {'name': ''})); adapter_layout.addLayout(row)
         firmware.addWidget(adapter_card)
-        self.github_widget = QWidget(); self.github_widget.setObjectName('BlueBridgeSurface'); gl = QHBoxLayout(self.github_widget); self.latest_label = QLabel(); gl.addWidget(self.latest_label, 1); self.download_button = self.button(gl, 'Download Firmware', lambda: self.update_firmware(True)); firmware.addWidget(self.github_widget); self.github_widget.hide()
-        self.configuration = QComboBox(); self.configuration.addItem('Preserve Configuration (recommended)', 'preserve'); self.configuration.addItem('Reset Configuration', 'reset'); firmware.addWidget(self.configuration)
-        row = QHBoxLayout(); self.button(row, 'Select UF2 File', lambda: self.update_firmware(False)); self.firmware_flash_button = self.button(row, 'Flash Firmware', self.install_staged_firmware); self.firmware_flash_button.setEnabled(False); firmware.addLayout(row)
-        self.firmware_preview = QLabel('Select a local UF2 file, then click Flash Firmware.'); self.firmware_preview.setWordWrap(True); firmware.addWidget(self.firmware_preview)
+        self.github_widget = QGroupBox('Online Update')
+        gl = QVBoxLayout(self.github_widget)
+        self.latest_label = QLabel('Check GitHub for an available firmware update.')
+        self.latest_label.setWordWrap(True); gl.addWidget(self.latest_label)
+        row = QHBoxLayout()
+        self.check_update_button = self.button(row, 'Check for Updates', self.check_firmware_release)
+        self.download_button = self.button(row, 'Download & Update', lambda: self.update_firmware(True))
+        self.download_button.setEnabled(False); gl.addLayout(row); firmware.addWidget(self.github_widget)
+        manual = QGroupBox('Manual Update'); manual_layout = QVBoxLayout(manual)
+        note = QLabel('Install firmware from a local MC BlueBridge UF2 file.'); manual_layout.addWidget(note)
+        row = QHBoxLayout(); self.button(row, 'Choose UF2 File', lambda: self.update_firmware(False)); self.firmware_flash_button = self.button(row, 'Install Selected Firmware', self.install_staged_firmware); self.firmware_flash_button.setEnabled(False); manual_layout.addLayout(row)
+        self.firmware_preview = QLabel('Choose a local UF2 file to see its version before installing.'); self.firmware_preview.setWordWrap(True); manual_layout.addWidget(self.firmware_preview)
+        firmware.addWidget(manual)
+        row = QHBoxLayout(); row.addWidget(QLabel('Configuration after either update:'))
+        self.configuration = QComboBox(); self.configuration.addItem('Preserve Configuration (recommended)', 'preserve'); self.configuration.addItem('Reset Configuration', 'reset'); row.addWidget(self.configuration); firmware.addLayout(row)
         self.firmware_progress_label = QLabel(); self.firmware_progress_label.setWordWrap(True); firmware.addWidget(self.firmware_progress_label)
         self.firmware_progress = QProgressBar(); self.firmware_progress.hide(); firmware.addWidget(self.firmware_progress)
         row = QHBoxLayout(); self.button(row, 'Export Configuration', self.export_config); self.button(row, 'Import Configuration', self.import_config); self.button(row, 'Reset Configuration', self.reset_config); firmware.addLayout(row)
@@ -487,7 +503,7 @@ class BlueBridgeTab(QWidget):
         self.volumes = QComboBox(); layout.addWidget(self.volumes)
         self.manual_path = QLabel(); self.manual_path.setWordWrap(True); layout.addWidget(self.manual_path); self.manual_path.hide()
         row = QHBoxLayout(); self.button(row, 'Select MC BlueBridge UF2', self.select_uf2); self.install_flash_button = self.button(row, 'Flash Selected UF2', lambda: self.flash(False)); self.install_flash_button.setEnabled(False); layout.addLayout(row)
-        self.install_online = QWidget(); row = QHBoxLayout(self.install_online); self.install_latest = QLabel('Online firmware: check for a release, or select a local UF2.'); row.addWidget(self.install_latest, 1); self.button(row, 'Check Online Release', self.check_install_release); self.install_download_button = self.button(row, 'Download & Flash', lambda: self.flash(True)); layout.addWidget(self.install_online); self.install_online.hide(); self.install_download_button.setEnabled(False)
+        self.install_online = QWidget(); row = QHBoxLayout(self.install_online); self.install_latest = QLabel('Online firmware: check for a release, or select a local UF2.'); row.addWidget(self.install_latest, 1); self.button(row, 'Check Online Release', self.check_install_release); self.install_download_button = self.button(row, 'Download & Flash', lambda: self.flash(True)); layout.addWidget(self.install_online); self.install_online.show(); self.install_download_button.setEnabled(False)
         self.install_progress_label = QLabel('Connect a Pico 2 W in BOOTSEL mode and select a UF2 file.'); self.install_progress_label.setWordWrap(True); layout.addWidget(self.install_progress_label)
         self.install_progress = QProgressBar(); self.install_progress.hide(); layout.addWidget(self.install_progress)
         self.volumes.currentIndexChanged.connect(self.update_flash_controls)
@@ -507,12 +523,12 @@ class BlueBridgeTab(QWidget):
             return
         self.staged_firmware = None
         self.firmware_flash_button.setEnabled(False)
-        self.firmware_preview.setText('Select a local UF2 file, then click Flash Firmware.')
+        self.firmware_preview.setText('Choose a local UF2 file to see its version before installing.')
         if self.service: self.service.close()
         self.service = None
         self.pages.hide(); self.installer.hide(); self.daemon_panel.setVisible(self.mode.currentIndex() == 1)
         self.adapters.clear(); self.adapters.hide()
-        self.profile_data = {}; self.status_data = {}; self.github_widget.hide()
+        self.profile_data = {}; self.status_data = {}; self.reset_online_release()
         self.managed_controller = None
         self.profile_panel.hide()
         self.pages.setCurrentIndex(0)
@@ -646,8 +662,9 @@ class BlueBridgeTab(QWidget):
             return
         self.staged_firmware = None
         self.firmware_flash_button.setEnabled(False)
-        self.firmware_preview.setText('Select a local UF2 file, then click Flash Firmware.')
+        self.firmware_preview.setText('Choose a local UF2 file to see its version before installing.')
         self.service.adapter_id = self.adapters.currentData() or ''
+        self.reset_online_release()
         self.managed_controller = None
         self.profiles.clear()
         self.load_all()
@@ -737,9 +754,9 @@ class BlueBridgeTab(QWidget):
         self.profile_buttons['Activate'].setVisible(bool(selected.get('connected')))
         self.profile_buttons['Delete'].setEnabled(profile.get('index', 0) != 0)
         self.render_paired()
-        self.github_widget.hide()
-        self.latest_label.setText('Latest firmware: v' + release.get('version', ''))
-        self.download_button.setEnabled(bool(release.get('available')))
+        self.github_widget.show()
+        if self.online_release.get('available'):
+            self.render_firmware_release(self.online_release)
         self.pages.setVisible(bool(status.get('detected')))
         self.message.setText('MC BlueBridge connected via ' + ('Remote' if self.service.host else 'USB'))
 
@@ -1244,8 +1261,45 @@ class BlueBridgeTab(QWidget):
         dialog.finished.connect(finished)
         dialog.open()
 
+    def reset_online_release(self):
+        self.online_release = {}
+        self.latest_label.setText('Check GitHub for an available firmware update.')
+        self.download_button.setEnabled(False)
+
+    def check_firmware_release(self):
+        if not self.service: return
+        self.latest_label.setText('Checking for updates…')
+        self.download_button.setEnabled(False)
+        self.online_operation = True
+        self.run(lambda: self.service.api('firmware/releases?force=1'), lambda result: self.render_firmware_release(result.get('release', {})))
+
+    def render_firmware_release(self, release):
+        self.online_operation = False
+        self.online_release = release
+        current = self.status_data.get('firmware', '')
+        newer = bool(release.get('available') and current and version_key(release['version']) > version_key(current))
+        self.download_button.setEnabled(newer)
+        if release.get('available'):
+            self.latest_label.setText(('Update available: v' if newer else 'Up to date. Latest available firmware: v') + release['version'])
+        else:
+            self.latest_label.setText(release.get('message', 'Online firmware is not available yet. You can install a local UF2 file below.'))
+
     def update_firmware(self, online):
-        if online: return
+        if online:
+            if not self.online_release.get('available'): return
+            self.staged_firmware = None
+            self.firmware_flash_button.setEnabled(False)
+            self.firmware_preview.setText('Choose a local UF2 file to see its version before installing.')
+            self.online_operation = True
+            self.latest_label.setText('Downloading and validating firmware…')
+            def downloaded(result):
+                self.online_operation = False
+                info = result['firmware']
+                self.staged_firmware = info
+                self.render_firmware_release(self.online_release)
+                self.defer(self.install_staged_firmware)
+            self.run(lambda: self.service.api('firmware/download', {}), downloaded)
+            return
         def selected(path):
             self.staged_firmware = None
             self.firmware_flash_button.setEnabled(False)
@@ -1260,7 +1314,7 @@ class BlueBridgeTab(QWidget):
         warning = ' Same installed version.' if info.get('relation') == 'same' else ' Older than the installed version.' if info.get('relation') == 'older' else ''
         self.firmware_preview.setText(f"Ready to flash v{info['version']} over v{info['current_version']}.{warning}")
         self.firmware_flash_button.setEnabled(True)
-        self.message.setText('Firmware validated. Click Flash Firmware to install it.')
+        self.message.setText('Firmware validated. Click Install Selected Firmware to install it.')
 
     def clear_firmware_progress(self):
         self.firmware_progress.hide()
@@ -1285,7 +1339,11 @@ class BlueBridgeTab(QWidget):
         info = self.staged_firmware
         configuration = self.configuration.currentData()
         warning = '\nThis older firmware may be incompatible with newer settings.' if info.get('relation') == 'older' else ''
-        if not self.confirm(f"Flash v{info['version']} over v{info['current_version']}?\n{self.configuration.currentText()}\nKeep the adapter connected while it restarts.{warning}"): return
+        if not self.confirm(f"Install v{info['version']} over v{info['current_version']}?\n{self.configuration.currentText()}\nKeep the adapter connected while it restarts.{warning}"):
+            self.staged_firmware = None
+            self.firmware_flash_button.setEnabled(False)
+            self.defer(lambda: self.run(lambda: self.service.api('firmware/cancel', {})))
+            return
         self.firmware_operation = True
         self.show_firmware_progress(-1, 'Installing firmware… Keep the adapter connected.')
         self.run(lambda: self.service.api('firmware/install', {'configuration': configuration}, progress=self.firmware_report), self.firmware_complete)
@@ -1294,7 +1352,7 @@ class BlueBridgeTab(QWidget):
         self.firmware_operation = False
         self.staged_firmware = None
         self.firmware_flash_button.setEnabled(False)
-        self.firmware_preview.setText('Select a local UF2 file, then click Flash Firmware.')
+        self.firmware_preview.setText('Choose a local UF2 file to see its version before installing.')
         self.show_firmware_progress(100, result.get('firmware', {}).get('message', 'Firmware installed.'))
         self.progress_clear_timer.start(1200)
         self.defer(self.load_all)
@@ -1314,13 +1372,12 @@ class BlueBridgeTab(QWidget):
         if self.confirm('Reset configuration and forget all controllers? Export a backup first if you want to restore them later.'): self.command('config/reset', {})
 
     def check_install_release(self):
-        return
         self.message.setText('Checking for online firmware… Local UF2 files work without an online release.')
-        self.run(lambda: (boot_volumes(), bluebridge_release()), self.installer_state)
+        self.run(lambda: (boot_volumes(), bluebridge_release(force=True)), self.installer_state)
 
     def installer_state(self, result):
         volumes, release = result; self.installer_release = release
-        self.render_volumes(volumes); self.install_latest.setText('Latest firmware: v' + release['version'] if release.get('available') else 'No online release available. Select a local UF2 file.'); self.update_flash_controls()
+        self.render_volumes(volumes); self.install_latest.setText('Latest firmware: v' + release['version'] if release.get('available') else release.get('message', 'Online firmware is not available yet. Select a local UF2 file.')); self.update_flash_controls()
 
     def render_volumes(self, volumes):
         existing = [self.volumes.itemData(i) for i in range(self.volumes.count()) if self.volumes.itemData(i) is not None]

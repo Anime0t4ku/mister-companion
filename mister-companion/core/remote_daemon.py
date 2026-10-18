@@ -32,7 +32,7 @@ def app_base_dir() -> Path:
 BASE_DIR = app_base_dir()
 LOCAL_REMOTE_SCRIPT_PATH = BASE_DIR / "assets" / "companion_remote.sh"
 REMOTE_SCRIPT_SOURCE_URL = "https://raw.githubusercontent.com/Anime0t4ku/mister-companion/main/mister-companion/assets/companion_remote.sh"
-BUNDLED_REMOTE_SCRIPT_VERSION = "4.0.11"
+BUNDLED_REMOTE_SCRIPT_VERSION = "4.1.0"
 
 _logger = logging.getLogger(__name__)
 _remote_script_cache_lock = threading.Lock()
