@@ -79,6 +79,7 @@ from core.video_converter import (
     probe_video,
     remove_ffmpeg,
 )
+from ui.tools.arcade_rom_checker import ArcadeRomChecker
 from ui.tab_header import create_tab_header
 from ui.dialogs.remote_file_picker_dialog import RemoteFilePickerDialog
 from ui.ssh_terminal import SSHTerminalWidget
@@ -168,6 +169,9 @@ class ToolsTab(QWidget):
         self.stack = QStackedWidget()
         root.addWidget(self.stack)
         self.home_page = self._build_home()
+        self.arcade_page, arcade_layout = self._tool_workspace_page("Arcade ROM Checker")
+        self.arcade_checker = ArcadeRomChecker(self, arcade_layout)
+        self.stack.addWidget(self.arcade_page)
         self.patcher_page = self._build_patcher()
         self.chd_page = self._build_chd()
         self.chd_extract_page = self._build_chd_extract()
@@ -193,6 +197,7 @@ class ToolsTab(QWidget):
         self.stack.addWidget(self.nfc_art_page)
         self.stack.addWidget(self.nfc_card_page)
         self.stack.addWidget(self.nfc_cassette_page)
+        self.stack.setCurrentWidget(self.home_page)
 
     def _build_home(self):
         page = QWidget()
@@ -206,6 +211,7 @@ class ToolsTab(QWidget):
         grid.setHorizontalSpacing(14)
         grid.setVerticalSpacing(14)
         entries = (
+            ("Arcade ROM Checker", "List MAME ROM ZIPs required by MRAs, check existing ROMs and optionally copy missing ZIPs from a local collection.", lambda: self.stack.setCurrentWidget(self.arcade_page)),
             ("ROM Patcher", "Apply IPS, IPS32, BPS, UPS and PPF patches. The source ROM is never overwritten.", lambda: self.stack.setCurrentWidget(self.patcher_page)),
             ("CHD Converter", "Queue CUE/GDI/ISO to CHD conversions using PC or MiSTer input and output locations.", lambda: self.stack.setCurrentWidget(self.chd_page)),
             ("CHD Extractor", "Extract CHD images to CUE/BIN, GDI or ISO using PC or MiSTer input and output locations.", lambda: self.stack.setCurrentWidget(self.chd_extract_page)),
@@ -635,6 +641,7 @@ class ToolsTab(QWidget):
         return self._confirm_close_ssh_session()
 
     def shutdown(self):
+        self.arcade_checker.shutdown()
         if self.stack.currentWidget() in (self.nfc_card_page, self.nfc_cassette_page):
             self._leave_nfc_focus()
         self._disconnect_ssh_terminal()
@@ -714,6 +721,7 @@ class ToolsTab(QWidget):
             combo.setCurrentText(LOCAL)
 
     def update_connection_state(self, lightweight=True):
+        self.arcade_checker.update_connection_state()
         for combo_name in ("rom_location", "patch_location", "output_location", "chd_input_location", "chd_output_location", "chd_extract_input_location", "chd_extract_output_location", "video_input_location", "video_output_location", "disc_output_location", "burn_source_location"):
             combo = getattr(self, combo_name, None)
             if combo:
