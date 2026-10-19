@@ -1009,7 +1009,7 @@ class InstallCenterDetailsDialog(QDialog):
             add_button("Reconfigure" if configured else "Configure", self.configure, enabled=installed, min_width=140)
             boot_text = "Disable Start on Boot" if service_enabled else "Enable Start on Boot"
             boot_action = "disable_ftp_save_sync_service" if service_enabled else "enable_ftp_save_sync_service"
-            add_button(boot_text, lambda action=boot_action: self.call_install_center_action(action), enabled=installed and configured, min_width=190)
+            add_button(boot_text, lambda checked=False, action=boot_action: self.call_install_center_action(action), enabled=installed and configured, min_width=190)
             add_button("Remove Config", lambda: self.call_install_center_action("remove_ftp_save_sync_config"), enabled=installed and configured, min_width=140)
             add_button("Uninstall", self.uninstall, enabled=installed, min_width=140)
         elif handler == "static_wallpaper":
