@@ -43,6 +43,16 @@ class ArcadeRomChecker(QWidget):
         self.rows = []
         self.snapshot = None
         self.controls = QWidget()
+        self.controls.setObjectName('ArcadeRomControls')
+        self.controls.setStyleSheet("""
+            QWidget#ArcadeRomControls,
+            QWidget#ArcadeRomTarget,
+            QWidget#ArcadeRomCollection,
+            QWidget#ArcadeRomControls QLabel,
+            QWidget#ArcadeRomControls QCheckBox {
+                background: transparent;
+            }
+        """)
         form = QVBoxLayout(self.controls)
         form.setContentsMargins(0, 0, 0, 0)
         intro = QLabel('List MAME ROM ZIP filenames referenced by MRAs. Checking and copying are optional. Presence checks use filenames only; ROM contents and CRCs are not validated. ZIP names separated by | are alternatives.')
@@ -55,6 +65,7 @@ class ArcadeRomChecker(QWidget):
         self.check_existing = QCheckBox('Check whether required ROM ZIPs are present')
         form.addWidget(self.check_existing)
         self.target_box = QWidget()
+        self.target_box.setObjectName('ArcadeRomTarget')
         target_layout = QVBoxLayout(self.target_box)
         target_layout.setContentsMargins(0, 0, 0, 0)
         self.target, self.target_path = self.path_row(target_layout, 'ROM check / copy destination:')
@@ -64,6 +75,7 @@ class ArcadeRomChecker(QWidget):
         self.find_local = QCheckBox('Find missing ROMs in a local MAME collection')
         form.addWidget(self.find_local)
         self.collection_box = QWidget()
+        self.collection_box.setObjectName('ArcadeRomCollection')
         collection_layout = QVBoxLayout(self.collection_box)
         collection_layout.setContentsMargins(0, 0, 0, 0)
         _, self.collection = self.path_row(collection_layout, 'Local MAME collection:', local_only=True)
@@ -96,10 +108,16 @@ class ArcadeRomChecker(QWidget):
         self.table.setColumnWidth(3, 200)
         layout.addWidget(self.table, 1)
         actions = QHBoxLayout()
-        for label, callback in [('Copy filenames', self.copy_names), ('Export list…', self.export), ('Copy found ROMs…', self.start_copy)]:
+        for label, callback in [('Copy filenames', self.copy_names), ('Copy filtered filenames', lambda: self.copy_names(filtered=True)), ('Export list…', self.export), ('Export filtered list…', lambda: self.export(filtered=True)), ('Copy found ROMs…', self.start_copy)]:
             button = QPushButton(label)
             button.clicked.connect(callback)
             actions.addWidget(button)
+            if label == 'Copy filtered filenames':
+                self.copy_filtered_button = button
+                button.setEnabled(False)
+            elif label == 'Export filtered list…':
+                self.export_filtered_button = button
+                button.setEnabled(False)
             if label.startswith('Copy found'):
                 self.copy_button = button
                 button.setEnabled(False)
@@ -301,9 +319,14 @@ class ArcadeRomChecker(QWidget):
         self.render()
         self.show_progress('Scan complete', 1, 1)
 
-    def render(self):
+    def filtered_rows(self):
         needle = self.search.text().casefold()
-        rows = [r for r in self.rows if (self.filter.currentText() == 'All' or r['status'] == self.filter.currentText()) and needle in (' '.join(r['names']) + ' '.join(r['mras'])).casefold()]
+        return [r for r in self.rows if (self.filter.currentText() == 'All' or r['status'] == self.filter.currentText()) and needle in (' '.join(r['names']) + ' '.join(r['mras'])).casefold()]
+
+    def render(self):
+        rows = self.filtered_rows()
+        self.copy_filtered_button.setEnabled(bool(rows))
+        self.export_filtered_button.setEnabled(bool(rows))
         self.table.setRowCount(len(rows))
         for i, row in enumerate(rows):
             for j, value in enumerate((' | '.join(row['names']), '; '.join(row['mras']), row['status'], row['local'] or 'Unavailable')):
@@ -311,17 +334,20 @@ class ArcadeRomChecker(QWidget):
                 item.setToolTip(value)
                 self.table.setItem(i, j, item)
 
-    def names_text(self):
-        return '\n'.join(' | '.join(r['names']) for r in self.rows)
+    def names_text(self, filtered=False):
+        rows = self.filtered_rows() if filtered else self.rows
+        return '\n'.join(' | '.join(r['names']) for r in rows)
 
-    def copy_names(self):
-        QApplication.clipboard().setText(self.names_text())
+    def copy_names(self, filtered=False):
+        QApplication.clipboard().setText(self.names_text(filtered))
 
-    def export(self):
-        path, _ = QFileDialog.getSaveFileName(self, 'Export required ROM filenames', 'arcade-roms.txt', 'Text files (*.txt)')
+    def export(self, filtered=False):
+        text = self.names_text(filtered)
+        filename = 'arcade-roms-missing.txt' if filtered and self.filter.currentText() == 'Missing' else 'arcade-roms-filtered.txt' if filtered else 'arcade-roms.txt'
+        path, _ = QFileDialog.getSaveFileName(self, 'Export filtered ROM filenames' if filtered else 'Export required ROM filenames', filename, 'Text files (*.txt)')
         if path:
             try:
-                Path(path).write_text(self.names_text() + '\n', encoding='utf-8')
+                Path(path).write_text(text + '\n', encoding='utf-8')
             except OSError as exc:
                 self.failed(str(exc))
 

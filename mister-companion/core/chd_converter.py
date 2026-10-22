@@ -145,7 +145,7 @@ def conversion_kind(input_path: str | Path) -> str:
     raise ChdmanError("Supported CHD inputs are CUE, GDI and ISO.")
 
 
-def run_chdman(input_path: str | Path, output_path: str | Path, log_callback=None) -> list[Path]:
+def run_chdman(input_path: str | Path, output_path: str | Path, log_callback=None, *, optimize_for_mister: bool = True) -> list[Path]:
     exe = chdman_executable()
     if not exe.exists():
         raise ChdmanError("CHDman is not downloaded yet.")
@@ -158,6 +158,8 @@ def run_chdman(input_path: str | Path, output_path: str | Path, log_callback=Non
     kind = conversion_kind(input_path)
     if kind == "cd":
         command = [str(exe), "createcd", "-i", str(input_path), "-o", str(output_path)]
+        if optimize_for_mister:
+            command.extend(["-c", "cdzs,cdfl", "-hs", "9792"])
     else:
         command = [str(exe), "createdvd", "-i", str(input_path), "-o", str(output_path)]
     outputs = [output_path]

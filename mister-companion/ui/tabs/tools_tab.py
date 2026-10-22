@@ -33,6 +33,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from core.config import save_config
 from core.chd_converter import (
     CHDMAN_DIR,
     CHDMAN_VERSION,
@@ -133,6 +134,7 @@ class ToolsTab(QWidget):
         self.ssh_terminal_host = ""
         self.ssh_connect_worker = None
         self._ssh_connect_generation = 0
+        self._chd_optimization_controls = []
         self._build_ui()
         self.update_connection_state()
 
@@ -1399,6 +1401,7 @@ class ToolsTab(QWidget):
         self.disc_convert_chd = QCheckBox("Convert to CHD after ripping")
         self.disc_convert_chd.toggled.connect(self._disc_chd_toggled)
         layout.addWidget(self.disc_convert_chd)
+        self.disc_chd_optimize = self._chd_optimization_checkbox(layout)
         self.disc_remove_bin = QCheckBox("Remove BIN/CUE after successful CHD conversion")
         self.disc_remove_bin.setChecked(False)
         self.disc_remove_bin.setEnabled(False)
@@ -1689,6 +1692,7 @@ class ToolsTab(QWidget):
         self.disc_rip_status.setVisible(False)
         self.disc_rip_log.clear()
 
+        optimize_chd = self.disc_chd_optimize.isChecked()
         convert = self.disc_convert_chd.isChecked()
         remove_bin_cue = self.disc_remove_bin.isChecked()
 
@@ -1724,7 +1728,7 @@ class ToolsTab(QWidget):
                             elif "error" in line.lower():
                                 worker.status.emit("LOG:" + line)
 
-                        run_chdman(cue, chd, chd_log)
+                        run_chdman(cue, chd, chd_log, optimize_for_mister=optimize_chd)
                         worker.progress.emit(100)
                         worker.status.emit("RIPSTATUS:CHD conversion complete — 100%")
 
@@ -1758,7 +1762,7 @@ class ToolsTab(QWidget):
                         elif "error" in line.lower():
                             worker.status.emit("LOG:" + line)
 
-                    run_chdman(cue, chd, chd_log)
+                    run_chdman(cue, chd, chd_log, optimize_for_mister=optimize_chd)
                     worker.progress.emit(100)
                     worker.status.emit("RIPSTATUS:CHD conversion complete — 100%")
                     if remove_bin_cue:
@@ -1957,6 +1961,27 @@ class ToolsTab(QWidget):
             sftp.close()
         return local_root
 
+    def _chd_optimization_checkbox(self, layout):
+        checkbox = QCheckBox("Optimize CD CHDs for MiSTer")
+        checkbox.setToolTip(
+            "Uses Zstandard/FLAC compression and a 9792-byte hunk size to help "
+            "with reported CHD slowdowns. Applies to CD images only; DVD/ISO "
+            "conversion is unchanged. Shared with all CD CHD conversion tools."
+        )
+        checkbox.setChecked(self.main_window.config_data.get("chd_optimize_for_mister", True))
+        self._chd_optimization_controls.append(checkbox)
+        checkbox.toggled.connect(self._set_chd_optimization)
+        layout.addWidget(checkbox)
+        return checkbox
+
+    def _set_chd_optimization(self, checked):
+        self.main_window.config_data["chd_optimize_for_mister"] = checked
+        for checkbox in self._chd_optimization_controls:
+            previous = checkbox.blockSignals(True)
+            checkbox.setChecked(checked)
+            checkbox.blockSignals(previous)
+        save_config(self.main_window.config_data)
+
     def _build_chd(self):
         page, layout = self._tool_workspace_page("CHD Converter")
         tool_row = QHBoxLayout()
@@ -1997,6 +2022,7 @@ class ToolsTab(QWidget):
         output_row.addWidget(browse_output)
         layout.addLayout(output_row)
 
+        self.chd_optimize = self._chd_optimization_checkbox(layout)
         self.chd_remove_source = QCheckBox("Remove BIN/CUE after successful conversion")
         self.chd_remove_source.setToolTip("For CUE jobs, remove the CUE and only the BIN files referenced by that CUE after the CHD has been created successfully.")
         layout.addWidget(self.chd_remove_source)
@@ -2272,6 +2298,7 @@ class ToolsTab(QWidget):
             return
         self.chd_start.setEnabled(False)
         remove_sources = self.chd_remove_source.isChecked()
+        optimize_chd = self.chd_optimize.isChecked()
         self.chd_log.clear()
         self.chd_transfer_progress.setValue(0)
         has_remote_transfer = any(job["source"] == REMOTE or job["destination"] == REMOTE for job in self.chd_jobs if job["status"] != "Completed")
@@ -2304,7 +2331,7 @@ class ToolsTab(QWidget):
                         else:
                             local_output = Path(job["output"])
 
-                        outputs = run_chdman(local_input, local_output, lambda line: worker.status.emit("LOG:" + line))
+                        outputs = run_chdman(local_input, local_output, lambda line: worker.status.emit("LOG:" + line), optimize_for_mister=optimize_chd)
                         if job["destination"] == REMOTE:
                             remote_dir = posixpath.dirname(job["output"])
                             for output in outputs:
