@@ -24,6 +24,8 @@ from core.retroaccount import (
 )
 from core.update_all_config import (
     CUSTOM_SOURCE_SYNC_ID_KEY,
+    SCREENSHOTDB_SOURCES,
+    TITLESCREENDB_SOURCES,
     queue_custom_source_pending_deletions,
     load_update_all_config,
     load_update_all_config_local,
@@ -48,6 +50,9 @@ class UpdateAllConfigDialog(QDialog):
 
         self.manualsdb_selected = []
         self.artworkdb_selected = []
+        self.screenshotdb_selected = []
+        self.titlescreendb_selected = []
+        self.coinop_effective_release = "Public"
         self.custom_sources = []
         self.custom_source_checks = []
         self.custom_sources_unmanaged_text = ""
@@ -156,7 +161,8 @@ class UpdateAllConfigDialog(QDialog):
         self.main_cores_check = QCheckBox("Enable Main Cores")
         self.main_source_combo = QComboBox()
         self.main_source_combo.addItems([
-            "MiSTer-devel (Recommended)",
+            "MiSTer-devel (Stable Linux)",
+            "MiSTer-devel (Edge Linux)",
             "DB9 / SNAC8 forks with ENCC",
             "AitorGomez fork",
         ])
@@ -178,11 +184,15 @@ class UpdateAllConfigDialog(QDialog):
 
         other_group = self._group("Other Cores", self.left_column_layout)
         self.coinop_check = QCheckBox("Coin-Op Collection")
+        self.coinop_releases_combo = QComboBox()
+        self.coinop_releases_combo.addItems(["Auto", "Public", "Beta", "Alpha"])
+        self.coinop_releases_combo.setToolTip("Auto lets Update_All follow your linked RetroAccount membership. Private releases require the appropriate Coin-Op license.")
+        self.coinop_releases_combo.setEnabled(False)
+        self.coinop_check.toggled.connect(self.coinop_releases_combo.setEnabled)
         self.arcade_offset_check = QCheckBox("Arcade Offset Folder")
         self.llapi_check = QCheckBox("LLAPI Forks Folder")
         self.unofficial_check = QCheckBox("Unofficial Distribution")
         self.yc_check = QCheckBox("Y/C Builds")
-        self.agg23_check = QCheckBox("agg23’s MiSTer Cores")
         self.altcores_check = QCheckBox("Alt Cores")
         self.dualram_check = QCheckBox("Dual RAM Console Cores")
         self.retroachievements_cores_check = QCheckBox("RetroAchievement Cores")
@@ -193,12 +203,18 @@ class UpdateAllConfigDialog(QDialog):
             self.llapi_check,
             self.unofficial_check,
             self.yc_check,
-            self.agg23_check,
             self.altcores_check,
             self.dualram_check,
             self.retroachievements_cores_check,
         ]:
             self._add(other_group, widget)
+            if widget is self.coinop_check:
+                releases_row = QHBoxLayout()
+                releases_row.addSpacing(20)
+                releases_row.addWidget(QLabel("Releases:"))
+                releases_row.addWidget(self.coinop_releases_combo)
+                releases_row.addStretch()
+                other_group.layout().addLayout(releases_row)
 
         extra_cores_group = self._group("Extra Cores", self.left_column_layout)
         self.physical_disc_check = QCheckBox("Physical CD Support")
@@ -222,6 +238,7 @@ class UpdateAllConfigDialog(QDialog):
         self.three_s_arm_check = QCheckBox("3S-ARM")
         self.mister_frontier_check = QCheckBox("MiSTer Frontier")
         self.maldita_castilla_check = QCheckBox("Maldita Castilla MiSTer")
+        self.diablo_check = QCheckBox("Diablo MiSTer")
         self.nblood_check = QCheckBox("NBlood")
 
         self.mister_frontier_source_combo = QComboBox()
@@ -244,16 +261,18 @@ class UpdateAllConfigDialog(QDialog):
             self.three_s_arm_check,
             self.mister_frontier_check,
             self.maldita_castilla_check,
+            self.diablo_check,
             self.nblood_check,
         ]:
             self._add(hybrid_group, widget)
+            if widget is self.mister_frontier_check:
+                frontier_row = QHBoxLayout()
+                frontier_row.addSpacing(20)
+                frontier_row.addWidget(QLabel("Filter:"))
+                frontier_row.addWidget(self.mister_frontier_source_combo)
+                frontier_row.addStretch()
+                hybrid_group.layout().addLayout(frontier_row)
 
-        frontier_row = QHBoxLayout()
-        frontier_row.addSpacing(20)
-        frontier_row.addWidget(QLabel("Filter:"))
-        frontier_row.addWidget(self.mister_frontier_source_combo)
-        frontier_row.addStretch()
-        hybrid_group.layout().addLayout(frontier_row)
         self.mister_frontier_check.toggled.connect(self.update_mister_frontier_state)
 
         tools_group = self._group("Tools & Scripts", self.left_column_layout)
@@ -272,6 +291,8 @@ class UpdateAllConfigDialog(QDialog):
         self.degauss_check = QCheckBox("Degauss")
         self.mister_monitor_check = QCheckBox("MiSTer Monitor")
         self.disc_tools_check = QCheckBox("Disc Tools")
+        self.shmup_deck_check = QCheckBox("Shmup Deck")
+        self.cifs_scripts_check = QCheckBox("CIFS Scripts")
         self.mister_dvd_check = QCheckBox("MiSTer DVD")
 
         for widget in [
@@ -293,6 +314,8 @@ class UpdateAllConfigDialog(QDialog):
         self._add(tools_group, self.misterfin_check)
         self._add(tools_group, self.mister_monitor_check)
         self._add(tools_group, self.disc_tools_check)
+        self._add(tools_group, self.shmup_deck_check)
+        self._add(tools_group, self.cifs_scripts_check)
         self._add(tools_group, self.mister_dvd_check)
 
         extra_group = self._group("Extra Content", self.left_column_layout)
@@ -305,7 +328,7 @@ class UpdateAllConfigDialog(QDialog):
         self.ranny_wallpapers_check = QCheckBox("Ranny Snice Wallpapers")
         self.manualsdb_check = QCheckBox("Game Manuals (EN) DB's")
         self.manualsdb_config_button = QPushButton("Configure")
-        self.artworkdb_check = QCheckBox("Game Artwork DB's")
+        self.artworkdb_check = QCheckBox("Game Box Art DBs")
         self.artworkdb_config_button = QPushButton("Configure")
 
         self.ranny_wallpapers_source_combo = QComboBox()
@@ -351,6 +374,28 @@ class UpdateAllConfigDialog(QDialog):
 
         self.artworkdb_check.toggled.connect(self.update_artworkdb_state)
         self.artworkdb_config_button.clicked.connect(self.on_artworkdb_configure)
+
+        self.screenshotdb_check = QCheckBox("Game Screenshot DBs")
+        self.screenshotdb_config_button = QPushButton("Configure")
+        self.screenshotdb_config_button.setEnabled(False)
+        screenshotdb_row = QHBoxLayout()
+        screenshotdb_row.addWidget(self.screenshotdb_check)
+        screenshotdb_row.addStretch()
+        screenshotdb_row.addWidget(self.screenshotdb_config_button)
+        extra_group.layout().addLayout(screenshotdb_row)
+        self.screenshotdb_check.toggled.connect(self.screenshotdb_config_button.setEnabled)
+        self.screenshotdb_config_button.clicked.connect(lambda: self._configure_artwork_type("screenshotdb", SCREENSHOTDB_SOURCES, "Game Screenshot DBs"))
+
+        self.titlescreendb_check = QCheckBox("Game Title Screen DBs")
+        self.titlescreendb_config_button = QPushButton("Configure")
+        self.titlescreendb_config_button.setEnabled(False)
+        titlescreendb_row = QHBoxLayout()
+        titlescreendb_row.addWidget(self.titlescreendb_check)
+        titlescreendb_row.addStretch()
+        titlescreendb_row.addWidget(self.titlescreendb_config_button)
+        extra_group.layout().addLayout(titlescreendb_row)
+        self.titlescreendb_check.toggled.connect(self.titlescreendb_config_button.setEnabled)
+        self.titlescreendb_config_button.clicked.connect(lambda: self._configure_artwork_type("titlescreendb", TITLESCREENDB_SOURCES, "Game Title Screen DBs"))
 
         retro_group = self._group("RetroAccount", self.right_column_layout)
         retro_group.setSizePolicy(
@@ -514,7 +559,6 @@ class UpdateAllConfigDialog(QDialog):
             "llapi_folder": self.llapi_check,
             "theypsilon_unofficial_distribution": self.unofficial_check,
             "MikeS11/YC_Builds-MiSTer": self.yc_check,
-            "agg23_db": self.agg23_check,
             "ajgowans/alt-cores": self.altcores_check,
             "TheJesusFish/Dual-Ram-Console-Cores": self.dualram_check,
             "theypsilon/RetroAchievementsDB_MiSTer": self.retroachievements_cores_check,
@@ -530,6 +574,9 @@ class UpdateAllConfigDialog(QDialog):
             "MultiDatabases/3s-arm": self.three_s_arm_check,
             "MiSTerOrganize/MiSTer_Frontier": self.mister_frontier_check,
             "MultiDatabases/maldita-castilla": self.maldita_castilla_check,
+            "MultiDatabases/diablo": self.diablo_check,
+            "MultiDatabases/shmup-deck": self.shmup_deck_check,
+            "MultiDatabases/cifs-scripts": self.cifs_scripts_check,
             "MultiDatabases/nblood": self.nblood_check,
             "mrext/all": self.mrext_check,
             "MiSTer_SAM_files": self.sam_check,
@@ -565,8 +612,10 @@ class UpdateAllConfigDialog(QDialog):
             return
 
         if database_id.startswith("chipster6502/artworkdb-"):
-            self.artworkdb_selected = [value for value in self.artworkdb_selected if value != database_id]
-            self.artworkdb_check.setChecked(bool(self.artworkdb_selected))
+            for key in ("artworkdb", "screenshotdb", "titlescreendb"):
+                selected = [value for value in getattr(self, key + "_selected") if value != database_id]
+                setattr(self, key + "_selected", selected)
+                getattr(self, key + "_check").setChecked(bool(selected))
             return
 
         for source, checkbox in zip(self.custom_sources, self.custom_source_checks):
@@ -877,6 +926,13 @@ class UpdateAllConfigDialog(QDialog):
 
             self.update_manualsdb_state()
 
+    def _configure_artwork_type(self, key, sources, title):
+        dialog = ArtworkDbConfigDialog(getattr(self, key + "_selected"), self, sources=sources, title=title)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            selected = dialog.get_selected_ids()
+            setattr(self, key + "_selected", selected)
+            getattr(self, key + "_check").setChecked(bool(selected))
+
     def on_artworkdb_configure(self):
         dialog = ArtworkDbConfigDialog(self.artworkdb_selected, self)
 
@@ -904,11 +960,12 @@ class UpdateAllConfigDialog(QDialog):
         self.jt_beta_check.setChecked(data["jt_beta"])
 
         self.coinop_check.setChecked(data["coinop"])
+        self.coinop_releases_combo.setCurrentText(data.get("coinop_releases", "Auto"))
+        self.coinop_effective_release = data.get("coinop_effective_release", "Public")
         self.arcade_offset_check.setChecked(data["arcade_offset"])
         self.llapi_check.setChecked(data["llapi"])
         self.unofficial_check.setChecked(data["unofficial"])
         self.yc_check.setChecked(data["yc"])
-        self.agg23_check.setChecked(data["agg23"])
         self.altcores_check.setChecked(data["altcores"])
         self.dualram_check.setChecked(data["dualram"])
         self.retroachievements_cores_check.setChecked(
@@ -929,6 +986,7 @@ class UpdateAllConfigDialog(QDialog):
             data.get("mister_frontier_source", "All Frontier Cores")
         )
         self.maldita_castilla_check.setChecked(data.get("maldita_castilla", False))
+        self.diablo_check.setChecked(data.get("diablo", False))
         self.nblood_check.setChecked(data.get("nblood", False))
 
         self.arcade_org_check.setChecked(data["arcade_org"])
@@ -946,6 +1004,8 @@ class UpdateAllConfigDialog(QDialog):
         self.degauss_check.setChecked(data.get("degauss", False))
         self.mister_monitor_check.setChecked(data.get("mister_monitor", False))
         self.disc_tools_check.setChecked(data.get("disc_tools", False))
+        self.shmup_deck_check.setChecked(data.get("shmup_deck", False))
+        self.cifs_scripts_check.setChecked(data.get("cifs_scripts", False))
         self.mister_dvd_check.setChecked(data.get("mister_dvd", False))
 
         self.bios_check.setChecked(data["bios"])
@@ -961,6 +1021,10 @@ class UpdateAllConfigDialog(QDialog):
         self.manualsdb_check.setChecked(data.get("manualsdb", False))
         self.artworkdb_selected = list(data.get("artworkdb_selected", []))
         self.artworkdb_check.setChecked(data.get("artworkdb", False))
+        self.titlescreendb_selected = list(data.get("titlescreendb_selected", []))
+        self.titlescreendb_check.setChecked(data.get("titlescreendb", False))
+        self.screenshotdb_selected = list(data.get("screenshotdb_selected", []))
+        self.screenshotdb_check.setChecked(data.get("screenshotdb", False))
         self.custom_sources = list(data.get("custom_sources", []))
         self.custom_sources_unmanaged_text = data.get("custom_sources_unmanaged_text", "")
         self._refresh_custom_sources()
@@ -980,11 +1044,12 @@ class UpdateAllConfigDialog(QDialog):
             "jt_beta": self.jt_beta_check.isChecked(),
 
             "coinop": self.coinop_check.isChecked(),
+            "coinop_releases": self.coinop_releases_combo.currentText(),
+            "coinop_effective_release": self.coinop_effective_release,
             "arcade_offset": self.arcade_offset_check.isChecked(),
             "llapi": self.llapi_check.isChecked(),
             "unofficial": self.unofficial_check.isChecked(),
             "yc": self.yc_check.isChecked(),
-            "agg23": self.agg23_check.isChecked(),
             "altcores": self.altcores_check.isChecked(),
             "dualram": self.dualram_check.isChecked(),
             "retroachievements_cores": self.retroachievements_cores_check.isChecked(),
@@ -1001,6 +1066,7 @@ class UpdateAllConfigDialog(QDialog):
             "mister_frontier": self.mister_frontier_check.isChecked(),
             "mister_frontier_source": self.mister_frontier_source_combo.currentText(),
             "maldita_castilla": self.maldita_castilla_check.isChecked(),
+            "diablo": self.diablo_check.isChecked(),
             "nblood": self.nblood_check.isChecked(),
 
             "arcade_org": self.arcade_org_check.isChecked(),
@@ -1018,6 +1084,8 @@ class UpdateAllConfigDialog(QDialog):
             "degauss": self.degauss_check.isChecked(),
             "mister_monitor": self.mister_monitor_check.isChecked(),
             "disc_tools": self.disc_tools_check.isChecked(),
+            "shmup_deck": self.shmup_deck_check.isChecked(),
+            "cifs_scripts": self.cifs_scripts_check.isChecked(),
             "mister_dvd": self.mister_dvd_check.isChecked(),
 
             "bios": self.bios_check.isChecked(),
@@ -1032,6 +1100,10 @@ class UpdateAllConfigDialog(QDialog):
             "manualsdb_selected": list(self.manualsdb_selected),
             "artworkdb": self.artworkdb_check.isChecked(),
             "artworkdb_selected": list(self.artworkdb_selected),
+            "titlescreendb": self.titlescreendb_check.isChecked(),
+            "titlescreendb_selected": list(self.titlescreendb_selected),
+            "screenshotdb": self.screenshotdb_check.isChecked(),
+            "screenshotdb_selected": list(self.screenshotdb_selected),
             "custom_sources": list(self.custom_sources),
             "custom_sources_unmanaged_text": self.custom_sources_unmanaged_text,
         }

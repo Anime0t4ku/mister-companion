@@ -72,6 +72,13 @@ DISC_TOOLS_DB_URL = "https://raw.githubusercontent.com/theypsilon/MultiDatabases
 MISTER_DVD_SECTION = "MultiDatabases/mister-dvd"
 MISTER_DVD_DB_URL = "https://raw.githubusercontent.com/theypsilon/MultiDatabases_MiSTer/db/mister-dvd/db.json"
 
+DIABLO_SECTION = 'MultiDatabases/diablo'
+DIABLO_DB_URL = 'https://raw.githubusercontent.com/theypsilon/MultiDatabases_MiSTer/db/diablo/db.json.zip'
+SHMUP_DECK_SECTION = 'MultiDatabases/shmup-deck'
+SHMUP_DECK_DB_URL = 'https://raw.githubusercontent.com/theypsilon/MultiDatabases_MiSTer/db/shmup-deck/db.json'
+CIFS_SCRIPTS_SECTION = 'MultiDatabases/cifs-scripts'
+CIFS_SCRIPTS_DB_URL = 'https://raw.githubusercontent.com/theypsilon/MultiDatabases_MiSTer/db/cifs-scripts/db.json'
+
 MANUALSDB_PATH = "/media/fat/downloader_ajgowans_manualsdb.ini"
 ARTWORKDB_PATH = "/media/fat/downloader_chipster6502_artworkdb.ini"
 
@@ -109,12 +116,14 @@ MANUALSDB_SOURCES = [
     ("gameandwatch", "Game & Watch"),
     ("gameboy", "Game Boy"),
     ("gamegear", "Game Gear"),
+    ("gamedotcom", "Game.com"),
     ("gba", "Game Boy Advance"),
     ("gbc", "Game Boy Color"),
     ("intellivision", "Intellivision"),
     ("jaguar", "Jaguar"),
     ("jaguarcd", "Jaguar CD"),
     ("lcdhandhelds", "LCD Handhelds"),
+    ("loopy", "Loopy"),
     ("megadrive", "Mega Drive"),
     ("n64", "Nintendo 64"),
     ("neogeoaes", "Neo Geo AES"),
@@ -124,8 +133,10 @@ MANUALSDB_SOURCES = [
     ("ngpc", "Neo Geo Pocket Color"),
     ("odyssey2", "Odyssey 2"),
     ("pokemonmini", "Pokémon Mini"),
+    ("pocketstation", "PocketStation"),
     ("psx", "PlayStation"),
     ("pyuutajr", "Pyuuta Jr."),
+    ("rcastudio", "RCA Studio II"),
     ("sega32x", "Sega 32X"),
     ("segacd", "Sega CD"),
     ("segasaturn", "Sega Saturn"),
@@ -137,6 +148,7 @@ MANUALSDB_SOURCES = [
     ("turbografxcd", "TurboGrafx-CD"),
     ("vc4000", "VC 4000"),
     ("vectrex", "Vectrex"),
+    ("virtualboy", "Virtual Boy"),
     ("wonderswanc", "WonderSwan Color"),
 ]
 
@@ -184,7 +196,94 @@ ARTWORKDB_SOURCES = [
     ("chipster6502/artworkdb-wonderswancolor", "WonderSwan Color", "https://raw.githubusercontent.com/chipster6502/artworkdb-misc/db/wonderswancolor_box2d.json.zip"),
 ]
 
-ARTWORKDB_IDS = [source_id for source_id, _label, _url in ARTWORKDB_SOURCES]
+
+SCREENSHOTDB_SOURCES = [
+    ('chipster6502/artworkdb-3do-screenshots', '3DO', 'https://raw.githubusercontent.com/chipster6502/artworkdb-misc/db/3do_snap.json.zip'),
+    ('chipster6502/artworkdb-atari5200-screenshots', 'Atari 5200', 'https://raw.githubusercontent.com/chipster6502/artworkdb-atari/db/atari5200_snap.json.zip'),
+    ('chipster6502/artworkdb-atari7800-screenshots', 'Atari 7800', 'https://raw.githubusercontent.com/chipster6502/artworkdb-atari/db/atari7800_snap.json.zip'),
+    ('chipster6502/artworkdb-amigacd32-screenshots', 'Amiga CD32', 'https://raw.githubusercontent.com/chipster6502/artworkdb-misc/db/amigacd32_snap.json.zip'),
+    ('chipster6502/artworkdb-arcade-screenshots', 'Arcade', 'https://raw.githubusercontent.com/chipster6502/artworkdb-arcade/db/arcade_snap.json.zip'),
+    ('chipster6502/artworkdb-atari2600-screenshots', 'Atari 2600', 'https://raw.githubusercontent.com/chipster6502/artworkdb-atari/db/atari2600_snap.json.zip'),
+    ('chipster6502/artworkdb-atarilynx-screenshots', 'Atari Lynx', 'https://raw.githubusercontent.com/chipster6502/artworkdb-atari/db/atarilynx_snap.json.zip'),
+    ('chipster6502/artworkdb-cd-i-screenshots', 'CD-i', 'https://raw.githubusercontent.com/chipster6502/artworkdb-misc/db/cd-i_snap.json.zip'),
+    ('chipster6502/artworkdb-coleco-screenshots', 'Coleco', 'https://raw.githubusercontent.com/chipster6502/artworkdb-misc/db/coleco_snap.json.zip'),
+    ('chipster6502/artworkdb-fds-screenshots', 'FDS', 'https://raw.githubusercontent.com/chipster6502/artworkdb-nintendo-consoles/db/fds_snap.json.zip'),
+    ('chipster6502/artworkdb-gameboy-screenshots', 'Game Boy', 'https://raw.githubusercontent.com/chipster6502/artworkdb-nintendo-handhelds/db/gameboy_snap.json.zip'),
+    ('chipster6502/artworkdb-gba-screenshots', 'GBA', 'https://raw.githubusercontent.com/chipster6502/artworkdb-nintendo-handhelds/db/gba_snap.json.zip'),
+    ('chipster6502/artworkdb-gbc-screenshots', 'Game Boy Color', 'https://raw.githubusercontent.com/chipster6502/artworkdb-nintendo-handhelds/db/gbc_snap.json.zip'),
+    ('chipster6502/artworkdb-gamegear-screenshots', 'Game Gear', 'https://raw.githubusercontent.com/chipster6502/artworkdb-sega/db/gamegear_snap.json.zip'),
+    ('chipster6502/artworkdb-genesis-screenshots', 'Genesis', 'https://raw.githubusercontent.com/chipster6502/artworkdb-sega/db/genesis_snap.json.zip'),
+    ('chipster6502/artworkdb-intellivision-screenshots', 'Intellivision', 'https://raw.githubusercontent.com/chipster6502/artworkdb-misc/db/intellivision_snap.json.zip'),
+    ('chipster6502/artworkdb-jaguar-screenshots', 'Jaguar', 'https://raw.githubusercontent.com/chipster6502/artworkdb-atari/db/jaguar_snap.json.zip'),
+    ('chipster6502/artworkdb-megacd-screenshots', 'Mega CD', 'https://raw.githubusercontent.com/chipster6502/artworkdb-sega/db/megacd_snap.json.zip'),
+    ('chipster6502/artworkdb-n64-screenshots', 'N64', 'https://raw.githubusercontent.com/chipster6502/artworkdb-nintendo-consoles/db/n64_snap.json.zip'),
+    ('chipster6502/artworkdb-neogeo-screenshots', 'Neo Geo', 'https://raw.githubusercontent.com/chipster6502/artworkdb-snk/db/neogeo_snap.json.zip'),
+    ('chipster6502/artworkdb-nes-screenshots', 'NES', 'https://raw.githubusercontent.com/chipster6502/artworkdb-nintendo-consoles/db/nes_snap.json.zip'),
+    ('chipster6502/artworkdb-neogeo-cd-screenshots', 'Neo Geo CD', 'https://raw.githubusercontent.com/chipster6502/artworkdb-snk/db/neogeo-cd_snap.json.zip'),
+    ('chipster6502/artworkdb-neogeopocket-screenshots', 'Neo Geo Pocket', 'https://raw.githubusercontent.com/chipster6502/artworkdb-snk/db/neogeopocket_snap.json.zip'),
+    ('chipster6502/artworkdb-neogeopocket-color-screenshots', 'Neo Geo Pocket Color', 'https://raw.githubusercontent.com/chipster6502/artworkdb-snk/db/neogeopocket-color_snap.json.zip'),
+    ('chipster6502/artworkdb-odyssey2-screenshots', 'Odyssey 2', 'https://raw.githubusercontent.com/chipster6502/artworkdb-misc/db/odyssey2_snap.json.zip'),
+    ('chipster6502/artworkdb-psx-screenshots', 'PSX', 'https://raw.githubusercontent.com/chipster6502/artworkdb-sony/db/psx_snap.json.zip'),
+    ('chipster6502/artworkdb-s32x-screenshots', 'Sega 32X', 'https://raw.githubusercontent.com/chipster6502/artworkdb-sega/db/s32x_snap.json.zip'),
+    ('chipster6502/artworkdb-sg-1000-screenshots', 'SG-1000', 'https://raw.githubusercontent.com/chipster6502/artworkdb-sega/db/sg-1000_snap.json.zip'),
+    ('chipster6502/artworkdb-sms-screenshots', 'SMS', 'https://raw.githubusercontent.com/chipster6502/artworkdb-sega/db/sms_snap.json.zip'),
+    ('chipster6502/artworkdb-snes-screenshots', 'SNES', 'https://raw.githubusercontent.com/chipster6502/artworkdb-nintendo-consoles/db/snes_snap.json.zip'),
+    ('chipster6502/artworkdb-satellaview-screenshots', 'Satellaview', 'https://raw.githubusercontent.com/chipster6502/artworkdb-nintendo-consoles/db/satellaview_snap.json.zip'),
+    ('chipster6502/artworkdb-saturn-screenshots', 'Saturn', 'https://raw.githubusercontent.com/chipster6502/artworkdb-sega/db/saturn_snap.json.zip'),
+    ('chipster6502/artworkdb-supergrafx-screenshots', 'SuperGrafx', 'https://raw.githubusercontent.com/chipster6502/artworkdb-nec/db/supergrafx_snap.json.zip'),
+    ('chipster6502/artworkdb-tgfx16-screenshots', 'TurboGrafx-16', 'https://raw.githubusercontent.com/chipster6502/artworkdb-nec/db/tgfx16_snap.json.zip'),
+    ('chipster6502/artworkdb-tgfx16-cd-screenshots', 'TurboGrafx-CD', 'https://raw.githubusercontent.com/chipster6502/artworkdb-nec/db/tgfx16-cd_snap.json.zip'),
+    ('chipster6502/artworkdb-vectrex-screenshots', 'Vectrex', 'https://raw.githubusercontent.com/chipster6502/artworkdb-misc/db/vectrex_snap.json.zip'),
+    ('chipster6502/artworkdb-virtualboy-screenshots', 'Virtual Boy', 'https://raw.githubusercontent.com/chipster6502/artworkdb-nintendo-consoles/db/virtualboy_snap.json.zip'),
+    ('chipster6502/artworkdb-wonderswan-screenshots', 'WonderSwan', 'https://raw.githubusercontent.com/chipster6502/artworkdb-misc/db/wonderswan_snap.json.zip'),
+    ('chipster6502/artworkdb-wonderswancolor-screenshots', 'WonderSwan Color', 'https://raw.githubusercontent.com/chipster6502/artworkdb-misc/db/wonderswancolor_snap.json.zip'),
+]
+
+TITLESCREENDB_SOURCES = [
+    ('chipster6502/artworkdb-3do-titles', '3DO', 'https://raw.githubusercontent.com/chipster6502/artworkdb-misc/db/3do_title.json.zip'),
+    ('chipster6502/artworkdb-atari5200-titles', 'Atari 5200', 'https://raw.githubusercontent.com/chipster6502/artworkdb-atari/db/atari5200_title.json.zip'),
+    ('chipster6502/artworkdb-atari7800-titles', 'Atari 7800', 'https://raw.githubusercontent.com/chipster6502/artworkdb-atari/db/atari7800_title.json.zip'),
+    ('chipster6502/artworkdb-amigacd32-titles', 'Amiga CD32', 'https://raw.githubusercontent.com/chipster6502/artworkdb-misc/db/amigacd32_title.json.zip'),
+    ('chipster6502/artworkdb-arcade-titles', 'Arcade', 'https://raw.githubusercontent.com/chipster6502/artworkdb-arcade/db/arcade_title.json.zip'),
+    ('chipster6502/artworkdb-atari2600-titles', 'Atari 2600', 'https://raw.githubusercontent.com/chipster6502/artworkdb-atari/db/atari2600_title.json.zip'),
+    ('chipster6502/artworkdb-atarilynx-titles', 'Atari Lynx', 'https://raw.githubusercontent.com/chipster6502/artworkdb-atari/db/atarilynx_title.json.zip'),
+    ('chipster6502/artworkdb-cd-i-titles', 'CD-i', 'https://raw.githubusercontent.com/chipster6502/artworkdb-misc/db/cd-i_title.json.zip'),
+    ('chipster6502/artworkdb-coleco-titles', 'Coleco', 'https://raw.githubusercontent.com/chipster6502/artworkdb-misc/db/coleco_title.json.zip'),
+    ('chipster6502/artworkdb-fds-titles', 'FDS', 'https://raw.githubusercontent.com/chipster6502/artworkdb-nintendo-consoles/db/fds_title.json.zip'),
+    ('chipster6502/artworkdb-gameboy-titles', 'Game Boy', 'https://raw.githubusercontent.com/chipster6502/artworkdb-nintendo-handhelds/db/gameboy_title.json.zip'),
+    ('chipster6502/artworkdb-gba-titles', 'GBA', 'https://raw.githubusercontent.com/chipster6502/artworkdb-nintendo-handhelds/db/gba_title.json.zip'),
+    ('chipster6502/artworkdb-gbc-titles', 'Game Boy Color', 'https://raw.githubusercontent.com/chipster6502/artworkdb-nintendo-handhelds/db/gbc_title.json.zip'),
+    ('chipster6502/artworkdb-gamegear-titles', 'Game Gear', 'https://raw.githubusercontent.com/chipster6502/artworkdb-sega/db/gamegear_title.json.zip'),
+    ('chipster6502/artworkdb-genesis-titles', 'Genesis', 'https://raw.githubusercontent.com/chipster6502/artworkdb-sega/db/genesis_title.json.zip'),
+    ('chipster6502/artworkdb-intellivision-titles', 'Intellivision', 'https://raw.githubusercontent.com/chipster6502/artworkdb-misc/db/intellivision_title.json.zip'),
+    ('chipster6502/artworkdb-jaguar-titles', 'Jaguar', 'https://raw.githubusercontent.com/chipster6502/artworkdb-atari/db/jaguar_title.json.zip'),
+    ('chipster6502/artworkdb-megacd-titles', 'Mega CD', 'https://raw.githubusercontent.com/chipster6502/artworkdb-sega/db/megacd_title.json.zip'),
+    ('chipster6502/artworkdb-n64-titles', 'N64', 'https://raw.githubusercontent.com/chipster6502/artworkdb-nintendo-consoles/db/n64_title.json.zip'),
+    ('chipster6502/artworkdb-neogeo-titles', 'Neo Geo', 'https://raw.githubusercontent.com/chipster6502/artworkdb-snk/db/neogeo_title.json.zip'),
+    ('chipster6502/artworkdb-nes-titles', 'NES', 'https://raw.githubusercontent.com/chipster6502/artworkdb-nintendo-consoles/db/nes_title.json.zip'),
+    ('chipster6502/artworkdb-neogeo-cd-titles', 'Neo Geo CD', 'https://raw.githubusercontent.com/chipster6502/artworkdb-snk/db/neogeo-cd_title.json.zip'),
+    ('chipster6502/artworkdb-neogeopocket-titles', 'Neo Geo Pocket', 'https://raw.githubusercontent.com/chipster6502/artworkdb-snk/db/neogeopocket_title.json.zip'),
+    ('chipster6502/artworkdb-neogeopocket-color-titles', 'Neo Geo Pocket Color', 'https://raw.githubusercontent.com/chipster6502/artworkdb-snk/db/neogeopocket-color_title.json.zip'),
+    ('chipster6502/artworkdb-odyssey2-titles', 'Odyssey 2', 'https://raw.githubusercontent.com/chipster6502/artworkdb-misc/db/odyssey2_title.json.zip'),
+    ('chipster6502/artworkdb-psx-titles', 'PSX', 'https://raw.githubusercontent.com/chipster6502/artworkdb-sony/db/psx_title.json.zip'),
+    ('chipster6502/artworkdb-s32x-titles', 'Sega 32X', 'https://raw.githubusercontent.com/chipster6502/artworkdb-sega/db/s32x_title.json.zip'),
+    ('chipster6502/artworkdb-sg-1000-titles', 'SG-1000', 'https://raw.githubusercontent.com/chipster6502/artworkdb-sega/db/sg-1000_title.json.zip'),
+    ('chipster6502/artworkdb-sms-titles', 'SMS', 'https://raw.githubusercontent.com/chipster6502/artworkdb-sega/db/sms_title.json.zip'),
+    ('chipster6502/artworkdb-snes-titles', 'SNES', 'https://raw.githubusercontent.com/chipster6502/artworkdb-nintendo-consoles/db/snes_title.json.zip'),
+    ('chipster6502/artworkdb-satellaview-titles', 'Satellaview', 'https://raw.githubusercontent.com/chipster6502/artworkdb-nintendo-consoles/db/satellaview_title.json.zip'),
+    ('chipster6502/artworkdb-saturn-titles', 'Saturn', 'https://raw.githubusercontent.com/chipster6502/artworkdb-sega/db/saturn_title.json.zip'),
+    ('chipster6502/artworkdb-supergrafx-titles', 'SuperGrafx', 'https://raw.githubusercontent.com/chipster6502/artworkdb-nec/db/supergrafx_title.json.zip'),
+    ('chipster6502/artworkdb-tgfx16-titles', 'TurboGrafx-16', 'https://raw.githubusercontent.com/chipster6502/artworkdb-nec/db/tgfx16_title.json.zip'),
+    ('chipster6502/artworkdb-tgfx16-cd-titles', 'TurboGrafx-CD', 'https://raw.githubusercontent.com/chipster6502/artworkdb-nec/db/tgfx16-cd_title.json.zip'),
+    ('chipster6502/artworkdb-vectrex-titles', 'Vectrex', 'https://raw.githubusercontent.com/chipster6502/artworkdb-misc/db/vectrex_title.json.zip'),
+    ('chipster6502/artworkdb-virtualboy-titles', 'Virtual Boy', 'https://raw.githubusercontent.com/chipster6502/artworkdb-nintendo-consoles/db/virtualboy_title.json.zip'),
+    ('chipster6502/artworkdb-wonderswan-titles', 'WonderSwan', 'https://raw.githubusercontent.com/chipster6502/artworkdb-misc/db/wonderswan_title.json.zip'),
+    ('chipster6502/artworkdb-wonderswancolor-titles', 'WonderSwan Color', 'https://raw.githubusercontent.com/chipster6502/artworkdb-misc/db/wonderswancolor_title.json.zip'),
+]
+
+ARTWORKDB_ALL_SOURCES = ARTWORKDB_SOURCES + SCREENSHOTDB_SOURCES + TITLESCREENDB_SOURCES
+
+ARTWORKDB_IDS = [source_id for source_id, _label, _url in ARTWORKDB_ALL_SOURCES]
 
 
 def split_downloader_paths():
@@ -619,7 +718,6 @@ def _known_update_all_database_sources(custom_sources=None):
         ("llapi_folder", "LLAPI Forks Folder"),
         ("theypsilon_unofficial_distribution", "Unofficial Distribution"),
         ("MikeS11/YC_Builds-MiSTer", "Y/C Builds"),
-        ("agg23_db", "agg23’s MiSTer Cores"),
         ("ajgowans/alt-cores", "Alt Cores"),
         ("TheJesusFish/Dual-Ram-Console-Cores", "Dual RAM Console Cores"),
         (RETROACHIEVEMENTS_CORES_SECTION, "RetroAchievement Cores"),
@@ -635,6 +733,9 @@ def _known_update_all_database_sources(custom_sources=None):
         (THREE_S_ARM_SECTION, "3S-ARM"),
         (MISTER_FRONTIER_SECTION, "MiSTer Frontier"),
         (MALDITA_CASTILLA_SECTION, "Maldita Castilla MiSTer"),
+        (DIABLO_SECTION, "Diablo MiSTer"),
+        (SHMUP_DECK_SECTION, "Shmup Deck"),
+        (CIFS_SCRIPTS_SECTION, "CIFS Scripts"),
         (NBLOOD_SECTION, "NBlood"),
         ("mrext/all", "MiSTer Extensions (Wizzo Scripts)"),
         ("MiSTer_SAM_files", "MiSTer Super Attract Mode"),
@@ -662,10 +763,15 @@ def _known_update_all_database_sources(custom_sources=None):
         (f"ajgowans/manualsdb-{source_id}", f"Game Manuals - {label}")
         for source_id, label in MANUALSDB_SOURCES
     )
-    sources.extend(
-        (source_id, f"Game Artwork - {label}")
-        for source_id, label, _url in ARTWORKDB_SOURCES
-    )
+    for artwork_label, artwork_sources in (
+        ("Game Box Art", ARTWORKDB_SOURCES),
+        ("Game Screenshots", SCREENSHOTDB_SOURCES),
+        ("Game Title Screens", TITLESCREENDB_SOURCES),
+    ):
+        sources.extend(
+            (source_id, f"{artwork_label} - {label}")
+            for source_id, label, _url in artwork_sources
+        )
     for source in custom_sources or []:
         try:
             database_id = normalize_database_id(source.get("database_id", ""))[1:-1]
@@ -846,7 +952,7 @@ def build_artworkdb_ini(selected_ids):
     selected = normalize_artworkdb_selected(selected_ids)
     sources_by_id = {
         source_id: url
-        for source_id, _label, url in ARTWORKDB_SOURCES
+        for source_id, _label, url in ARTWORKDB_ALL_SOURCES
     }
     lines = []
 
@@ -980,9 +1086,14 @@ def _build_config_data(
     manualsdb_selected = parse_manualsdb_ini(manualsdb_ini)
     artworkdb_selected = parse_artworkdb_ini(artworkdb_ini)
 
+    coinop_filter = extract_section_value(ini_data, "Coin-OpCollection/Distribution-MiSTerFPGA", "filter") or ""
+    terms = coinop_filter.lower().split()
+    effective_release = "Public" if not coinop_filter.strip() or "!coinop-collection-beta" in terms else "Beta" if "!coinop-collection-alpha" in terms else "Alpha"
     data = {
+        "coinop_releases": "Auto" if json_data.get("coin_op_collection_releases_auto", True) else effective_release,
+        "coinop_effective_release": effective_release,
         "main_cores": is_enabled("distribution_mister"),
-        "main_source": "MiSTer-devel (Recommended)",
+        "main_source": "MiSTer-devel (Stable Linux)",
         "jtcores": is_enabled("jtcores"),
         "jt_beta": json_data.get("download_beta_cores", False),
 
@@ -991,7 +1102,6 @@ def _build_config_data(
         "llapi": is_enabled("llapi_folder"),
         "unofficial": is_enabled("theypsilon_unofficial_distribution"),
         "yc": is_enabled("MikeS11/YC_Builds-MiSTer"),
-        "agg23": is_enabled("agg23_db"),
         "altcores": is_enabled("ajgowans/alt-cores"),
         "dualram": is_enabled("TheJesusFish/Dual-Ram-Console-Cores"),
         "retroachievements_cores": is_enabled(RETROACHIEVEMENTS_CORES_SECTION),
@@ -1028,6 +1138,9 @@ def _build_config_data(
         "mister_dvd": is_enabled(MISTER_DVD_SECTION),
 
         "maldita_castilla": is_enabled(MALDITA_CASTILLA_SECTION),
+        "diablo": is_enabled(DIABLO_SECTION),
+        "shmup_deck": is_enabled(SHMUP_DECK_SECTION),
+        "cifs_scripts": is_enabled(CIFS_SCRIPTS_SECTION),
         "nblood": is_enabled(NBLOOD_SECTION),
 
         "bios": is_enabled("bios_db"),
@@ -1039,16 +1152,23 @@ def _build_config_data(
         "anime0t4ku_mister_scripts": is_enabled("anime0t4ku_mister_scripts"),
         "manualsdb": bool(manualsdb_selected),
         "manualsdb_selected": manualsdb_selected,
-        "artworkdb": bool(artworkdb_selected),
-        "artworkdb_selected": artworkdb_selected,
+        "artworkdb": any(x in {r[0] for r in ARTWORKDB_SOURCES} for x in artworkdb_selected),
+        "artworkdb_selected": [x for x in artworkdb_selected if x in {r[0] for r in ARTWORKDB_SOURCES}],
+        "screenshotdb": any(x in {r[0] for r in SCREENSHOTDB_SOURCES} for x in artworkdb_selected),
+        "screenshotdb_selected": [x for x in artworkdb_selected if x in {r[0] for r in SCREENSHOTDB_SOURCES}],
+        "titlescreendb": any(x in {r[0] for r in TITLESCREENDB_SOURCES} for x in artworkdb_selected),
+        "titlescreendb_selected": [x for x in artworkdb_selected if x in {r[0] for r in TITLESCREENDB_SOURCES}],
 
         "ranny_wallpapers": is_enabled("Ranny-Snice/Ranny-Snice-Wallpapers"),
         "ranny_wallpapers_source": "All Wallpapers",
     }
 
-    if "aitorgomez.net" in ini_data:
+    main_url = extract_section_value(ini_data, "distribution_mister", "db_url")
+    if "MiSTer-devel/Distribution_MiSTer" in main_url:
+        data["main_source"] = "MiSTer-devel (Edge Linux)"
+    if "aitorgomez.net" in main_url:
         data["main_source"] = "AitorGomez fork"
-    elif "MiSTer-DB9" in ini_data:
+    elif "MiSTer-DB9" in main_url:
         data["main_source"] = "DB9 / SNAC8 forks with ENCC"
 
     if data["mister_frontier"]:
@@ -1220,16 +1340,22 @@ def handle_mister_frontier_section(enabled, source, lines):
 
 
 def _prepare_config_lines_and_json(config, main_lines, arcade_lines, bios_lines, json_data):
+    # These are explicit user choices; prevent upstream first-run migrations from replacing them.
+    json_data["introduced_pinned_linux_distribution_mister"] = True
+    json_data["introduced_cifs_scripts"] = True
+    json_data["coin_op_collection_releases_auto"] = config.get("coinop_releases", "Auto") == "Auto"
     json_data["download_beta_cores"] = bool(config.get("jt_beta", False))
     json_data["introduced_arcade_names_txt"] = bool(config.get("arcade_org", False))
 
     main_lines = remove_section_from_lines(main_lines, "distribution_mister")
     if config.get("main_cores"):
-        source = config.get("main_source", "MiSTer-devel (Recommended)")
+        source = config.get("main_source", "MiSTer-devel (Stable Linux)")
         if "AitorGomez" in source:
             url = "https://www.aitorgomez.net/static/mistermain/db.json.zip"
         elif "DB9" in source:
             url = "https://raw.githubusercontent.com/MiSTer-DB9/Distribution_MiSTer/main/dbencc.json.zip"
+        elif "Stable Linux" in source:
+            url = "https://raw.githubusercontent.com/theypsilon/MultiDatabases_MiSTer/db/distribution-mister-pinned-linux/db.json.zip"
         else:
             url = "https://raw.githubusercontent.com/MiSTer-devel/Distribution_MiSTer/main/db.json.zip"
 
@@ -1261,6 +1387,13 @@ def _prepare_config_lines_and_json(config, main_lines, arcade_lines, bios_lines,
             "db_url = https://raw.githubusercontent.com/Coin-OpCollection/Distribution-MiSTerFPGA/db/db.json.zip",
         ],
     )
+    release = config.get("coinop_releases", "Auto")
+    if release == "Auto":
+        release = config.get("coinop_effective_release", "Public")
+    coinop_filter = {"Beta": "[MiSTer] !coinop-collection-alpha", "Alpha": "[MiSTer]"}.get(release)
+    if config.get("coinop", False) and coinop_filter:
+        main_lines.append(f"filter = {coinop_filter}")
+
     main_lines = handle_simple_section(
         "arcade_offset_folder",
         config.get("arcade_offset", False),
@@ -1297,15 +1430,7 @@ def _prepare_config_lines_and_json(config, main_lines, arcade_lines, bios_lines,
             "db_url = https://raw.githubusercontent.com/MikeS11/YC_Builds-MiSTer/db/db.json.zip",
         ],
     )
-    main_lines = handle_simple_section(
-        "agg23_db",
-        config.get("agg23", False),
-        main_lines,
-        [
-            "[agg23_db]",
-            "db_url = https://raw.githubusercontent.com/agg23/mister-repository/db/manifest.json",
-        ],
-    )
+    main_lines = remove_section_from_lines(main_lines, "agg23_db")
     main_lines = handle_simple_section(
         "ajgowans/alt-cores",
         config.get("altcores", False),
@@ -1337,6 +1462,9 @@ def _prepare_config_lines_and_json(config, main_lines, arcade_lines, bios_lines,
         (SOLARUS_SECTION, "solarus_mister", SOLARUS_DB_URL),
         (THREE_S_ARM_SECTION, "three_s_arm", THREE_S_ARM_DB_URL),
         (MALDITA_CASTILLA_SECTION, "maldita_castilla", MALDITA_CASTILLA_DB_URL),
+        (DIABLO_SECTION, "diablo", DIABLO_DB_URL),
+        (SHMUP_DECK_SECTION, "shmup_deck", SHMUP_DECK_DB_URL),
+        (CIFS_SCRIPTS_SECTION, "cifs_scripts", CIFS_SCRIPTS_DB_URL),
         (NBLOOD_SECTION, "nblood", NBLOOD_DB_URL),
     ]:
         main_lines = handle_simple_section(
@@ -1573,14 +1701,14 @@ def _prepare_manualsdb_ini(config):
 
 
 def _prepare_artworkdb_ini(config):
-    if not config.get("artworkdb", False):
-        return ""
-
-    selected = normalize_artworkdb_selected(config.get("artworkdb_selected", []))
-
-    if not selected:
-        selected = list(ARTWORKDB_IDS)
-
+    selected = []
+    for key, sources in (("artworkdb", ARTWORKDB_SOURCES),
+                         ("screenshotdb", SCREENSHOTDB_SOURCES),
+                         ("titlescreendb", TITLESCREENDB_SOURCES)):
+        if config.get(key, False):
+            allowed = {row[0] for row in sources}
+            chosen = [value for value in config.get(key + "_selected", []) if value in allowed]
+            selected.extend(chosen or [row[0] for row in sources])
     return build_artworkdb_ini(selected)
 
 

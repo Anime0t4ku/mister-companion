@@ -16,13 +16,15 @@ from core.update_all_config import ARTWORKDB_SOURCES
 
 
 class ArtworkDbConfigDialog(QDialog):
-    def __init__(self, selected_ids=None, parent=None):
+    def __init__(self, selected_ids=None, parent=None, *, sources=None, title="Game Box Art DBs"):
         super().__init__(parent)
 
+        self.sources = ARTWORKDB_SOURCES if sources is None else sources
+        self.dialog_title = title
         self.selected_ids = set(selected_ids or [])
         self.checkboxes = {}
 
-        self.setWindowTitle("Game Artwork DB's")
+        self.setWindowTitle(self.dialog_title)
         self.resize(520, 650)
         self.setMinimumSize(420, 450)
 
@@ -34,7 +36,7 @@ class ArtworkDbConfigDialog(QDialog):
         outer.setContentsMargins(12, 12, 12, 12)
         outer.setSpacing(10)
 
-        title = QLabel("Game Artwork DB's")
+        title = QLabel(self.dialog_title)
         title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         title.setStyleSheet("font-weight: bold; font-size: 16px;")
         outer.addWidget(title)
@@ -67,7 +69,7 @@ class ArtworkDbConfigDialog(QDialog):
         self.list_layout.setSpacing(4)
         scroll.setWidget(content)
 
-        for source_id, label, _url in ARTWORKDB_SOURCES:
+        for source_id, label, _url in self.sources:
             checkbox = QCheckBox(label)
             checkbox.setProperty("source_id", source_id)
             checkbox.setProperty("search_text", f"{source_id} {label}".lower())
@@ -118,6 +120,6 @@ class ArtworkDbConfigDialog(QDialog):
     def get_selected_ids(self):
         return [
             source_id
-            for source_id, _label, _url in ARTWORKDB_SOURCES
+            for source_id, _label, _url in self.sources
             if self.checkboxes[source_id].isChecked()
         ]
