@@ -1,4 +1,4 @@
-from PyQt6.QtWidgets import QFileDialog, QMessageBox
+from PyQt6.QtWidgets import QFileDialog, QMessageBox, QInputDialog
 
 from core.open_helpers import open_uri
 from core.scripts_actions import (
@@ -133,6 +133,23 @@ class InstallCenterActions:
             if dialog.changed and not offline:
                 return_to_menu_remote(self.connection)
             self.refresh()
+
+    def configure_mister_emby(self):
+        from core.install_center import build_context
+        from core.extras_mister_emby import validate_server, save_server
+        value, ok = QInputDialog.getText(self.tab, 'MiSTerEmby Server',
+            'Emby server URL (for example http://192.168.1.10:8096):')
+        if not ok:
+            return
+        try:
+            value = validate_server(value)
+        except ValueError as exc:
+            QMessageBox.warning(self.tab, 'MiSTerEmby Server', str(exc))
+            return
+        context = build_context(self.main_window)
+        self.tab.start_task('Configuring MiSTerEmby...',
+            lambda log: save_server(context, value, log),
+            'Server saved. Launch MiSTerEmby from Scripts and enter its on-screen PIN at emby.media/pin.')
 
     def configure_update_all(self, installed=True):
         if not installed:

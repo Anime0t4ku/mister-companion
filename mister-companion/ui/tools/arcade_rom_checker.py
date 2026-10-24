@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import (QApplication, QAbstractItemView, QCheckBox, QComboB
     QFileDialog, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMessageBox,
     QProgressBar, QPushButton, QTableWidget, QTableWidgetItem, QTextEdit, QWidget,
     QVBoxLayout)
-from core.arcade_roms import local_zip_index, mra_requirements
+from core.arcade_roms import local_zip_index, mra_requirements, destination_zip_path
 from ui.dialogs.remote_file_picker_dialog import RemoteFilePickerDialog
 
 
@@ -292,6 +292,15 @@ class ArcadeRomChecker(QWidget):
                         existing = {a.filename.lower(): a.filename for a in sftp.listdir_attr(destination) if stat.S_ISREG(a.st_mode)}
                     else:
                         existing = local_zip_index(destination, cancelled=worker.isInterruptionRequested)
+                    for name in {n for group in requirements for n in group if '/' in n}:
+                        worker.check()
+                        path = destination_zip_path(destination, name)
+                        try:
+                            present = stat.S_ISREG(sftp.stat(path).st_mode) if target == 'MiSTer' else Path(path).is_file()
+                        except FileNotFoundError:
+                            present = False
+                        if present:
+                            existing[name] = path
                 local = {}
                 if find:
                     worker.phase.emit('Indexing local MAME collection', 0, 0)
@@ -302,8 +311,8 @@ class ArcadeRomChecker(QWidget):
                 for index, (group, mras) in enumerate(sorted(requirements.items())):
                     worker.check()
                     present = any(name in existing for name in group)
-                    local_name = next((n for n in group if n in local), None)
-                    rows.append(dict(names=group, mras=mras, status=('Present' if present else 'Missing') if check else 'Not checked', local=local.get(local_name, ''), copy_name=local_name))
+                    local_name = next((n for n in group if n in local or n.rsplit('/', 1)[-1] in local), None)
+                    rows.append(dict(names=group, mras=mras, status=('Present' if present else 'Missing') if check else 'Not checked', local=(local.get(local_name) or local.get(local_name.rsplit('/', 1)[-1], '')) if local_name else '', copy_name=local_name))
                     worker.phase.emit('Checking ZIP requirements', index + 1, len(requirements))
                 return rows, errors, len(files), (target, destination, host) if check else None
             finally:
@@ -371,6 +380,15 @@ class ArcadeRomChecker(QWidget):
                 worker.phase.emit('Indexing destination ROMs', 0, 0)
                 worker.status.emit('Checking destination before copying…')
                 existing = {a.filename.lower() for a in sftp.listdir_attr(destination)} if sftp else set(local_zip_index(destination))
+                for name in {n for row in jobs for n in row['names'] if '/' in n}:
+                    worker.check()
+                    path = destination_zip_path(destination, name)
+                    try:
+                        present = stat.S_ISREG(sftp.stat(path).st_mode) if sftp else Path(path).is_file()
+                    except FileNotFoundError:
+                        present = False
+                    if present:
+                        existing.add(name)
                 pending = []
                 planned = set(existing)
                 worker.phase.emit('Preparing copy', 0, 0)
@@ -398,7 +416,19 @@ class ArcadeRomChecker(QWidget):
                     file_bytes = 0
                     try:
                         if sftp:
-                            dest = posixpath.join(destination, name)
+                            dest = destination_zip_path(destination, name)
+                            missing = []
+                            parent = posixpath.dirname(dest)
+                            while parent and parent != '/':
+                                try:
+                                    if not stat.S_ISDIR(sftp.stat(parent).st_mode):
+                                        raise ValueError('ROM parent is not a directory: ' + parent)
+                                    break
+                                except FileNotFoundError:
+                                    missing.append(parent)
+                                    parent = posixpath.dirname(parent)
+                            for parent in reversed(missing):
+                                sftp.mkdir(parent)
                             temp = dest + '.companion-part-' + os.urandom(6).hex()
                             def progress(sent, file_total):
                                 nonlocal file_bytes
@@ -408,7 +438,8 @@ class ArcadeRomChecker(QWidget):
                             sftp.put(row['local'], temp, callback=progress)
                             sftp.rename(temp, dest)
                         else:
-                            dest = Path(destination) / name
+                            dest = Path(destination_zip_path(destination, name))
+                            dest.parent.mkdir(parents=True, exist_ok=True)
                             created = False
                             try:
                                 with open(dest, 'xb') as out, open(row['local'], 'rb') as inp:

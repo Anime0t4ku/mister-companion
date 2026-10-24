@@ -78,6 +78,7 @@ HUB_RAW_BASE_URL = "https://raw.githubusercontent.com/Anime0t4ku/mister-companio
 # Kept local so this UI update remains compatible with Desktop baselines that
 # use these handlers but do not export the backend's handler-to-database map.
 DOWNLOADER_UPDATE_HANDLERS = frozenset({
+    "mister_emby",
     "zaparoo",
     "zaparoo_frontend",
     "retroachievement_cores",
@@ -1134,7 +1135,9 @@ class InstallCenterDetailsDialog(QDialog):
         else:
             add_button("Check for Updates", self.check_for_updates, enabled=installed, min_width=170)
 
-        if handler == "3s_arm":
+        if handler == "mister_emby":
+            add_button("Add / Edit Server Address", self.configure, enabled=installed, min_width=170)
+        elif handler == "3s_arm":
             add_button("Upload SF33RD.AFS", lambda: self.call_install_center_action("upload_sf33rd_afs", self.output), enabled=self.status.get("upload_enabled", context_ready), min_width=190)
         elif handler == "dvd_player":
             css_present = bool(self.status.get("libdvdcss_present"))
@@ -2366,6 +2369,8 @@ class InstallCenterTab(QWidget):
         status = self.statuses.get(item.get("id"), {})
         if handler == "update_all":
             self.actions.configure_update_all(bool(status.get("installed")))
+        elif handler == "mister_emby":
+            self.actions.configure_mister_emby()
         elif handler == "cifs_mount":
             self.actions.configure_cifs()
         elif handler == "dav_browser":

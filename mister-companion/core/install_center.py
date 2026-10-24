@@ -1,3 +1,4 @@
+from core.extras_mister_emby import (get_misteremby_status, install_or_update_misteremby, install_or_update_misteremby_local, uninstall_misteremby, uninstall_misteremby_local)
 import io
 import json
 import re
@@ -265,6 +266,7 @@ HUB_CATALOG_MIN_URL = HUB_RAW_BASE_URL + "generated/catalog_min.json"
 ROM_MANIFEST_REMOTE_PATH = "/media/fat/Scripts/.config/mister_companion/install_center/installed_roms.json"
 
 DOWNLOADER_HANDLER_DATABASES = {
+    "mister_emby": "freemchr/misteremby",
     "zaparoo": "ZaparooProject/Zaparoo_MiSTer",
     "retroachievement_cores": "theypsilon/RetroAchievementsDB_MiSTer",
     "3s_arm": "MultiDatabases/3s-arm",
@@ -297,6 +299,8 @@ _DOWNLOADER_MARKER_CACHE = {}
 
 def _downloader_database_url(db_id: str) -> str | None:
     db_id = str(db_id or "").strip()
+    if db_id == "freemchr/misteremby":
+        return "https://raw.githubusercontent.com/freemchr/MiSTerEmby/db/db.json"
     if db_id.startswith("MultiDatabases/"):
         slug = db_id.split("/", 1)[1]
         return f"https://raw.githubusercontent.com/theypsilon/MultiDatabases_MiSTer/db/{slug}/db.json"
@@ -470,6 +474,7 @@ CATEGORY_FALLBACK = [
 ]
 
 FALLBACK_ITEMS = [
+    ("mister_emby", "extras", "extra", "mister_emby", "MiSTerEmby", "freemchr", "Browse movies, TV, music and music videos from an Emby server on MiSTer, including CRT playback. The server handles transcoding."),
     ("update_all", "scripts", "script", "update_all", "update_all", "theypsilon", "update_all keeps your MiSTer FPGA setup up to date by downloading cores, scripts, databases, tools, and optional community content from configured update sources."),
     ("misterfin", "scripts", "script", "misterfin", "MiSTerFin", "MiSTerFin project", "MiSTerFin is a Jellyfin media client for MiSTer. It runs as ARM software from the Scripts menu on the standard menu core, uses the regular MiSTer framebuffer, and plays server-transcoded media through its bundled mplayer-arm."),
     ("mister_monitor", "scripts", "script", "mister_monitor", "MiSTer Monitor", "chipster6502", "Displays real-time game artwork and system information from MiSTer on supported ESP32-based screens."),
@@ -541,6 +546,7 @@ SCRIPT_INSTALLERS = {
 }
 
 EXTRA_HANDLERS = {
+    "mister_emby": (get_misteremby_status, get_misteremby_status, install_or_update_misteremby, install_or_update_misteremby_local, uninstall_misteremby, uninstall_misteremby_local),
     "3s_arm": (get_3sx_status, get_3sx_status_local, install_or_update_3sx, install_or_update_3sx_local, uninstall_3sx, uninstall_3sx_local),
     "3sx_mister": (get_3sx_status, get_3sx_status_local, install_or_update_3sx, install_or_update_3sx_local, uninstall_3sx, uninstall_3sx_local),
     "sonic_mania_mister": (get_sonic_mania_status, get_sonic_mania_status_local, install_or_update_sonic_mania, install_or_update_sonic_mania_local, uninstall_sonic_mania, uninstall_sonic_mania_local),
@@ -1590,7 +1596,7 @@ def action_supported(item: dict, status: dict, action: str) -> bool:
     if action == "uninstall":
         return installed
     if action == "configure":
-        return installed and (item.get("handler") in {"update_all", "cifs_mount", "dav_browser", "ftp_save_sync", "ra_viewer", "retroachievement_cores"})
+        return installed and (item.get("handler") in {"mister_emby", "update_all", "cifs_mount", "dav_browser", "ftp_save_sync", "ra_viewer", "retroachievement_cores"})
     if action == "run":
         return installed and item.get("handler") == "update_all"
     return False
@@ -1678,7 +1684,7 @@ def run_uninstall(item: dict, context: InstallCenterContext, log: Callable[[str]
         if not functions:
             raise RuntimeError("This entry does not have an Install Center uninstaller yet.")
         uninstall_online, uninstall_local = functions[4], functions[5]
-        if handler in {"retroachievement_cores", "3s_arm", "3sx_mister", "dreamster", "mister_duke3d", "mister_quake", "mms2_gb_core", "paprium_megadrive", "sonic_mania_mister", "megavgmdrive", "physical_disc_cores", "solarus", "mister_dvd", "dvd_player", "misterzine_frontend"}:
+        if handler in {"mister_emby", "retroachievement_cores", "3s_arm", "3sx_mister", "dreamster", "mister_duke3d", "mister_quake", "mms2_gb_core", "paprium_megadrive", "sonic_mania_mister", "megavgmdrive", "physical_disc_cores", "solarus", "mister_dvd", "dvd_player", "misterzine_frontend"}:
             if context.offline:
                 uninstall_local(context.sd_root, log, force=force_downloader)
             else:
