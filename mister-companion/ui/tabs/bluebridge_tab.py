@@ -1423,7 +1423,8 @@ class BlueBridgeTab(QWidget):
         self.choose_firmware_file(selected)
 
     def flash(self, online):
-        if online: return
+        if online and not self.installer_release.get('available'):
+            self.message.setText('Check for an online firmware release first.'); return
         volume = self.volumes.currentData()
         if not volume: self.message.setText('Connect a Pico 2 W in BOOTSEL mode first.'); return
         path = self.manual_path.text()
