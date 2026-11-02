@@ -136,6 +136,36 @@ def default_output_name(input_path: str | Path) -> str:
     return path.with_suffix(".chd").name
 
 
+def chd_relative_output(input_path: str | Path, folder_mode: str = "flat", source_root=None) -> Path:
+    """Return only relative output components, independent of source platform."""
+    source = Path(str(input_path).replace("\\", "/"))
+    name = default_output_name(input_path)
+    if folder_mode == "game":
+        # Strip explicit disc tags only; preserve region/revision and other tags.
+        stem = re.sub(r"\s*[\(\[]dis[ck]\s*\d+(?:\s*of\s*\d+)?[\)\]]", "", source.stem, flags=re.I)
+        stem = re.sub(r"\s+", " ", stem).strip()
+        return Path(stem if stem not in {"", ".", ".."} else source.stem) / name
+    if folder_mode == "source":
+        if source_root is None:
+            parent = Path(source.parent.name) if source.parent.name else Path()
+        else:
+            root = Path(str(source_root).replace("\\", "/"))
+            parent = source.parent.relative_to(root)
+        if ".." in parent.parts:
+            raise ChdmanError("Source folder must be inside the selected input folder.")
+        return parent / name
+    return Path(name)
+
+
+def compression_thread_limit(mode="auto", custom=1, available=None):
+    available = max(1, available if available is not None else (os.cpu_count() or 1))
+    if mode == "background":
+        return max(1, available // 2)
+    if mode == "custom":
+        return max(1, min(int(custom), available))
+    return None
+
+
 def conversion_kind(input_path: str | Path) -> str:
     ext = Path(str(input_path)).suffix.lower()
     if ext in {".cue", ".gdi"}:
@@ -145,7 +175,7 @@ def conversion_kind(input_path: str | Path) -> str:
     raise ChdmanError("Supported CHD inputs are CUE, GDI and ISO.")
 
 
-def run_chdman(input_path: str | Path, output_path: str | Path, log_callback=None, *, optimize_for_mister: bool = True) -> list[Path]:
+def run_chdman(input_path: str | Path, output_path: str | Path, log_callback=None, *, optimize_for_mister: bool = True, num_processors: int | None = None) -> list[Path]:
     exe = chdman_executable()
     if not exe.exists():
         raise ChdmanError("CHDman is not downloaded yet.")
@@ -162,6 +192,10 @@ def run_chdman(input_path: str | Path, output_path: str | Path, log_callback=Non
             command.extend(["-c", "cdzs,cdfl", "-hs", "9792"])
     else:
         command = [str(exe), "createdvd", "-i", str(input_path), "-o", str(output_path)]
+    if num_processors is not None:
+        if not isinstance(num_processors, int) or num_processors < 1:
+            raise ChdmanError("Compression threads must be a positive integer.")
+        command.extend(["-np", str(num_processors)])
     outputs = [output_path]
 
     env = os.environ.copy()

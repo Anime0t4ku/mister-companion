@@ -11,6 +11,9 @@ THEME_MODE_MIGRATIONS = {
 
 DEFAULT_CONFIG = {
     "app_version": APP_VERSION,
+    "chd_folder_mode": "flat",
+    "chd_cpu_mode": "auto",
+    "chd_cpu_threads": 1,
     "devices": [],
     "last_connected": None,
     "theme_mode": "auto",

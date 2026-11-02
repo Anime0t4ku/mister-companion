@@ -25,6 +25,7 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QProgressBar,
+    QSpinBox,
     QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
@@ -39,6 +40,8 @@ from core.chd_converter import (
     CHDMAN_VERSION,
     ChdmanError,
     default_output_name,
+    chd_relative_output,
+    compression_thread_limit,
     descriptor_references,
     download_chdman,
     extract_chdman,
@@ -46,7 +49,7 @@ from core.chd_converter import (
     remove_chdman,
     run_chdman,
 )
-from core.file_browser import download_path, join_remote_path, remote_exists, upload_path
+from core.file_browser import ensure_remote_dir, download_path, join_remote_path, remote_exists, upload_path
 from core.app_paths import generated_path
 from core.disc_tools import (
     CDRDAO_DIR,
@@ -135,6 +138,7 @@ class ToolsTab(QWidget):
         self.ssh_connect_worker = None
         self._ssh_connect_generation = 0
         self._chd_optimization_controls = []
+        self._chd_cpu_controls = []
         self._build_ui()
         self.update_connection_state()
 
@@ -1402,6 +1406,7 @@ class ToolsTab(QWidget):
         self.disc_convert_chd.toggled.connect(self._disc_chd_toggled)
         layout.addWidget(self.disc_convert_chd)
         self.disc_chd_optimize = self._chd_optimization_checkbox(layout)
+        self._chd_cpu_options(layout)
         self.disc_remove_bin = QCheckBox("Remove BIN/CUE after successful CHD conversion")
         self.disc_remove_bin.setChecked(False)
         self.disc_remove_bin.setEnabled(False)
@@ -1692,6 +1697,7 @@ class ToolsTab(QWidget):
         self.disc_rip_status.setVisible(False)
         self.disc_rip_log.clear()
 
+        num_processors = self._chd_thread_limit()
         optimize_chd = self.disc_chd_optimize.isChecked()
         convert = self.disc_convert_chd.isChecked()
         remove_bin_cue = self.disc_remove_bin.isChecked()
@@ -1728,7 +1734,7 @@ class ToolsTab(QWidget):
                             elif "error" in line.lower():
                                 worker.status.emit("LOG:" + line)
 
-                        run_chdman(cue, chd, chd_log, optimize_for_mister=optimize_chd)
+                        run_chdman(cue, chd, chd_log, optimize_for_mister=optimize_chd, num_processors=num_processors)
                         worker.progress.emit(100)
                         worker.status.emit("RIPSTATUS:CHD conversion complete — 100%")
 
@@ -1762,7 +1768,7 @@ class ToolsTab(QWidget):
                         elif "error" in line.lower():
                             worker.status.emit("LOG:" + line)
 
-                    run_chdman(cue, chd, chd_log, optimize_for_mister=optimize_chd)
+                    run_chdman(cue, chd, chd_log, optimize_for_mister=optimize_chd, num_processors=num_processors)
                     worker.progress.emit(100)
                     worker.status.emit("RIPSTATUS:CHD conversion complete — 100%")
                     if remove_bin_cue:
@@ -1982,6 +1988,58 @@ class ToolsTab(QWidget):
             checkbox.blockSignals(previous)
         save_config(self.main_window.config_data)
 
+    def _chd_cpu_options(self, layout):
+        config = self.main_window.config_data
+        row = QHBoxLayout()
+        row.addWidget(QLabel("CPU usage:"))
+        combo = QComboBox()
+        for label, value in (("Automatic (all available)", "auto"), ("Background (recommended)", "background"), ("Custom", "custom")):
+            combo.addItem(label, value)
+        combo.setCurrentIndex(max(0, combo.findData(config.get("chd_cpu_mode", "auto"))))
+        row.addWidget(combo)
+        label = QLabel("Compression threads:")
+        spin = QSpinBox()
+        spin.setRange(1, os.cpu_count() or 1)
+        try:
+            spin.setValue(int(config.get("chd_cpu_threads", 1)))
+        except (TypeError, ValueError):
+            spin.setValue(1)
+        row.addWidget(label)
+        row.addWidget(spin)
+        row.addStretch(1)
+        layout.addLayout(row)
+        hint = QLabel("Fewer threads leave more resources available for other apps, but conversion takes longer.")
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+        self._chd_cpu_controls.append((combo, spin, label))
+        label.setVisible(combo.currentData() == "custom")
+        spin.setVisible(combo.currentData() == "custom")
+        combo.currentIndexChanged.connect(lambda _index: self._set_chd_cpu_options(combo, spin))
+        spin.valueChanged.connect(lambda _value: self._set_chd_cpu_options(combo, spin))
+
+    def _set_chd_cpu_options(self, combo, spin):
+        config = self.main_window.config_data
+        config["chd_cpu_mode"] = combo.currentData()
+        config["chd_cpu_threads"] = spin.value()
+        for other_combo, other_spin, label in self._chd_cpu_controls:
+            other_combo.blockSignals(True)
+            other_spin.blockSignals(True)
+            other_combo.setCurrentIndex(other_combo.findData(config["chd_cpu_mode"]))
+            other_spin.setValue(config["chd_cpu_threads"])
+            label.setVisible(config["chd_cpu_mode"] == "custom")
+            other_spin.setVisible(config["chd_cpu_mode"] == "custom")
+            other_combo.blockSignals(False)
+            other_spin.blockSignals(False)
+        save_config(config)
+
+    def _chd_thread_limit(self):
+        config = self.main_window.config_data
+        return compression_thread_limit(config.get("chd_cpu_mode", "auto"), config.get("chd_cpu_threads", 1))
+
+    def _set_chd_folder_mode(self):
+        self.main_window.config_data["chd_folder_mode"] = self.chd_folder_mode.currentData()
+        save_config(self.main_window.config_data)
+
     def _build_chd(self):
         page, layout = self._tool_workspace_page("CHD Converter")
         tool_row = QHBoxLayout()
@@ -2022,6 +2080,18 @@ class ToolsTab(QWidget):
         output_row.addWidget(browse_output)
         layout.addLayout(output_row)
 
+        folder_row = QHBoxLayout()
+        folder_row.addWidget(QLabel("Folder structure for new jobs:"))
+        self.chd_folder_mode = QComboBox()
+        for label, value in (("No subfolders", "flat"), ("Folder per game", "game"), ("Preserve source folders", "source")):
+            self.chd_folder_mode.addItem(label, value)
+        self.chd_folder_mode.setCurrentIndex(max(0, self.chd_folder_mode.findData(self.main_window.config_data.get("chd_folder_mode", "flat"))))
+        self.chd_folder_mode.setToolTip("Folder per game groups explicit (Disc 1), [Disc 1] and (Disk 1) tags. Preserve source folders uses the selected input folder as root; individual files keep their immediate parent folder. Only converted CHDs are written.")
+        self.chd_folder_mode.currentIndexChanged.connect(self._set_chd_folder_mode)
+        folder_row.addWidget(self.chd_folder_mode)
+        folder_row.addStretch(1)
+        layout.addLayout(folder_row)
+        self._chd_cpu_options(layout)
         self.chd_optimize = self._chd_optimization_checkbox(layout)
         self.chd_remove_source = QCheckBox("Remove BIN/CUE after successful conversion")
         self.chd_remove_source.setToolTip("For CUE jobs, remove the CUE and only the BIN files referenced by that CUE after the CHD has been created successfully.")
@@ -2154,7 +2224,7 @@ class ToolsTab(QWidget):
             folder = QFileDialog.getExistingDirectory(self, "Select Input Folder")
             files = [str(p) for p in Path(folder).rglob("*") if p.is_file() and p.suffix.lower() in CHD_INPUT_EXTS] if folder else []
         for path in files:
-            self._add_chd_job(path, location, output_dir, self.chd_output_location.currentText())
+            self._add_chd_job(path, location, output_dir, self.chd_output_location.currentText(), source_root=folder)
 
     def _remote_chd_files(self, folder):
         results = []
@@ -2174,9 +2244,9 @@ class ToolsTab(QWidget):
             sftp.close()
         return results
 
-    def _add_chd_job(self, input_path, source_location, output_dir, output_location):
-        name = default_output_name(input_path)
-        output_path = posixpath.join(output_dir.rstrip("/"), name) if output_location == REMOTE else str(Path(output_dir) / name)
+    def _add_chd_job(self, input_path, source_location, output_dir, output_location, source_root=None):
+        relative = chd_relative_output(input_path, self.chd_folder_mode.currentData(), source_root)
+        output_path = posixpath.join(output_dir, *relative.parts) if output_location == REMOTE else str(Path(output_dir) / relative)
         job = {"input": input_path, "source": source_location, "output": output_path, "destination": output_location, "status": "Queued"}
         self.chd_jobs.append(job)
         self._refresh_chd_table()
@@ -2298,6 +2368,7 @@ class ToolsTab(QWidget):
             return
         self.chd_start.setEnabled(False)
         remove_sources = self.chd_remove_source.isChecked()
+        num_processors = self._chd_thread_limit()
         optimize_chd = self.chd_optimize.isChecked()
         self.chd_log.clear()
         self.chd_transfer_progress.setValue(0)
@@ -2331,9 +2402,14 @@ class ToolsTab(QWidget):
                         else:
                             local_output = Path(job["output"])
 
-                        outputs = run_chdman(local_input, local_output, lambda line: worker.status.emit("LOG:" + line), optimize_for_mister=optimize_chd)
+                        outputs = run_chdman(local_input, local_output, lambda line: worker.status.emit("LOG:" + line), optimize_for_mister=optimize_chd, num_processors=num_processors)
                         if job["destination"] == REMOTE:
                             remote_dir = posixpath.dirname(job["output"])
+                            sftp = self.connection.client.open_sftp()
+                            try:
+                                ensure_remote_dir(sftp, remote_dir)
+                            finally:
+                                sftp.close()
                             for output in outputs:
                                 self._upload_remote_file(output, remote_dir, worker, target_name=output.name)
                         if remove_sources and PurePosixPath(str(job["input"]).replace("\\", "/")).suffix.lower() == ".cue":
@@ -2593,6 +2669,11 @@ class ToolsTab(QWidget):
                             raise ChdmanError("CHDman did not produce any output files.")
                         if job["destination"] == REMOTE:
                             remote_dir = posixpath.dirname(job["output"])
+                            sftp = self.connection.client.open_sftp()
+                            try:
+                                ensure_remote_dir(sftp, remote_dir)
+                            finally:
+                                sftp.close()
                             for output in outputs:
                                 self._ensure_remote_output_new(posixpath.join(remote_dir, output.name))
                             for output in outputs:
