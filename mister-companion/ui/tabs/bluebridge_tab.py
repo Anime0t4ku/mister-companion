@@ -4,7 +4,7 @@ from pathlib import Path
 from serial.tools import list_ports
 from PyQt6.QtCore import Qt, QThread, QTimer, pyqtSignal
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QComboBox, QTabWidget, QFormLayout, QLineEdit, QSpinBox, QCheckBox, QScrollArea, QFileDialog, QMessageBox, QInputDialog, QDialog, QGridLayout, QGroupBox, QSizePolicy, QProgressBar, QPlainTextEdit
-from core.bluebridge import BlueBridgeService, boot_volumes, flash_volume
+from core.bluebridge import BlueBridgeService, boot_volumes, flash_volume, supports_dualsense
 from core.bluebridge_protocol import _uf2_info
 from core.bluebridge_releases import bluebridge_release, download_bluebridge_release, version_key
 from ui.tab_header import create_tab_header
@@ -325,7 +325,23 @@ class BlueBridgeTab(QWidget):
         output_row = QHBoxLayout()
         output_row.addWidget(QLabel('USB output'))
         self.output = QComboBox()
-        for i, name in enumerate(['MiSTer', 'X-Input', 'Generic HID', 'Nintendo Switch', 'Xbox 360 (Console)'], 1): self.output.addItem(name, i)
+        output_groups = (
+            ('MiSTer', ((1, 'MiSTer'),)),
+            ('Computer', ((2, 'X-Input'), (3, 'Generic HID'), (6, 'DualSense (PC/Mac)'))),
+            ('Console', ((4, 'Nintendo Switch'), (5, 'Xbox 360'))),
+        )
+        for group, outputs in output_groups:
+            self.output.addItem(group)
+            heading = self.output.model().item(self.output.count() - 1)
+            heading.setFlags(Qt.ItemFlag.NoItemFlags)
+            font = heading.font()
+            font.setBold(True)
+            heading.setFont(font)
+            for mode, label in outputs:
+                self.output.addItem('    ' + label, mode)
+        self.dualsense_option = self.output.model().item(self.output.findData(6))
+        self.dualsense_option.setEnabled(False)
+        self.output.setCurrentIndex(self.output.findData(1))
         self.output.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
         self.output.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         output_row.addWidget(self.output)
@@ -717,6 +733,9 @@ class BlueBridgeTab(QWidget):
         self.live_controller.setCurrentIndex(self.live_controller.findData(self.controllers_data.get('connected_index')))
         self.live_controller.setEnabled(self.live_controller.count() > 0)
         self.output.setEnabled(not multi)
+        dualsense_supported = supports_dualsense(status.get('firmware'))
+        self.dualsense_option.setEnabled(dualsense_supported)
+        self.dualsense_option.setText('    DualSense (PC/Mac)' + ('' if dualsense_supported else ' (requires firmware v1.1.0+)'))
         for index in (2, 3): self.editor_tabs.setTabVisible(index, not multi)
         if multi and self.editor_tabs.currentIndex() in (2, 3): self.editor_tabs.setCurrentIndex(0)
         count = sum(bool(c.get('connected')) for c in self.controllers_data.get('controllers', []))
@@ -726,7 +745,8 @@ class BlueBridgeTab(QWidget):
         self.pair_button.setEnabled(bool(status.get('pairing')) or occupied < int(status.get('max_connected', 1)))
         self.disconnect_button.setVisible(connected)
         self.tester_button.setVisible(connected)
-        self.output.setCurrentIndex(max(0, min(4, int(status.get('output_mode', 1)) - 1)))
+        index = self.output.findData(int(status.get('output_mode', 1)))
+        self.output.setCurrentIndex(index if index >= 0 else self.output.findData(1))
         self.mapping_identity.setVisible(not multi and int(status.get('output_mode', 1)) == 1)
         self.adapter_name_label.setText(status.get('adapter_name', 'MC BlueBridge adapter'))
         naming = status.get('capabilities', {}).get('adapter_rename', False)
@@ -982,7 +1002,12 @@ class BlueBridgeTab(QWidget):
     def change_output(self):
         mode = self.output.currentData()
         previous = int(self.status_data.get('output_mode', 1) or 1)
-        if mode == 5 and not self.confirm('Xbox 360 (Console) mode uses the native Xbox 360 USB layout, so BlueBridge management is unavailable while this mode is active. To return without a management connection, hold BOOTSEL for 5 seconds to switch back to MiSTer mode. Continue?'):
+        if mode is None or mode == previous:
+            return
+        if mode == 6 and not self.confirm('DualSense (PC/Mac) presents your paired controller as a wired DualSense for compatible computer games and apps. PS5 console support is unavailable. Continue?'):
+            self.output.setCurrentIndex(self.output.findData(previous))
+            return
+        if mode == 5 and not self.confirm('Xbox 360 mode uses the native Xbox 360 USB layout, so BlueBridge management is unavailable while this mode is active. To return without a management connection, hold BOOTSEL for 5 seconds to switch back to MiSTer mode. Continue?'):
             index = self.output.findData(previous)
             if index >= 0: self.output.setCurrentIndex(index)
             return
@@ -991,7 +1016,7 @@ class BlueBridgeTab(QWidget):
             self.mapping_identity.setVisible(mode == 1)
             self.render_identity()
             if mode == 5:
-                self.message.setText('Xbox 360 (Console) mode enabled. Management disconnect is expected. Hold BOOTSEL for 5 seconds to return to MiSTer mode.')
+                self.message.setText('Xbox 360 mode enabled. Management disconnect is expected. Hold BOOTSEL for 5 seconds to return to MiSTer mode.')
             else:
                 self.message.setText('Output changed. Profile settings are preserved.')
         self.run(lambda: self.service.api('output', {'mode': mode}), done)

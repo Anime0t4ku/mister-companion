@@ -11,6 +11,13 @@ from core.bluebridge_releases import version_key, bluebridge_release, download_b
 from core.remote_daemon import REMOTE_DAEMON_PORT
 
 
+def supports_dualsense(firmware):
+    try:
+        return version_key(firmware) >= version_key('1.1.0')
+    except ValueError:
+        return False
+
+
 def boot_volumes():
     found = []
     for part in psutil.disk_partitions(all=True):
@@ -188,7 +195,7 @@ class BlueBridgeService:
         result = []
         present = set()
         for port in list_ports.comports():
-            if not ((port.vid == 0x2e8a and (port.pid in (0x10b1, 0x10b2, 0x10b3, 0x10c6) or 0xb000 <= (port.pid or 0) <= 0xbfff)) or (port.vid == 0x0f0d and port.pid == 0x0092)):
+            if not ((port.vid == 0x2e8a and (port.pid in (0x10b1, 0x10b2, 0x10b3, 0x10c6) or 0xb000 <= (port.pid or 0) <= 0xbfff)) or (port.vid, port.pid) in ((0x0f0d, 0x0092), (0x054c, 0x0ce6))):
                 continue
             key = port.serial_number or port.device
             present.add(key)
@@ -307,10 +314,13 @@ class BlueBridgeService:
             if route == 'output':
                 if payload is not None:
                     mode = int(p['mode'])
-                    if mode not in (1, 2, 3, 4, 5): raise ValueError('Invalid output mode')
+                    names = {1: 'MiSTer', 2: 'X-Input', 3: 'Generic HID', 4: 'Nintendo Switch',
+                             5: 'Xbox 360 (Console)', 6: 'DualSense'}
+                    if mode not in names: raise ValueError('Invalid output mode')
+                    if mode == 6 and not supports_dualsense(manager.request_json('HELLO').get('firmware')):
+                        raise ValueError('DualSense (PC/Mac) requires BlueBridge firmware v1.1.0 or later.')
                     manager.request('OUTPUT_SET', mode)
                     manager.close()
-                    names = {1: 'MiSTer', 2: 'X-Input', 3: 'Generic HID', 4: 'Nintendo Switch', 5: 'Xbox 360 (Console)'}
                     return {'output': {'mode': mode, 'name': names[mode]}}
                 return {'output': manager.request_json('OUTPUT_GET')}
             if route == 'config/reset':
