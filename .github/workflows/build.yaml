@@ -184,7 +184,7 @@ jobs:
       matrix:
         include:
           - arch: x86_64
-            runner: ubuntu-latest
+            runner: ubuntu-24.04
           - arch: ARM64
             runner: ubuntu-24.04-arm
 
@@ -200,6 +200,22 @@ jobs:
       - name: Verify Native Architecture
         run: |
           python -c "import platform; print(platform.platform()); print(platform.machine())"
+
+      - name: Verify Linux glibc baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          getconf GNU_LIBC_VERSION
+          python - <<'PYGLIBC'
+          import platform
+          import sys
+
+          version = platform.libc_ver()[1]
+          major, minor = map(int, version.split('.')[:2])
+          print(f"Build host glibc: {version}")
+          if (major, minor) > (2, 39):
+              sys.exit("Linux runner uses glibc newer than the 2.39 target")
+          PYGLIBC
 
       - name: Install Dependencies
         working-directory: mister-companion
