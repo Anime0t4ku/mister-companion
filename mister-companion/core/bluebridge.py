@@ -18,14 +18,37 @@ def supports_dualsense(firmware):
         return False
 
 
+def _windows_removable_volumes():
+    from ctypes import windll
+
+    kernel = windll.kernel32
+    drives = kernel.GetLogicalDrives()
+    for index, letter in enumerate('ABCDEFGHIJKLMNOPQRSTUVWXYZ'):
+        if drives & (1 << index):
+            root = letter + ':\\'
+            if kernel.GetDriveTypeW(root) == 2:  # DRIVE_REMOVABLE
+                yield Path(root)
+
+
 def boot_volumes():
-    found = []
-    for part in psutil.disk_partitions(all=True):
+    roots = set()
+    try:
+        partitions = psutil.disk_partitions(all=True)
+    except OSError:
+        if os.name != 'nt':
+            raise
+        partitions = []
+    for part in partitions:
         filesystem = (part.fstype or '').lower()
         options = set((part.opts or '').lower().split(','))
         if filesystem in ('nfs', 'nfs4', 'cifs', 'smbfs', 'smb', 'sshfs', 'fuse.sshfs', 'autofs') or 'remote' in options or part.mountpoint.startswith(('\\\\', '//')):
             continue
-        path = Path(part.mountpoint)
+        roots.add(Path(part.mountpoint))
+    if os.name == 'nt':
+        roots.update(_windows_removable_volumes())
+
+    found = []
+    for path in roots:
         try:
             info = (path / 'INFO_UF2.TXT').read_text(errors='replace')
             if 'RP2350' in info:

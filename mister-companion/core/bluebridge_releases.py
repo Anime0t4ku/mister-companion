@@ -4,6 +4,9 @@ import json
 import re
 import time
 import threading
+import ssl
+
+import certifi
 
 BLUEBRIDGE_RELEASE_URL = "https://api.github.com/repos/Anime0t4ku/MC-BlueBridge/releases"
 
@@ -17,8 +20,18 @@ def version_key(value):
     identifiers = tuple((0, int(p)) if p.isdigit() else (1, p) for p in (pre or "").split("."))
     return tuple(int(match.group(i)) for i in (1, 2, 3)) + (1 if pre is None else 0, identifiers)
 
+def _open_firmware_url(request, timeout):
+    try:
+        return urllib.request.urlopen(request, timeout=timeout)
+    except urllib.error.URLError as exc:
+        if not isinstance(exc.reason, ssl.SSLCertVerificationError):
+            raise
+        context = ssl.create_default_context(cafile=certifi.where())
+        return urllib.request.urlopen(request, timeout=timeout, context=context)
+
+
 def _lookup_bluebridge_release(installed="", opener=None):
-    opener = opener or urllib.request.urlopen
+    opener = opener or _open_firmware_url
     candidates = []
     stable_only = bool(installed and version_key(installed)[3])
     try:
@@ -47,9 +60,9 @@ def _lookup_bluebridge_release(installed="", opener=None):
     except urllib.error.HTTPError as exc:
         if exc.code == 404:
             return {"available": False, "state": "unavailable", "message": "Online firmware is not available yet. You can install a local UF2 file below."}
-        return {"available": False, "state": "error", "message": "Unable to check for updates. Please try again later."}
-    except (OSError, ValueError, urllib.error.URLError):
-        return {"available": False, "state": "error", "message": "Unable to check for updates. Please try again later."}
+        return {"available": False, "state": "error", "message": f"Unable to check for updates. GitHub returned HTTP {exc.code}."}
+    except (OSError, ValueError) as exc:
+        return {"available": False, "state": "error", "message": f"Unable to check for updates. {exc}"}
     if not candidates:
         return {"available": False, "state": "unavailable", "message": "Online firmware is not available yet. You can install a local UF2 file below."}
     stable = [c for c in candidates if c[0][3] and not c[1].get("prerelease")]
@@ -60,7 +73,7 @@ def download_bluebridge_release(info):
     if not info.get("available") or not info.get("url", "").startswith("https://github.com/Anime0t4ku/MC-BlueBridge/releases/download/"):
         raise ValueError("No firmware release available")
     request = urllib.request.Request(info["url"], headers={"User-Agent": "MiSTer-Companion-BlueBridge"})
-    with urllib.request.urlopen(request, timeout=60) as response:
+    with _open_firmware_url(request, timeout=60) as response:
         data = response.read(8 * 1024 * 1024 + 1)
     if not data or len(data) > 8 * 1024 * 1024 or len(data) != info["size"]:
         raise ValueError("Incomplete or oversized firmware download")

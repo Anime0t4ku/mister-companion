@@ -1,7 +1,6 @@
 import json
 import time
 from pathlib import Path
-from serial.tools import list_ports
 from PyQt6.QtCore import Qt, QThread, QTimer, pyqtSignal
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QComboBox, QTabWidget, QFormLayout, QLineEdit, QSpinBox, QCheckBox, QScrollArea, QFileDialog, QMessageBox, QInputDialog, QDialog, QGridLayout, QGroupBox, QSizePolicy, QProgressBar, QPlainTextEdit
 from core.bluebridge import BlueBridgeService, boot_volumes, flash_volume, supports_dualsense
@@ -526,48 +525,64 @@ class BlueBridgeTab(QWidget):
         layout.addStretch(); outer.addWidget(self.installer, 1)
 
     def change_mode(self):
-        if self.mode.currentIndex() == 3:
-            self.pages.hide()
-            self.chooser.hide()
-            self.daemon_panel.hide()
-            self.adapters.hide()
-            self.connection_bar.show()
-            self.installer.show()
-            self.message.setText('Select a local UF2 file. Checking for a Pico 2 W in BOOTSEL mode…')
+        mode = self.mode.currentIndex()
         if self.worker:
-            if self.worker_quiet: self.defer(self.change_mode)
+            if self.worker_quiet:
+                self.defer(self.change_mode)
             return
+
+        previous_service = self.service
+        self.service = None
         self.staged_firmware = None
         self.firmware_flash_button.setEnabled(False)
         self.firmware_preview.setText('Choose a local UF2 file to see its version before installing.')
-        if self.service: self.service.close()
-        self.service = None
-        self.pages.hide(); self.installer.hide(); self.daemon_panel.setVisible(self.mode.currentIndex() == 1)
-        self.adapters.clear(); self.adapters.hide()
-        self.profile_data = {}; self.status_data = {}; self.reset_online_release()
+        self.pages.hide()
+        self.installer.setVisible(mode == 3)
+        self.daemon_panel.setVisible(mode == 1)
+        self.adapters.clear()
+        self.adapters.hide()
+        self.profile_data = {}
+        self.status_data = {}
+        self.reset_online_release()
         self.managed_controller = None
         self.profile_panel.hide()
         self.pages.setCurrentIndex(0)
-        mode = self.mode.currentIndex()
         self.chooser.setVisible(mode == 0)
         self.connection_bar.setVisible(mode != 0)
-        if mode == 0:
-            self.message.setText('Choose how to manage your adapter, or install MC BlueBridge on a Pico 2 W.')
-        if mode != 3: self.auto_installer = False
-        if mode == 1:
-            if self.main_window.is_offline_mode() or not self.main_window.connection.is_connected():
-                self.message.setText('Connect to a MiSTer in Online mode to use Remote. USB and Install / Recover are available without a MiSTer connection.')
-                return
-            self.main_window.remote_tab.refresh_state()
-            self.message.setText('Checking Companion Remote daemon…')
-        elif mode == 2:
-            self.service = BlueBridgeService()
-            self.service.adapter_id = self.preferred_adapter
+        if mode != 3:
+            self.auto_installer = False
+
+        if mode == 2:
+            service = BlueBridgeService()
+            service.adapter_id = self.preferred_adapter
             self.preferred_adapter = ''
-            self.refresh()
+            self.service = service
+            self.message.setText('Looking for MC BlueBridge USB adapters…')
+            scan, render = service.adapters, self.render_adapters
         elif mode == 3:
-            self.installer.show(); self.message.setText('Select firmware and a Pico 2 W in BOOTSEL mode.')
-            self.run(boot_volumes, self.render_volumes, quiet=True)
+            self.volumes.clear()
+            self.volumes.addItem('Checking for RP2350 BOOTSEL devices…', None)
+            self.update_flash_controls()
+            self.message.setText('Select firmware and a Pico 2 W in BOOTSEL mode.')
+            scan, render = boot_volumes, self.render_volumes
+        else:
+            if previous_service:
+                self.run(previous_service.close, quiet=True)
+            if mode == 0:
+                self.message.setText('Choose how to manage your adapter, or install MC BlueBridge on a Pico 2 W.')
+            elif self.main_window.is_offline_mode() or not self.main_window.connection.is_connected():
+                self.message.setText('Connect to a MiSTer in Online mode to use Remote. USB and Install / Recover are available without a MiSTer connection.')
+            else:
+                self.main_window.remote_tab.refresh_state()
+                self.message.setText('Checking Companion Remote daemon…')
+            return
+
+        def work():
+            if previous_service:
+                previous_service.close()
+            return scan()
+
+        self.run(work, render, quiet=True)
 
     def daemon_action(self, command):
         remote = self.main_window.remote_tab
@@ -1406,7 +1421,7 @@ class BlueBridgeTab(QWidget):
 
     def render_volumes(self, volumes):
         existing = [self.volumes.itemData(i) for i in range(self.volumes.count()) if self.volumes.itemData(i) is not None]
-        if self.volumes.count() and existing == volumes:
+        if existing == volumes and (volumes or self.volumes.itemText(0) == 'Waiting for RP2350 BOOTSEL device…'):
             return
         self.volumes.blockSignals(True)
         current = self.volumes.currentText(); self.volumes.clear(); self.volumes.addItems(volumes)
