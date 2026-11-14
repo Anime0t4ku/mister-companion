@@ -965,7 +965,46 @@ search.addEventListener('input',render);load();setInterval(refreshStatus,2000);
 BLUEBRIDGE_HTML = r'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#120f1c"><title>MC BlueBridge</title><style>
 :root{--panel:#1b1628;--panel2:#241d35;--panel3:#2d2442;--text:#f4efff;--muted:#b7acca;--accent:#8b5cf6;--accent2:#a78bfa;--ok:#39d98a;--danger:#e16978;--border:#3b3055;--shadow:0 18px 50px rgba(0,0,0,.35)}*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:radial-gradient(circle at top,#281d40,#120f1c 50%,#0b0911);color:var(--text);font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif}button,input,select{font:inherit}.shell{width:min(1180px,100%);margin:auto;padding:14px}.topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;background:rgba(27,22,40,.96);border:1px solid var(--border);border-radius:18px;padding:11px 15px;box-shadow:var(--shadow)}.brand{display:flex;align-items:center;gap:11px}.brand img{width:58px}.brand h1{margin:0;font-size:1rem}.brand p{margin:3px 0 0;color:var(--muted);font-size:.76rem}.pill{display:inline-flex;align-items:center;gap:7px;padding:7px 10px;border:1px solid var(--border);border-radius:999px;background:var(--panel2);font-size:.78rem;font-weight:800}.dot{width:9px;height:9px;border-radius:50%;background:var(--danger)}.pill.ok .dot{background:var(--ok)}.nav{display:flex;gap:7px;margin:10px 0}.nav a{flex:1;text-align:center;text-decoration:none;color:var(--text);background:var(--panel);border:1px solid var(--border);border-radius:11px;padding:9px 5px;font-size:.8rem;font-weight:800}.nav a.active{background:var(--accent);border-color:var(--accent2)}.panel{background:rgba(27,22,40,.96);border:1px solid var(--border);border-radius:18px;box-shadow:var(--shadow);padding:15px;margin-bottom:12px}.btn{border:1px solid #5b4a7a;background:linear-gradient(180deg,#382c52,#251d37);color:var(--text);border-radius:10px;padding:9px 12px;font-weight:800;cursor:pointer;min-height:38px}.btn.primary{background:var(--accent);border-color:var(--accent2)}.btn.danger{background:#4a242e;border-color:#7c3b49}.btn.small{min-height:32px;padding:6px 9px;font-size:.74rem}.btn:disabled{opacity:.4;cursor:default}.subtle{color:var(--muted);font-size:.76rem;line-height:1.45}.controller-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}.controller-head h2{margin:3px 0 4px;font-size:1.3rem}.status-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:7px;margin-top:13px}.stat{background:#171222;border:1px solid var(--border);border-radius:10px;padding:9px}.stat span{display:block;color:var(--muted);font-size:.68rem}.stat strong{display:block;font-size:.8rem;margin-top:3px;word-break:break-word}.stat.action{cursor:pointer;transition:border-color .15s,background .15s}.stat.action:hover{border-color:var(--accent2);background:var(--panel2)}.under-card{display:flex;gap:8px;margin:-2px 0 12px}.under-card .btn{flex:1}.toolbar{display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap}.toolbar h2,.toolbar h3{margin:0}.profile-pills{display:flex;gap:7px;overflow:auto;padding:4px 0 9px}.profile-pill{border:1px solid var(--border);background:var(--panel2);color:var(--text);border-radius:999px;padding:8px 12px;white-space:nowrap;cursor:pointer}.profile-pill.active{background:var(--accent);border-color:var(--accent2)}.editor-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin:10px 0}.editor-head h2{margin:0}.actions{display:flex;gap:7px;flex-wrap:wrap}.tabs{display:flex;gap:6px;border-bottom:1px solid var(--border);padding-bottom:9px;margin-bottom:13px;overflow:auto}.tab{border:0;background:transparent;color:var(--muted);padding:8px 11px;border-radius:9px;font-weight:800;cursor:pointer;white-space:nowrap}.tab.active{background:var(--panel3);color:var(--text)}.tabpage{display:none}.tabpage.active{display:block}.surface{background:var(--panel2);border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:10px}.surface h3{margin:0 0 5px}.notice{padding:11px 12px;background:#171222;border:1px solid var(--border);border-radius:11px;color:var(--muted);font-size:.76rem;line-height:1.45;margin-bottom:10px}.map-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.map-item{display:grid;grid-template-columns:minmax(95px,.8fr) minmax(130px,1.2fr) auto;align-items:center;gap:8px;padding:9px;background:#171222;border-radius:10px;border:1px solid transparent}.map-item.hit{border-color:var(--accent2)}select,input[type=text],input[type=number]{width:100%;background:#100d18;color:var(--text);border:1px solid var(--border);border-radius:10px;padding:9px}.form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.form-group label{display:block;font-size:.76rem;font-weight:800;margin-bottom:5px}.switch-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 12px;background:#171222;border-radius:10px;margin-bottom:10px}.switch{position:relative;width:46px;height:26px;flex:none}.switch input{opacity:0;width:0;height:0}.slider{position:absolute;inset:0;background:#4b405c;border-radius:999px}.slider:before{content:"";position:absolute;width:20px;height:20px;left:3px;top:3px;border-radius:50%;background:#fff;transition:.15s}.switch input:checked+.slider{background:var(--accent)}.switch input:checked+.slider:before{transform:translateX(20px)}.button-checks{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px}.check{display:flex;gap:6px;align-items:center;background:#171222;border-radius:9px;padding:8px;font-size:.75rem}.macro-card{background:#171222;border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:9px}.macro-head{display:flex;justify-content:space-between;gap:10px;align-items:center}.macro-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}.macro-output{margin-top:10px}.capture-select{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:7px}.paired-list{display:grid;gap:8px;margin-top:12px}.paired-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;background:var(--panel2);border:1px solid var(--border);border-radius:13px;padding:12px}.paired-row.connected{border-color:var(--accent2)}.paired-row h3{margin:0 0 4px;font-size:.92rem}.firmware-update{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(220px,1fr) auto;gap:9px;align-items:end;margin-top:12px}.firmware-update input[type=file]{width:100%;background:#100d18;color:var(--text);border:1px solid var(--border);border-radius:10px;padding:8px}.firmware-status{margin-top:9px}.firmware-status.busy{color:var(--accent2)}.firmware-status.error{color:var(--danger)}.firmware-status.warning{color:#e7bd63}.maintenance-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.maintenance-actions .btn{flex:1;min-width:180px}.search{margin-top:10px}.tester-buttons{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px}.test-key{padding:10px;background:#171222;border:1px solid var(--border);border-radius:10px;text-align:center;font-size:.75rem}.test-key.on{background:var(--accent);border-color:var(--accent2)}.analog-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:10px}.analog{background:#171222;border-radius:10px;padding:10px}.analog strong{display:block}.tester-banner{background:#2b2045;border:1px solid var(--accent2);border-radius:11px;padding:10px;margin-bottom:10px}.page{display:none}.page.active{display:block}.modal{display:none;position:fixed;inset:0;background:rgba(8,6,13,.82);z-index:100;align-items:center;justify-content:center;padding:20px}.modal.show{display:flex}.modal-card{width:min(430px,100%);background:var(--panel);border:1px solid var(--accent2);border-radius:18px;padding:20px;box-shadow:var(--shadow);text-align:center}.modal-card h3{margin-top:0}.footer{text-align:center;color:var(--muted);font-size:.72rem;padding:8px}.hidden{display:none!important}@media(max-width:800px){.status-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.map-grid,.form-grid,.macro-grid{grid-template-columns:1fr}.button-checks,.tester-buttons{grid-template-columns:repeat(2,minmax(0,1fr))}.analog-grid{grid-template-columns:1fr}.map-item{grid-template-columns:90px minmax(0,1fr)}.map-item .listen{grid-column:2}.controller-head,.editor-head{align-items:stretch;flex-direction:column}.controller-head .btn{width:100%}.nav a{font-size:.7rem;padding:8px 2px}.brand img{width:45px}.brand p{display:none}}
 .btn.back{background:#493268;border-color:#c4a7ff;color:#fff;flex-shrink:0}.btn.back:hover{background:#5a3e80}.btn.back:focus-visible{outline:2px solid #fff;outline-offset:3px}.adapter-name{margin-top:15px;padding-top:15px;border-top:1px solid var(--border)}.diagnostics-panel summary{cursor:pointer;font-weight:700;padding:4px 0}.diagnostics-panel .diagnostics-controls{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}.diagnostics-panel pre{max-height:220px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font-size:.78rem}.diagnostics-panel .btn{min-height:36px;padding:7px 12px}.diagnostics-panel .diagnostics-details{margin-top:12px}</style></head><body><div class="shell"><header class="topbar"><div class="brand"><img src="/assets/logo.png" alt="MiSTer Companion"><div><h1>MiSTer Companion Remote</h1><p>Browser remote v4.2.0</p></div></div><div id="connection" class="pill"><i class="dot"></i><span>Not detected</span></div></header><nav class="nav"><a href="/">Home</a><a href="/controller">Controller</a><a href="/keyboard">Keyboard</a><a href="/games">Games</a><a href="/scripts">Scripts</a><a href="/bluebridge" class="active">BlueBridge</a></nav>
-<section id="adapterSelection" class="panel hidden"><label for="adapterSelector">Adapter to manage</label><select id="adapterSelector" onchange="selectAdapter(this.value)"></select></section><main id="overviewPage" class="page active"><section id="controllerModePanel" class="panel hidden"><label for="controllerMode">Controller mode</label><select id="controllerMode" onchange="controllerModeChanged()"><option value="0">Single controller</option><option value="1">Multi-controller (MiSTer only)</option></select><p class="subtle">Multi mode supports up to two controllers with profiles, mappings and rumble. Turbo and macros are disabled. May increase input latency. Changing mode restarts the adapter.</p><div id="multiControllerSelection" class="hidden"><label for="liveController">Connected controllers</label><select id="liveController" onchange="selectLiveController(this.value)"></select></div></section><section id="controllerCard" class="panel"><div class="controller-head"><div><div class="subtle">Current controller</div><h2 id="currentController">No controller connected</h2><div id="currentState" class="subtle">Turn on a paired controller normally, or start pairing to add one.</div></div><button id="disconnectBtn" class="btn hidden" onclick="disconnectController()">Disconnect</button></div><div class="status-grid"><div class="stat action" onclick="openFirmware()" role="button" tabindex="0"><span>Firmware</span><strong id="firmware">-</strong></div><div class="stat"><span>Bluetooth</span><strong id="bluetooth">-</strong></div><div class="stat"><span>USB output</span><strong id="usbReady">-</strong></div><div class="stat"><span>Battery</span><strong id="battery">-</strong></div><div class="stat"><span>Output</span><select id="outputMode" onchange="outputChanged()"><optgroup label="MiSTer"><option value="1">MiSTer</option></optgroup><optgroup label="Computer"><option value="2">X-Input</option><option value="3">Generic HID</option><option value="6" disabled>DualSense (PC/Mac) (requires firmware v1.1.0+)</option></optgroup><optgroup label="Console"><option value="4">Nintendo Switch</option><option value="5">Xbox 360</option></optgroup></select></div><div class="stat"><span>Active profile</span><strong id="activeProfile">-</strong></div></div></section><div class="under-card"><button id="pairBtn" class="btn" onclick="pair(true)">Start Pairing</button><button class="btn" onclick="openPaired()">Paired Controllers</button><button class="btn" onclick="openBlocked()">Blocked Devices</button><button id="testerBtn" class="btn hidden" onclick="openTester()">Controller Tester</button><button class="btn" onclick="openFirmware()">Firmware</button></div>
+<section id="adapterSelection" class="panel hidden"><label for="adapterSelector">Adapter to manage</label><select id="adapterSelector" onchange="selectAdapter(this.value)"></select></section><main id="overviewPage" class="page active"><section id="controllerModePanel" class="panel hidden"><label for="controllerMode">Controller mode</label><select id="controllerMode" onchange="controllerModeChanged()"><option value="0">Single controller</option><option value="1">Multi-controller (MiSTer only)</option></select><p class="subtle">Multi mode supports up to two controllers with profiles, mappings and rumble. Turbo and macros are disabled. May increase input latency. Changing mode restarts the adapter.</p><div id="multiControllerSelection" class="hidden"><label for="liveController">Connected controllers</label><select id="liveController" onchange="selectLiveController(this.value)"></select></div></section><section id="touchMousePanel" class="panel hidden">
+<h2>Touchpad mouse</h2>
+<label><input id="touchMouseEnabled" type="checkbox" onchange="touchMouseDirty=true"> Use DS4 touchpad as a USB mouse</label>
+<p class="subtle">Slide and press the DS4 touchpad. Requires single-controller MiSTer output. Other gamepad controls remain available.</p>
+<fieldset id="ds4GyroPanel" class="hidden" disabled style="border:1px solid var(--border);border-radius:12px;padding:16px;margin:16px 0">
+<legend>DS4 gyro mouse (experimental)</legend>
+<label><input id="ds4GyroEnabled" type="checkbox"> Enable DS4 gyro mouse</label>
+<div class="form-group"><label for="ds4GyroSensitivity">Sensitivity (%)</label><input id="ds4GyroSensitivity" type="number" min="1" max="200" value="100"></div>
+<div class="form-group"><label for="ds4GyroActivation">Move the pointer</label><select id="ds4GyroActivation"><option value="1">While touching the touchpad</option><option value="2">While holding L2</option><option value="0">Whenever gyro is enabled</option></select></div>
+<label><input id="ds4GyroInvertX" type="checkbox"> Invert horizontal movement</label>
+<label><input id="ds4GyroInvertY" type="checkbox"> Invert vertical movement</label>
+<label><input id="ds4GyroFire" type="checkbox"> Use R2 for mouse left-click / fire</label>
+<div class="form-group"><label for="ds4GyroPause">Hold to pause and reposition</label><select id="ds4GyroPause"></select></div>
+<p class="subtle">Mouse output above must also be enabled. Touchpad movement remains available. To zero resting drift, hold the pause button with the controller still for at least half a second. The pause button is reserved while gyro is enabled; optional R2 fire replaces gamepad R2. Settings apply after restart.</p>
+</fieldset><p id="touchMouseStatus" class="subtle" role="status"></p>
+<button id="touchMouseSave" class="btn primary" onclick="saveTouchMouse()" disabled>Save mouse setting and restart</button>
+<p class="subtle">This adapter-wide setting applies to supported controllers and is off by default. Leave Controller Tester before checking movement in a mouse-capable core. The tester captures input and suppresses USB output.</p>
+</section><section id="lightbarPanel" class="panel hidden">
+<h2>DS4 light-bar colours</h2>
+<fieldset id="lightbarDefaults" disabled style="border:0;padding:0;margin:0">
+<div class="form-group"><label for="lightbarTheme">Colour theme</label><select id="lightbarTheme" onchange="lightbarThemeChanged()"><option value="2">Nintendo — P1 red, P2 green</option><option value="1">Sega — P1 blue, P2 yellow/orange</option><option value="0">Custom</option></select></div>
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px">
+<label>P1 colour <input id="lightbarP1" type="color" value="#400000" oninput="lightbarColourChanged(0)"></label>
+<label>P2 colour <input id="lightbarP2" type="color" value="#004000" oninput="lightbarColourChanged(1)"></label>
+<label>P3 colour <input id="lightbarP3" type="color" value="#004000" oninput="lightbarColourChanged(2)"></label>
+<label>P4 colour <input id="lightbarP4" type="color" value="#200020" oninput="lightbarColourChanged(3)"></label></div>
+<p class="subtle">Themes set P1/P2 and retain your P3/P4 choices. Auto follows BlueBridge connection slots, not MiSTer player assignment. Each adapter currently supports two connected controllers.</p>
+<button id="lightbarSavePalette" class="btn primary" onclick="saveLightbarPalette()">Save theme and colours</button>
+</fieldset>
+<fieldset id="lightbarController" class="hidden" disabled style="border:1px solid var(--border);border-radius:12px;padding:16px;margin:16px 0">
+<legend id="lightbarControllerName">Controller colour</legend>
+<div class="form-group"><label for="lightbarPlayer">Preset</label><select id="lightbarPlayer" onchange="lightbarControllerDirty=true"><option value="0">Auto — BlueBridge slot</option><option value="1">P1 colour</option><option value="2">P2 colour</option><option value="3">P3 colour</option><option value="4">P4 colour</option></select></div>
+<label><input id="lightbarCustom" type="checkbox" onchange="lightbarControllerDirty=true;renderLightbar()"> Override with a custom colour</label>
+<label>Custom colour <input id="lightbarCustomColour" type="color" value="#400000" oninput="lightbarControllerDirty=true"></label>
+<p id="lightbarControllerStatus" class="subtle"></p>
+<button id="lightbarSaveController" class="btn" onclick="saveLightbarController()">Save controller colour</button>
+</fieldset>
+<p id="lightbarStatus" class="subtle" role="status">Connect an adapter to read colours.</p>
+<p class="subtle">Connected DS4 light bars update without a restart. Other controllers are unaffected. Rumble retains the selected colour.</p>
+</section><section id="controllerCard" class="panel"><div class="controller-head"><div><div class="subtle">Current controller</div><h2 id="currentController">No controller connected</h2><div id="currentState" class="subtle">Turn on a paired controller normally, or start pairing to add one.</div></div><button id="disconnectBtn" class="btn hidden" onclick="disconnectController()">Disconnect</button></div><div class="status-grid"><div class="stat action" onclick="openFirmware()" role="button" tabindex="0"><span>Firmware</span><strong id="firmware">-</strong></div><div class="stat"><span>Bluetooth</span><strong id="bluetooth">-</strong></div><div class="stat"><span>USB output</span><strong id="usbReady">-</strong></div><div class="stat"><span>Battery</span><strong id="battery">-</strong></div><div class="stat"><span>Output</span><select id="outputMode" onchange="outputChanged()"><optgroup label="MiSTer"><option value="1">MiSTer</option></optgroup><optgroup label="Computer"><option value="2">X-Input</option><option value="3">Generic HID</option><option value="6" disabled>DualSense (PC/Mac) (requires firmware v1.1.0+)</option></optgroup><optgroup label="Console"><option value="4">Nintendo Switch</option><option value="5">Xbox 360</option></optgroup></select></div><div class="stat"><span>Active profile</span><strong id="activeProfile">-</strong></div></div></section><div class="under-card"><button id="pairBtn" class="btn" onclick="pair(true)">Start Pairing</button><button class="btn" onclick="openPaired()">Paired Controllers</button><button class="btn" onclick="openBlocked()">Blocked Devices</button><button id="testerBtn" class="btn hidden" onclick="openTester()">Controller Tester</button><button class="btn" onclick="openFirmware()">Firmware</button></div>
 <section id="controllerManagement" class="panel"><div class="toolbar"><div><h2 id="manageTitle">Profiles</h2><div id="manageState" class="subtle">Select a paired controller to manage its profiles.</div></div><button id="closeControllerBtn" class="btn small hidden" onclick="closeManagedController()">Close Controller</button></div><div id="profilePills" class="profile-pills"></div><div id="newProfileRow" class="capture-select"><input id="newProfile" type="text" maxlength="23" placeholder="New profile name"><button class="btn" onclick="createProfile()">Create</button></div><div id="editor" class="hidden"><div class="editor-head"><div><div id="crumb" class="subtle"></div><h2 id="profileTitle"></h2></div><div class="actions"><button id="activateBtn" class="btn small" onclick="activateCurrent()">Activate</button><button class="btn small" onclick="duplicateCurrent()">Duplicate</button><button id="deleteBtn" class="btn small danger" onclick="deleteCurrent()">Delete</button><button class="btn primary" onclick="saveProfile()">Save</button></div></div><div class="tabs"><button class="tab active" data-tab="mapping">Mapping</button><button class="tab" data-tab="analog">Analog</button><button class="tab" data-tab="turbo">Turbo</button><button class="tab" data-tab="macros">Macros</button><button class="tab" data-tab="advanced">Advanced</button></div>
 <div id="mapping" class="tabpage active"><div class="surface"><div class="toolbar"><div><h3>Controller mapping</h3><div class="subtle">Choose mappings from the list, or use the controller while it is connected.</div></div><button class="btn small" onclick="resetMapping()">Reset mapping</button><button id="sourceListen" class="btn small" onclick="captureMappingSource()">Press controller button</button></div><div id="mapGrid" class="map-grid"></div></div></div>
 <div id="analog" class="tabpage"><div class="surface"><h3>Analog controls</h3><div class="form-grid"><div class="form-group"><label>Left stick deadzone (%)</label><input id="dzL" type="number" min="0" max="50"></div><div class="form-group"><label>Right stick deadzone (%)</label><input id="dzR" type="number" min="0" max="50"></div><div class="form-group"><label>Trigger deadzone (%)</label><input id="dzT" type="number" min="0" max="50"></div></div><div id="invertRows"></div></div></div>
@@ -1044,7 +1083,7 @@ async function loadProfiles(force=true){try{profilesData=(await api('/api/bluebr
 function renderControllerMode(){const supported=typeof statusData.multi_controller==='boolean',multi=!!statusData.multi_controller;$('controllerModePanel').classList.toggle('hidden',!supported);$('controllerMode').value=multi?'1':'0';$('multiControllerSelection').classList.toggle('hidden',!multi);const sel=$('liveController');sel.innerHTML='';for(const c of controllersData.controllers||[])if(c.connected)sel.append(new Option(c.name,c.index));sel.value=String(currentController);sel.disabled=!sel.options.length;$('outputMode').disabled=multi;for(const key of ['turbo','macros']){document.querySelector('.tab[data-tab="'+key+'"]').classList.toggle('hidden',multi);$(key).classList.toggle('hidden',multi);}if(multi&&document.querySelector('.tab.active')?.dataset.tab.match(/^(turbo|macros)$/))document.querySelector('.tab[data-tab="mapping"]').click();$('misterSettings').classList.toggle('hidden',multi||Number(statusData.output_mode)!==1);$('pairBtn').classList.toggle('hidden',false);$('pairBtn').disabled=!statusData.pairing&&(controllersData.controllers||[]).filter(c=>c.connected).length>=Number(statusData.max_connected||1);$('pairBtn').textContent=statusData.pairing?'Stop Pairing':'Start Pairing';}
 async function controllerModeChanged(){const enabled=$('controllerMode').value==='1';if(!confirm('Change controller mode? The adapter will restart and connected controllers will disconnect. Saved profiles are preserved.')){$('controllerMode').value=statusData.multi_controller?'1':'0';return;}try{await post('/api/bluebridge/mode',{multi_controller:enabled});profileData=null;currentProfile=-1;editorDirty=false;toast('Adapter restarting');setTimeout(refresh,2000);}catch(e){$('controllerMode').value=statusData.multi_controller?'1':'0';toast(e.message,true);}}
 async function selectLiveController(value){if(profileSaving)return;try{await post('/api/bluebridge/controllers/select',{index:Number(value)});currentController=Number(value);currentProfile=-1;profileData=null;editorDirty=false;offlineManagement=false;await refresh();}catch(e){toast(e.message,true);}}
-function renderAll(){renderControllerCard();renderFirmware();renderProfiles();renderPaired();renderBlocked();if(profileData&&!editorDirty&&!profileSaving)renderEditor();renderControllerMode()}
+function renderAll(){renderLightbar();renderTouchMouse();renderControllerCard();renderFirmware();renderProfiles();renderPaired();renderBlocked();if(profileData&&!editorDirty&&!profileSaving)renderEditor();renderControllerMode()}
 function openFirmware(){showPage('firmware');renderFirmware()}function renderFirmware(){if($('firmwareInstalled'))$('firmwareInstalled').textContent=statusData.firmware?'v'+statusData.firmware:'-';if($('firmwareSchema'))$('firmwareSchema').textContent=statusData.config_schema??'-'}
 function supportsDualSense(firmware) {
   const version = /^v?(\d+)\.(\d+)\.(\d+)(-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.exec(String(firmware ?? '').trim());
@@ -1170,6 +1209,121 @@ async function downloadDiagnostics(){
   finally{diagnosticsBusy=false;await refreshDiagnostics();}
 }
 refresh();setInterval(()=>{if(document.visibilityState==='visible'&&!profileSaving&&!testerTimer&&!firmwareUpdating&&!$('captureModal').classList.contains('show'))refresh()},4000);
+
+// BLUEBRIDGE_TOUCH_MOUSE
+let touchMouseSaving=false,touchMouseDirty=false,touchMouseAdapter='';
+function renderTouchMouse(){
+  if(touchMouseAdapter!==selectedAdapterId){touchMouseDirty=false;touchMouseAdapter=selectedAdapterId;}
+  const supported=!!statusData.capabilities?.touch_mouse;
+  $('touchMousePanel').classList.toggle('hidden',!supported);
+  renderDS4Gyro();
+  const data=statusData.touch_mouse;
+  $('touchMouseSave').disabled=!supported||!data||touchMouseSaving||(statusData.capabilities?.ds4_gyro&&!statusData.ds4_aim);
+  if(!supported)return;
+  if(!data){$('touchMouseEnabled').disabled=true;$('touchMouseStatus').textContent='Unable to read mouse settings. Refresh to retry.';return;}
+  if(!touchMouseSaving&&!touchMouseDirty) $('touchMouseEnabled').checked=!!data.enabled;
+  const eligible=!statusData.multi_controller&&Number(statusData.output_mode)===1&&data.available;
+  $('touchMouseEnabled').disabled=touchMouseSaving;
+  $('touchMouseStatus').textContent=!eligible
+    ? 'Mouse output requires single-controller MiSTer mode. Your saved choice is retained.'
+    : data.enabled!==data.active
+      ? 'Setting saved. Waiting for the adapter to restart.'
+      : data.active?'Mouse output is active. Exit Controller Tester to use it.':'Mouse output is off.';
+}
+async function saveTouchMouse(){
+  if(touchMouseSaving||!statusData.touch_mouse)return;
+  touchMouseSaving=true;
+  $('touchMouseSave').disabled=true;
+  $('touchMouseEnabled').disabled=true;
+  try{
+    const result=await post('/api/bluebridge/touch-mouse',pointerPayload());
+    if(statusData.capabilities?.ds4_gyro)statusData.ds4_aim=pointerPayload().ds4_aim;
+    touchMouseDirty=false;
+    statusData.touch_mouse.enabled=$('touchMouseEnabled').checked;
+    toast(result.mouse?.restart_required?'Mouse setting saved. Adapter restarting…':'Mouse setting saved.');
+    setTimeout(()=>refresh(),1500);
+  }catch(e){toast(e.message,true);}
+  finally{touchMouseSaving=false;renderTouchMouse();}
+}
+saveTouchMouse=guardAdapterAction(saveTouchMouse);
+
+// BLUEBRIDGE_DS4_GYRO
+function renderDS4Gyro(){
+  const supported=!!statusData.capabilities?.ds4_gyro,aim=statusData.ds4_aim;
+  $('ds4GyroPanel').classList.toggle('hidden',!supported);
+  $('ds4GyroPanel').disabled=!supported||!aim||touchMouseSaving;
+  if(!supported||!aim||touchMouseDirty||touchMouseSaving)return;
+  $('ds4GyroEnabled').checked=!!aim.enabled;$('ds4GyroSensitivity').value=String(aim.sensitivity);
+  $('ds4GyroActivation').value=String(aim.activation);
+  $('ds4GyroInvertX').checked=!!(aim.flags&1);$('ds4GyroInvertY').checked=!!(aim.flags&2);$('ds4GyroFire').checked=!!(aim.flags&4);
+  const labels=['Cross','Circle','Square','Triangle','L1','R1','L2','R2','Share','Options','L3','R3','PS','Touchpad click'];
+  $('ds4GyroPause').replaceChildren(new Option('None',255),...labels.map((name,i)=>new Option(name,i)));
+  $('ds4GyroPause').value=String(aim.pause_button);
+}
+function pointerPayload(){
+  const payload={enabled:$('touchMouseEnabled').checked};
+  if(statusData.capabilities?.ds4_gyro){
+    if(!statusData.ds4_aim)throw Error('Unable to read DS4 gyro settings. Refresh before saving.');
+    const sensitivity=Number($('ds4GyroSensitivity').value);
+    if(!Number.isInteger(sensitivity)||sensitivity<1||sensitivity>200)throw Error('Choose a whole-number sensitivity from 1 to 200%.');
+    payload.ds4_aim={enabled:$('ds4GyroEnabled').checked,sensitivity,
+      activation:Number($('ds4GyroActivation').value),pause_button:Number($('ds4GyroPause').value),
+      flags:($('ds4GyroInvertX').checked?1:0)|($('ds4GyroInvertY').checked?2:0)|($('ds4GyroFire').checked?4:0)};
+  }
+  return payload;
+}
+$('ds4GyroPanel').addEventListener('input',()=>touchMouseDirty=true);
+$('ds4GyroPanel').addEventListener('change',()=>touchMouseDirty=true);
+
+// BLUEBRIDGE_DS4_LIGHTBAR
+let lightbarSaving=false,lightbarPaletteDirty=false,lightbarControllerDirty=false,lightbarAdapter='',lightbarControllerId='';
+function lightbarHex(rgb){return '#'+rgb.map(v=>Number(v).toString(16).padStart(2,'0')).join('');}
+function lightbarRGB(hex){if(!/^#[0-9a-f]{6}$/i.test(hex))throw Error('Choose a valid colour.');return [1,3,5].map(i=>parseInt(hex.slice(i,i+2),16));}
+function lightbarThemeChanged(){
+  const theme=Number($('lightbarTheme').value),colours={1:['#000040','#402000'],2:['#400000','#004000']}[theme];
+  if(colours){$('lightbarP1').value=colours[0];$('lightbarP2').value=colours[1];}
+  lightbarPaletteDirty=true;
+}
+function lightbarColourChanged(player){if(player<2)$('lightbarTheme').value='0';lightbarPaletteDirty=true;}
+function renderLightbar(){
+  if(lightbarAdapter!==selectedAdapterId){lightbarAdapter=selectedAdapterId;lightbarPaletteDirty=lightbarControllerDirty=false;lightbarControllerId='';}
+  const supported=!!statusData.capabilities?.ds4_lightbar,data=statusData.lightbar;
+  $('lightbarPanel').classList.toggle('hidden',!supported);
+  $('lightbarDefaults').disabled=!supported||!data||lightbarSaving;
+  if(!supported)return;
+  if(!data){$('lightbarStatus').textContent='Unable to read light-bar settings. Refresh to retry.';$('lightbarController').classList.add('hidden');return;}
+  if(!lightbarPaletteDirty&&!lightbarSaving){$('lightbarTheme').value=String(data.theme);data.players.forEach((rgb,i)=>$('lightbarP'+(i+1)).value=lightbarHex(rgb));}
+  const c=selectedController(),choice=c&&data.controllers.find(x=>Number(x.index)===Number(c.index)&&Number(x.id)===Number(c.id));
+  const key=c?String(c.id)+':'+c.index:'';
+  if(key!==lightbarControllerId){lightbarControllerId=key;lightbarControllerDirty=false;}
+  const ds4=Number(c?.kind)===4;
+  $('lightbarController').classList.toggle('hidden',!ds4||!choice);
+  $('lightbarController').disabled=lightbarSaving||!choice;
+  if(ds4&&choice){
+    $('lightbarControllerName').textContent=c.name+' colour';
+    if(!lightbarControllerDirty&&!lightbarSaving){$('lightbarPlayer').value=String(choice.player);$('lightbarCustom').checked=!!choice.custom_enabled;$('lightbarCustomColour').value=lightbarHex(choice.rgb);}
+    $('lightbarCustomColour').disabled=!$('lightbarCustom').checked||lightbarSaving;
+    $('lightbarPlayer').disabled=$('lightbarCustom').checked||lightbarSaving;
+    $('lightbarControllerStatus').textContent=c.connected?'Connected on BlueBridge slot '+(Number(c.slot)+1)+'.':'Saved choice will apply when this DS4 connects.';
+  }
+  $('lightbarStatus').textContent=lightbarPaletteDirty||lightbarControllerDirty?'Unsaved colour changes.':'Colours are saved on the adapter.';
+}
+async function saveLightbarPalette(){
+  if(lightbarSaving)return;lightbarSaving=true;renderLightbar();
+  try{
+    const result=await post('/api/bluebridge/lightbar/palette',{theme:Number($('lightbarTheme').value),players:[1,2,3,4].map(i=>lightbarRGB($('lightbarP'+i).value))});
+    statusData.lightbar=result.lightbar;lightbarPaletteDirty=false;toast('Theme and colours saved.');
+  }catch(e){toast(e.message,true);}finally{lightbarSaving=false;renderLightbar();}
+}
+async function saveLightbarController(){
+  if(lightbarSaving)return;const c=selectedController();if(!c||Number(c.kind)!==4)return;
+  lightbarSaving=true;renderLightbar();
+  try{
+    const result=await post('/api/bluebridge/lightbar/controller',{index:Number(c.index),id:Number(c.id),player:Number($('lightbarPlayer').value),custom_enabled:$('lightbarCustom').checked,rgb:lightbarRGB($('lightbarCustomColour').value)});
+    statusData.lightbar=result.lightbar;lightbarControllerDirty=false;toast('Controller colour saved.');
+  }catch(e){toast(e.message,true);}finally{lightbarSaving=false;renderLightbar();}
+}
+saveLightbarPalette=guardAdapterAction(saveLightbarPalette);saveLightbarController=guardAdapterAction(saveLightbarController);
 </script></body></html>'''.encode("utf-8")
 
 
@@ -1758,6 +1912,22 @@ class BlueBridgeManager:
             status["protocol"] = hello.get("protocol", status.get("protocol"))
             status["config_schema"] = hello.get("config_schema")
             status["capabilities"] = hello.get("capabilities", {})
+            # BLUEBRIDGE_TOUCH_MOUSE: optional firmware capability; older adapters remain usable.
+            if status["capabilities"].get("touch_mouse"):
+                try:
+                    status["touch_mouse"] = self.request_json("TOUCH_MOUSE_GET")
+                except Exception as mouse_error:
+                    status["touch_mouse_error"] = str(mouse_error)
+            if status["capabilities"].get("ds4_lightbar"):
+                try:
+                    status["lightbar"] = self.request_json("LIGHTBAR_GET")
+                except Exception as lightbar_error:
+                    status["lightbar_error"] = str(lightbar_error)
+            if status["capabilities"].get("ds4_gyro"):
+                try:
+                    status["ds4_aim"] = self.request_json("DS4_AIM_GET")
+                except Exception as gyro_error:
+                    status["ds4_aim_error"] = str(gyro_error)
             self.adapter_name = hello.get("adapter_name") or "MC BlueBridge adapter"
             status["adapter_id"] = self.adapter_id
             status["adapter_name"] = self.adapter_name
@@ -2443,6 +2613,45 @@ def _json_http(sock, payload, status="200 OK"):
     send_http(sock, status, "application/json; charset=utf-8", json.dumps(payload).encode("utf-8"))
 
 
+# BLUEBRIDGE_DS4_GYRO
+def save_pointer_settings(bluebridge,payload):
+    aim=payload.get("ds4_aim")
+    if aim is None:return bluebridge.request_json("TOUCH_MOUSE_SET",int(payload["enabled"]))
+    if not bluebridge.request_json("HELLO").get("capabilities",{}).get("ds4_gyro"):
+        raise ValueError("This firmware does not advertise DS4 gyro support")
+    if not isinstance(aim,dict) or type(aim.get("enabled")) is not bool:
+        raise ValueError("Invalid DS4 gyro settings")
+    for name,low,high in [("sensitivity",1,200),("activation",0,2),("flags",0,7),("pause_button",0,255)]:
+        value=aim.get(name)
+        if type(value) is not int or value<low or value>high:raise ValueError("Invalid DS4 gyro "+name)
+    if aim["pause_button"]>13 and aim["pause_button"]!=255:raise ValueError("Invalid DS4 pause button")
+    return bluebridge.request_json("DS4_AIM_SET",int(aim["enabled"]),aim["sensitivity"],aim["activation"],aim["flags"],aim["pause_button"],int(payload["enabled"]))
+
+# BLUEBRIDGE_DS4_LIGHTBAR
+def lightbar_rgb(value):
+    if not isinstance(value,list) or len(value)!=3 or any(type(v) is not int or v<0 or v>255 for v in value):
+        raise ValueError("A colour must contain three whole numbers from 0 to 255")
+    return value
+def save_lightbar_palette(bluebridge,payload):
+    if not isinstance(payload,dict):raise ValueError("Invalid colour settings")
+    theme=payload.get("theme");players=payload.get("players")
+    if type(theme) is not int or theme<0 or theme>2:raise ValueError("Invalid colour theme")
+    if not isinstance(players,list) or len(players)!=4:raise ValueError("Four player colours are required")
+    colours=[lightbar_rgb(rgb) for rgb in players]
+    expected={1:[[0,0,64],[64,32,0]],2:[[64,0,0],[0,64,0]]}
+    if theme and colours[:2]!=expected[theme]:raise ValueError("Theme colours changed; select Custom")
+    bluebridge.request("LIGHTBAR_PALETTE_SET",theme,*[v for rgb in colours for v in rgb])
+    return bluebridge.request_json("LIGHTBAR_GET")
+def save_lightbar_controller(bluebridge,payload):
+    if not isinstance(payload,dict):raise ValueError("Invalid controller colour settings")
+    for name,maximum in [("index",7),("id",4294967295),("player",4)]:
+        value=payload.get(name)
+        if type(value) is not int or value<0 or value>maximum:raise ValueError("Invalid controller "+name)
+    if type(payload.get("custom_enabled")) is not bool:raise ValueError("Invalid custom colour choice")
+    rgb=lightbar_rgb(payload.get("rgb"))
+    bluebridge.request("LIGHTBAR_SET",payload["index"],payload["id"],payload["player"],int(payload["custom_enabled"]),*rgb)
+    return bluebridge.request_json("LIGHTBAR_GET")
+
 def handle_client(sock, address, path):
     try:
         method, target, headers, request_body = _read_http_request(sock)
@@ -2903,6 +3112,35 @@ def handle_client(sock, address, path):
                             _json_http(sock, response(False, "error", "GET or POST required"), "405 Method Not Allowed")
                     except Exception as e:
                         _json_http(sock, response(False, "error", str(e)), "400 Bad Request")
+                    return
+                # BLUEBRIDGE_TOUCH_MOUSE
+                if request_path == "/api/bluebridge/touch-mouse":
+                    if method != "POST":
+                        _json_http(sock, response(False, "error", "POST required"), "405 Method Not Allowed")
+                        return
+                    try:
+                        if not bluebridge.request_json("HELLO").get("capabilities", {}).get("touch_mouse"):
+                            raise ValueError("This firmware does not support touchpad mouse output")
+                        payload = json.loads(request_body.decode("utf-8") or "{}")
+                        if not isinstance(payload, dict) or type(payload.get("enabled")) is not bool:
+                            raise ValueError("enabled must be a boolean")
+                        result = save_pointer_settings(bluebridge,payload)
+                        _json_http(sock, response(True, "bluebridge", "Mouse setting saved", mouse=result))
+                    except Exception as mouse_error:
+                        _json_http(sock, response(False, "error", str(mouse_error)), "400 Bad Request")
+                    return
+                if request_path in ("/api/bluebridge/lightbar/palette","/api/bluebridge/lightbar/controller"):
+                    if method != "POST":
+                        _json_http(sock,response(False,"error","POST required"),"405 Method Not Allowed")
+                        return
+                    try:
+                        if not bluebridge.request_json("HELLO").get("capabilities",{}).get("ds4_lightbar"):
+                            raise ValueError("This firmware does not advertise DS4 light-bar support")
+                        payload=json.loads(request_body.decode("utf-8") or "{}")
+                        result=save_lightbar_palette(bluebridge,payload) if request_path.endswith("/palette") else save_lightbar_controller(bluebridge,payload)
+                        _json_http(sock,response(True,"bluebridge","Colours saved",lightbar=result))
+                    except Exception as lightbar_error:
+                        _json_http(sock,response(False,"error",str(lightbar_error)),"400 Bad Request")
                     return
                 if request_path == "/api/bluebridge/output":
                     try:
