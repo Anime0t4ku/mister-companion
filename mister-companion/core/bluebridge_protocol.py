@@ -222,6 +222,16 @@ class BlueBridgeManager:
             status["adapter_id"] = self.adapter_id
             status["adapter_name"] = self.adapter_name
             status["adapter_custom_name"] = hello.get("adapter_custom_name", "")
+            for capability, key, command in (
+                ("touch_mouse", "touch_mouse", "TOUCH_MOUSE_GET"),
+                ("ds4_gyro", "ds4_aim", "DS4_AIM_GET"),
+                ("ds4_lightbar", "lightbar", "LIGHTBAR_GET"),
+            ):
+                if status["capabilities"].get(capability):
+                    try:
+                        status[key] = self.request_json(command)
+                    except Exception as error:
+                        status[key + "_error"] = str(error)
             return status
         except Exception as e:
             return {"detected": False, "connected": False, "message": str(e)}

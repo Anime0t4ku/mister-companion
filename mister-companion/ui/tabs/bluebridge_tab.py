@@ -2,7 +2,8 @@ import json
 import time
 from pathlib import Path
 from PyQt6.QtCore import Qt, QThread, QTimer, pyqtSignal
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QComboBox, QTabWidget, QFormLayout, QLineEdit, QSpinBox, QCheckBox, QScrollArea, QFileDialog, QMessageBox, QInputDialog, QDialog, QGridLayout, QGroupBox, QSizePolicy, QProgressBar, QPlainTextEdit
+from PyQt6.QtGui import QColor
+from PyQt6.QtWidgets import QColorDialog, QDialogButtonBox, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QComboBox, QTabWidget, QFormLayout, QLineEdit, QSpinBox, QCheckBox, QScrollArea, QFileDialog, QMessageBox, QInputDialog, QDialog, QGridLayout, QGroupBox, QSizePolicy, QProgressBar, QPlainTextEdit
 from core.bluebridge import BlueBridgeService, boot_volumes, flash_volume, supports_dualsense
 from core.bluebridge_protocol import _uf2_info
 from core.bluebridge_releases import bluebridge_release, download_bluebridge_release, version_key
@@ -33,6 +34,8 @@ class BlueBridgeTab(QWidget):
         self.worker = None
         self.worker_quiet = False
         self.active = False
+        self.ds4_editor = None
+        self.ds4_adapter = None
         self.profile_data = {}
         self.profile_editor_key = None
         self.profile_editor_baseline = None
@@ -356,6 +359,19 @@ class BlueBridgeTab(QWidget):
         self.tester_button = self.button(row, 'Controller Tester', self.open_tester)
         self.button(row, 'Firmware', lambda: self.pages.setCurrentIndex(3))
         overview.addLayout(row)
+        self.ds4_panel = QGroupBox('DualShock 4')
+        ds4_layout = QVBoxLayout(self.ds4_panel)
+        ds4_buttons = QHBoxLayout()
+        self.ds4_pointer_button = self.button(ds4_buttons, 'Touchpad and Gyro', self.edit_ds4_pointer)
+        self.ds4_palette_button = self.button(ds4_buttons, 'Light Bar Palette', self.edit_ds4_palette)
+        self.ds4_controller_button = self.button(ds4_buttons, 'Controller Light Bar', self.edit_ds4_controller)
+        ds4_buttons.addStretch()
+        ds4_layout.addLayout(ds4_buttons)
+        self.ds4_status = QLabel()
+        self.ds4_status.setWordWrap(True)
+        ds4_layout.addWidget(self.ds4_status)
+        overview.addWidget(self.ds4_panel)
+        self.ds4_panel.hide()
         self.controllers = QComboBox(self)
         self.controllers.hide()
         self.profile_panel = QGroupBox('Profiles')
@@ -622,7 +638,7 @@ class BlueBridgeTab(QWidget):
             self.refresh()
 
     def tick(self):
-        if not self.active or self.worker or self.closing or self.firmware_dialog: return
+        if not self.active or self.worker or self.closing or self.firmware_dialog or self.ds4_editor: return
         mode = self.mode.currentIndex()
         if mode == 1:
             if self.main_window.is_offline_mode() or not self.main_window.connection.is_connected():
@@ -684,6 +700,9 @@ class BlueBridgeTab(QWidget):
                 self.defer(lambda: self.mode.setCurrentIndex(3))
         else:
             self.service.adapter_id = self.adapters.currentData()
+            if self.service.adapter_id != current:
+                self.managed_controller = None
+                self.ds4_panel.hide()
             self.defer(self.load_all)
 
     def select_adapter(self):
@@ -695,6 +714,7 @@ class BlueBridgeTab(QWidget):
         self.firmware_flash_button.setEnabled(False)
         self.firmware_preview.setText('Choose a local UF2 file to see its version before installing.')
         self.service.adapter_id = self.adapters.currentData() or ''
+        self.ds4_panel.hide()
         self.reset_online_release()
         self.managed_controller = None
         self.profiles.clear()
@@ -731,6 +751,7 @@ class BlueBridgeTab(QWidget):
 
     def render_status(self, status):
         self.status_data = status
+        self.render_ds4_controls(status)
         if not status.get('detected'):
             self.pages.hide(); self.message.setText(status.get('message', 'Adapter disconnected')); return
         connected_controller = next((c for c in self.controllers_data.get('controllers', []) if c.get('index') == self.controllers_data.get('connected_index')), None)
@@ -794,6 +815,239 @@ class BlueBridgeTab(QWidget):
             self.render_firmware_release(self.online_release)
         self.pages.setVisible(bool(status.get('detected')))
         self.message.setText('MC BlueBridge connected via ' + ('Remote' if self.service.host else 'USB'))
+
+    def selected_ds4(self):
+        index = self.managed_controller
+        if index is None:
+            index = self.controllers_data.get('connected_index')
+        return next((controller for controller in self.controllers_data.get('controllers', [])
+                     if controller['index'] == index and controller.get('kind') == 4), None)
+
+    def ds4_controller_colour(self, controller):
+        if controller:
+            return next((choice for choice in (self.status_data.get('lightbar') or {}).get('controllers', [])
+                         if (choice['index'], choice['id']) == (controller['index'], controller['id'])), None)
+
+    def render_ds4_controls(self, status):
+        controller = self.selected_ds4()
+        self.ds4_adapter = (self.service, self.service.adapter_id) if self.service and status.get('detected') and controller else None
+        caps = status.get('capabilities', {})
+        mouse = bool(self.ds4_adapter and caps.get('touch_mouse'))
+        lightbar = bool(self.ds4_adapter and caps.get('ds4_lightbar'))
+        self.ds4_panel.setVisible(mouse or lightbar)
+        self.ds4_pointer_button.setVisible(mouse)
+        self.ds4_palette_button.setVisible(lightbar)
+        self.ds4_controller_button.setVisible(lightbar and bool(self.ds4_controller_colour(controller)))
+        pointer_ready = bool(status.get('touch_mouse')) and (not caps.get('ds4_gyro') or bool(status.get('ds4_aim')))
+        self.ds4_pointer_button.setEnabled(pointer_ready)
+        self.ds4_palette_button.setEnabled(bool(status.get('lightbar')))
+        unavailable = (mouse and not pointer_ready) or (lightbar and not status.get('lightbar'))
+        if unavailable:
+            message = 'Some DualShock 4 settings could not be read. Refresh the adapter and try again.'
+            if self.service.host and not any(status.get(key) for key in ('touch_mouse', 'ds4_aim', 'lightbar',
+                                                                        'touch_mouse_error', 'ds4_aim_error', 'lightbar_error')):
+                message = 'Update Companion Remote to v4.3.0 or later to manage DualShock 4 settings.'
+            self.ds4_status.setText(message)
+        self.ds4_status.setVisible(unavailable)
+
+    def ds4_dialog(self, title):
+        dialog = QDialog(self)
+        dialog.setWindowTitle(title)
+        dialog.setMinimumWidth(420)
+        layout = QVBoxLayout(dialog)
+        form = QFormLayout()
+        layout.addLayout(form)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+        return dialog, form
+
+    def ds4_choice(self, form, label, items, selected):
+        combo = QComboBox()
+        for text, value in items:
+            combo.addItem(text, value)
+        combo.setCurrentIndex(combo.findData(selected))
+        form.addRow(label, combo)
+        return combo
+
+    def ds4_check(self, form, label, checked):
+        control = QCheckBox(label)
+        control.setChecked(bool(checked))
+        form.addRow(control)
+        return control
+
+    def edit_ds4_pointer(self):
+        status = self.status_data
+        mouse = status.get('touch_mouse')
+        aim = status.get('ds4_aim')
+        if not mouse or (status.get('capabilities', {}).get('ds4_gyro') and not aim):
+            return
+        dialog, form = self.ds4_dialog('DualShock 4 Touchpad and Gyro')
+        note = QLabel('These settings apply to the adapter. Mouse output requires single-controller MiSTer mode. Applying changes restarts the adapter.')
+        note.setWordWrap(True)
+        form.addRow(note)
+        enabled = self.ds4_check(form, 'Use the touchpad as a USB mouse', mouse['enabled'])
+        if aim:
+            gyro = self.ds4_check(form, 'Enable gyro mouse (experimental)', aim['enabled'])
+            sensitivity = QSpinBox()
+            sensitivity.setRange(1, 200)
+            sensitivity.setSuffix('%')
+            sensitivity.setValue(aim['sensitivity'])
+            form.addRow('Sensitivity', sensitivity)
+            activation = self.ds4_choice(form, 'Move the pointer', [
+                ('Whenever gyro is enabled', 0), ('While touching the touchpad', 1),
+                ('While holding L2', 2),
+            ], aim['activation'])
+            labels = ('Cross', 'Circle', 'Square', 'Triangle', 'L1', 'R1', 'L2', 'R2',
+                      'Share', 'Options', 'L3', 'R3', 'PS', 'Touchpad click')
+            pause = self.ds4_choice(form, 'Hold to pause and recenter', [('None', 255), *[(label, index) for index, label in enumerate(labels)]], aim['pause_button'])
+            flags = [
+                self.ds4_check(form, label, aim['flags'] & (1 << bit))
+                for bit, label in enumerate(('Invert horizontal movement', 'Invert vertical movement', 'Use R2 for mouse click'))
+            ]
+            gyro_note = QLabel('Enable USB mouse output to use gyro. Hold the pause button with the controller still for at least half a second to zero drift. R2 mouse click replaces gamepad R2.')
+            gyro_note.setWordWrap(True)
+            form.addRow(gyro_note)
+
+        def payload():
+            settings = {'enabled': enabled.isChecked()}
+            if aim:
+                settings['ds4_aim'] = {
+                    'enabled': gyro.isChecked(),
+                    'sensitivity': sensitivity.value(),
+                    'activation': activation.currentData(),
+                    'pause_button': pause.currentData(),
+                    'flags': sum(1 << bit for bit, control in enumerate(flags) if control.isChecked()),
+                }
+            return settings
+
+        self.save_ds4_dialog(dialog, 'touch-mouse', payload)
+
+    def ds4_colour_button(self, form, label, rgb, on_pick=None):
+        button = QPushButton()
+
+        def set_colour(channels):
+            button.setText(QColor(*channels).name().upper())
+
+        def read_colour():
+            colour = QColor(button.text())
+            return [colour.red(), colour.green(), colour.blue()]
+
+        def pick():
+            colour = QColorDialog.getColor(QColor(button.text()), button, label)
+            if colour.isValid():
+                set_colour((colour.red(), colour.green(), colour.blue()))
+                if on_pick:
+                    on_pick()
+
+        set_colour(rgb)
+        button.clicked.connect(pick)
+        form.addRow(label, button)
+        return button, set_colour, read_colour
+
+    def edit_ds4_palette(self):
+        lightbar = self.status_data.get('lightbar')
+        if not lightbar:
+            return
+        dialog, form = self.ds4_dialog('DualShock 4 Light Bar Palette')
+        form.addRow(QLabel('This palette applies to the adapter.'))
+        theme = self.ds4_choice(form, 'Color theme', [('Custom', 0), ('Sega', 1), ('Nintendo', 2)], lightbar['theme'])
+        presets = {1: ((0, 0, 64), (64, 32, 0)), 2: ((64, 0, 0), (0, 64, 0))}
+
+        def select_custom():
+            theme.setCurrentIndex(theme.findData(0))
+
+        colours = [
+            self.ds4_colour_button(form, f'Player {index} color', rgb, select_custom if index <= 2 else None)
+            for index, rgb in enumerate(lightbar['players'], 1)
+        ]
+
+        def apply_theme():
+            for (_, set_colour, _), rgb in zip(colours, presets.get(theme.currentData(), ())):
+                set_colour(rgb)
+
+        theme.activated.connect(apply_theme)
+
+        def payload():
+            return {'theme': theme.currentData(), 'players': [read_colour() for _, _, read_colour in colours]}
+
+        self.save_ds4_dialog(dialog, 'lightbar/palette', payload)
+
+    def edit_ds4_controller(self):
+        controller = self.selected_ds4()
+        colour = self.ds4_controller_colour(controller)
+        if not colour:
+            return
+        dialog, form = self.ds4_dialog('DualShock 4 Controller Light Bar')
+        name = QLabel(controller['name'] + ('' if controller.get('connected') else ' · Offline'))
+        name.setTextFormat(Qt.TextFormat.PlainText)
+        form.addRow('Controller', name)
+        player = self.ds4_choice(form, 'Player color', [('Automatic (BlueBridge slot)', 0),
+                                 *[(f'Player {index}', index) for index in range(1, 5)]], colour['player'])
+        custom = self.ds4_check(form, 'Override with a custom color', colour['custom_enabled'])
+        button, _, read_colour = self.ds4_colour_button(form, 'Custom color', colour['rgb'])
+
+        def update_enabled():
+            button.setEnabled(custom.isChecked())
+            player.setEnabled(not custom.isChecked())
+
+        custom.toggled.connect(update_enabled)
+        update_enabled()
+
+        def payload():
+            return {'index': controller['index'], 'id': controller['id'], 'player': player.currentData(),
+                    'custom_enabled': custom.isChecked(), 'rgb': read_colour()}
+
+        self.save_ds4_dialog(dialog, 'lightbar/controller', payload)
+
+    def save_ds4_dialog(self, dialog, route, payload):
+        target = self.ds4_adapter
+        if not self.service or target != (self.service, self.service.adapter_id):
+            dialog.deleteLater()
+            return
+        self.ds4_editor = dialog
+        try:
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return
+            settings = payload()
+        finally:
+            self.ds4_editor = None
+            dialog.deleteLater()
+
+        service, adapter_id = target
+
+        def save():
+            if self.service is not service or service.adapter_id != adapter_id:
+                raise RuntimeError('Selected BlueBridge adapter changed. Reopen DualShock 4 settings.')
+            result = service.api(route, settings)
+            if not result.get('mouse', {}).get('restart_required'):
+                return True
+            deadline = time.monotonic() + 12
+            while time.monotonic() < deadline:
+                time.sleep(0.75)
+                try:
+                    if any(adapter['id'] == adapter_id for adapter in service.adapters()):
+                        status = service.api('status')['status']
+                        mouse = status.get('touch_mouse') or {}
+                        aim = status.get('ds4_aim') or {}
+                        if mouse.get('active') != settings['enabled']:
+                            continue
+                        requested_aim = settings.get('ds4_aim', {})
+                        if all(aim.get(key) == value for key, value in requested_aim.items()) and not aim.get('restart_required'):
+                            return True
+                except Exception:
+                    pass
+            return False
+
+        def saved(reconnected):
+            if reconnected:
+                self.defer(self.load_all)
+            else:
+                self.pages.hide()
+                self.message.setText('Settings saved. Refresh to check whether the adapter has restarted.')
+
+        self.run(save, saved)
 
     def load_profile(self):
         index = self.profiles.currentData()
@@ -974,6 +1228,7 @@ class BlueBridgeTab(QWidget):
         self.profiles.clear()
         self.profile_data = {}
         self.pages.setCurrentIndex(0)
+        self.ds4_panel.hide()
         self.command('controllers/select', {'index': index})
 
     def close_managed_controller(self):
@@ -988,6 +1243,7 @@ class BlueBridgeTab(QWidget):
         self.profile_data = {}
         self.profile_panel.hide()
         self.close_controller_button.hide()
+        self.render_ds4_controls(self.status_data)
         self.load_all()
 
     def disconnect_controller(self):

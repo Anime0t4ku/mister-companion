@@ -244,6 +244,8 @@ class BlueBridgeService:
         route, _, query = path.partition('?')
         if self.host:
             response = requests.request('POST' if payload is not None or data is not None else 'GET', f'http://{self.host}:{REMOTE_DAEMON_PORT}/api/bluebridge/{path}', headers={'X-BlueBridge-Adapter': self.adapter_id, 'Content-Type': 'application/octet-stream' if data is not None else 'application/json'}, json=payload if data is None else None, data=data, timeout=150 if route.startswith('firmware/') else 20)
+            if route in ('touch-mouse', 'lightbar/palette', 'lightbar/controller') and response.status_code == 400:
+                raise RuntimeError(response.json().get('message') or 'BlueBridge settings could not be saved')
             response.raise_for_status()
             result = response.json()
             if result.get('ok') is False:
@@ -286,6 +288,8 @@ class BlueBridgeService:
                         except Exception:
                             pass
                 raise RuntimeError('Adapter restarted. Refresh adapters to reconnect.')
+            if route in ('touch-mouse', 'lightbar/palette', 'lightbar/controller'):
+                return self.save_ds4_settings(manager, route, p)
             if route == 'controllers': return {'controllers': manager.controllers()}
             if route == 'blocked-devices': return {'blocked_devices': manager.blocked_devices()}
             if route == 'profiles': return {'profiles': manager.profiles()}
@@ -354,3 +358,36 @@ class BlueBridgeService:
             manager.request(command, *args)
             if route in ('adapter/rename','profiles/select','profile/mister-mapping'): manager.close()
             return {'ok': True}
+
+
+    def save_ds4_settings(self, manager, route, settings):
+        capabilities = manager.request_json('HELLO').get('capabilities', {})
+        if route == 'touch-mouse':
+            if not capabilities.get('touch_mouse'):
+                raise RuntimeError('This firmware does not support touchpad mouse output')
+            enabled = int(settings['enabled'])
+            aim = settings.get('ds4_aim')
+            if aim is None:
+                result = manager.request_json('TOUCH_MOUSE_SET', enabled)
+            else:
+                if not capabilities.get('ds4_gyro'):
+                    raise RuntimeError('This firmware does not support DS4 gyro aiming')
+                result = manager.request_json(
+                    'DS4_AIM_SET', int(aim['enabled']), aim['sensitivity'],
+                    aim['activation'], aim['flags'], aim['pause_button'], enabled,
+                )
+            if result.get('restart_required'):
+                manager.close()
+            return {'mouse': result}
+
+        if not capabilities.get('ds4_lightbar'):
+            raise RuntimeError('This firmware does not support DS4 light bar settings')
+        if route == 'lightbar/palette':
+            channels = [channel for rgb in settings['players'] for channel in rgb]
+            manager.request('LIGHTBAR_PALETTE_SET', settings['theme'], *channels)
+        else:
+            manager.request(
+                'LIGHTBAR_SET', settings['index'], settings['id'], settings['player'],
+                int(settings['custom_enabled']), *settings['rgb'],
+            )
+        return {'ok': True}
