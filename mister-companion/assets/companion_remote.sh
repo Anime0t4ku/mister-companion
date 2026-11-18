@@ -975,7 +975,12 @@ BLUEBRIDGE_HTML = r'''<!doctype html><html lang="en"><head><meta charset="utf-8"
 <h2>DualShock 4 Touchpad and Gyro</h2>
 <label><input id="touchMouseEnabled" type="checkbox" onchange="touchMouseDirty=true"> Use DS4 touchpad as a USB mouse</label>
 <p class="subtle">Slide and press the DS4 touchpad. Requires single-controller MiSTer output. Other gamepad controls remain available.</p>
-<fieldset id="ds4GyroPanel" class="hidden" disabled style="border:1px solid var(--border);border-radius:12px;padding:16px;margin:16px 0">
+<div id="ds4RightClickSection" class="hidden">
+<label><input id="ds4RightClickEnabled" type="checkbox" onchange="ds4RightClickDirty=true"> Enable right-click on the right half of the DS4 touchpad</label>
+<p class="subtle">Off: the whole pad clicks the left mouse button. On: left half = left-click; right half = right-click. A held click keeps its button until release. Mouse output must also be enabled.</p>
+<button id="ds4RightClickSave" class="btn" onclick="saveDS4RightClick()" disabled>Save right-click option</button>
+<p id="ds4RightClickStatus" class="subtle" role="status"></p>
+</div><fieldset id="ds4GyroPanel" class="hidden" disabled style="border:1px solid var(--border);border-radius:12px;padding:16px;margin:16px 0">
 <legend>DS4 gyro mouse (experimental)</legend>
 <label><input id="ds4GyroEnabled" type="checkbox"> Enable DS4 gyro mouse</label>
 <div class="form-group"><label for="ds4GyroSensitivity">Sensitivity (%)</label><input id="ds4GyroSensitivity" type="number" min="1" max="200" value="100"></div>
@@ -1084,7 +1089,7 @@ async function loadProfiles(force=true){try{profilesData=(await api('/api/bluebr
 function renderControllerMode(){const supported=typeof statusData.multi_controller==='boolean',multi=!!statusData.multi_controller;$('controllerModePanel').classList.toggle('hidden',!supported);$('controllerMode').value=multi?'1':'0';$('multiControllerSelection').classList.toggle('hidden',!multi);const sel=$('liveController');sel.innerHTML='';for(const c of controllersData.controllers||[])if(c.connected)sel.append(new Option(c.name,c.index));sel.value=String(currentController);sel.disabled=!sel.options.length;$('outputMode').disabled=multi;for(const key of ['turbo','macros']){document.querySelector('.tab[data-tab="'+key+'"]').classList.toggle('hidden',multi);$(key).classList.toggle('hidden',multi);}if(multi&&document.querySelector('.tab.active')?.dataset.tab.match(/^(turbo|macros)$/))document.querySelector('.tab[data-tab="mapping"]').click();$('misterSettings').classList.toggle('hidden',multi||Number(statusData.output_mode)!==1);$('pairBtn').classList.toggle('hidden',false);$('pairBtn').disabled=!statusData.pairing&&(controllersData.controllers||[]).filter(c=>c.connected).length>=Number(statusData.max_connected||1);$('pairBtn').textContent=statusData.pairing?'Stop Pairing':'Start Pairing';}
 async function controllerModeChanged(){const enabled=$('controllerMode').value==='1';if(!confirm('Change controller mode? The adapter will restart and connected controllers will disconnect. Saved profiles are preserved.')){$('controllerMode').value=statusData.multi_controller?'1':'0';return;}try{await post('/api/bluebridge/mode',{multi_controller:enabled});profileData=null;currentProfile=-1;editorDirty=false;toast('Adapter restarting');setTimeout(refresh,2000);}catch(e){$('controllerMode').value=statusData.multi_controller?'1':'0';toast(e.message,true);}}
 async function selectLiveController(value){if(profileSaving)return;try{await post('/api/bluebridge/controllers/select',{index:Number(value)});currentController=Number(value);currentProfile=-1;profileData=null;editorDirty=false;offlineManagement=false;await refresh();}catch(e){toast(e.message,true);}}
-function renderAll(){renderDS4Settings();renderControllerCard();renderFirmware();renderProfiles();renderPaired();renderBlocked();if(profileData&&!editorDirty&&!profileSaving)renderEditor();renderControllerMode()}
+function renderAll(){renderDS4RightClick();renderDS4Settings();renderControllerCard();renderFirmware();renderProfiles();renderPaired();renderBlocked();if(profileData&&!editorDirty&&!profileSaving)renderEditor();renderControllerMode()}
 function openFirmware(){showPage('firmware');renderFirmware()}function renderFirmware(){if($('firmwareInstalled'))$('firmwareInstalled').textContent=statusData.firmware?'v'+statusData.firmware:'-';if($('firmwareSchema'))$('firmwareSchema').textContent=statusData.config_schema??'-'}
 function supportsDualSense(firmware) {
   const version = /^v?(\d+)\.(\d+)\.(\d+)(-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.exec(String(firmware ?? '').trim());
@@ -1346,6 +1351,35 @@ async function saveLightbarController(){
   }catch(e){toast(e.message,true);}finally{lightbarSaving=false;renderLightbar();}
 }
 saveLightbarPalette=guardAdapterAction(saveLightbarPalette);saveLightbarController=guardAdapterAction(saveLightbarController);
+
+// BLUEBRIDGE_DS4_RIGHT_CLICK_V1
+let ds4RightClickDirty=false,ds4RightClickSaving=false,ds4RightClickSelection='';
+function renderDS4RightClick(){
+  const controller=selectedDS4();
+  const key=JSON.stringify([selectedAdapterId,controller?.index,controller?.id]);
+  if(key!==ds4RightClickSelection){ds4RightClickSelection=key;ds4RightClickDirty=false;}
+  const supported=!!controller&&!!statusData.capabilities?.ds4_right_click;
+  const data=statusData.ds4_mouse;
+  $('ds4RightClickSection').classList.toggle('hidden',!supported);
+  $('ds4RightClickEnabled').disabled=!supported||!data||ds4RightClickSaving;
+  $('ds4RightClickSave').disabled=!supported||!data||ds4RightClickSaving;
+  if(!supported)return;
+  if(!data){$('ds4RightClickStatus').textContent='Unable to read right-click setting. Refresh to retry.';return;}
+  if(!ds4RightClickDirty&&!ds4RightClickSaving)$('ds4RightClickEnabled').checked=!!data.right_click;
+  $('ds4RightClickStatus').textContent=data.right_click?'Right-click is enabled.':'Right-click is off; the whole touchpad clicks left.';
+}
+async function saveDS4RightClick(){
+  if(ds4RightClickSaving||!selectedDS4()||!statusData.ds4_mouse)return;
+  const adapter=selectedAdapterId;
+  ds4RightClickSaving=true;renderDS4RightClick();
+  try{
+    const result=await post('/api/bluebridge/ds4-mouse',{right_click:$('ds4RightClickEnabled').checked});
+    if(selectedAdapterId!==adapter)return;
+    statusData.ds4_mouse=result.settings;ds4RightClickDirty=false;
+    toast('Right-click option saved. Release any held click to use the new setting.');
+  }catch(e){toast(e.message,true);}finally{ds4RightClickSaving=false;renderDS4RightClick();}
+}
+saveDS4RightClick=guardAdapterAction(saveDS4RightClick);
 </script></body></html>'''.encode("utf-8")
 
 
@@ -1934,6 +1968,11 @@ class BlueBridgeManager:
             status["protocol"] = hello.get("protocol", status.get("protocol"))
             status["config_schema"] = hello.get("config_schema")
             status["capabilities"] = hello.get("capabilities", {})
+            if status["capabilities"].get("ds4_right_click"):
+                try:
+                    status["ds4_mouse"] = self.request_json("DS4_MOUSE_GET")
+                except Exception as right_click_error:
+                    status["ds4_mouse_error"] = str(right_click_error)
             # BLUEBRIDGE_TOUCH_MOUSE: optional firmware capability; older adapters remain usable.
             if status["capabilities"].get("touch_mouse"):
                 try:
@@ -2674,6 +2713,15 @@ def save_lightbar_controller(bluebridge,payload):
     bluebridge.request("LIGHTBAR_SET",payload["index"],payload["id"],payload["player"],int(payload["custom_enabled"]),*rgb)
     return bluebridge.request_json("LIGHTBAR_GET")
 
+# BLUEBRIDGE_DS4_RIGHT_CLICK_V1
+def save_ds4_mouse_settings(bluebridge,payload):
+    if not isinstance(payload,dict) or type(payload.get("right_click")) is not bool:
+        raise ValueError("right_click must be a boolean")
+    if not bluebridge.request_json("HELLO").get("capabilities",{}).get("ds4_right_click"):
+        raise ValueError("This firmware does not support the right-click option")
+    bluebridge.request("DS4_MOUSE_SET",int(payload["right_click"]))
+    return bluebridge.request_json("DS4_MOUSE_GET")
+
 def handle_client(sock, address, path):
     try:
         method, target, headers, request_body = _read_http_request(sock)
@@ -3136,6 +3184,17 @@ def handle_client(sock, address, path):
                         _json_http(sock, response(False, "error", str(e)), "400 Bad Request")
                     return
                 # BLUEBRIDGE_TOUCH_MOUSE
+                if request_path == "/api/bluebridge/ds4-mouse":
+                    if method != "POST":
+                        _json_http(sock,response(False,"error","POST required"),"405 Method Not Allowed")
+                        return
+                    try:
+                        payload=json.loads(request_body.decode("utf-8") or "{}")
+                        settings=save_ds4_mouse_settings(bluebridge,payload)
+                        _json_http(sock,response(True,"bluebridge","Right-click option saved",settings=settings))
+                    except Exception as right_click_error:
+                        _json_http(sock,response(False,"error",str(right_click_error)),"400 Bad Request")
+                    return
                 if request_path == "/api/bluebridge/touch-mouse":
                     if method != "POST":
                         _json_http(sock, response(False, "error", "POST required"), "405 Method Not Allowed")
