@@ -1,7 +1,7 @@
 #!/bin/sh
 
 TITLE="MiSTer Companion Remote by Anime0t4ku"
-SCRIPT_VERSION="4.3.1"
+SCRIPT_VERSION="4.3.2"
 SCRIPT_PATH="/media/fat/Scripts/companion_remote.sh"
 
 BASE="/media/fat/Scripts/.config/companion_remote"
