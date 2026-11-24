@@ -18,7 +18,7 @@ For a complete overview of MiSTer Companion Desktop features, supported platform
 
 ---
 
-### Pre-Releases
+### Pre-Releases (These are not the stable builds)
 
 | Name | Platform | Status | File |
 |------|----------|--------|------|
