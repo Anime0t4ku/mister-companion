@@ -4,7 +4,7 @@ from pathlib import Path
 from PyQt6.QtCore import Qt, QThread, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import QColorDialog, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QComboBox, QTabWidget, QFormLayout, QLineEdit, QSpinBox, QCheckBox, QScrollArea, QFileDialog, QMessageBox, QInputDialog, QDialog, QGridLayout, QGroupBox, QSizePolicy, QProgressBar, QPlainTextEdit
-from core.bluebridge import BlueBridgeService, boot_volumes, flash_volume, supports_dualsense
+from core.bluebridge import BlueBridgeService, boot_volumes, flash_volume, supports_dualsense, OUTPUT_NAMES, USB_MANAGEMENT_WARNING
 from core.bluebridge_protocol import _uf2_info
 from core.bluebridge_releases import bluebridge_release, download_bluebridge_release, version_key
 from ui.tab_header import create_tab_header
@@ -329,18 +329,20 @@ class BlueBridgeTab(QWidget):
         self.output = QComboBox()
         output_groups = (
             ('MiSTer', ((1, 'MiSTer'),)),
-            ('Computer', ((2, 'X-Input'), (3, 'Generic HID'), (6, 'DualSense (PC/Mac)'))),
+            ('Computer', ((2, 'X-Input (BlueBridge)'), (7, 'X-Input (X360)'), (3, 'Generic HID'), (6, 'DualSense'))),
             ('Console', ((4, 'Nintendo Switch'), (5, 'Xbox 360'))),
         )
-        for group, outputs in output_groups:
-            self.output.addItem(group)
-            heading = self.output.model().item(self.output.count() - 1)
-            heading.setFlags(Qt.ItemFlag.NoItemFlags)
-            font = heading.font()
-            font.setBold(True)
-            heading.setFont(font)
-            for mode, label in outputs:
-                self.output.addItem('    ' + label, mode)
+        def add_output_choices(combo):
+            for group, outputs in output_groups:
+                combo.addItem(group)
+                heading = combo.model().item(combo.count() - 1)
+                heading.setFlags(Qt.ItemFlag.NoItemFlags)
+                font = heading.font()
+                font.setBold(True)
+                heading.setFont(font)
+                for mode, label in outputs:
+                    combo.addItem('    ' + label, mode)
+        add_output_choices(self.output)
         self.dualsense_option = self.output.model().item(self.output.findData(6))
         self.dualsense_option.setEnabled(False)
         self.output.setCurrentIndex(self.output.findData(1))
@@ -369,6 +371,22 @@ class BlueBridgeTab(QWidget):
         self.close_controller_button = self.button(profile_header, 'Close Controller', self.close_managed_controller)
         self.close_controller_button.hide()
         profile_layout.addLayout(profile_header)
+        self.output_override_group = QGroupBox('Controller USB output override')
+        override_layout = QVBoxLayout(self.output_override_group)
+        override_note = QLabel('Apply this output when this controller connects. Default uses the adapter output. Only MiSTer supports multiple controllers; other overrides use this controller alone. Saving applies on the next connection.')
+        override_note.setWordWrap(True)
+        override_layout.addWidget(override_note)
+        override_row = QHBoxLayout()
+        self.output_override = QComboBox()
+        self.output_override.addItem('Default (adapter output)', 0)
+        add_output_choices(self.output_override)
+        override_row.addWidget(self.output_override, 1)
+        self.button(override_row, 'Save override', self.save_output_override)
+        override_layout.addLayout(override_row)
+        profile_layout.addWidget(self.output_override_group)
+        self.output_override_group.hide()
+        self.output_override_target = None
+        self.output_override_saved = 0
         self.profiles = QComboBox()
         profile_layout.addWidget(self.profiles)
         self.profiles.activated.connect(self.load_profile)
@@ -424,6 +442,8 @@ class BlueBridgeTab(QWidget):
         self.ds4_tab_indices = (self.editor_tabs.count() - 2, self.editor_tabs.count() - 1)
         self.ds4_pointer_form = QVBoxLayout()
         self.ds4_pointer_tab.addLayout(self.ds4_pointer_form)
+        self.ds4_mouse_form = QVBoxLayout()
+        self.ds4_pointer_tab.addLayout(self.ds4_mouse_form)
         self.ds4_pointer_tab.addStretch()
         self.ds4_palette_form = QVBoxLayout()
         self.ds4_lightbar_tab.addLayout(self.ds4_palette_form)
@@ -759,7 +779,7 @@ class BlueBridgeTab(QWidget):
         self.summary.setText(f"{status.get('adapter_name', 'MC BlueBridge adapter')} · Firmware v{status.get('firmware', '?')}\nController: {status.get('controller', status.get('controller_name', live))} · Profile: {status.get('profile', '-')}\nBattery: {str(status.get('battery_percent')) + '%' if status.get('battery_supported') else 'Unavailable'} · Bluetooth: {'Ready' if status.get('bt_ready') else 'Not ready'} · USB: {'Ready' if status.get('usb_ready') else 'Not ready'}")
         multi = bool(status.get('multi_controller'))
         self.controller_mode_panel.setVisible(isinstance(status.get('multi_controller'), bool))
-        self.controller_mode.setCurrentIndex(1 if multi else 0)
+        self.controller_mode.setCurrentIndex(1 if status.get('multi_controller_enabled', multi) else 0)
         self.live_controller.setVisible(multi)
         self.live_controller.clear()
         for controller in self.controllers_data.get('controllers', []):
@@ -767,10 +787,15 @@ class BlueBridgeTab(QWidget):
                 self.live_controller.addItem(controller.get('name', 'Controller'), controller['index'])
         self.live_controller.setCurrentIndex(self.live_controller.findData(self.controllers_data.get('connected_index')))
         self.live_controller.setEnabled(self.live_controller.count() > 0)
-        self.output.setEnabled(not multi)
+        self.output.setEnabled(not multi or bool(status.get('capabilities', {}).get('controller_output_override')))
+        native = bool(status.get('capabilities', {}).get('native_xinput_modes'))
+        for mode in (7,):
+            option = self.output.model().item(self.output.findData(mode))
+            option.setEnabled(native)
+            option.setText('    ' + OUTPUT_NAMES[mode] + ('' if native else ' (requires firmware v2.0.0+)'))
         dualsense_supported = supports_dualsense(status.get('firmware'))
         self.dualsense_option.setEnabled(dualsense_supported)
-        self.dualsense_option.setText('    DualSense (PC/Mac)' + ('' if dualsense_supported else ' (requires firmware v1.1.0+)'))
+        self.dualsense_option.setText('    DualSense' + ('' if dualsense_supported else ' (requires firmware v1.1.0+)'))
         for index in (2, 3): self.editor_tabs.setTabVisible(index, not multi)
         if multi and self.editor_tabs.currentIndex() in (2, 3): self.editor_tabs.setCurrentIndex(0)
         count = sum(bool(c.get('connected')) for c in self.controllers_data.get('controllers', []))
@@ -804,6 +829,7 @@ class BlueBridgeTab(QWidget):
         self.profile_panel.setVisible(bool(profile))
         selected = next((c for c in controllers.get('controllers', []) if c.get('index') == profiles.get('controller_index')), {})
         self.profile_panel.setTitle(selected.get('name', 'Controller') + ' Profiles')
+        self.render_output_override(selected)
         self.profile_state.setText('Connected controller' if selected.get('connected') else 'Paired · Offline — stored settings remain editable')
         self.close_controller_button.setVisible(bool(profile) and self.managed_controller is not None and not selected.get('connected'))
         self.profile_buttons['Activate'].setVisible(bool(selected.get('connected')))
@@ -814,6 +840,46 @@ class BlueBridgeTab(QWidget):
             self.render_firmware_release(self.online_release)
         self.pages.setVisible(bool(status.get('detected')))
         self.message.setText('MC BlueBridge connected via ' + ('Remote' if self.service.host else 'USB'))
+
+    def render_output_override(self, controller):
+        supported = bool(self.status_data.get('capabilities', {}).get('controller_output_override'))
+        self.output_override_group.setVisible(supported and bool(controller))
+        if not controller:
+            self.output_override_target = None
+            return
+        target = (self.service, self.service.adapter_id, controller['index'], controller['id'])
+        saved = int(controller.get('output_override', 0))
+        if target != self.output_override_target or self.output_override.currentData() == self.output_override_saved:
+            self.output_override.setCurrentIndex(self.output_override.findData(saved))
+        self.output_override_target, self.output_override_saved = target, saved
+        for mode in OUTPUT_NAMES:
+            source = self.output.model().item(self.output.findData(mode))
+            option = self.output_override.model().item(self.output_override.findData(mode))
+            option.setEnabled(source.isEnabled())
+            option.setText(source.text())
+
+    def save_output_override(self):
+        target = self.output_override_target
+        mode = self.output_override.currentData()
+        if not target or mode is None:
+            return
+        if self.worker:
+            if self.worker_quiet:
+                self.defer(self.save_output_override)
+            return
+        if mode in (5, 7) and not self.confirm('This override applies on the next controller connection. ' + USB_MANAGEMENT_WARNING):
+            return
+        service, adapter_id, index, controller_id = target
+        def save():
+            if self.service is not service or service.adapter_id != adapter_id:
+                raise RuntimeError('Selected adapter changed. Reopen the controller settings.')
+            return service.api('controllers/output', {'index': index, 'id': controller_id, 'mode': mode})
+        def saved(_):
+            if self.output_override_target == target:
+                self.output_override_saved = mode
+            self.message.setText('Controller output override saved. It applies when the controller reconnects.')
+            self.defer(self.load_all)
+        self.run(save, saved)
 
     def selected_ds4(self):
         index = self.managed_controller
@@ -856,6 +922,14 @@ class BlueBridgeTab(QWidget):
         self.render_ds4_form('touch-mouse', self.ds4_pointer_form,
                              (mouse, aim) if mouse and (aim or not caps.get('ds4_gyro')) else None,
                              self.build_ds4_pointer)
+        right_click = status.get('ds4_mouse')
+        if caps.get('ds4_right_click'):
+            self.render_ds4_form('ds4-mouse', self.ds4_mouse_form,
+                                 (right_click['right_click'],) if right_click is not None else None,
+                                 self.build_ds4_mouse)
+        else:
+            self.clear_layout(self.ds4_mouse_form)
+            self.ds4_forms.pop('ds4-mouse', None)
         palette = status.get('lightbar') or {}
         self.render_ds4_form('lightbar/palette', self.ds4_palette_form,
                              (palette['theme'], palette['players']) if palette else None,
@@ -881,6 +955,7 @@ class BlueBridgeTab(QWidget):
             return
         group = QGroupBox({
             'touch-mouse': 'Pointer settings',
+            'ds4-mouse': 'Touchpad click',
             'lightbar/palette': 'Adapter palette',
             'lightbar/controller': 'Controller colour',
         }[route])
@@ -906,6 +981,13 @@ class BlueBridgeTab(QWidget):
         control.setChecked(bool(checked))
         form.addRow(control)
         return control
+
+    def build_ds4_mouse(self, form, right_click):
+        enabled = self.ds4_check(form, 'Enable right-click on the right half of the touchpad', right_click)
+        note = QLabel('Off: the whole touchpad clicks left. On: left half clicks left; right half clicks right. A held click keeps its button until release. Mouse output must also be enabled. Saving does not restart the adapter.')
+        note.setWordWrap(True)
+        form.addRow(note)
+        return lambda: {'right_click': enabled.isChecked()}
 
     def build_ds4_pointer(self, form, mouse, aim):
         note = QLabel('These settings apply to the adapter. Mouse output requires single-controller MiSTer mode. Applying changes restarts the adapter.')
@@ -1269,7 +1351,7 @@ class BlueBridgeTab(QWidget):
     def change_controller_mode(self):
         enabled = bool(self.controller_mode.currentData())
         if not self.confirm('Change controller mode? The adapter will restart and connected controllers will disconnect. Saved profiles are preserved.'):
-            self.controller_mode.setCurrentIndex(1 if self.status_data.get('multi_controller') else 0)
+            self.controller_mode.setCurrentIndex(1 if self.status_data.get('multi_controller_enabled', self.status_data.get('multi_controller')) else 0)
             return
         self.capture_callback = None
         self.capture_timer.stop()
@@ -1285,10 +1367,10 @@ class BlueBridgeTab(QWidget):
         previous = int(self.status_data.get('output_mode', 1) or 1)
         if mode is None or mode == previous:
             return
-        if mode == 6 and not self.confirm('DualSense (PC/Mac) presents your paired controller as a wired DualSense for compatible computer games and apps. PS5 console support is unavailable. Continue?'):
+        if mode == 6 and not self.confirm('DualSense presents your paired controller as a wired DualSense for compatible computer games and apps. PS5 console support is unavailable. Continue?'):
             self.output.setCurrentIndex(self.output.findData(previous))
             return
-        if mode == 5 and not self.confirm('Xbox 360 mode uses the native Xbox 360 USB layout, so BlueBridge management is unavailable while this mode is active. To return without a management connection, hold BOOTSEL for 5 seconds to switch back to MiSTer mode. Continue?'):
+        if mode in (5, 7) and not self.confirm(USB_MANAGEMENT_WARNING):
             index = self.output.findData(previous)
             if index >= 0: self.output.setCurrentIndex(index)
             return
@@ -1296,8 +1378,8 @@ class BlueBridgeTab(QWidget):
             self.status_data['output_mode'] = mode
             self.mapping_identity.setVisible(mode == 1)
             self.render_identity()
-            if mode == 5:
-                self.message.setText('Xbox 360 mode enabled. Management disconnect is expected. Hold BOOTSEL for 5 seconds to return to MiSTer mode.')
+            if mode in (5, 7):
+                self.message.setText('Output changed. USB management may disconnect. Hold BOOTSEL for 5 seconds to disconnect controllers and return to MiSTer; overrides are preserved.')
             else:
                 self.message.setText('Output changed. Profile settings are preserved.')
         self.run(lambda: self.service.api('output', {'mode': mode}), done)

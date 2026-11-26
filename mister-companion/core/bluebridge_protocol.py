@@ -225,6 +225,7 @@ class BlueBridgeManager:
             for capability, key, command in (
                 ("touch_mouse", "touch_mouse", "TOUCH_MOUSE_GET"),
                 ("ds4_gyro", "ds4_aim", "DS4_AIM_GET"),
+                ("ds4_right_click", "ds4_mouse", "DS4_MOUSE_GET"),
                 ("ds4_lightbar", "lightbar", "LIGHTBAR_GET"),
             ):
                 if status["capabilities"].get(capability):

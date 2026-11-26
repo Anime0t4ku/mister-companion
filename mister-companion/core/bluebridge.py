@@ -18,6 +18,44 @@ def supports_dualsense(firmware):
         return False
 
 
+OUTPUT_NAMES = {
+    1: 'MiSTer', 2: 'X-Input (BlueBridge)', 3: 'Generic HID',
+    4: 'Nintendo Switch', 5: 'Xbox 360', 6: 'DualSense',
+    7: 'X-Input (X360)',
+}
+USB_MANAGEMENT_WARNING = (
+    'On some devices, this mode may lose the USB serial connection, so BlueBridge '
+    'management will be unavailable. Hold BOOTSEL for 5 seconds to disconnect all '
+    'controllers and return to MiSTer mode. Saved output overrides are preserved '
+    'and apply again when the controller reconnects. Continue?'
+)
+
+
+def validate_output_mode(manager, mode):
+    if type(mode) is not int or mode not in OUTPUT_NAMES:
+        raise ValueError('Invalid output mode')
+    hello = manager.request_json('HELLO')
+    if mode == 7 and not hello.get('capabilities', {}).get('native_xinput_modes'):
+        raise ValueError('X-Input (X360) requires BlueBridge firmware v2.0.0 or later.')
+    if mode == 6 and not supports_dualsense(hello.get('firmware')):
+        raise ValueError('DualSense requires BlueBridge firmware v1.1.0 or later.')
+    return mode
+
+
+def save_controller_output(manager, payload):
+    if not isinstance(payload, dict):
+        raise ValueError('Invalid controller output settings')
+    for key, maximum in (('index', 7), ('id', 4294967295), ('mode', 7)):
+        value = payload.get(key)
+        if type(value) is not int or not 0 <= value <= maximum:
+            raise ValueError('Invalid controller output ' + key)
+    if not manager.request_json('HELLO').get('capabilities', {}).get('controller_output_override'):
+        raise ValueError('Controller output overrides require BlueBridge firmware v2.0.0 or later.')
+    if payload['mode']:
+        validate_output_mode(manager, payload['mode'])
+    return manager.request_json('CONTROLLER_OUTPUT_SET', payload['index'], payload['id'], payload['mode'])
+
+
 def _windows_removable_volumes():
     from ctypes import windll
 
@@ -218,7 +256,7 @@ class BlueBridgeService:
         result = []
         present = set()
         for port in list_ports.comports():
-            if not ((port.vid == 0x2e8a and (port.pid in (0x10b1, 0x10b2, 0x10b3, 0x10c6) or 0xb000 <= (port.pid or 0) <= 0xbfff)) or (port.vid, port.pid) in ((0x0f0d, 0x0092), (0x054c, 0x0ce6))):
+            if not ((port.vid == 0x2e8a and (port.pid in (0x10b1, 0x10b2, 0x10b3, 0x10c6) or 0xb000 <= (port.pid or 0) <= 0xbfff)) or (port.vid, port.pid) in ((0x0f0d, 0x0092), (0x054c, 0x0ce6), (0x045e, 0x028e))):
                 continue
             key = port.serial_number or port.device
             present.add(key)
@@ -244,7 +282,7 @@ class BlueBridgeService:
         route, _, query = path.partition('?')
         if self.host:
             response = requests.request('POST' if payload is not None or data is not None else 'GET', f'http://{self.host}:{REMOTE_DAEMON_PORT}/api/bluebridge/{path}', headers={'X-BlueBridge-Adapter': self.adapter_id, 'Content-Type': 'application/octet-stream' if data is not None else 'application/json'}, json=payload if data is None else None, data=data, timeout=150 if route.startswith('firmware/') else 20)
-            if route in ('touch-mouse', 'lightbar/palette', 'lightbar/controller') and response.status_code == 400:
+            if route in ('touch-mouse', 'ds4-mouse', 'lightbar/palette', 'lightbar/controller', 'controllers/output') and response.status_code == 400:
                 raise RuntimeError(response.json().get('message') or 'BlueBridge settings could not be saved')
             response.raise_for_status()
             result = response.json()
@@ -288,8 +326,11 @@ class BlueBridgeService:
                         except Exception:
                             pass
                 raise RuntimeError('Adapter restarted. Refresh adapters to reconnect.')
-            if route in ('touch-mouse', 'lightbar/palette', 'lightbar/controller'):
+            if route in ('touch-mouse', 'ds4-mouse', 'lightbar/palette', 'lightbar/controller'):
                 return self.save_ds4_settings(manager, route, p)
+            if route == 'controllers/output':
+                if payload is None: raise ValueError('Controller output settings require POST')
+                return {'settings': save_controller_output(manager, p)}
             if route == 'controllers': return {'controllers': manager.controllers()}
             if route == 'blocked-devices': return {'blocked_devices': manager.blocked_devices()}
             if route == 'profiles': return {'profiles': manager.profiles()}
@@ -340,15 +381,10 @@ class BlueBridgeService:
             }
             if route == 'output':
                 if payload is not None:
-                    mode = int(p['mode'])
-                    names = {1: 'MiSTer', 2: 'X-Input', 3: 'Generic HID', 4: 'Nintendo Switch',
-                             5: 'Xbox 360 (Console)', 6: 'DualSense'}
-                    if mode not in names: raise ValueError('Invalid output mode')
-                    if mode == 6 and not supports_dualsense(manager.request_json('HELLO').get('firmware')):
-                        raise ValueError('DualSense (PC/Mac) requires BlueBridge firmware v1.1.0 or later.')
+                    mode = validate_output_mode(manager, p.get('mode'))
                     manager.request('OUTPUT_SET', mode)
                     manager.close()
-                    return {'output': {'mode': mode, 'name': names[mode]}}
+                    return {'output': {'mode': mode, 'name': OUTPUT_NAMES[mode]}}
                 return {'output': manager.request_json('OUTPUT_GET')}
             if route == 'config/reset':
                 manager.reset_configuration(); return {'ok': True}
@@ -362,6 +398,13 @@ class BlueBridgeService:
 
     def save_ds4_settings(self, manager, route, settings):
         capabilities = manager.request_json('HELLO').get('capabilities', {})
+        if route == 'ds4-mouse':
+            if not capabilities.get('ds4_right_click'):
+                raise RuntimeError('This firmware does not support the right-click option')
+            if type(settings.get('right_click')) is not bool:
+                raise ValueError('right_click must be a boolean')
+            manager.request('DS4_MOUSE_SET', int(settings['right_click']))
+            return {'settings': manager.request_json('DS4_MOUSE_GET')}
         if route == 'touch-mouse':
             if not capabilities.get('touch_mouse'):
                 raise RuntimeError('This firmware does not support touchpad mouse output')
